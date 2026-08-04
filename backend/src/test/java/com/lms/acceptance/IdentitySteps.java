@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.lms.identity.AuthService;
+import com.lms.identity.command.AuthService;
 import com.lms.shared.error.AuthenticationFailedException;
 import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;

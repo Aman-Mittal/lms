@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.identity.domain;
+package com.lms.identity.command.domain;
 
 import java.time.Instant;
 import java.util.UUID;

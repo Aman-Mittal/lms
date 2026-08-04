@@ -15,12 +15,15 @@
  */
 package com.lms.shared.config;
 
+import java.util.List;
+
 import javax.sql.DataSource;
 
 import com.lms.shared.tenant.TenantAwareTransactionManager;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jdbc.core.convert.JdbcCustomConversions;
 import org.springframework.data.jdbc.core.dialect.JdbcDialect;
 import org.springframework.data.jdbc.core.dialect.JdbcPostgresDialect;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -54,6 +57,20 @@ public class PersistenceConfig {
     @Bean
     JdbcDialect lmsJdbcDialect() {
         return JdbcPostgresDialect.INSTANCE;
+    }
+
+    /**
+     * Registers the {@code jsonb} converters.
+     *
+     * <p>Named {@code lmsJdbcCustomConversions} rather than
+     * {@code jdbcCustomConversions} so Boot's {@code @ConditionalOnMissingBean}
+     * definition backs off by type instead of colliding by name.
+     */
+    @Bean
+    JdbcCustomConversions lmsJdbcCustomConversions() {
+        return new JdbcCustomConversions(List.of(
+                JsonbConverters.PgObjectToJson.INSTANCE,
+                JsonbConverters.JsonToPgObject.INSTANCE));
     }
 
     /**

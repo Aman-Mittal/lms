@@ -13,19 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.identity;
+package com.lms.identity.command;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.lms.identity.domain.AppUser;
-import com.lms.identity.domain.OrgUnit;
-import com.lms.identity.repository.AppUserRepository;
-import com.lms.identity.repository.OrgUnitRepository;
-import com.lms.identity.repository.RefreshTokenRepository;
-import com.lms.identity.repository.TenantRepository;
+import com.lms.identity.command.domain.AppUser;
+import com.lms.identity.command.domain.OrgUnit;
+import com.lms.identity.command.AppUserRepository;
+import com.lms.identity.command.OrgUnitRepository;
+import com.lms.identity.command.RefreshTokenRepository;
+import com.lms.identity.command.TenantRepository;
 import com.lms.identity.security.TokenService;
 import com.lms.shared.error.AuthenticationFailedException;
 import com.lms.shared.tenant.TenantContext;

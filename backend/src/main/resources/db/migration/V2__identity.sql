@@ -125,6 +125,12 @@ CREATE TABLE app_user
 
 CREATE INDEX app_user_org_idx ON app_user (tenant_id, org_unit_id);
 
+-- Login looks users up case-insensitively, so the index has to match the
+-- expression. Without this the unique constraint on (tenant_id, email) still
+-- serves the tenant predicate, but lower(email) degrades to a filter over every
+-- user in the tenant -- fine at ten users, not at ten thousand.
+CREATE INDEX app_user_email_lower_idx ON app_user (tenant_id, lower(email));
+
 -- ---------------------------------------------------------------------------
 -- RBAC
 -- ---------------------------------------------------------------------------
@@ -192,7 +198,11 @@ CREATE TABLE refresh_token
 );
 
 CREATE INDEX refresh_token_user_idx ON refresh_token (tenant_id, user_id);
-CREATE INDEX refresh_token_expiry_idx ON refresh_token (expires_at) WHERE revoked_at IS NULL;
+-- Named *_sweep_idx to mark it as a deliberate cross-tenant maintenance index.
+-- It serves the housekeeping delete of expired tokens, which runs platform-wide
+-- rather than per tenant, so leading with tenant_id would make it useless for
+-- its only purpose. QueryPlanTest exempts this suffix and nothing else.
+CREATE INDEX refresh_token_expiry_sweep_idx ON refresh_token (expires_at) WHERE revoked_at IS NULL;
 
 -- ---------------------------------------------------------------------------
 -- Audit log (vision document 3.1)

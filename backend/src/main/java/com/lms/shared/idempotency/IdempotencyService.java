@@ -1,0 +1,181 @@
+/*
+ * Copyright 2026 Aman Mittal
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.lms.shared.idempotency;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.HexFormat;
+import java.util.Optional;
+
+import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.tenant.TenantContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Deduplicates retried state-changing requests.
+ *
+ * <p>The claim is an {@code INSERT}, not a check-then-insert. Two concurrent
+ * retries would both pass a {@code SELECT} and both proceed; letting the
+ * primary key decide makes the race impossible rather than unlikely. The loser
+ * catches {@link DuplicateKeyException} and reads the winner's outcome.
+ *
+ * <p>Reuse of a key with a <em>different</em> body is rejected outright. That
+ * is a client defect, and silently returning the earlier response would hide it
+ * while giving the caller an answer to a question it did not ask.
+ */
+@Service
+public class IdempotencyService {
+
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
+
+    /**
+     * How long a completed record is kept. Long enough to cover any realistic
+     * client retry window, short enough that the 1 GB free database does not
+     * fill with them.
+     */
+    private static final int RETENTION_HOURS = 48;
+
+    private final JdbcClient jdbc;
+
+    public IdempotencyService(JdbcClient jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * Claims a key for this request.
+     *
+     * @return empty if the caller should proceed, or the previously recorded
+     *         outcome if this request has already been handled
+     * @throws BusinessRuleViolationException if the key was used for a
+     *         different request, or if an identical request is still running
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<RecordedOutcome> claim(String key, String method, String path, String body) {
+        String hash = fingerprint(method, path, body);
+        try {
+            jdbc.sql("""
+                            INSERT INTO idempotency_key (tenant_id, key, request_hash, state)
+                            VALUES (:tenantId, :key, :hash, 'IN_PROGRESS')
+                            """)
+                    .param("tenantId", TenantContext.requireTenantId())
+                    .param("key", key)
+                    .param("hash", hash)
+                    .update();
+            return Optional.empty();
+        } catch (DuplicateKeyException alreadyClaimed) {
+            return Optional.of(existingOutcome(key, hash));
+        }
+    }
+
+    /** Records the outcome so a later retry receives the original response. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void complete(String key, int httpStatus, String responseBody) {
+        jdbc.sql("""
+                        UPDATE idempotency_key
+                           SET state = 'COMPLETED', http_status = :status,
+                               response_body = :body, completed_at = now()
+                         WHERE tenant_id = :tenantId AND key = :key
+                        """)
+                .param("tenantId", TenantContext.requireTenantId())
+                .param("key", key)
+                .param("status", httpStatus)
+                .param("body", responseBody)
+                .update();
+    }
+
+    /**
+     * Releases a claim whose request failed.
+     *
+     * <p>Without this, a transient failure would poison the key: the client
+     * retries, finds the key claimed, and can never succeed.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void release(String key) {
+        jdbc.sql("DELETE FROM idempotency_key WHERE tenant_id = :tenantId AND key = :key AND state = 'IN_PROGRESS'")
+                .param("tenantId", TenantContext.requireTenantId())
+                .param("key", key)
+                .update();
+    }
+
+    private RecordedOutcome existingOutcome(String key, String expectedHash) {
+        var row = jdbc.sql("""
+                        SELECT request_hash, state, http_status, response_body
+                          FROM idempotency_key
+                         WHERE tenant_id = :tenantId AND key = :key
+                        """)
+                .param("tenantId", TenantContext.requireTenantId())
+                .param("key", key)
+                .query()
+                .singleRow();
+
+        if (!expectedHash.equals(row.get("request_hash"))) {
+            throw new BusinessRuleViolationException("idempotency-key-reused",
+                    "This Idempotency-Key was already used for a different request");
+        }
+        if (!"COMPLETED".equals(row.get("state"))) {
+            throw new BusinessRuleViolationException("idempotency-in-progress",
+                    "An identical request is still being processed; retry shortly");
+        }
+        return new RecordedOutcome((Integer) row.get("http_status"), (String) row.get("response_body"));
+    }
+
+    /**
+     * Prunes completed records.
+     *
+     * <p>Also runs at startup: Render's free tier has no cron and the instance
+     * sleeps, so a purely wall-clock schedule would simply not fire.
+     */
+    @Scheduled(initialDelay = 30_000, fixedDelay = 6 * 60 * 60 * 1000)
+    @Transactional
+    public void pruneExpired() {
+        int removed = jdbc.sql("DELETE FROM idempotency_key WHERE state = 'COMPLETED' AND created_at < :before")
+                .param("before", Instant.now().minus(RETENTION_HOURS, ChronoUnit.HOURS))
+                .update();
+        if (removed > 0) {
+            log.info("Pruned {} expired idempotency records", removed);
+        }
+    }
+
+    private static String fingerprint(String method, String path, String body) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(method.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '\n');
+            digest.update(path.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '\n');
+            if (body != null) {
+                digest.update(body.getBytes(StandardCharsets.UTF_8));
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    /** A previously recorded response, replayed verbatim to a retry. */
+    public record RecordedOutcome(Integer httpStatus, String responseBody) {
+    }
+}

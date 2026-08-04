@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.identity.repository;
+package com.lms.identity.command;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.lms.identity.domain.AppUser;
+import com.lms.identity.command.domain.AppUser;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;

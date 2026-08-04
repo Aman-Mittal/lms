@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.identity.repository;
+package com.lms.identity.command;
 
 import java.time.Instant;
 import java.util.Optional;

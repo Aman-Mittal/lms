@@ -13,20 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.identity.domain;
+package com.lms.identity.events;
 
 import java.time.Instant;
 import java.util.UUID;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.relational.core.mapping.Table;
-
-/** A named bundle of permissions within a tenant. */
-@Table("role")
-public record Role(
-        @Id UUID id,
+/**
+ * A user successfully authenticated.
+ *
+ * <p>Carries identifiers and the organisational path, never the {@code AppUser}
+ * aggregate and never anything credential-shaped.
+ */
+public record UserAuthenticated(
         UUID tenantId,
-        String code,
-        String name,
-        Instant createdAt) {
+        UUID userId,
+        String email,
+        String orgPath,
+        Instant occurredAt) {
+
+    public static UserAuthenticated now(UUID tenantId, UUID userId, String email, String orgPath) {
+        return new UserAuthenticated(tenantId, userId, email, orgPath, Instant.now());
+    }
 }

@@ -79,6 +79,11 @@ server:
     mime-types: application/json,application/problem+json
 
 management:
+  tracing:
+    sampling:
+      # Every request is sampled. At free-tier volumes there is nothing to gain
+      # by sampling less, and a missing trace costs more than a cheap one.
+      probability: ${TRACE_SAMPLE_RATE:1.0}
   endpoints:
     web:
       exposure:
@@ -95,9 +100,25 @@ management:
       enabled: true
 
 logging:
+  # Structured JSON to stdout, as vision document 4.4 requires, so a log
+  # aggregator can ingest it without Grok patterns. Boot 4 does this natively --
+  # no logstash-logback-encoder, so nothing extra to license-audit or configure
+  # for native image.
+  #
+  # Left unset in development, where human-readable output is worth more than
+  # machine-readable; LOG_FORMAT=ecs is set in deployed environments.
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  # MDC keys carried on every line: the correlation id, and the trace and span
+  # ids if a tracer is present.
+  include-application-name: true
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
     com.lms: ${LOG_LEVEL_APP:INFO}
+  pattern:
+    correlation: "[${spring.application.name:},%X{correlationId:-},%X{traceId:-},%X{spanId:-}] "
+
 
 lms:
   security:

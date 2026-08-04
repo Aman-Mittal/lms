@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.identity.domain;
+package com.lms.identity.command.domain;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -21,21 +21,12 @@ import java.util.UUID;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
-/** A corporate entity: the top-level isolation container (vision document 2.1). */
-@Table("tenant")
-public record Tenant(
+/** A named bundle of permissions within a tenant. */
+@Table("role")
+public record Role(
         @Id UUID id,
+        UUID tenantId,
         String code,
         String name,
-        TenantStatus status,
-        Instant createdAt,
-        Instant updatedAt) {
-
-    public enum TenantStatus {
-        ACTIVE, SUSPENDED, CLOSED
-    }
-
-    public boolean isActive() {
-        return status == TenantStatus.ACTIVE;
-    }
+        Instant createdAt) {
 }

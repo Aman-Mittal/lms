@@ -22,7 +22,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 
-import com.lms.identity.domain.AppUser;
+import com.lms.identity.command.domain.AppUser;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;

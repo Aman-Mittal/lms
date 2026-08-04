@@ -122,11 +122,112 @@ identity  masterdata  order  planning  sourcing  execution  telematics  finance 
 
 - A context **must not** call another context's classes directly. Cross-context
   communication is `ApplicationEventPublisher` and domain events only.
-- Anything a peer context may consume goes in the context's root package or an
-  explicit `…api` package; everything else stays in a nested package and is
-  internal.
 - `ModularityTests` fails the build on any violation. If you find yourself
   wanting to relax it, you want an event instead.
+
+**Every module carries a `package-info.java`** declaring
+`@ApplicationModule(displayName = …, allowedDependencies = {…})`. Dependencies
+are declared explicitly and narrowly — an empty `allowedDependencies` means the
+module may talk to nothing but `shared`. Widening it is a design decision, so it
+should be visible in a diff.
+
+### Module layout: CQRS
+
+Every module uses the same internal shape. Commands and queries are separated
+because they have genuinely different needs: the write side must protect
+invariants through aggregates, while the read side usually spans several of them
+and wants exactly the columns a screen needs.
+
+```
+com.lms.<module>
+├── package-info.java        @ApplicationModule — declares allowed dependencies
+├── events/                  @NamedInterface("events") — the module's ONLY
+│   └── …                    published surface; records, no behaviour
+├── command/                 write side
+│   ├── …Command.java        intent, as a record
+│   ├── …CommandService.java loads an aggregate, enforces rules, saves, publishes
+│   ├── domain/              aggregates and value objects
+│   └── …Repository.java     Spring Data JDBC, aggregate-scoped
+├── query/                   read side
+│   ├── …View.java           flat projections shaped for a caller
+│   └── …QueryService.java   hand-written SQL via JdbcClient
+└── web/                     REST adapters, one per side
+```
+
+Rules that make the split worth having:
+
+- **Queries never load aggregates and never write.** `query/` uses `JdbcClient`
+  with explicit SQL and returns `…View` records. It does not touch repositories.
+  This is what makes multi-aggregate reads cheap under Spring Data JDBC, which
+  has no lazy loading by design (DOCS/adr/0002).
+- **Commands never return view models.** A command handler returns an identifier
+  or nothing. If a caller needs data back, it issues a query.
+- **Only `events/` is importable by other modules.** It is a Modulith
+  `@NamedInterface`, so peers declare `allowedDependencies = "masterdata::events"`
+  and get the events without gaining access to `command`, `query` or `domain`.
+  Everything else is internal and the build enforces that.
+- **Events are past-tense facts** carrying identifiers and values, never
+  aggregates or entities. A shared mutable object graph across a boundary
+  defeats the point of having one.
+
+### Idempotency is required on every state-changing endpoint
+
+Retries are normal here, not exceptional: the free instance sleeps after 15
+minutes and clients retry the request that wakes it, telematics ingest runs
+over unreliable mobile links, and the Modulith event registry delivers **at
+least once** and republishes incomplete events after a restart.
+
+- Command endpoints accept an `Idempotency-Key` header and go through
+  `IdempotencyService`. The claim is an `INSERT`, not check-then-insert — the
+  primary key settles the race between concurrent retries instead of leaving it
+  to chance.
+- A retry receives **the original response**, not a 409. The client is retrying
+  precisely because it never learned the first outcome.
+- Reusing a key with a different body is rejected: that is a client defect, and
+  replaying an unrelated response would hide it.
+- A failed request **releases** its claim, or the key is poisoned and the client
+  can never succeed.
+- **Every event listener must be safe to run twice.** At-least-once delivery
+  means this is a correctness requirement, not a nicety. Make the handler's
+  effect naturally idempotent (upsert, state-machine guard) rather than relying
+  on delivery counts.
+
+### Queries must be indexed, paginated and bounded
+
+On 0.1 CPU there is no headroom to absorb a bad query plan.
+
+- **`tenant_id` comes first in every index**, matching how row-level security
+  and every query filter.
+- **Keyset pagination, never `OFFSET`.** Use `Slice` in `shared.query`.
+  `OFFSET n` makes the database walk and discard n rows, so page 500 costs 500
+  times page 1, and concurrent inserts shift every subsequent offset so rows are
+  silently skipped or repeated. Cursors do neither. The trade — no total count,
+  no jump to page N — is accepted deliberately.
+- **Every list endpoint is bounded.** `Slice.MAX_LIMIT` caps what a client can
+  ask for regardless of what it requests.
+- **New queries need a supporting index**, and `QueryPlanTest` asserts it: it
+  runs `EXPLAIN` and fails on a sequential scan over a tenant-scoped table. A
+  plan that is fine against ten test rows and catastrophic against a million is
+  otherwise invisible until production.
+- Sort keys must be unique and stable, or paired with the primary key to break
+  ties — a cursor on a non-unique column loses or repeats rows.
+
+### Correlation ids and structured logs
+
+Vision document 4.4. `CorrelationIdFilter` runs at highest precedence, ahead of
+security, so that rejected requests are still traceable — those are the ones
+someone will go looking for.
+
+- An inbound `X-Correlation-Id` is honoured but **validated** before it reaches
+  a log line or the audit trail; an unvalidated header there is log injection
+  and forged audit entries. Malformed values are replaced, never rejected —
+  observability must not be able to fail a request.
+- The id is echoed on the response, put in the MDC alongside `traceId`/`spanId`,
+  and recorded on every `audit_log` row.
+- Logs are **structured JSON on stdout** in deployed environments
+  (`LOG_FORMAT=ecs`), using Boot 4's built-in support — no
+  `logstash-logback-encoder` to license-audit or configure for native image.
+  Left plain in development, where readable beats parseable.
 
 ### There is no message broker
 
