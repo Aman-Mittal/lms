@@ -26,6 +26,7 @@ import com.lms.shared.geo.BoundingBox;
 import com.lms.shared.geo.GeoUtils;
 import com.lms.shared.geo.LatLon;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -61,6 +62,13 @@ public record Terminal(
         LocalTime closesAt,
         Integer avgDwellMinutes,
         String[] permittedVehicleTypes,
+        /*
+         * Required for correctness, not just concurrency. Spring Data JDBC
+         * treats a record with a pre-assigned @Id as an existing row and issues
+         * an UPDATE, which matches nothing and persists nothing without error.
+         * A null version marks the aggregate as new.
+         */
+        @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -92,7 +100,7 @@ public record Terminal(
                 Json.of(toGeoJsonRing(ring)), null, null, null,
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
-                Instant.now(), Instant.now());
+                null, Instant.now(), Instant.now());
     }
 
     /** Creates a point-radius terminal, deriving a box that encloses the circle. */
@@ -110,7 +118,7 @@ public record Terminal(
                 null, bd(centre.lat()), bd(centre.lon()), BigDecimal.valueOf(radiusMetres),
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
-                Instant.now(), Instant.now());
+                null, Instant.now(), Instant.now());
     }
 
     /** The stored bounding box, for candidate filtering. */

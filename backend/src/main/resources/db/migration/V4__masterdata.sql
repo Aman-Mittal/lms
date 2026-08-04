@@ -16,6 +16,14 @@
 
 -- Master Data Management (vision document 3.2): the single source of truth for
 -- partners, assets, personnel and the geospatial network.
+--
+-- Every aggregate root carries a `version` column, and that is load-bearing
+-- rather than optional. Spring Data JDBC decides between INSERT and UPDATE by
+-- asking whether the aggregate is new, and for a record with a client-assigned
+-- @Id it concludes "not new" -- so save() issues an UPDATE that matches no rows
+-- and persists nothing at all, silently and with no error. A @Version field
+-- makes newness explicit (null version means new), and brings optimistic
+-- locking with it, which matters once two dispatchers edit the same vehicle.
 
 -- ---------------------------------------------------------------------------
 -- 3.2.1 Business partner registry
@@ -43,6 +51,7 @@ CREATE TABLE business_partner
     on_time_pct    NUMERIC(5, 2),
     claims_ratio   NUMERIC(5, 2),
     scorecard_at   TIMESTAMPTZ,
+    version           BIGINT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT business_partner_code_unique UNIQUE (tenant_id, code),
@@ -109,6 +118,7 @@ CREATE TABLE vehicle
     status            TEXT        NOT NULL DEFAULT 'AVAILABLE',
     hazmat_certified  BOOLEAN     NOT NULL DEFAULT false,
     reefer_capable    BOOLEAN     NOT NULL DEFAULT false,
+    version           BIGINT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT vehicle_registration_unique UNIQUE (tenant_id, registration_no),
@@ -146,6 +156,7 @@ CREATE TABLE driver
     -- than a full log: the MVP needs the limit enforced, not the audit trail.
     hos_minutes_today  INT         NOT NULL DEFAULT 0,
     hos_reset_at       TIMESTAMPTZ,
+    version           BIGINT,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT driver_licence_unique UNIQUE (tenant_id, licence_no),
@@ -192,6 +203,7 @@ CREATE TABLE terminal
     closes_at         TIME,
     avg_dwell_minutes INT,
     permitted_vehicle_types TEXT[],
+    version           BIGINT,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT terminal_code_unique UNIQUE (tenant_id, code),

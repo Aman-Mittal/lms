@@ -16,7 +16,6 @@
 package com.lms.acceptance;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,9 +41,8 @@ public class IdentitySteps {
     private AuthService authService;
     @Autowired
     private JwtDecoder jwtDecoder;
-
-    private final Map<String, UUID> tenantIds = new HashMap<>();
-    private final Map<String, UUID> orgUnitIds = new HashMap<>();
+    @Autowired
+    private ScenarioWorld world;
 
     private AuthService.AuthResult lastResult;
     private final List<String> failureMessages = new ArrayList<>();
@@ -53,8 +51,8 @@ public class IdentitySteps {
 
     @Before
     public void resetScenarioState() {
-        tenantIds.clear();
-        orgUnitIds.clear();
+        // ScenarioWorld is @ScenarioScope and resets itself; only this class's
+        // own scratch state needs clearing.
         failureMessages.clear();
         lastResult = null;
         listedEmails = null;
@@ -67,24 +65,25 @@ public class IdentitySteps {
     public void aTenant(String code, String name) {
         // Codes are made unique per scenario so a shared container does not
         // leak state between scenarios.
-        tenantIds.put(code, fixtures.createTenant(uniqueCode(code), name));
+        world.putTenant(code, fixtures.createTenant(world.uniqueCode(code), name));
     }
 
     @Given("tenant {string} has an organisational unit {string} named {string} of type {string}")
     public void anOrgUnit(String tenantCode, String path, String name, String type) {
-        UUID tenantId = tenantIds.get(tenantCode);
-        UUID parentId = orgUnitIds.get(parentPathOf(path));
-        orgUnitIds.put(path, fixtures.createOrgUnit(tenantId, path, name, type, parentId));
+        UUID tenantId = world.tenantId(tenantCode);
+        String parentPath = parentPathOf(path);
+        UUID parentId = parentPath == null ? null : world.orgUnitId(parentPath);
+        world.putOrgUnit(path, fixtures.createOrgUnit(tenantId, path, name, type, parentId));
     }
 
     @Given("tenant {string} has a user {string} with password {string} in unit {string}")
     public void aUser(String tenantCode, String email, String password, String orgPath) {
-        fixtures.createUser(tenantIds.get(tenantCode), orgUnitIds.get(orgPath), orgPath, email, password);
+        fixtures.createUser(world.tenantId(tenantCode), world.orgUnitId(orgPath), orgPath, email, password);
     }
 
     @Given("the user {string} of tenant {string} is suspended")
     public void suspendUser(String email, String tenantCode) {
-        fixtures.suspendUser(tenantIds.get(tenantCode), email);
+        fixtures.suspendUser(world.tenantId(tenantCode), email);
     }
 
     @Given("{string} has logged in to tenant {string} with password {string}")
@@ -99,7 +98,7 @@ public class IdentitySteps {
     public void logsIn(String email, String tenantCode, String password) {
         // Unknown tenant codes are passed through verbatim so the "no such
         // tenant" path is genuinely exercised.
-        String code = tenantIds.containsKey(tenantCode) ? uniqueCode(tenantCode) : tenantCode;
+        String code = world.knowsTenant(tenantCode) ? world.uniqueCode(tenantCode) : tenantCode;
         try {
             lastResult = authService.login(code, email, password, null);
         } catch (AuthenticationFailedException e) {
@@ -110,7 +109,7 @@ public class IdentitySteps {
 
     @When("users are listed without a tenant predicate while scoped to {string}")
     public void listUsersScoped(String tenantCode) {
-        listedEmails = fixtures.listAllUserEmailsWithoutTenantPredicate(tenantIds.get(tenantCode));
+        listedEmails = fixtures.listAllUserEmailsWithoutTenantPredicate(world.tenantId(tenantCode));
     }
 
     @When("users are listed without a tenant predicate and without any tenant scope")
@@ -120,7 +119,7 @@ public class IdentitySteps {
 
     @When("the organisational subtree of {string} is listed for tenant {string}")
     public void listSubtree(String orgPath, String tenantCode) {
-        listedSubtree = fixtures.listSubtree(tenantIds.get(tenantCode), orgPath);
+        listedSubtree = fixtures.listSubtree(world.tenantId(tenantCode), orgPath);
     }
 
     @When("the refresh token is exchanged")
@@ -154,7 +153,7 @@ public class IdentitySteps {
     @Then("the access token carries the tenant of {string}")
     public void tokenCarriesTenant(String tenantCode) {
         Jwt jwt = jwtDecoder.decode(lastResult.accessToken());
-        assertThat(jwt.getClaimAsString("tenant")).isEqualTo(tenantIds.get(tenantCode).toString());
+        assertThat(jwt.getClaimAsString("tenant")).isEqualTo(world.tenantId(tenantCode).toString());
     }
 
     @Then("the access token carries the organisational path {string}")
@@ -214,10 +213,4 @@ public class IdentitySteps {
         return lastSlash <= 0 ? null : trimmed.substring(0, lastSlash + 1);
     }
 
-    /** Scenario-scoped tenant codes, since the container is shared across the suite. */
-    private String uniqueCode(String code) {
-        return code + "-" + scenarioSalt;
-    }
-
-    private final String scenarioSalt = UUID.randomUUID().toString().substring(0, 8);
 }

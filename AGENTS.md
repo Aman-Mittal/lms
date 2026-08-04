@@ -103,6 +103,20 @@ These have already cost time. Do not rediscover them.
   `error while loading shared libraries: libz.so.1` — which names the loader,
   not the build flag, and looks like a broken image rather than a link option.
   Full `--static` is not used because it additionally requires a musl toolchain.
+- **Every aggregate root needs `@Version`, for correctness before concurrency.**
+  Spring Data JDBC chooses INSERT or UPDATE by asking whether the aggregate is
+  new, and a record with a client-assigned `@Id` looks *not* new — so `save()`
+  issues an UPDATE that matches no rows and **persists nothing, silently, with
+  no error**. A `@Version Long` field (null ⇒ new) fixes it and brings
+  optimistic locking along. Factory methods must pass `null` for it.
+- **A Cucumber step expression may carry only one keyword annotation.**
+  Given/When/Then are interchangeable at match time, so putting `@When` and
+  `@Given` with the same text on one method registers a duplicate expression.
+  That aborts registration of the rest of the class, and the symptom is later
+  steps in the *same file* reporting as "undefined" while earlier ones work.
+- **Bind parameters used only in `IS NULL` need an explicit cast.** Postgres has
+  nothing to infer a type from and fails with "could not determine data type of
+  parameter". Write `CAST(:id AS uuid) IS NULL`, not `:id IS NULL`.
 - **No Lombok.** Use Java records and Spring Data JDBC constructor binding.
 - **No `springdoc-openapi`.** `api/openapi.yaml` is hand-authored and is the
   contract source of truth. Do not generate the spec from annotations; generate
