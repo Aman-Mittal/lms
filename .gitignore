@@ -1,0 +1,43 @@
+# Build output
+target/
+build/
+dist/
+out/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# GraalVM native image intermediates
+*.build_artifacts.txt
+reports/
+
+# Node / Angular
+node_modules/
+.angular/
+npm-debug.log*
+.npm/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+nbproject/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets -- never commit these
+.env
+.env.local
+*.pem
+!src/test/resources/**/*.pem
+deploy/.env
+
+# Test output
+coverage/
+playwright-report/
+test-results/

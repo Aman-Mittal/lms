@@ -1,0 +1,157 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Native image build and publish.
+#
+# Native compilation needs ~6-8 GB of RAM and upwards of ten minutes. It runs
+# here, on a 16 GB runner, rather than on Render -- whose free build pipeline
+# would struggle with it. The repository is public, so Actions minutes are
+# unmetered and this can run on every push to main without rationing.
+#
+# The resulting package is published PUBLIC, which is what lets Render pull it
+# with no registry credential at all.
+
+name: Native image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  native-image:
+    name: Build native image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Only this job writes packages, and only on main (see the push step).
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      # GraalVM Community Edition: GPLv2 WITH Classpath Exception.
+      # This distribution is pinned deliberately. Oracle GraalVM ships under
+      # the proprietary GFTC and would invalidate this project's Apache-2.0
+      # distribution -- see DOCS/adr/0003.
+      - name: Set up GraalVM Community Edition
+        uses: graalvm/setup-graalvm@0def53c0fd8534bc13416c9469f5be45265824fd # v1
+        with:
+          java-version: "25"
+          distribution: graalvm-community
+          cache: maven
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Confirm the toolchain is the Community Edition
+        run: |
+          native-image --version | tee ni-version.txt
+          if grep -qi "Oracle GraalVM" ni-version.txt; then
+            echo "::error::Oracle GraalVM detected. Only GPLv2+CE distributions are permitted (DOCS/adr/0003)."
+            exit 1
+          fi
+
+      # `package`, not the bare `native:compile` goal -- the goal on its own
+      # skips resource processing, so application.yaml never reaches
+      # target/classes and AOT fails on a datasource it cannot configure.
+      - name: Compile native image
+        working-directory: backend
+        run: ./mvnw -B -ntp -Pnative -DskipTests package
+
+      - name: Report binary size
+        working-directory: backend
+        run: |
+          SIZE=$(du -h target/lms-platform | cut -f1)
+          echo "Native binary: ${SIZE}" >> "$GITHUB_STEP_SUMMARY"
+
+      # A binary that cannot start is not a build success. This catches the
+      # classic native-image failure mode -- missing reflection metadata that
+      # only surfaces at runtime -- before anything is published.
+      - name: Smoke test the binary
+        working-directory: backend
+        run: |
+          docker run -d --name pg -e POSTGRES_DB=lms -e POSTGRES_USER=lms \
+            -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres:17.7-alpine
+          for i in $(seq 1 30); do
+            docker exec pg pg_isready -U lms -d lms && break || sleep 2
+          done
+
+          DATABASE_URL=jdbc:postgresql://localhost:5432/lms \
+          DATABASE_USERNAME=lms DATABASE_PASSWORD= PORT=8080 \
+            ./target/lms-platform &
+          APP_PID=$!
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/actuator/health/readiness; then
+              echo "Native binary started and reports ready."
+              kill "$APP_PID"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Native binary failed to become ready."
+          kill "$APP_PID" 2>/dev/null || true
+          exit 1
+
+      - name: Set up Buildx
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: native
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Publishing reminder
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          {
+            echo "### Published"
+            echo ""
+            echo '`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}`'
+            echo ""
+            echo "The GHCR package must be set to **public** for Render to pull it"
+            echo "without a registry credential. This is a one-time setting in the"
+            echo "package's settings page; a private package will fail the deploy."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,219 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege by default. Jobs that need more request it explicitly.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "25"
+  RAT_VERSION: "0.18"
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Compile and unit tests. Fast feedback; everything else fans out from here.
+  # -------------------------------------------------------------------------
+  build:
+    name: Build and unit test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Compile
+        working-directory: backend
+        run: ./mvnw -B -ntp compile
+
+      - name: Unit tests
+        working-directory: backend
+        run: ./mvnw -B -ntp test
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: surefire-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Integration tests against real Postgres via Testcontainers.
+  # H2 is not an acceptable substitute -- it has no row-level security, and RLS
+  # is the tenant-isolation guarantee most worth testing. See DOCS/adr/0005.
+  # -------------------------------------------------------------------------
+  integration-test:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Verify (Cucumber acceptance suite + dependency license gate)
+        working-directory: backend
+        run: ./mvnw -B -ntp verify
+
+      # The Gherkin report is the readable answer to "what does this platform
+      # actually guarantee", so it is kept whether the run passed or failed.
+      - name: Upload Cucumber report
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: cucumber-report
+          path: |
+            backend/target/cucumber-report.html
+            backend/target/cucumber.json
+          retention-days: 14
+
+      - name: Upload third-party license inventory
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: third-party-licenses
+          path: backend/target/generated-sources/license/THIRD-PARTY.txt
+          retention-days: 30
+
+  # -------------------------------------------------------------------------
+  # Module boundaries. A context reaching into a peer's internals fails here.
+  # -------------------------------------------------------------------------
+  modularity:
+    name: Module boundaries
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Verify module boundaries
+        working-directory: backend
+        run: ./mvnw -B -ntp test -Dtest=ModularityTests -DfailIfNoTests=false
+
+  # -------------------------------------------------------------------------
+  # Apache RAT: every file must carry the Apache-2.0 header.
+  # Note this project is NOT an ASF project and must not use the ASF
+  # boilerplate -- see DOCS/adr/0003 and AGENTS.md section 5.
+  # -------------------------------------------------------------------------
+  license-headers:
+    name: License headers (Apache RAT)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Cache RAT jar
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: apache-rat-${{ env.RAT_VERSION }}.jar
+          key: apache-rat-${{ env.RAT_VERSION }}
+
+      - name: Download RAT
+        run: |
+          if [ ! -f "apache-rat-${RAT_VERSION}.jar" ]; then
+            curl -fsSL -o "apache-rat-${RAT_VERSION}.jar" \
+              "https://repo1.maven.org/maven2/org/apache/rat/apache-rat/${RAT_VERSION}/apache-rat-${RAT_VERSION}.jar"
+          fi
+
+      - name: Run RAT
+        run: |
+          # No --output-style: RAT 0.18 has no 'plain' stylesheet and fails
+          # outright if one is named. The default text report is what we want.
+          java -jar "apache-rat-${RAT_VERSION}.jar" \
+            --input-exclude-file .rat-excludes \
+            -- . | tee rat-report.txt
+
+          # RAT exits non-zero for reasons other than unapproved licences, so
+          # assert on the count rather than on the exit code.
+          UNAPPROVED=$(grep -oP 'Unapproved:\s*\K[0-9]+' rat-report.txt | head -1)
+          echo "Unapproved licences: ${UNAPPROVED:-unknown}"
+          if [ "${UNAPPROVED:-1}" != "0" ]; then
+            echo "::error::Files are missing the Apache-2.0 license header (see report above)."
+            sed -n '/Files with unapproved/,/^$/p' rat-report.txt
+            exit 1
+          fi
+
+      - name: Upload RAT report
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: rat-report
+          path: rat-report.txt
+          retention-days: 7
+
+  ci-summary:
+    name: CI summary
+    runs-on: ubuntu-latest
+    needs: [build, integration-test, modularity, license-headers]
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Report
+        run: |
+          {
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Build and unit test | ${{ needs.build.result }} |"
+            echo "| Integration tests | ${{ needs.integration-test.result }} |"
+            echo "| Module boundaries | ${{ needs.modularity.result }} |"
+            echo "| License headers | ${{ needs.license-headers.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "${{ contains(needs.*.result, 'failure') }}" = "false" ]

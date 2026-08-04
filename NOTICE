@@ -1,0 +1,58 @@
+Enterprise Logistics Management Platform (LMS)
+Copyright 2026 Aman Mittal
+
+This product includes software developed by
+Aman Mittal (https://github.com/Aman-Mittal/lms).
+
+Licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+--------------------------------------------------------------------------------
+Third-party dependencies
+--------------------------------------------------------------------------------
+
+This product depends on software developed by third parties. All runtime
+dependencies are distributed under the Apache License 2.0, the MIT License, or
+a BSD/ISC-style permissive license. The complete, generated inventory is
+produced by the build (see DOCS/adr/0003-graalvm-licensing-and-apache-compliance.md)
+and is enforced in continuous integration.
+
+Notable dependencies requiring attribution:
+
+  Spring Boot, Spring Framework, Spring Security, Spring Data, Spring Modulith
+    Copyright 2012-2026 the original author or authors.
+    Licensed under the Apache License, Version 2.0.
+
+  Apache Tomcat (embedded)
+    Copyright The Apache Software Foundation.
+    Licensed under the Apache License, Version 2.0.
+
+  Flyway
+    Copyright Red Gate Software Ltd.
+    Licensed under the Apache License, Version 2.0.
+
+  HikariCP
+    Copyright Brett Wooldridge.
+    Licensed under the Apache License, Version 2.0.
+
+  MapStruct
+    Copyright MapStruct Authors.
+    Licensed under the Apache License, Version 2.0.
+
+  PostgreSQL JDBC Driver (pgjdbc)
+    Copyright the PostgreSQL Global Development Group.
+    Licensed under the BSD-2-Clause License.
+
+--------------------------------------------------------------------------------
+Build toolchain
+--------------------------------------------------------------------------------
+
+Native executables are produced with GraalVM Native Image, which is distributed
+under the GNU General Public License version 2 WITH the Classpath Exception --
+the same license as OpenJDK. The Classpath Exception expressly permits linking
+independent modules with the runtime and distributing the resulting executable
+under terms of the author's choosing. This project's binaries are therefore
+distributed under the Apache License 2.0.
+
+See DOCS/adr/0003-graalvm-licensing-and-apache-compliance.md for the full
+analysis.
