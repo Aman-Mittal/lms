@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright 2026 Aman Mittal
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.0</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.lms</groupId>
+  <artifactId>lms-platform</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>LMS Platform</name>
+  <description>Enterprise Logistics Management Platform -- MVP</description>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <properties>
+    <!--
+      Java 25 LTS. Not a free choice: Spring Boot 4.1's native-maven-plugin
+      requires the GraalVM 25 line, whose reachability-metadata schema the
+      Java 21 GraalVM builds do not understand. Lowering this breaks the
+      native build, not just the language level.
+    -->
+    <java.version>25</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <spring-modulith.version>2.1.0</spring-modulith.version>
+    <mapstruct.version>1.6.3</mapstruct.version>
+    <cucumber.version>7.34.6</cucumber.version>
+    <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
+
+    <!-- The native binary is launched directly; no fat jar layering needed. -->
+    <spring-boot.build-image.skip>true</spring-boot.build-image.skip>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.modulith</groupId>
+        <artifactId>spring-modulith-bom</artifactId>
+        <version>${spring-modulith.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Web -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- Persistence: Spring Data JDBC, not JPA. See DOCS/adr/0002. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jdbc</artifactId>
+    </dependency>
+    <!--
+      Must be the starter, not a bare flyway-core. Spring Boot 4 split
+      auto-configuration into per-technology modules: flyway-core alone puts
+      Flyway on the classpath but nothing auto-configures it, so migrations
+      silently never run and the first query fails on a missing table.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-flyway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <!--
+      Deliberately NOT runtime scope. Spring Boot's AOT processing instantiates
+      the DataSource at build time, and the AOT classpath excludes runtime-scope
+      artifacts. Without the driver visible there, the build fails with "Failed
+      to determine a suitable driver class", which reads like a configuration
+      problem and is actually a scope problem.
+    -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
+
+    <!-- Security: JWT RS256 resource server. No external IdP in the MVP. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+
+    <!-- Modularity + the JDBC event publication registry that stands in for a broker. -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-jdbc</artifactId>
+    </dependency>
+
+    <!-- Operability -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- Mapping -->
+    <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct</artifactId>
+      <version>${mapstruct.version}</version>
+    </dependency>
+
+    <!-- Test -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Generates architecture diagrams from the code in ModularityTests. -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-docs</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!--
+      Cucumber (MIT) drives the acceptance suite from Gherkin feature files.
+      Test scope only, so it is not distributed and sits outside the
+      compile/runtime license gate.
+    -->
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-java</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-spring</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-junit-platform-engine</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Testcontainers 2.x renamed its modules to a testcontainers-* prefix. -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!--
+          Native image tuning. The parent POM's `native` profile activates this
+          plugin; this block only supplies build arguments.
+
+          -Os optimises for binary size rather than peak throughput, which is
+          the right trade for a 512 MB / 0.1 CPU instance: there is no headroom
+          to exploit aggressive inlining, and a smaller image means a faster
+          pull and a faster cold start after Render spins the service down.
+        -->
+        <plugin>
+          <groupId>org.graalvm.buildtools</groupId>
+          <artifactId>native-maven-plugin</artifactId>
+          <configuration>
+            <imageName>lms-platform</imageName>
+            <buildArgs>
+              <buildArg>-Os</buildArg>
+              <!--
+                Statically link everything except libc. Without this the binary
+                needs libz.so.1 at runtime, which the distroless base image does
+                not carry, and the container dies instantly with a loader error
+                that says nothing about zlib being the cause. A fully static
+                build would additionally require a musl toolchain; this keeps
+                glibc dynamic, which distroless/base does provide.
+              -->
+              <buildArg>--static-nolibc</buildArg>
+              <buildArg>--enable-monitoring=heapdump</buildArg>
+              <!-- Fail the build on unsupported constructs rather than at runtime. -->
+              <buildArg>--strict-image-heap</buildArg>
+              <buildArg>-H:+ReportExceptionStackTraces</buildArg>
+            </buildArgs>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <!--
+          Do NOT add `-Dspring.flyway.enabled=false` (or any other feature
+          toggle) to jvmArguments here.
+
+          Spring AOT evaluates conditions at build time and freezes the result
+          into the generated context. Disabling a feature for the AOT run does
+          not merely skip it during the build: it removes the beans from the
+          image entirely, and the native binary then runs without them
+          permanently. Doing exactly that produced a binary that silently never
+          migrated, and only failed later against a fresh database with
+          "relation event_publication does not exist".
+        -->
+      </plugin>
+
+      <!--
+        The parent POM only *manages* this plugin, inside its `native` profile.
+        It has to be declared here to actually run; without this the build
+        happily produces a jar and no native binary, and the Docker COPY then
+        fails on a missing target/lms-platform. Outside -Pnative it contributes
+        no executions, so it is inert for ordinary builds.
+      -->
+      <plugin>
+        <groupId>org.graalvm.buildtools</groupId>
+        <artifactId>native-maven-plugin</artifactId>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.mapstruct</groupId>
+              <artifactId>mapstruct-processor</artifactId>
+              <version>${mapstruct.version}</version>
+            </path>
+          </annotationProcessorPaths>
+          <compilerArgs>
+            <arg>-parameters</arg>
+            <arg>-Amapstruct.defaultComponentModel=spring</arg>
+            <arg>-Amapstruct.unmappedTargetPolicy=ERROR</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+
+      <!--
+        Dependency license gate. Fails the build on any dependency whose license
+        is not on the allowlist. EPL-2.0 appears only in test scope (JUnit), so
+        the check is limited to compile+runtime.
+      -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <version>${license-maven-plugin.version}</version>
+        <configuration>
+          <excludedScopes>test,provided</excludedScopes>
+          <failOnBlacklist>true</failOnBlacklist>
+          <!--
+            Denylist is expressed as a regex over license names. Anything
+            copyleft without a linking exception must not reach the runtime
+            classpath of an Apache-2.0 distribution.
+          -->
+          <excludedLicenses>GPL|GNU General Public License|AGPL|SSPL|CDDL|EUPL|MPL</excludedLicenses>
+          <includeTransitiveDependencies>true</includeTransitiveDependencies>
+          <thirdPartyFilename>THIRD-PARTY.txt</thirdPartyFilename>
+        </configuration>
+        <executions>
+          <execution>
+            <id>check-dependency-licenses</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>add-third-party</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!--
+      Native image build: `./mvnw -Pnative package`.
+
+      The compile-no-fork execution lives here rather than in the default build
+      because the parent only binds add-reachability-metadata, and for jar
+      packaging the plugin binds nothing else. Without an explicit execution,
+      `package` produces a jar, reports SUCCESS, and silently never compiles a
+      binary. Bound unconditionally, it would instead force a three-minute
+      native compile onto every ordinary `test` and `verify` run.
+    -->
+    <profile>
+      <id>native</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>build-native</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>compile-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>
