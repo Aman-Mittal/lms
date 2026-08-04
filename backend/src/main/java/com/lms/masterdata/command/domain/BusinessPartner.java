@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import com.lms.shared.error.BusinessRuleViolationException;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -46,6 +47,12 @@ public record BusinessPartner(
         BigDecimal onTimePct,
         BigDecimal claimsRatio,
         Instant scorecardAt,
+        /*
+         * Required for correctness: Spring Data JDBC treats a record with a
+         * pre-assigned @Id as existing and would UPDATE nothing instead of
+         * inserting. A null version marks the aggregate as new.
+         */
+        @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -80,6 +87,20 @@ public record BusinessPartner(
     }
 
     /**
+     * Registers a partner in DRAFT.
+     *
+     * <p>Always DRAFT, never ACTIVE: 3.2.1 requires partners to be walked
+     * through verification, and creating one ready to transact would bypass KYC
+     * altogether.
+     */
+    public static BusinessPartner register(UUID id, UUID tenantId, UUID orgUnitId, String code,
+                                           String legalName, PartnerType type, String taxId) {
+        return new BusinessPartner(id, tenantId, orgUnitId, code, legalName, type,
+                PartnerStatus.DRAFT, taxId, null, null, null, null, null, null,
+                null, Instant.now(), Instant.now());
+    }
+
+    /**
      * Whether the partner may be allocated a load.
      *
      * <p>Vision document 3.2.1: "System MUST block order creation or load
@@ -104,7 +125,7 @@ public record BusinessPartner(
         }
         return new BusinessPartner(id, tenantId, orgUnitId, code, legalName, partnerType, target,
                 taxId, creditLimit, paymentTerms, billingAddress, onTimePct, claimsRatio,
-                scorecardAt, createdAt, Instant.now());
+                scorecardAt, version, createdAt, Instant.now());
     }
 
     /**

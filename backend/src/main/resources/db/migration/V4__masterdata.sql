@@ -81,6 +81,7 @@ CREATE TABLE compliance_document
     -- expiry must treat NULL as valid rather than as expired.
     expires_on    DATE,
     file_ref      TEXT,
+    version       BIGINT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT compliance_document_owner_valid
         CHECK (owner_type IN ('PARTNER', 'VEHICLE', 'DRIVER', 'TRIP'))
