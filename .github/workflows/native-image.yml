@@ -24,11 +24,20 @@
 
 name: Native image
 
+# The native build needs 6-8 GB and upwards of ten minutes. Running it on every
+# pull request means every review waits for it, and a red native build blocks a
+# change that has nothing to do with native compilation.
+#
+# So: always on main, because that is what gets published and deployed; on a
+# pull request only when it is labelled `native`, which is how you ask for the
+# check on a change that plausibly affects AOT -- a new reflective dependency, a
+# configuration property, a Spring Data mapping.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 permissions:
@@ -46,6 +55,9 @@ jobs:
   native-image:
     name: Build native image
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(github.event.pull_request.labels.*.name, 'native')
     permissions:
       contents: read
       # Only this job writes packages, and only on main (see the push step).
