@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /** A named bundle of permissions within a tenant. */
@@ -28,5 +29,6 @@ public record Role(
         UUID tenantId,
         String code,
         String name,
+        @Version Long version,
         Instant createdAt) {
 }

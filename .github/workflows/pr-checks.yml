@@ -1,0 +1,232 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Checks that only make sense for a pull request.
+#
+# Everything that can be judged from a single commit lives in ci.yml and runs
+# on every push. What is here needs either the pull request's metadata or a
+# comparison against the base branch -- a question of the form "what did this
+# change do", which a push event cannot answer.
+
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` matters: the title check would otherwise pass on a bad title and
+    # never re-run when it was corrected, leaving a red check on a fixed PR.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Applied migrations are immutable
+  # -------------------------------------------------------------------------
+  #
+  # Flyway records a checksum for every script it has applied and refuses to
+  # start if one changes. Editing V6 to add a column therefore does not break
+  # this build -- it breaks every database that has already run V6, which
+  # includes production, at the next deploy, after the image has been built and
+  # pushed and the old one retired.
+  #
+  # This is the one check here that would have caught a real mistake made while
+  # building the order module: the fix for the missing version column was a new
+  # V7, and it was tempting to just edit V6.
+  migration-immutability:
+    name: Applied migrations unchanged
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          # The full history is needed to find the merge base; a shallow clone
+          # has no common ancestor to diff against.
+          fetch-depth: 0
+
+      - name: Check that no existing migration was modified or deleted
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          MIGRATIONS=backend/src/main/resources/db/migration
+
+          # --diff-filter=MD: modified or deleted. Added is exactly what a
+          # schema change is supposed to look like.
+          CHANGED=$(git diff --name-only --diff-filter=MD \
+            "$BASE_SHA" "$HEAD_SHA" -- "$MIGRATIONS" || true)
+
+          if [ -n "$CHANGED" ]; then
+            echo "::error::Migrations that have already been applied were modified or deleted."
+            echo "$CHANGED" | sed 's/^/    /'
+            echo ""
+            echo "Flyway validates a checksum per applied script. Changing one does not"
+            echo "fail here -- it fails at startup on every database that already ran it."
+            echo "Add a new V<n>__*.sql instead."
+            exit 1
+          fi
+
+          echo "No applied migration was touched."
+
+  # -------------------------------------------------------------------------
+  # Dependency review
+  # -------------------------------------------------------------------------
+  #
+  # The pom's license-maven-plugin gate is the authority on licensing and runs
+  # in ci.yml. This adds the two things it cannot do: it sees only what the
+  # pull request *adds*, so the failure names the dependency somebody just
+  # introduced rather than dumping the whole tree, and it checks the advisory
+  # database as well as the licence.
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Copyleft and source-available licences. The pom's excludedLicenses
+          # is a regex over licence *names*; this is a list of SPDX identifiers,
+          # so the two cannot be written identically. This list is the stricter
+          # of the pair -- it also refuses LGPL and EPL-1.0 -- so a dependency
+          # that passes here always passes the pom gate, and never the reverse.
+          # EPL-2.0 is absent on purpose: JUnit is EPL-2.0 and is allowed at
+          # test scope.
+          deny-licenses: >-
+            GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0-only, GPL-3.0-or-later,
+            AGPL-3.0-only, AGPL-3.0-or-later,
+            LGPL-2.0-only, LGPL-2.1-only, LGPL-3.0-only,
+            CDDL-1.0, CDDL-1.1, EPL-1.0, EUPL-1.2,
+            MPL-1.1, MPL-2.0, SSPL-1.0
+          fail-on-severity: high
+          comment-summary-in-pr: never
+
+  # -------------------------------------------------------------------------
+  # Pull request title
+  # -------------------------------------------------------------------------
+  #
+  # The title becomes the squash-merge commit subject, so it is the permanent
+  # history rather than a convention for its own sake.
+  pr-title:
+    name: PR title is conventional
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check title format
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # An inline check rather than a third-party action: the rule is one
+          # regular expression, and a marketplace action here would be a
+          # supply-chain dependency bought for nothing.
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9,._-]+\))?!?: .+'
+
+          if ! printf '%s' "$PR_TITLE" | grep -qE "$PATTERN"; then
+            echo "::error::PR title does not follow Conventional Commits: '$PR_TITLE'"
+            echo ""
+            echo "Expected: <type>(<optional scope>): <description>"
+            echo "Types:    feat fix docs style refactor perf test build ci chore revert"
+            echo "Example:  feat(planning): reject loads over the vehicle payload"
+            exit 1
+          fi
+
+          # 72 characters is where GitHub starts truncating in the commits list,
+          # and a subject nobody can read in full is a subject nobody reads.
+          LENGTH=${#PR_TITLE}
+          if [ "$LENGTH" -gt 72 ]; then
+            echo "::error::PR title is $LENGTH characters; keep the subject to 72 or fewer."
+            exit 1
+          fi
+
+          echo "Title is well formed ($LENGTH characters)."
+
+  # -------------------------------------------------------------------------
+  # New rules arrive with the code they govern
+  # -------------------------------------------------------------------------
+  #
+  # A domain rule with no scenario is a rule nobody can point at. This does not
+  # try to judge whether the coverage is any good -- it only asks that a pull
+  # request touching a command service or an aggregate touches a test too,
+  # which is a question a script can actually answer.
+  test-coverage-signal:
+    name: Behaviour change carries a test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check for accompanying tests
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+
+          DOMAIN=$(echo "$CHANGED" | grep -E \
+            'backend/src/main/java/.*/(command|domain)/.*\.java$' || true)
+          TESTS=$(echo "$CHANGED" | grep -E \
+            'backend/src/test/.*\.(java|feature)$' || true)
+
+          if [ -n "$DOMAIN" ] && [ -z "$TESTS" ]; then
+            echo "::error::Domain or command code changed with no test or feature file touched."
+            echo "$DOMAIN" | sed 's/^/    /'
+            echo ""
+            echo "If the change genuinely needs no test -- a rename, a comment -- say so in"
+            echo "the PR description and override this check."
+            exit 1
+          fi
+
+          if [ -n "$DOMAIN" ]; then
+            echo "Domain change is accompanied by test changes."
+          else
+            echo "No domain or command code changed."
+          fi
+
+  pr-summary:
+    name: PR checks summary
+    runs-on: ubuntu-latest
+    needs: [migration-immutability, dependency-review, pr-title, test-coverage-signal]
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Report
+        run: |
+          {
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Applied migrations unchanged | ${{ needs.migration-immutability.result }} |"
+            echo "| Dependency review | ${{ needs.dependency-review.result }} |"
+            echo "| PR title | ${{ needs.pr-title.result }} |"
+            echo "| Behaviour change carries a test | ${{ needs.test-coverage-signal.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "${{ contains(needs.*.result, 'failure') }}" = "false" ]

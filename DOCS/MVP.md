@@ -63,6 +63,39 @@ usable demo and a minute of staring at a loading page.
   with before/after JSONB snapshots (enforced by database rules, not
   convention).
 
+**Master data (vision §3.2)**
+- Business partners with the full KYC lifecycle; BLACKLISTED is terminal, so
+  reinstating a partner is a deliberate act with its own record rather than a
+  status edit.
+- Vehicles with payload and volume capacities and statutory documents; drivers
+  with licence class, expiry and hours of service.
+- **Dispatch readiness** as a port other contexts call: it answers against the
+  date a trip would *depart*, not today, because a certificate valid now but
+  lapsing before departure is not a valid certificate. Every blocking reason is
+  returned at once.
+- Terminals as geofences — polygon or point-radius — with overlap refused
+  within a functional category and permitted across categories, since a
+  warehouse inside a port is a normal arrangement.
+
+**Demand and planning (vision §3.3, §3.4)**
+- Chargeable weight as `max(dead weight, volumetric weight)`, with the divisor
+  stored per line because it is a commercial term: changing a default must not
+  retrospectively alter what an existing order was billed.
+- Dangerous-goods validation in both directions — a regulated class without a
+  UN number is an undeclared shipment; a UN number on ordinary cargo is a
+  mis-keyed line. Every problem is reported at once.
+- The material compatibility matrix, applied per grouping key rather than
+  across the whole order: materials bound for different destinations will never
+  share a vehicle, and refusing that order would invent a rule the business
+  does not have.
+- Consignment generation grouped by consignee and destination, **idempotent by
+  construction** — only unplanned lines are drawn and each is marked as taken,
+  so a retried request after a timeout issues no second lorry receipt.
+- Load building with three hard refusals: capacity in both dimensions, the
+  dangerous-goods certification of the individual vehicle, and compatibility
+  against everything already on the lorry. The capacity rule is also a database
+  CHECK constraint, so it holds whichever code path writes the row.
+
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
   (crossing *and* containment), point-to-polyline distance for route deviation,
@@ -73,9 +106,10 @@ usable demo and a minute of staring at a loading page.
 
 ## Verified, not assumed
 
-`./mvnw verify` runs **60 tests**, all green, against real PostgreSQL via
-Testcontainers — never H2, which has no row-level security and so cannot test
-the property most worth testing.
+`./mvnw verify` runs **147 tests**, including **56 Cucumber scenarios over 704
+steps**, all green, against real PostgreSQL via Testcontainers — never H2,
+which has no row-level security and so cannot test the property most worth
+testing.
 
 The Cucumber suite (`src/test/resources/features/`) is the readable
 specification. Its most important scenario runs a query with **no tenant
@@ -94,13 +128,24 @@ passed compilation and looked correct:
    `FORCE` also applies to the owner that the login lookup runs as.
 3. **`@Transactional` bound the tenant scope too late**, so every login failed
    with "invalid credentials" for reasons nowhere near the credentials.
+4. **Order lines silently did not persist.** A record with a client-assigned
+   `@Id` and no `@Version` looks like an existing row to Spring Data JDBC, so
+   the insert became an UPDATE matching nothing — and reported success. It
+   surfaced as "this order has no lines to validate", nowhere near the cause.
+   This failure mode has now been hit three times, on three different
+   aggregates, which is why `.github/scripts/check-conventions.sh` now fails
+   the build on any `@Table` entity with an `@Id` and no `@Version`.
 
 ## Not built yet
 
 Deferred, with interfaces left open. Do not read the vision document as a
 description of current behaviour:
 
-masterdata (partners, vehicles, drivers, terminals) · order and planning ·
+**The REST layer.** Only `/auth` exists. Every other context is driven through
+its command and query services by the Cucumber suite; `api/openapi.yaml` and
+the controllers it describes are written together, not retrofitted, so neither
+exists yet.
+
 sourcing and load allocation · trip execution and gate operations · telematics
 ingest · rating and invoicing · the Angular console and its Playwright suite ·
 reverse auction · OCR · ERP sync · SAML/OIDC and MFA · multi-leg planning ·

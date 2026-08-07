@@ -108,7 +108,9 @@ These have already cost time. Do not rediscover them.
   new, and a record with a client-assigned `@Id` looks *not* new — so `save()`
   issues an UPDATE that matches no rows and **persists nothing, silently, with
   no error**. A `@Version Long` field (null ⇒ new) fixes it and brings
-  optimistic locking along. Factory methods must pass `null` for it.
+  optimistic locking along. Factory methods must pass `null` for it. This has
+  now been hit three times, so `.github/scripts/check-conventions.sh` fails the
+  build on any `@Table` entity that has an `@Id` and no `@Version`.
 - **A Cucumber step expression may carry only one keyword annotation.**
   Given/When/Then are interchangeable at match time, so putting `@When` and
   `@Given` with the same text on one method registers a duplicate expression.
@@ -371,8 +373,33 @@ cd backend
 docker compose -f deploy/docker-compose.yml up
 
 # License audit over the repo (same command CI runs)
-java -jar apache-rat-0.17.jar --input-exclude-file .rat-excludes -- .
+java -jar apache-rat-0.18.jar --input-exclude-file .rat-excludes -- .
+
+# Project conventions no compiler or test catches (same script CI runs)
+.github/scripts/check-conventions.sh
 ```
+
+### What CI enforces, and where
+
+`ci.yml` runs on **every push to every branch** and on pull requests. Anything
+judgeable from a single commit belongs here: build, unit tests, the Cucumber
+suite against Testcontainers Postgres, module boundaries, project conventions,
+RAT headers, and the dependency licence gate.
+
+`pr-checks.yml` runs on pull requests only, and holds what needs the pull
+request's metadata or a diff against the base branch:
+
+| Check | Why it cannot be a push check |
+|---|---|
+| Applied migrations unchanged | Needs the base branch to know which migrations already existed |
+| Dependency review | Reports only what the PR *adds*, and reads the advisory database |
+| PR title is conventional | The title becomes the squash-merge commit subject |
+| Behaviour change carries a test | Needs the diff to see that domain code moved and tests did not |
+
+The migration check is the load-bearing one. Flyway validates a checksum per
+applied script, so editing a migration that has already run does not fail the
+build — it fails at startup on every database that already ran it, which
+includes production, after the image has been built and pushed.
 
 ---
 
@@ -382,8 +409,13 @@ java -jar apache-rat-0.17.jar --input-exclude-file .rat-excludes -- .
 - Integration tests use **Testcontainers Postgres** — never an in-memory
   database. H2 does not have row-level security, so it cannot verify the thing
   most worth verifying.
-- `LogisticsSpineAcceptanceTest` walks the entire order-to-invoice path and is
-  the definition of done for the MVP. Changes that break it are not finished.
+- The Cucumber suite under `backend/src/test/resources/features/` is the
+  readable statement of what the platform guarantees. A domain rule with no
+  scenario is a rule nobody can point at, and `pr-checks.yml` fails a pull
+  request that changes `command/` or `domain/` code without touching a test.
+- A single feature walking the entire order-to-invoice path is the definition
+  of done for the MVP. It does not exist yet: today the suite covers identity,
+  master data, fleet compliance, and order through load building.
 - Assert on behaviour, not on log output.
 
 ---

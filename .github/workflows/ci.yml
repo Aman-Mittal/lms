@@ -14,9 +14,14 @@
 
 name: CI
 
+# Push on every branch, not just main. A developer pushing a topic branch gets
+# the same answer CI will give the pull request, before opening one -- the
+# repository is public, so Actions minutes are unmetered and there is nothing
+# to ration. Pull requests are covered too, because a PR from a fork does not
+# produce a push event on this repository.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -140,6 +145,24 @@ jobs:
         run: ./mvnw -B -ntp test -Dtest=ModularityTests -DfailIfNoTests=false
 
   # -------------------------------------------------------------------------
+  # Project conventions that no compiler, linter or test catches. Cheap enough
+  # to run without a JDK, and deliberately not gated behind `build` -- a missing
+  # @Version compiles perfectly and passes every unit test.
+  # -------------------------------------------------------------------------
+  conventions:
+    name: Project conventions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Check conventions
+        run: .github/scripts/check-conventions.sh
+
+  # -------------------------------------------------------------------------
   # Apache RAT: every file must carry the Apache-2.0 header.
   # Note this project is NOT an ASF project and must not use the ASF
   # boilerplate -- see DOCS/adr/0003 and AGENTS.md section 5.
@@ -201,7 +224,7 @@ jobs:
   ci-summary:
     name: CI summary
     runs-on: ubuntu-latest
-    needs: [build, integration-test, modularity, license-headers]
+    needs: [build, integration-test, modularity, conventions, license-headers]
     if: always()
     permissions:
       contents: read
@@ -214,6 +237,7 @@ jobs:
             echo "| Build and unit test | ${{ needs.build.result }} |"
             echo "| Integration tests | ${{ needs.integration-test.result }} |"
             echo "| Module boundaries | ${{ needs.modularity.result }} |"
+            echo "| Project conventions | ${{ needs.conventions.result }} |"
             echo "| License headers | ${{ needs.license-headers.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
           [ "${{ contains(needs.*.result, 'failure') }}" = "false" ]

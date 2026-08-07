@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /** A person who can authenticate, scoped to one tenant and one organisational unit. */
@@ -32,6 +33,7 @@ public record AppUser(
         String fullName,
         UserStatus status,
         Instant lastLoginAt,
+        @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -45,7 +47,7 @@ public record AppUser(
 
     public AppUser withLastLoginAt(Instant at) {
         return new AppUser(id, tenantId, orgUnitId, email, passwordHash, fullName,
-                status, at, createdAt, Instant.now());
+                status, at, version, createdAt, Instant.now());
     }
 
     /**

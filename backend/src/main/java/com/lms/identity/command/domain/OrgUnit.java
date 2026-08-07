@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -39,6 +40,7 @@ public record OrgUnit(
         String path,
         String name,
         UnitType unitType,
+        @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
 

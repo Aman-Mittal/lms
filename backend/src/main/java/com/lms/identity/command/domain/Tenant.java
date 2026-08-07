@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /** A corporate entity: the top-level isolation container (vision document 2.1). */
@@ -28,6 +29,7 @@ public record Tenant(
         String code,
         String name,
         TenantStatus status,
+        @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
 
