@@ -63,10 +63,37 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // The API is stateless and token-authenticated; there is no
-                // session cookie for an attacker to ride, so CSRF protection
-                // has nothing to protect here.
-                .csrf(csrf -> csrf.disable())
+                // CodeQL reports this as "Disabled Spring CSRF protection", high
+                // severity, and suggests replacing it with `.csrf(csrf -> {})`.
+                // That suggestion is wrong here and would break the API.
+                //
+                // CSRF is an attack that works because a browser attaches
+                // credentials to a cross-site request automatically. Nothing in
+                // this API is attached automatically:
+                //
+                //   - the only credential is `Authorization: Bearer`, which a
+                //     browser never sends on its own;
+                //   - SessionCreationPolicy.STATELESS means there is no session
+                //     cookie, and no session to hold a CSRF token in;
+                //   - the refresh token travels in the JSON body of
+                //     POST /auth/refresh, not in a cookie -- AuthController has
+                //     no cookie anywhere;
+                //   - httpBasic and formLogin are disabled below, so there is no
+                //     other ambient credential;
+                //   - CORS sets allowCredentials(false).
+                //
+                // Enabling the default protection would install a
+                // HttpSessionCsrfTokenRepository with no session to use, so
+                // every POST, PUT and DELETE would answer 403 and the console
+                // would have no way to obtain a token. It would not add
+                // security; it would remove the API.
+                //
+                // The assumption this rests on -- that no credential is ever
+                // carried in a cookie -- is enforced by
+                // .github/scripts/check-conventions.sh, so that introducing
+                // cookie authentication later fails the build here rather than
+                // silently making this comment untrue.
+                .csrf(csrf -> csrf.disable()) // codeql[java/spring-disabled-csrf-protection]
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth

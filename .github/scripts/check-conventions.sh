@@ -201,6 +201,30 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 5c. No credential is ever carried in a cookie
+# ---------------------------------------------------------------------------
+#
+# CSRF protection is disabled in SecurityConfig, and that is correct only
+# because nothing in this API is attached to a request by the browser
+# automatically: the access token is an Authorization header, the refresh token
+# is a JSON body field, and there is no session.
+#
+# The day somebody stores a token in a cookie -- for a "remember me", or to
+# make a download link work -- that reasoning becomes false and the API becomes
+# CSRF-vulnerable, silently, with the comment in SecurityConfig still asserting
+# otherwise. This is what makes that comment checkable instead of aspirational.
+
+section "no credential is carried in a cookie"
+COOKIE_USE=$(grep -rnE "addCookie\(|ResponseCookie|CookieCsrfTokenRepository|SETCOOKIE|\"Set-Cookie\"" \
+    "$MAIN" --include='*.java' || true)
+if [ -n "$COOKIE_USE" ]; then
+    fail "cookies are being set -- re-examine the CSRF decision in SecurityConfig before allowing this:"
+    echo "$COOKIE_USE" | sed 's/^/      /'
+else
+    pass "no cookie-borne credentials, so the CSRF exemption holds"
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Pagination is keyset, never OFFSET
 # ---------------------------------------------------------------------------
 #
