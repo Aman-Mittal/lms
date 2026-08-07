@@ -91,3 +91,72 @@ Feature: Identity, access and tenant isolation
     When the refresh token is exchanged
     Then a new access token is issued
     And the previous refresh token is no longer accepted
+
+  # ------------------------------------------------------------------ RBAC
+
+  Scenario: A permission the user does not hold refuses the command
+    # The permission vocabulary was seeded in V2 and carried in the token's
+    # `perms` claim from the first commit, and until now nothing read it: every
+    # authenticated user of a tenant could dispatch trips and blacklist
+    # partners. These two scenarios are what stops that returning.
+    Given the tenant scope is "acme" at "/acme/"
+    And the signed-in user lacks "PARTNER_CREATE"
+    When a partner "BLOCKED" is registered
+    Then the command is refused as unauthorised
+
+  Scenario: The permission the user does hold is enough
+    Given the tenant scope is "acme" at "/acme/"
+    And the signed-in user holds only "PARTNER_CREATE"
+    When a partner "ALLOWED" is registered
+    Then the command succeeds
+
+  # ------------------------------------------------- brute-force resistance
+
+  Scenario: Five wrong passwords lock the account
+    # BCrypt makes each guess expensive, which is necessary and not sufficient:
+    # an attacker with a password list just spends longer, and the only cost is
+    # to a 0.1-CPU instance busy hashing their attempts.
+    Given a tenant "lockco" named "Lock Co"
+    And tenant "lockco" has an organisational unit "/lockco/" named "Lock HQ" of type "HQ"
+    And tenant "lockco" has a user "ops@lockco.test" with password "correct-horse" in unit "/lockco/"
+    When "ops@lockco.test" logs in to tenant "lockco" with password "wrong-1"
+    And "ops@lockco.test" logs in to tenant "lockco" with password "wrong-2"
+    And "ops@lockco.test" logs in to tenant "lockco" with password "wrong-3"
+    And "ops@lockco.test" logs in to tenant "lockco" with password "wrong-4"
+    And "ops@lockco.test" logs in to tenant "lockco" with password "wrong-5"
+    Then authentication fails
+    And the account "ops@lockco.test" of tenant "lockco" is locked
+
+  Scenario: A locked account refuses even the right password
+    # And with the same message as a wrong one. "This account is locked" would
+    # confirm the address exists and tell an attacker their guessing worked.
+    Given a tenant "lockco2" named "Lock Co 2"
+    And tenant "lockco2" has an organisational unit "/lockco2/" named "Lock HQ" of type "HQ"
+    And tenant "lockco2" has a user "ops@lockco2.test" with password "correct-horse" in unit "/lockco2/"
+    And the account "ops@lockco2.test" of tenant "lockco2" is locked out
+    When "ops@lockco2.test" logs in to tenant "lockco2" with password "correct-horse"
+    Then authentication fails
+
+  Scenario: A successful sign-in clears the failure count
+    # Otherwise a legitimate user accumulates their way into a lockout across
+    # months of occasional typos.
+    Given a tenant "lockco3" named "Lock Co 3"
+    And tenant "lockco3" has an organisational unit "/lockco3/" named "Lock HQ" of type "HQ"
+    And tenant "lockco3" has a user "ops@lockco3.test" with password "correct-horse" in unit "/lockco3/"
+    And "ops@lockco3.test" logs in to tenant "lockco3" with password "wrong-1"
+    And "ops@lockco3.test" logs in to tenant "lockco3" with password "wrong-2"
+    When "ops@lockco3.test" logs in to tenant "lockco3" with password "correct-horse"
+    Then authentication succeeds
+    And the account "ops@lockco3.test" of tenant "lockco3" has no recorded failures
+
+  Scenario: Authentication attempts reach the audit log
+    # V2 created audit_log with rules refusing UPDATE and DELETE, and nothing
+    # ever wrote to it. An empty audit table answers "was there anything
+    # suspicious" with silence, and silence reads as no.
+    Given a tenant "audco" named "Aud Co"
+    And tenant "audco" has an organisational unit "/audco/" named "Aud HQ" of type "HQ"
+    And tenant "audco" has a user "ops@audco.test" with password "correct-horse" in unit "/audco/"
+    When "ops@audco.test" logs in to tenant "audco" with password "nope"
+    And "ops@audco.test" logs in to tenant "audco" with password "correct-horse"
+    Then the audit log for tenant "audco" contains "LOGIN_FAILED"
+    And the audit log for tenant "audco" contains "LOGIN_SUCCEEDED"

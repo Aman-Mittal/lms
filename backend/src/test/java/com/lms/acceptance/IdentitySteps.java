@@ -43,6 +43,10 @@ public class IdentitySteps {
     private JwtDecoder jwtDecoder;
     @Autowired
     private ScenarioWorld world;
+    @Autowired
+    private org.springframework.jdbc.core.simple.JdbcClient jdbc;
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private AuthService.AuthResult lastResult;
     private final List<String> failureMessages = new ArrayList<>();
@@ -131,6 +135,59 @@ public class IdentitySteps {
     private String previousRefreshToken;
 
     // ----------------------------------------------------------------- then
+
+    @Given("the account {string} of tenant {string} is locked out")
+    public void lockAccount(String email, String tenantCode) {
+        // Driven through the real login path rather than by writing the column
+        // directly: a lockout produced by an UPDATE would still pass even if
+        // the counting logic were broken.
+        for (int attempt = 0; attempt < com.lms.identity.command.domain.AppUser.MAX_FAILED_ATTEMPTS;
+                attempt++) {
+            logsIn(email, tenantCode, "definitely-not-the-password");
+        }
+    }
+
+    @Then("the account {string} of tenant {string} is locked")
+    public void accountIsLocked(String email, String tenantCode) {
+        assertThat(userRow(email, tenantCode).get("locked_until"))
+                .as("account should be locked after repeated failures")
+                .isNotNull();
+    }
+
+    @Then("the account {string} of tenant {string} has no recorded failures")
+    public void noRecordedFailures(String email, String tenantCode) {
+        assertThat(((Number) userRow(email, tenantCode).get("failed_login_attempts")).intValue())
+                .isZero();
+    }
+
+    @Then("the audit log for tenant {string} contains {string}")
+    public void auditContains(String tenantCode, String action) {
+        java.util.UUID tenantId = world.tenantId(tenantCode);
+        List<String> actions = com.lms.shared.tenant.TenantContext.callWith(tenantId, null, () ->
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                        .execute(status -> jdbc.sql(
+                                        "SELECT action FROM audit_log WHERE tenant_id = :tenantId")
+                                .param("tenantId", tenantId)
+                                .query(String.class)
+                                .list()));
+
+        assertThat(actions).contains(action);
+    }
+
+    private java.util.Map<String, Object> userRow(String email, String tenantCode) {
+        java.util.UUID tenantId = world.tenantId(tenantCode);
+        return com.lms.shared.tenant.TenantContext.callWith(tenantId, null, () ->
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                        .execute(status -> jdbc.sql("""
+                                        SELECT failed_login_attempts, locked_until
+                                          FROM app_user
+                                         WHERE tenant_id = :tenantId AND lower(email) = lower(:email)
+                                        """)
+                                .param("tenantId", tenantId)
+                                .param("email", email)
+                                .query()
+                                .singleRow()));
+    }
 
     @Then("authentication succeeds")
     public void authenticationSucceeds() {

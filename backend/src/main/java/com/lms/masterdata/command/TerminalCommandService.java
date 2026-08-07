@@ -23,6 +23,7 @@ import com.lms.masterdata.events.TerminalRegistered;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +45,7 @@ public class TerminalCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('TERMINAL_CREATE')")
     public UUID register(RegisterTerminalCommand command) {
         UUID tenantId = TenantContext.requireTenantId();
 

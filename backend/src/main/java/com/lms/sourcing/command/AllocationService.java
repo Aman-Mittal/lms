@@ -39,6 +39,7 @@ import com.lms.sourcing.events.LoadOffered;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -103,6 +104,7 @@ public class AllocationService {
      * @return the allocation, already carrying its first offer
      */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_ALLOCATE')")
     public UUID allocate(UUID loadId) {
         UUID tenantId = TenantContext.requireTenantId();
 
@@ -147,6 +149,7 @@ public class AllocationService {
 
     /** The vendor takes the load. */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_ALLOCATE')")
     public void accept(UUID allocationId, UUID vendorPartnerId) {
         UUID tenantId = TenantContext.requireTenantId();
         Allocation allocation = require(allocationId);
@@ -169,6 +172,7 @@ public class AllocationService {
 
     /** The vendor declines. The cascade moves on. */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_ALLOCATE')")
     public void reject(UUID allocationId, UUID vendorPartnerId) {
         UUID tenantId = TenantContext.requireTenantId();
         Allocation allocation = require(allocationId);
@@ -208,6 +212,7 @@ public class AllocationService {
 
     /** Abandons an allocation, releasing the load for manual handling. */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_ALLOCATE')")
     public void cancel(UUID allocationId) {
         UUID tenantId = TenantContext.requireTenantId();
         Allocation allocation = require(allocationId);

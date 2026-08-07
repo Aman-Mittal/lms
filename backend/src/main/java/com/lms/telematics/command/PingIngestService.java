@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.lms.execution.api.TripTrackingPort;
+import com.lms.masterdata.api.FleetCapacityPort;
 import com.lms.masterdata.api.TerminalGeofencePort;
 import com.lms.shared.geo.GeoUtils;
 import com.lms.shared.geo.LatLon;
@@ -41,6 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -76,25 +78,29 @@ public class PingIngestService implements PingIngestPort {
     private final GeofenceEventRepository geofenceEvents;
     private final RouteDeviationService deviations;
     private final TerminalGeofencePort terminals;
+    private final FleetCapacityPort fleet;
     private final TripTrackingPort tripTracking;
     private final ApplicationEventPublisher events;
 
     public PingIngestService(PingWriter pings, GeofencePresenceStore presence,
                              GeofenceEventRepository geofenceEvents,
                              RouteDeviationService deviations,
-                             TerminalGeofencePort terminals, TripTrackingPort tripTracking,
+                             TerminalGeofencePort terminals, FleetCapacityPort fleet,
+                             TripTrackingPort tripTracking,
                              ApplicationEventPublisher events) {
         this.pings = pings;
         this.presence = presence;
         this.geofenceEvents = geofenceEvents;
         this.deviations = deviations;
         this.terminals = terminals;
+        this.fleet = fleet;
         this.tripTracking = tripTracking;
         this.events = events;
     }
 
     @Override
     @Transactional
+    @PreAuthorize("hasAuthority('TELEMATICS_INGEST')")
     public IngestResult ingest(List<PingReport> batch) {
         UUID tenantId = TenantContext.requireTenantId();
 
@@ -130,6 +136,7 @@ public class PingIngestService implements PingIngestPort {
         // and a genuine journey would look like a series of impossible jumps.
         Map<UUID, LatLon> lastPoint = new HashMap<>();
         Map<UUID, Instant> lastAt = new HashMap<>();
+        Map<UUID, Boolean> knownVehicles = new HashMap<>();
 
         for (PingReport report : ordered) {
             UUID vehicleId = report.vehicleId();
@@ -146,6 +153,18 @@ public class PingIngestService implements PingIngestPort {
 
             if (refusal.isPresent()) {
                 rejections.add(new Rejection(vehicleId, report.recordedAt(), refusal.get()));
+                continue;
+            }
+
+            // The vehicle identifier comes from the caller, and row-level
+            // security does not cover it: the foreign key to `vehicle` is
+            // checked by the system and does not consult the policy, so an
+            // unchecked identifier would let one tenant file positions against
+            // another tenant's lorry. Cached per batch -- a flush is one
+            // vehicle, so this is one lookup, not one per point.
+            if (!knownVehicles.computeIfAbsent(vehicleId, fleet::isRegistered)) {
+                rejections.add(new Rejection(vehicleId, report.recordedAt(),
+                        "no such vehicle on this tenant's register"));
                 continue;
             }
 

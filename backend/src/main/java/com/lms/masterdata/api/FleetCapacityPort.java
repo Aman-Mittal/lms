@@ -40,6 +40,22 @@ public interface FleetCapacityPort {
     Optional<VehicleCapacity> capacityOf(UUID vehicleId);
 
     /**
+     * Whether the vehicle is on this tenant's register at all, in any status.
+     *
+     * <p>Distinct from {@link #capacityOf}, which excludes a vehicle that is in
+     * maintenance -- a lorry off the road still reports its position, and
+     * discarding those points would lose the fact that it is sitting in a
+     * workshop.
+     *
+     * <p>Telematics needs this because a position report names the vehicle it
+     * is about. Row-level security stops the row being <em>read</em> by another
+     * tenant, but the foreign key to {@code vehicle} is checked by the system
+     * and does not consult the policy, so without this a caller could file
+     * positions against a vehicle identifier belonging to somebody else.
+     */
+    boolean isRegistered(UUID vehicleId);
+
+    /**
      * @param payloadCapacityKg gross weight less tare, which is what a load may
      *                          actually weigh -- not the laden total, which
      *                          would over-allocate every vehicle by its own mass

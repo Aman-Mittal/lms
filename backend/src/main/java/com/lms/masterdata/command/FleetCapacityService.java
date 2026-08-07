@@ -35,6 +35,11 @@ public class FleetCapacityService implements FleetCapacityPort {
     }
 
     @Override
+    public boolean isRegistered(UUID vehicleId) {
+        return vehicleId != null && vehicles.findById(vehicleId).isPresent();
+    }
+
+    @Override
     public Optional<VehicleCapacity> capacityOf(UUID vehicleId) {
         return vehicles.findById(vehicleId)
                 .filter(Vehicle::isAvailable)

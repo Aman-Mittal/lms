@@ -22,8 +22,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -39,6 +42,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * not compile.
  */
 @Configuration
+// Turns @PreAuthorize on the command services into an actual check. Without
+// it the annotations are documentation: the permission vocabulary was seeded
+// in V2 and carried in the `perms` claim from the first commit, and nothing
+// ever read it -- so any authenticated user of a tenant could dispatch trips,
+// blacklist partners and award loads.
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final List<String> allowedOrigins;
@@ -61,6 +70,12 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Obtaining a token cannot require a token. These two
+                        // were missing, which meant /auth/login answered 401 to
+                        // everybody and nobody could ever sign in -- invisible
+                        // to a test suite that drives the services directly.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
                         // Render polls readiness to decide when the instance is
                         // live, and does so unauthenticated.
                         .requestMatchers("/actuator/health/**").permitAll()
@@ -69,22 +84,46 @@ public class SecurityConfig {
                         // Pages generates its client from it.
                         .requestMatchers(HttpMethod.GET, "/openapi.yaml").permitAll()
                         .anyRequest().authenticated())
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable());
 
         return http.build();
     }
 
+    /**
+     * Turns the {@code perms} claim into Spring Security authorities.
+     *
+     * <p>No {@code SCOPE_} or {@code ROLE_} prefix. The claim already holds
+     * this platform's own permission codes -- ORDER_CREATE, TRIP_EXECUTE -- and
+     * a prefix would mean every {@code @PreAuthorize} carried a piece of
+     * framework trivia that has nothing to do with the rule being expressed.
+     */
+    @Bean
+    JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
+        authorities.setAuthoritiesClaimName("perms");
+        authorities.setAuthorityPrefix("");
+
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(authorities);
+        return converter;
+    }
+
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         // Explicit origins rather than a wildcard: the console is served from a
-        // known GitHub Pages origin and credentials are allowed.
+        // known GitHub Pages origin.
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-Id"));
         config.setExposedHeaders(List.of("X-Correlation-Id"));
-        config.setAllowCredentials(true);
+        // False. Tokens travel in the Authorization header, not in a cookie,
+        // so nothing here needs credentialed requests -- and allowing them
+        // widens what a compromised or mis-typed allowed origin could do.
+        config.setAllowCredentials(false);
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

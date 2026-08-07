@@ -27,11 +27,13 @@ import com.lms.identity.command.OrgUnitRepository;
 import com.lms.identity.command.RefreshTokenRepository;
 import com.lms.identity.command.TenantRepository;
 import com.lms.identity.security.TokenService;
+import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.error.AuthenticationFailedException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -64,6 +66,17 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final TransactionTemplate transactions;
+    /**
+     * A separate, independent transaction for recording a failed attempt.
+     *
+     * <p>Load-bearing. A failed login throws, and the throw rolls back the
+     * transaction it happened in -- so an increment written on the main
+     * template is undone by the very exception that justified it. The counter
+     * would never reach the threshold and the lockout would never fire, while
+     * looking completely correct in the source.
+     */
+    private final TransactionTemplate failureTransactions;
+    private final AuditTrail audit;
 
     public AuthService(TenantRepository tenants,
                        AppUserRepository users,
@@ -71,7 +84,8 @@ public class AuthService {
                        RefreshTokenRepository refreshTokens,
                        PasswordEncoder passwordEncoder,
                        TokenService tokenService,
-                       PlatformTransactionManager transactionManager) {
+                       PlatformTransactionManager transactionManager,
+                       AuditTrail audit) {
         this.tenants = tenants;
         this.users = users;
         this.orgUnits = orgUnits;
@@ -79,6 +93,10 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.failureTransactions = new TransactionTemplate(transactionManager);
+        this.failureTransactions.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.audit = audit;
     }
 
     public AuthResult login(String tenantCode, String email, String password, String deviceFingerprint) {
@@ -90,16 +108,37 @@ public class AuthService {
         // Scope first, transaction second. Reversing these silently breaks
         // every login -- see the class comment.
         return TenantContext.callWith(tenantId, null, () -> transactions.execute(status -> {
-            AppUser user = users.findByTenantAndEmail(tenantId, email)
-                    .orElseThrow(() -> new AuthenticationFailedException(GENERIC_FAILURE));
+            Instant now = Instant.now();
+
+            AppUser user = users.findByTenantAndEmail(tenantId, email).orElse(null);
+            if (user == null) {
+                audit.recordFor(tenantId, null, "LOGIN_FAILED", "APP_USER", null, null, null);
+                throw new AuthenticationFailedException(GENERIC_FAILURE);
+            }
+
+            if (user.isLockedAt(now)) {
+                // Deliberately the same message as a wrong password. Saying
+                // "this account is locked" confirms the address exists and tells
+                // an attacker their guessing is working.
+                audit.recordFor(tenantId, user.id(), "LOGIN_BLOCKED_LOCKED", "APP_USER",
+                        user.id(), null, null);
+                throw new AuthenticationFailedException(GENERIC_FAILURE);
+            }
 
             // Verify the password even for accounts that cannot log in, so that
             // a suspended account does not answer faster than an active one.
             boolean passwordMatches = passwordEncoder.matches(password, user.passwordHash());
             if (!passwordMatches || !user.canAuthenticate()) {
+                AppUser failed = failureTransactions.execute(
+                        inner -> users.save(user.withFailedLogin(now)));
+                audit.recordFor(tenantId, user.id(),
+                        failed.isLockedAt(now) ? "LOGIN_LOCKED_OUT" : "LOGIN_FAILED",
+                        "APP_USER", user.id(), null, null);
                 throw new AuthenticationFailedException(GENERIC_FAILURE);
             }
 
+            audit.recordFor(tenantId, user.id(), "LOGIN_SUCCEEDED", "APP_USER",
+                    user.id(), null, null);
             return issueFor(user, deviceFingerprint);
         }));
     }

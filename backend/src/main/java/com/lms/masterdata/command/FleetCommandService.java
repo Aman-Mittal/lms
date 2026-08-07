@@ -27,6 +27,7 @@ import com.lms.masterdata.command.domain.Vehicle;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +53,7 @@ public class FleetCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('VEHICLE_CREATE')")
     public UUID registerVehicle(UUID orgUnitId, UUID ownerPartnerId, String registrationNo,
                                 String category, String vehicleType, String axleConfig,
                                 BigDecimal grossWeightKg, BigDecimal tareWeightKg, BigDecimal maxVolumeM3,
@@ -81,6 +83,7 @@ public class FleetCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('DRIVER_CREATE')")
     public UUID registerDriver(UUID orgUnitId, UUID employerPartnerId, String fullName, String phone,
                                String licenceNo, String licenceClass, String licenceAuthority,
                                LocalDate licenceExpiresOn, boolean hazmatEndorsed) {
@@ -97,6 +100,7 @@ public class FleetCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('PARTNER_CREATE')")
     public UUID registerPartner(UUID orgUnitId, String code, String legalName,
                                 BusinessPartner.PartnerType type, String taxId) {
         UUID tenantId = TenantContext.requireTenantId();
@@ -111,6 +115,7 @@ public class FleetCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('PARTNER_UPDATE')")
     public void transitionPartner(UUID partnerId, BusinessPartner.PartnerStatus target) {
         BusinessPartner partner = partners.findById(partnerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Business partner", partnerId));
@@ -118,6 +123,7 @@ public class FleetCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('VEHICLE_UPDATE')")
     public UUID attachDocument(ComplianceDocument.OwnerType ownerType, UUID ownerId,
                                String documentType, String documentNo, String issuingAuthority,
                                LocalDate issuedOn, LocalDate expiresOn) {

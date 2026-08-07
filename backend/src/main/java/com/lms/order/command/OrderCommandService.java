@@ -31,6 +31,7 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +58,7 @@ public class OrderCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('ORDER_CREATE')")
     public UUID raiseOrder(UUID orgUnitId, UUID customerPartnerId, String orderNo,
                            UUID originTerminalId, Instant requestedPickupAt,
                            Instant requestedDeliveryAt, SalesOrder.OrderSource source) {
@@ -81,6 +83,7 @@ public class OrderCommandService {
      * would never be re-run.
      */
     @Transactional
+    @PreAuthorize("hasAuthority('ORDER_UPDATE')")
     public UUID addLine(UUID orderId, int lineNo, String materialCode, String materialDescription,
                         MaterialClass materialClass, String hazmatUnCode,
                         BigDecimal quantity, String uom, BigDecimal deadWeightKg,
@@ -112,6 +115,7 @@ public class OrderCommandService {
      * usable system and one people work around by leaving things out.
      */
     @Transactional
+    @PreAuthorize("hasAuthority('ORDER_UPDATE')")
     public void validate(UUID orderId) {
         UUID tenantId = TenantContext.requireTenantId();
         SalesOrder order = require(orderId);
@@ -143,6 +147,7 @@ public class OrderCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('ORDER_UPDATE')")
     public void cancel(UUID orderId) {
         SalesOrder order = require(orderId);
         orders.save(order.transitionTo(SalesOrder.OrderStatus.CANCELLED));

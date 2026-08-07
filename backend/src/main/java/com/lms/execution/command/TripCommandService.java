@@ -36,6 +36,7 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -98,6 +99,7 @@ public class TripCommandService {
 
     /** Raises a trip against an awarded load. */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public UUID raiseTrip(String tripNo, UUID loadId, Instant plannedStartAt) {
         UUID tenantId = TenantContext.requireTenantId();
 
@@ -135,6 +137,7 @@ public class TripCommandService {
      * the gate with the driver waiting.
      */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void assign(UUID tripId, UUID vehicleId, UUID driverId) {
         Trip trip = require(tripId);
 
@@ -155,6 +158,7 @@ public class TripCommandService {
     }
 
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public UUID attachDocument(UUID tripId, String documentType, String documentRef) {
         UUID tenantId = TenantContext.requireTenantId();
         Trip trip = require(tripId);
@@ -172,6 +176,7 @@ public class TripCommandService {
     // ------------------------------------------------------------ 3.6.2 gate
 
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void gateIn(UUID tripId, UUID terminalId, Instant at, String remarks) {
         UUID tenantId = TenantContext.requireTenantId();
         Trip trip = require(tripId);
@@ -191,6 +196,7 @@ public class TripCommandService {
      * rather than obviously wrong.
      */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void recordWeighing(UUID tripId, UUID terminalId,
                                WeighbridgeReading.ReadingType type,
                                BigDecimal weightKg, Instant at) {
@@ -215,6 +221,7 @@ public class TripCommandService {
 
     /** Loading is finished and the vehicle has been weighed laden. */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void markLoaded(UUID tripId, Instant at) {
         Trip trip = require(tripId);
 
@@ -249,6 +256,7 @@ public class TripCommandService {
      * order matters: nothing is written until every check has passed.
      */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void dispatch(UUID tripId, Instant at) {
         UUID tenantId = TenantContext.requireTenantId();
         Trip trip = require(tripId);
@@ -284,12 +292,14 @@ public class TripCommandService {
 
     /** Moving. Driven automatically by the origin geofence exit once telematics lands. */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void beginTransit(UUID tripId) {
         trips.save(require(tripId).beginTransit());
     }
 
     /** Inside the destination geofence. */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void arrive(UUID tripId, Instant at) {
         UUID tenantId = TenantContext.requireTenantId();
         Trip trip = require(tripId);
@@ -304,6 +314,7 @@ public class TripCommandService {
 
     /** Proof of delivery accepted. */
     @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void complete(UUID tripId, Instant at) {
         UUID tenantId = TenantContext.requireTenantId();
         Trip trip = require(tripId);

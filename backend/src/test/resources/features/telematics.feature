@@ -152,3 +152,12 @@ Feature: Coordinates move the trip
     Then trip "TRIP-T1" has no raw positions left
     And the stored track for trip "TRIP-T1" has fewer than 20 points
     And the stored track for trip "TRIP-T1" is longer than 25000 m
+
+  Scenario: A position for a vehicle on nobody's register is refused
+    # Row-level security stops another tenant reading the row, but the foreign
+    # key to `vehicle` is checked by the system and does not consult the
+    # policy -- so without an explicit check a caller could file positions
+    # against somebody else's lorry.
+    Given a position for an unregistered vehicle 2 hours ago
+    When the positions are ingested
+    Then 1 position was rejected mentioning "no such vehicle"

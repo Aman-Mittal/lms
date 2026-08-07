@@ -146,6 +146,14 @@ public class TelematicsSteps {
 
     // ------------------------------------------------------------------- when
 
+    @Given("a position for an unregistered vehicle {int} hours ago")
+    public void aPositionForUnknownVehicle(int hoursAgo) {
+        batch.add(new PingIngestPort.PingReport(UUID.randomUUID(),
+                Instant.now().minus(hoursAgo, ChronoUnit.HOURS),
+                BigDecimal.valueOf(19.4), BigDecimal.valueOf(73.4),
+                BigDecimal.valueOf(60), null, BigDecimal.valueOf(5), true, "DEVICE"));
+    }
+
     @When("the positions are ingested")
     public void ingestPositions() {
         result = ingest.ingest(List.copyOf(batch));

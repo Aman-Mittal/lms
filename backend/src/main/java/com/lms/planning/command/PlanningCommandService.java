@@ -37,6 +37,7 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,6 +88,7 @@ public class PlanningCommandService {
      *         plan
      */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE')")
     public List<UUID> generateConsignments(UUID orderId) {
         UUID tenantId = TenantContext.requireTenantId();
 
@@ -152,6 +154,7 @@ public class PlanningCommandService {
 
     /** Opens an empty load sized against a specific, available vehicle. */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE')")
     public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId) {
         UUID tenantId = TenantContext.requireTenantId();
 
@@ -178,6 +181,7 @@ public class PlanningCommandService {
      * compatibility against everything already on the vehicle (3.3).
      */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE')")
     public void assignConsignment(UUID loadId, UUID consignmentId) {
         UUID tenantId = TenantContext.requireTenantId();
 
@@ -213,6 +217,7 @@ public class PlanningCommandService {
 
     /** Closes a load to further building and offers it for sourcing. */
     @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE')")
     public void planLoad(UUID loadId) {
         UUID tenantId = TenantContext.requireTenantId();
 
