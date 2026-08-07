@@ -416,6 +416,21 @@ public final class GeoUtils {
     }
 
     /** Twice the signed area of triangle (a, b, c); sign gives orientation. */
+    /**
+     * Rounds a coordinate to six decimal places.
+     *
+     * <p>About eleven centimetres at the equator, which is finer than any
+     * vehicle GPS is accurate to. Serialising the full double instead would put
+     * seventeen significant figures of floating-point noise into every stored
+     * track, which on the highest-volume table in the platform is real bytes
+     * spent representing precision that does not exist.
+     */
+    public static java.math.BigDecimal round6(double degrees) {
+        return java.math.BigDecimal.valueOf(degrees)
+                .setScale(6, java.math.RoundingMode.HALF_UP)
+                .stripTrailingZeros();
+    }
+
     private static double cross(LatLon a, LatLon b, LatLon c) {
         return (b.lon() - a.lon()) * (c.lat() - a.lat())
                 - (b.lat() - a.lat()) * (c.lon() - a.lon());

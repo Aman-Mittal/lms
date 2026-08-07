@@ -175,7 +175,15 @@ public record Terminal(
                 || poly.ring().stream().anyMatch(circle::contains);
     }
 
-    private LatLon centre() {
+    /**
+     * The geofence's centre.
+     *
+     * <p>For a point-radius terminal this is the defining point; for a polygon
+     * it is the centroid of its bounding box, which is close enough for the two
+     * things it is used for -- overlap tests and measuring how far a vehicle has
+     * strayed from the corridor between two terminals.
+     */
+    public LatLon centre() {
         return new LatLon(centreLat.doubleValue(), centreLon.doubleValue());
     }
 

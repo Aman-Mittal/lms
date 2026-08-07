@@ -27,6 +27,11 @@ spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/lms}
     username: ${DATABASE_USERNAME:lms}
+    # No default. A fallback password is a password: if DATABASE_PASSWORD is
+    # ever unset in a deployed environment, a default would have the service
+    # quietly try a guessable credential instead of refusing to start. Local
+    # development gets its value from deploy/docker-compose.yml, and the tests
+    # from Testcontainers.
     password: ${DATABASE_PASSWORD:}
     hikari:
       # Render's free Postgres is small and the web service has 0.1 CPU --

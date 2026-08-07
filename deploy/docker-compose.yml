@@ -29,6 +29,10 @@ services:
     environment:
       POSTGRES_DB: lms
       POSTGRES_USER: lms
+      # Overridable from deploy/.env. The default keeps `docker compose up`
+      # a single command, and is a throwaway local credential -- this
+      # database is created and destroyed on a developer's machine and is
+      # never reachable from anywhere else.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
