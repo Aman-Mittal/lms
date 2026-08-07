@@ -58,6 +58,21 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
+      # Two seconds that answer the question the logs would, if the logs were
+      # readable. Downloading an Actions log needs admin rights on the
+      # repository, so when this job fails in ten seconds there is no way from
+      # outside to tell a missing JDK from a wrapper that is not executable
+      # from a Maven that cannot reach Central. This prints all three.
+      - name: Preflight
+        working-directory: backend
+        run: |
+          echo "java:  $(java -version 2>&1 | head -1)"
+          echo "JAVA_HOME=${JAVA_HOME:-unset}"
+          echo "wrapper: $(ls -l mvnw | awk '{print $1, $NF}')"
+          echo "wrapper properties:"
+          sed 's/^/    /' .mvn/wrapper/maven-wrapper.properties
+          test -x ./mvnw || echo "::error::backend/mvnw is not executable"
+
       - name: Compile
         working-directory: backend
         run: ./mvnw -B -ntp compile
@@ -164,12 +179,28 @@ jobs:
 
   # -------------------------------------------------------------------------
   # Apache RAT: every file must carry the Apache-2.0 header.
-  # Note this project is NOT an ASF project and must not use the ASF
-  # boilerplate -- see DOCS/adr/0003 and AGENTS.md section 5.
+  #
+  # DISABLED as a gate, by request. It now runs only when triggered by hand
+  # (Actions -> CI -> Run workflow), so it no longer blocks a pull request.
+  #
+  # It is disabled rather than deleted, because it is not a formality: this
+  # project is Apache-2.0 licensed and RAT is the only thing that checks every
+  # file actually says so. It has already caught three files this month whose
+  # headers a shell quoting bug silently dropped, and the `.rat-excludes` list
+  # and the assertion below are the accumulated knowledge of what to ignore.
+  # Re-enabling is one line -- delete the `if:` -- and running it locally is:
+  #
+  #   java -jar apache-rat-0.18.jar --input-exclude-file .rat-excludes -- .
+  #
+  # `.github/scripts/check-conventions.sh` still fails the build on the ASF
+  # boilerplate header specifically, which is the licensing mistake with real
+  # consequences: this is NOT an ASF project and must not claim to be.
+  # See DOCS/adr/0003 and AGENTS.md section 5.
   # -------------------------------------------------------------------------
   license-headers:
     name: License headers (Apache RAT)
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     steps:
@@ -224,7 +255,7 @@ jobs:
   ci-summary:
     name: CI summary
     runs-on: ubuntu-latest
-    needs: [build, integration-test, modularity, conventions, license-headers]
+    needs: [build, integration-test, modularity, conventions]
     if: always()
     permissions:
       contents: read
@@ -238,6 +269,6 @@ jobs:
             echo "| Integration tests | ${{ needs.integration-test.result }} |"
             echo "| Module boundaries | ${{ needs.modularity.result }} |"
             echo "| Project conventions | ${{ needs.conventions.result }} |"
-            echo "| License headers | ${{ needs.license-headers.result }} |"
+            echo "| License headers | disabled (run CI manually to check) |"
           } >> "$GITHUB_STEP_SUMMARY"
           [ "${{ contains(needs.*.result, 'failure') }}" = "false" ]

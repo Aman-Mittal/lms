@@ -173,6 +173,34 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 5b. Source files carry the licence header
+# ---------------------------------------------------------------------------
+#
+# Apache RAT is disabled as a pull-request gate. This is the part of what it
+# checked that has actually caught something: three files this month lost their
+# header to a shell quoting bug and nobody noticed until RAT said so.
+#
+# Deliberately much narrower than RAT -- it looks at first-party source only,
+# and only for the copyright line. RAT's value was never the breadth of its
+# scan; it was noticing when a new file arrived without a header. If this is
+# more than you want, delete this section; the ASF-provenance check above is
+# the one with legal consequences and it stands on its own.
+
+section "source files carry the licence header"
+MISSING_HEADER=""
+while IFS= read -r file; do
+    head -20 "$file" | grep -q "Copyright .* Aman Mittal" || MISSING_HEADER="${MISSING_HEADER}${file}"$'\n'
+done < <(find backend/src .github/scripts -type f \
+    \( -name '*.java' -o -name '*.sql' -o -name '*.feature' -o -name '*.sh' \) 2>/dev/null)
+
+if [ -n "$MISSING_HEADER" ]; then
+    fail "source files with no Apache-2.0 copyright header:"
+    echo "$MISSING_HEADER" | sed '/^$/d' | sed 's/^/      /'
+else
+    pass "every source file carries the licence header"
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Pagination is keyset, never OFFSET
 # ---------------------------------------------------------------------------
 #
