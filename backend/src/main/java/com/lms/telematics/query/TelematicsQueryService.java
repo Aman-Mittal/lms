@@ -173,14 +173,16 @@ public class TelematicsQueryService {
                          WHERE t.id = :tripId
                         """)
                 .param("tripId", tripId)
+                // listOfRows, not optionalValue: optionalValue is for a query
+                // that returns one column, and this one returns eleven.
                 .query()
-                .optionalValue()
+                .listOfRows()
+                .stream()
+                .findFirst()
                 .map(this::toProgress);
     }
 
-    @SuppressWarnings("unchecked")
-    private TripProgressView toProgress(Object row) {
-        var values = (java.util.Map<String, Object>) row;
+    private TripProgressView toProgress(java.util.Map<String, Object> values) {
 
         BigDecimal lat = (BigDecimal) values.get("lat");
         BigDecimal lon = (BigDecimal) values.get("lon");
@@ -214,9 +216,23 @@ public class TelematicsQueryService {
 
         return new TripProgressView((UUID) values.get("trip_id"), (String) values.get("trip_no"),
                 (String) values.get("status"), lat, lon,
-                values.get("last_fix_at") == null ? null
-                        : ((java.time.OffsetDateTime) values.get("last_fix_at")).toInstant(),
+                // The raw driver type, not OffsetDateTime. This row is read as
+                // a generic map rather than mapped to a record, so none of
+                // Spring Data's conversions apply and TIMESTAMPTZ arrives as a
+                // java.sql.Timestamp.
+                toInstant(values.get("last_fix_at")),
                 remaining, minutes, completion, deviation != null, deviation);
+    }
+
+    private static Instant toInstant(Object value) {
+        return switch (value) {
+            case null -> null;
+            case java.sql.Timestamp timestamp -> timestamp.toInstant();
+            case java.time.OffsetDateTime offset -> offset.toInstant();
+            case Instant instant -> instant;
+            default -> throw new IllegalStateException(
+                    "Unexpected timestamp type " + value.getClass());
+        };
     }
 
     /** Open route excursions across the fleet: the control tower's alert list. */

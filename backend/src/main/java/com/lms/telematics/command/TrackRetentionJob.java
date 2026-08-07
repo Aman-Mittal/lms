@@ -108,9 +108,13 @@ public class TrackRetentionJob {
     /**
      * Simplifies one trip's track and removes its raw points.
      *
+     * <p>Public so it can be invoked for a single trip -- by a test, or by an
+     * operator reclaiming space from one enormous track without waiting for the
+     * sweep to reach it.
+     *
      * @return how many raw rows were removed
      */
-    int compact(UUID tenantId, UUID tripId) {
+    public int compact(UUID tenantId, UUID tripId) {
         List<GpsPing> raw = pings.trackOf(tenantId, tripId);
         if (raw.isEmpty()) {
             return 0;
