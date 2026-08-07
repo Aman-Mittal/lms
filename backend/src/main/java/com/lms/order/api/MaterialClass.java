@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.order.command.domain;
+package com.lms.order.api;
 
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -70,9 +70,24 @@ public enum MaterialClass {
         INCOMPATIBLE.computeIfAbsent(b, k -> EnumSet.noneOf(MaterialClass.class)).add(a);
     }
 
+    /**
+     * Classes whose carriage is regulated as dangerous goods.
+     *
+     * <p>Used to enforce the other half of the 3.3 hazmat rule: a line in one
+     * of these classes must carry a UN number, because without one there is
+     * nothing to print on the transport document and no way to tell a driver
+     * what they are carrying.
+     */
+    private static final Set<MaterialClass> DANGEROUS = EnumSet.of(CHEMICAL, TOXIC, FLAMMABLE);
+
     /** Whether these two classes may share a transport unit. */
     public boolean isCompatibleWith(MaterialClass other) {
         return !INCOMPATIBLE.getOrDefault(this, Set.of()).contains(other);
+    }
+
+    /** Whether carriage of this class is regulated as dangerous goods. */
+    public boolean isDangerous() {
+        return DANGEROUS.contains(this);
     }
 
     /** The classes this one may not travel with. */

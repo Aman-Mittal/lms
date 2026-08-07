@@ -19,7 +19,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.lms.order.command.domain.MaterialClass;
+import com.lms.order.api.MaterialClass;
 import com.lms.order.command.domain.OrderLine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -42,7 +42,7 @@ class ChargeableWeightTest {
                 w == null ? null : new BigDecimal(w),
                 h == null ? null : new BigDecimal(h),
                 divisor == null ? null : new BigDecimal(divisor),
-                UUID.randomUUID(), UUID.randomUUID(), Instant.now());
+                UUID.randomUUID(), UUID.randomUUID(), false, null, Instant.now());
     }
 
     @Nested
@@ -97,7 +97,7 @@ class ChargeableWeightTest {
                     1, "MAT", "Ten boxes", MaterialClass.GENERAL, null,
                     BigDecimal.TEN, "EA", new BigDecimal("100"),
                     BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, null,
-                    UUID.randomUUID(), UUID.randomUUID(), Instant.now());
+                    UUID.randomUUID(), UUID.randomUUID(), false, null, Instant.now());
 
             assertThat(tenBoxes.volumeM3()).isEqualByComparingTo("10.000");
             assertThat(tenBoxes.volumetricWeightKg()).isEqualByComparingTo("2000.000");

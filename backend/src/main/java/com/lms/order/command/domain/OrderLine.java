@@ -20,7 +20,9 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.lms.order.api.MaterialClass;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -48,6 +50,8 @@ public record OrderLine(
         BigDecimal volumetricDivisor,
         UUID consigneePartnerId,
         UUID destinationTerminalId,
+        boolean planned,
+        @Version Long version,
         Instant createdAt) {
 
     /**
@@ -122,5 +126,22 @@ public record OrderLine(
 
     /** Identifies "the same consignee at the same location". */
     public record GroupingKey(UUID consigneePartnerId, UUID destinationTerminalId) {
+    }
+
+    /**
+     * Marks the line as taken onto a consignment.
+     *
+     * <p>Idempotent: re-marking an already-planned line returns the same
+     * instance rather than issuing a pointless update, so a retried
+     * consignment generation costs nothing.
+     */
+    public OrderLine markPlanned() {
+        if (planned) {
+            return this;
+        }
+        return new OrderLine(id, tenantId, orderId, lineNo, materialCode, materialDescription,
+                materialClass, hazmatUnCode, quantity, uom, deadWeightKg, lengthM, widthM, heightM,
+                volumetricDivisor, consigneePartnerId, destinationTerminalId, true,
+                version, createdAt);
     }
 }

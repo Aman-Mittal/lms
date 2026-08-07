@@ -21,12 +21,17 @@
  * consignments grouped by destination, and consignments are aggregated into
  * loads that respect a vehicle's hard capacities.
  *
- * <p>Depends on {@code order::events} to learn that demand has been validated,
- * and on {@code masterdata::api} because load building must ask what a vehicle
- * can actually carry -- a question that has to be answered before the load is
- * built, not eventually afterwards.
+ * <p>Both declared dependencies are synchronous ports rather than events, and
+ * both for the same reason: they gate the operator's next click. Load building
+ * must know what a vehicle can carry <em>before</em> the load is built, and
+ * consignment generation must return the references it just created. Learning
+ * either eventually would mean pressing a button and watching nothing happen.
+ *
+ * <p>The dependency runs one way only. Planning reads from order and tells it
+ * what has been planned; order never imports planning, which is what keeps
+ * these two out of a cycle that {@code ModularityTests} would reject.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",
-        allowedDependencies = {"order::events", "masterdata::api", "masterdata::events"})
+        allowedDependencies = {"order::api", "masterdata::api"})
 package com.lms.planning;

@@ -90,6 +90,28 @@ public class ScenarioWorld {
         return id;
     }
 
+    /**
+     * Identifiers of anything else a scenario created, keyed by the name the
+     * Gherkin uses.
+     *
+     * <p>Shared here rather than in a step class because the order and planning
+     * scenarios span both: a step that builds a load needs the identifier of a
+     * terminal another step registered.
+     */
+    private final Map<String, UUID> refs = new HashMap<>();
+
+    public void putRef(String key, UUID id) {
+        refs.put(key, id);
+    }
+
+    public UUID ref(String key) {
+        UUID id = refs.get(key);
+        if (id == null) {
+            throw new IllegalStateException("Scenario has nothing named '" + key + "'");
+        }
+        return id;
+    }
+
     public void useScope(String tenantCode, String orgPath) {
         this.currentTenantCode = tenantCode;
         this.currentOrgPath = orgPath;

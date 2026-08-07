@@ -34,6 +34,13 @@ class LoadCapacityTest {
                 UUID.randomUUID(), "RIGID_16T", new BigDecimal(capacityKg), new BigDecimal(capacityM3));
     }
 
+    /** A load built against a real vehicle, which is what carries certification. */
+    private static LoadUnit vehicleLoad(String capacityKg, String capacityM3, boolean hazmatCertified) {
+        return LoadUnit.open(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "LOAD-V",
+                UUID.randomUUID(), UUID.randomUUID(), "RIGID_16T", hazmatCertified,
+                new BigDecimal(capacityKg), new BigDecimal(capacityM3));
+    }
+
     @Test
     @DisplayName("accumulates consignments within capacity")
     void accumulatesWithinCapacity() {
@@ -104,6 +111,40 @@ class LoadCapacityTest {
 
         assertThat(mixed.requiresHazmat()).isTrue();
         assertThat(afterOrdinary.requiresHazmat()).isTrue();
+    }
+
+    @Test
+    @DisplayName("dangerous goods are refused on an uncertified vehicle")
+    void hazmatRefusedWithoutCertification() {
+        // The 3.2.2 hard stop, reaching into planning. Certification belongs to
+        // the individual vehicle, so a load sized only against a vehicle *type*
+        // cannot answer this -- which is why the check is keyed on there being a
+        // real vehicle behind the load.
+        LoadUnit uncertified = vehicleLoad("10000", "40", false);
+
+        assertThatThrownBy(() -> uncertified.addConsignment(
+                new BigDecimal("100"), BigDecimal.ONE, true))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("not certified");
+    }
+
+    @Test
+    @DisplayName("ordinary freight is unaffected by the certification check")
+    void ordinaryFreightOnUncertifiedVehicle() {
+        LoadUnit uncertified = vehicleLoad("10000", "40", false)
+                .addConsignment(new BigDecimal("100"), BigDecimal.ONE, false);
+
+        assertThat(uncertified.plannedWeightKg()).isEqualByComparingTo("100");
+        assertThat(uncertified.requiresHazmat()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a certified vehicle takes dangerous goods")
+    void hazmatAllowedWhenCertified() {
+        LoadUnit certified = vehicleLoad("10000", "40", true)
+                .addConsignment(new BigDecimal("100"), BigDecimal.ONE, true);
+
+        assertThat(certified.requiresHazmat()).isTrue();
     }
 
     @Test

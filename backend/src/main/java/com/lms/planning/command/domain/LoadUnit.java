@@ -45,7 +45,9 @@ public record LoadUnit(
         UUID orgUnitId,
         String loadNo,
         UUID originTerminalId,
+        UUID vehicleId,
         String vehicleType,
+        boolean vehicleHazmatCertified,
         BigDecimal capacityWeightKg,
         BigDecimal capacityVolumeM3,
         BigDecimal plannedWeightKg,
@@ -72,8 +74,27 @@ public record LoadUnit(
         TRANSITIONS.put(LoadStatus.CANCELLED, EnumSet.noneOf(LoadStatus.class));
     }
 
+    /**
+     * Opens a load sized against a nominal vehicle type, with no specific
+     * vehicle behind it and therefore no dangerous goods certification.
+     */
     public static LoadUnit open(UUID id, UUID tenantId, UUID orgUnitId, String loadNo,
                                 UUID originTerminalId, String vehicleType,
+                                BigDecimal capacityWeightKg, BigDecimal capacityVolumeM3) {
+        return open(id, tenantId, orgUnitId, loadNo, originTerminalId, null, vehicleType,
+                false, capacityWeightKg, capacityVolumeM3);
+    }
+
+    /**
+     * Opens a load against a specific vehicle, carrying its certification.
+     *
+     * <p>{@code vehicleHazmatCertified} is copied in rather than looked up on
+     * each assignment, for the same reason the capacities are: the plan must
+     * keep being judged against the fleet definition it was built from.
+     */
+    public static LoadUnit open(UUID id, UUID tenantId, UUID orgUnitId, String loadNo,
+                                UUID originTerminalId, UUID vehicleId, String vehicleType,
+                                boolean vehicleHazmatCertified,
                                 BigDecimal capacityWeightKg, BigDecimal capacityVolumeM3) {
         if (capacityWeightKg == null || capacityWeightKg.signum() <= 0) {
             throw new IllegalArgumentException("Load capacity weight must be positive");
@@ -81,9 +102,10 @@ public record LoadUnit(
         if (capacityVolumeM3 == null || capacityVolumeM3.signum() <= 0) {
             throw new IllegalArgumentException("Load capacity volume must be positive");
         }
-        return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleType,
-                capacityWeightKg, capacityVolumeM3, BigDecimal.ZERO, BigDecimal.ZERO,
-                false, LoadStatus.DRAFT, null, Instant.now(), Instant.now());
+        return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
+                vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
+                BigDecimal.ZERO, BigDecimal.ZERO, false, LoadStatus.DRAFT, null,
+                Instant.now(), Instant.now());
     }
 
     public BigDecimal remainingWeightKg() {
@@ -116,6 +138,15 @@ public record LoadUnit(
                     "Load " + loadNo + " is " + status + " and can no longer be built");
         }
 
+        // 3.2.2 read through to load building: certification belongs to the
+        // individual vehicle, not to its type, so this cannot be inferred from
+        // `vehicleType` and has to be carried on the load.
+        if (hazmat && vehicleId != null && !vehicleHazmatCertified) {
+            throw new BusinessRuleViolationException("load-not-hazmat-certified",
+                    "Load " + loadNo + " is built on a vehicle that is not certified "
+                            + "to carry dangerous goods");
+        }
+
         BigDecimal newWeight = plannedWeightKg.add(weightKg);
         BigDecimal newVolume = plannedVolumeM3.add(volumeM3);
 
@@ -140,9 +171,10 @@ public record LoadUnit(
             throw new BusinessRuleViolationException("load-capacity-exceeded", detail.toString());
         }
 
-        return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleType,
-                capacityWeightKg, capacityVolumeM3, newWeight, newVolume,
-                requiresHazmat || hazmat, status, version, createdAt, Instant.now());
+        return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
+                vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
+                newWeight, newVolume, requiresHazmat || hazmat, status,
+                version, createdAt, Instant.now());
     }
 
     public LoadUnit transitionTo(LoadStatus target) {
@@ -153,9 +185,10 @@ public record LoadUnit(
             throw new BusinessRuleViolationException("load-illegal-transition",
                     "Load " + loadNo + " cannot move from " + status + " to " + target);
         }
-        return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleType,
-                capacityWeightKg, capacityVolumeM3, plannedWeightKg, plannedVolumeM3,
-                requiresHazmat, target, version, createdAt, Instant.now());
+        return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
+                vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
+                plannedWeightKg, plannedVolumeM3, requiresHazmat, target,
+                version, createdAt, Instant.now());
     }
 
     /** Percentage of weight capacity used, for the utilisation the platform exists to improve. */
