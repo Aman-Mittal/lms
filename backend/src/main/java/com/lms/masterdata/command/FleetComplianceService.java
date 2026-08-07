@@ -52,6 +52,33 @@ public class FleetComplianceService implements FleetCompliancePort {
     }
 
     @Override
+    public ComplianceVerdict checkHazmatReadiness(UUID vehicleId, UUID driverId) {
+        List<String> reasons = new ArrayList<>();
+
+        vehicles.findById(vehicleId).ifPresentOrElse(vehicle -> {
+            if (!vehicle.hazmatCertified()) {
+                reasons.add("vehicle " + vehicle.registrationNo()
+                        + " is not certified to carry dangerous goods");
+            }
+        }, () -> reasons.add("vehicle " + vehicleId + " does not exist"));
+
+        if (driverId == null) {
+            // Not a warning. Dangerous goods need a named, endorsed driver, and
+            // "nobody assigned yet" is not a person who has been trained.
+            reasons.add("no driver is assigned, and dangerous goods require an endorsed driver");
+        } else {
+            drivers.findById(driverId).ifPresentOrElse(driver -> {
+                if (!driver.hazmatEndorsed()) {
+                    reasons.add("driver " + driver.fullName()
+                            + " is not endorsed to carry dangerous goods");
+                }
+            }, () -> reasons.add("driver " + driverId + " does not exist"));
+        }
+
+        return reasons.isEmpty() ? ComplianceVerdict.clear() : ComplianceVerdict.blocked(reasons);
+    }
+
+    @Override
     public ComplianceVerdict checkDispatchReadiness(UUID vehicleId, UUID driverId, LocalDate dispatchOn) {
         UUID tenantId = TenantContext.requireTenantId();
         List<String> reasons = new ArrayList<>();

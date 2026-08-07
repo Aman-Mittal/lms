@@ -96,6 +96,30 @@ usable demo and a minute of staring at a loading page.
   against everything already on the lorry. The capacity rule is also a database
   CHECK constraint, so it holds whichever code path writes the row.
 
+**Sourcing (vision §3.5)**
+- Contractual routing guide per lane and vehicle type, walked in rank order,
+  cascading on rejection *or* on a response SLA that lapses. Round-robin fair
+  share over a calendar month is a second implementation of the same strategy
+  interface, shaped so the deferred reverse auction is a new bean rather than a
+  change to any caller.
+- An exhausted cascade is **terminal and needs a human**. A load nobody will
+  take is a commercial problem, and re-offering it automatically would spin
+  against unwilling vendors while the freight sits.
+- Vendor eligibility is checked at offer time, not trusted from when the guide
+  was written: a guide is a standing arrangement and outlives the standing of
+  the vendors in it.
+
+**Trip execution (vision §3.6)**
+- Nine-state trip machine (the eight of §3.6.1 plus CANCELLED) as an explicit
+  transition table. A dispatched trip cannot be cancelled — bringing freight
+  back is a new movement, not a status change.
+- Gate-in/gate-out log, weighbridge tare and gross with the payload computed and
+  **stored**, and the origin dwell that detention will be billed on.
+- Dispatch is gated on four things at once, reported together: the trip's own
+  statutory documents, the vehicle's and driver's documents *against the
+  departure date*, hazmat certification when the load carries dangerous goods,
+  and the weighed payload against the manifest within tolerance.
+
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
   (crossing *and* containment), point-to-polyline distance for route deviation,
@@ -106,9 +130,9 @@ usable demo and a minute of staring at a loading page.
 
 ## Verified, not assumed
 
-`./mvnw verify` runs **147 tests**, including **56 Cucumber scenarios over 704
-steps**, all green, against real PostgreSQL via Testcontainers — never H2,
-which has no row-level security and so cannot test the property most worth
+`./mvnw verify` runs **189 tests**, including **83 Cucumber scenarios over
+1,296 steps**, all green, against real PostgreSQL via Testcontainers — never
+H2, which has no row-level security and so cannot test the property most worth
 testing.
 
 The Cucumber suite (`src/test/resources/features/`) is the readable
@@ -135,6 +159,13 @@ passed compilation and looked correct:
    This failure mode has now been hit three times, on three different
    aggregates, which is why `.github/scripts/check-conventions.sh` now fails
    the build on any `@Table` entity with an `@Id` and no `@Version`.
+5. **Every scheduled job was a silent no-op.** A scheduled thread carries no
+   tenant scope, so under row-level security `tenant_id = app_current_tenant()`
+   evaluates against NULL — which is NULL, not true. The job read an empty
+   table and reported success. The idempotency prune had done nothing since the
+   day it was written. Jobs now iterate tenants and work *scoped*, the same way
+   request handling does, rather than bypassing RLS; `sourcing.feature` proves
+   it by clearing the scope before invoking the real sweeper.
 
 ## Not built yet
 
@@ -146,8 +177,8 @@ its command and query services by the Cucumber suite; `api/openapi.yaml` and
 the controllers it describes are written together, not retrofitted, so neither
 exists yet.
 
-sourcing and load allocation · trip execution and gate operations · telematics
-ingest · rating and invoicing · the Angular console and its Playwright suite ·
+telematics ingest · rating and invoicing · the Angular console and its
+Playwright suite ·
 reverse auction · OCR · ERP sync · SAML/OIDC and MFA · multi-leg planning ·
 control tower · notifications · i18n.
 

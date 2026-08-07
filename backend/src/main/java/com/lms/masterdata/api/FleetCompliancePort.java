@@ -41,6 +41,20 @@ public interface FleetCompliancePort {
     ComplianceVerdict checkDispatchReadiness(UUID vehicleId, UUID driverId, LocalDate dispatchOn);
 
     /**
+     * Checks that a vehicle and driver are qualified to carry dangerous goods.
+     *
+     * <p>Separate from {@link #checkDispatchReadiness} because it is asked only
+     * of the loads that need it. Folding it in would mean every ordinary trip
+     * carried the question, and the obvious way to make that work -- a boolean
+     * parameter defaulting to false -- is the version somebody forgets to pass.
+     *
+     * <p>Certification belongs to the individual vehicle and the individual
+     * driver, never to a vehicle type or a job title, which is why neither can
+     * be inferred from anything already on the load.
+     */
+    ComplianceVerdict checkHazmatReadiness(UUID vehicleId, UUID driverId);
+
+    /**
      * The outcome, as data rather than an exception.
      *
      * <p>Callers differ in what they want: execution refuses the dispatch,

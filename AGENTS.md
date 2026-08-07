@@ -111,11 +111,23 @@ These have already cost time. Do not rediscover them.
   optimistic locking along. Factory methods must pass `null` for it. This has
   now been hit three times, so `.github/scripts/check-conventions.sh` fails the
   build on any `@Table` entity that has an `@Id` and no `@Version`.
-- **A Cucumber step expression may carry only one keyword annotation.**
-  Given/When/Then are interchangeable at match time, so putting `@When` and
-  `@Given` with the same text on one method registers a duplicate expression.
-  That aborts registration of the rest of the class, and the symptom is later
-  steps in the *same file* reporting as "undefined" while earlier ones work.
+- **A Cucumber step expression may carry only one keyword annotation, and must
+  be unique across *every* step class.** Given/When/Then are interchangeable at
+  match time, so the same text under two keywords — or the same text in two
+  classes — is a duplicate. Registration of a whole class then aborts, and the
+  symptom is steps in an *unrelated* file reporting as "undefined". Hit three
+  times: same-method duplicate, same-file duplicate, and
+  `assignment is refused mentioning` meaning two different things in planning
+  and execution.
+- **A scheduled job carries no tenant scope, and under RLS that means it sees
+  nothing.** `app_current_tenant()` returns NULL, `tenant_id = NULL` is NULL
+  rather than true, and the job reads an empty table and reports success. Use
+  `TenantSweep.forEachTenant`, which iterates the tenant register and does the
+  work scoped. Never give a job a way to bypass row-level security.
+- **`JdbcClient` cannot bind a bare `Instant`.** The PostgreSQL driver refuses
+  to infer a SQL type and fails with "Can't infer the SQL type to use". Spring
+  Data's converters handle it on the mapping path, so this only bites in
+  hand-written statements: pass `instant.atOffset(ZoneOffset.UTC)`.
 - **Bind parameters used only in `IS NULL` need an explicit cast.** Postgres has
   nothing to infer a type from and fails with "could not determine data type of
   parameter". Write `CAST(:id AS uuid) IS NULL`, not `:id IS NULL`.

@@ -16,9 +16,7 @@
 package com.lms.acceptance;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -85,10 +83,6 @@ public class PlanningSteps {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
-    private final Map<String, UUID> orderIds = new HashMap<>();
-    private final Map<String, UUID> loadIds = new HashMap<>();
-    private final Map<String, UUID> vehicleIds = new HashMap<>();
-
     private UUID lastPlannedOrderId;
     private List<UUID> generated = List.of();
     private RuntimeException failure;
@@ -130,7 +124,7 @@ public class PlanningSteps {
     @Given("lorry {string} is taken off the road")
     public void lorryOffTheRoad(String registration) {
         inTransaction(() -> {
-            Vehicle vehicle = vehicles.findById(vehicleIds.get(registration)).orElseThrow();
+            Vehicle vehicle = vehicles.findById(world.ref("vehicle:" + registration)).orElseThrow();
             return vehicles.save(vehicle.withStatus(Vehicle.VehicleStatus.MAINTENANCE));
         });
     }
@@ -139,7 +133,7 @@ public class PlanningSteps {
 
     @Given("an order {string} for {string} from {string}")
     public void anOrder(String orderNo, String customerCode, String originCode) {
-        orderIds.put(orderNo, orderCommands.raiseOrder(world.orgUnitId(), world.ref(customerCode),
+        world.putRef("order:" + orderNo, orderCommands.raiseOrder(world.orgUnitId(), world.ref(customerCode),
                 world.uniqueCode(orderNo), world.ref(originCode), null, null,
                 SalesOrder.OrderSource.MANUAL));
     }
@@ -178,7 +172,7 @@ public class PlanningSteps {
     @When("order {string} is validated")
     public void orderIsValidated(String orderNo) {
         attempt(() -> {
-            orderCommands.validate(orderIds.get(orderNo));
+            orderCommands.validate(world.ref("order:" + orderNo));
             return null;
         });
     }
@@ -187,7 +181,7 @@ public class PlanningSteps {
 
     @When("consignments are generated for order {string}")
     public void generateConsignments(String orderNo) {
-        lastPlannedOrderId = orderIds.get(orderNo);
+        lastPlannedOrderId = world.ref("order:" + orderNo);
         generated = List.of();
         attempt(() -> {
             generated = planning.generateConsignments(lastPlannedOrderId);
@@ -198,8 +192,8 @@ public class PlanningSteps {
     @When("a load {string} is opened at {string} on lorry {string}")
     public void openLoad(String loadNo, String originCode, String registration) {
         attempt(() -> {
-            loadIds.put(loadNo, planning.openLoad(world.orgUnitId(), world.uniqueCode(loadNo),
-                    world.ref(originCode), vehicleIds.get(registration)));
+            world.putRef("load:" + loadNo, planning.openLoad(world.orgUnitId(), world.uniqueCode(loadNo),
+                    world.ref(originCode), world.ref("vehicle:" + registration)));
             return null;
         });
     }
@@ -208,7 +202,7 @@ public class PlanningSteps {
     public void assignConsignment(String consigneeCode, String destinationCode, String loadNo) {
         UUID consignmentId = consignmentFor(consigneeCode, destinationCode).id();
         attempt(() -> {
-            planning.assignConsignment(loadIds.get(loadNo), consignmentId);
+            planning.assignConsignment(world.ref("load:" + loadNo), consignmentId);
             return null;
         });
     }
@@ -216,7 +210,7 @@ public class PlanningSteps {
     @When("load {string} is planned")
     public void planLoad(String loadNo) {
         attempt(() -> {
-            planning.planLoad(loadIds.get(loadNo));
+            planning.planLoad(world.ref("load:" + loadNo));
             return null;
         });
     }
@@ -225,7 +219,7 @@ public class PlanningSteps {
 
     @Then("order {string} is {string}")
     public void orderStatusIs(String orderNo, String expected) {
-        SalesOrder order = inTransaction(() -> orders.findById(orderIds.get(orderNo)).orElseThrow());
+        SalesOrder order = inTransaction(() -> orders.findById(world.ref("order:" + orderNo)).orElseThrow());
         assertThat(order.status().name()).isEqualTo(expected);
     }
 
@@ -252,7 +246,7 @@ public class PlanningSteps {
     @Then("order {string} has {int} consignment in total")
     public void orderHasConsignments(String orderNo, int expected) {
         List<Consignment> all = inTransaction(() ->
-                consignments.findByOrder(TenantContext.requireTenantId(), orderIds.get(orderNo)));
+                consignments.findByOrder(TenantContext.requireTenantId(), world.ref("order:" + orderNo)));
         assertThat(all).hasSize(expected);
     }
 
@@ -281,7 +275,7 @@ public class PlanningSteps {
 
     @Then("load {string} holds {int} consignments")
     public void loadHolds(String loadNo, int expected) {
-        assertThat(inTransaction(() -> planningQueries.findConsignmentsOnLoad(loadIds.get(loadNo))))
+        assertThat(inTransaction(() -> planningQueries.findConsignmentsOnLoad(world.ref("load:" + loadNo))))
                 .hasSize(expected);
     }
 
@@ -317,7 +311,7 @@ public class PlanningSteps {
         // on top -- the capacity that matters for planning is what is left over
         // once the lorry has carried itself.
         int tare = 6000;
-        vehicleIds.put(registration, fleet.registerVehicle(world.orgUnitId(), null, registration,
+        world.putRef("vehicle:" + registration, fleet.registerVehicle(world.orgUnitId(), null, registration,
                 "TRUCK", "RIGID", "2-AXLE",
                 BigDecimal.valueOf(payloadKg + tare), BigDecimal.valueOf(tare),
                 BigDecimal.valueOf(volumeM3), hazmatCertified, false));
@@ -326,7 +320,7 @@ public class PlanningSteps {
     private void addLine(String orderNo, int lineNo, int weightKg, String materialClass, String unCode,
                          BigDecimal lengthM, BigDecimal widthM, BigDecimal heightM,
                          String consigneeCode, String destinationCode) {
-        attempt(() -> orderCommands.addLine(orderIds.get(orderNo), lineNo,
+        attempt(() -> orderCommands.addLine(world.ref("order:" + orderNo), lineNo,
                 "MAT-" + lineNo, materialClass + " goods",
                 MaterialClass.valueOf(materialClass), unCode,
                 BigDecimal.ONE, "EA", BigDecimal.valueOf(weightKg),
@@ -347,7 +341,7 @@ public class PlanningSteps {
     }
 
     private LoadUnit load(String loadNo) {
-        return inTransaction(() -> loads.findById(loadIds.get(loadNo)).orElseThrow());
+        return inTransaction(() -> loads.findById(world.ref("load:" + loadNo)).orElseThrow());
     }
 
     private void assertBusinessFailure(String expectedCode, String fragment) {

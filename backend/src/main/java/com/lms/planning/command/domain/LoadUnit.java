@@ -53,6 +53,7 @@ public record LoadUnit(
         BigDecimal plannedWeightKg,
         BigDecimal plannedVolumeM3,
         boolean requiresHazmat,
+        UUID awardedVendorPartnerId,
         LoadStatus status,
         @Version Long version,
         Instant createdAt,
@@ -104,7 +105,7 @@ public record LoadUnit(
         }
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
-                BigDecimal.ZERO, BigDecimal.ZERO, false, LoadStatus.DRAFT, null,
+                BigDecimal.ZERO, BigDecimal.ZERO, false, null, LoadStatus.DRAFT, null,
                 Instant.now(), Instant.now());
     }
 
@@ -173,7 +174,7 @@ public record LoadUnit(
 
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
-                newWeight, newVolume, requiresHazmat || hazmat, status,
+                newWeight, newVolume, requiresHazmat || hazmat, awardedVendorPartnerId, status,
                 version, createdAt, Instant.now());
     }
 
@@ -187,8 +188,28 @@ public record LoadUnit(
         }
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
-                plannedWeightKg, plannedVolumeM3, requiresHazmat, target,
+                plannedWeightKg, plannedVolumeM3, requiresHazmat, awardedVendorPartnerId, target,
                 version, createdAt, Instant.now());
+    }
+
+    /**
+     * Records the vendor that has taken the load, and moves it to AWARDED.
+     *
+     * <p>The vendor is kept on the load, not only on the allocation that
+     * produced it. Who is moving a load is a fact about the load: a load
+     * allocated by a phone call tomorrow has a vendor and no allocation record
+     * at all, and execution must not have to know which of those happened.
+     */
+    public LoadUnit awardTo(UUID vendorPartnerId) {
+        if (vendorPartnerId == null) {
+            throw new IllegalArgumentException("An award must name a vendor");
+        }
+        LoadUnit awarded = transitionTo(LoadStatus.AWARDED);
+        return new LoadUnit(awarded.id, awarded.tenantId, awarded.orgUnitId, awarded.loadNo,
+                awarded.originTerminalId, awarded.vehicleId, awarded.vehicleType,
+                awarded.vehicleHazmatCertified, awarded.capacityWeightKg, awarded.capacityVolumeM3,
+                awarded.plannedWeightKg, awarded.plannedVolumeM3, awarded.requiresHazmat,
+                vendorPartnerId, awarded.status, awarded.version, awarded.createdAt, Instant.now());
     }
 
     /** Percentage of weight capacity used, for the utilisation the platform exists to improve. */

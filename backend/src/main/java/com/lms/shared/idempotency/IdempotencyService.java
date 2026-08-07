@@ -25,6 +25,7 @@ import java.util.Optional;
 
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.tenant.TenantContext;
+import com.lms.shared.tenant.TenantSweep;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
@@ -59,9 +60,11 @@ public class IdempotencyService {
     private static final int RETENTION_HOURS = 48;
 
     private final JdbcClient jdbc;
+    private final TenantSweep tenantSweep;
 
-    public IdempotencyService(JdbcClient jdbc) {
+    public IdempotencyService(JdbcClient jdbc, TenantSweep tenantSweep) {
         this.jdbc = jdbc;
+        this.tenantSweep = tenantSweep;
     }
 
     /**
@@ -143,20 +146,30 @@ public class IdempotencyService {
     }
 
     /**
-     * Prunes completed records.
+     * Prunes completed records, one tenant at a time.
      *
      * <p>Also runs at startup: Render's free tier has no cron and the instance
      * sleeps, so a purely wall-clock schedule would simply not fire.
+     *
+     * <p>The per-tenant loop is not tidiness. This method was originally a
+     * single unscoped DELETE, and it deleted nothing: {@code idempotency_key}
+     * enforces row-level security, a scheduled thread carries no tenant scope,
+     * and the policy therefore matched no rows at all. It reported success
+     * every six hours while the table grew. See {@link TenantSweep}.
      */
     @Scheduled(initialDelay = 30_000, fixedDelay = 6 * 60 * 60 * 1000)
-    @Transactional
     public void pruneExpired() {
-        int removed = jdbc.sql("DELETE FROM idempotency_key WHERE state = 'COMPLETED' AND created_at < :before")
-                .param("before", Instant.now().minus(RETENTION_HOURS, ChronoUnit.HOURS))
-                .update();
-        if (removed > 0) {
-            log.info("Pruned {} expired idempotency records", removed);
-        }
+        Instant before = Instant.now().minus(RETENTION_HOURS, ChronoUnit.HOURS);
+        tenantSweep.forEachTenant("idempotency-prune", tenantId ->
+                jdbc.sql("""
+                                DELETE FROM idempotency_key
+                                 WHERE tenant_id = :tenantId
+                                   AND state = 'COMPLETED'
+                                   AND created_at < :before
+                                """)
+                        .param("tenantId", tenantId)
+                        .param("before", before)
+                        .update());
     }
 
     private static String fingerprint(String method, String path, String body) {
