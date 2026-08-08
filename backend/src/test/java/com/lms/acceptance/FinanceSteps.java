@@ -216,13 +216,27 @@ public class FinanceSteps {
      */
     @When("trip {string} is completed")
     public void tripIsCompleted(String tripNo) {
-        TripUnderTest trip = trips.get(tripNo);
-        tripCommands.complete(trip.tripId(), Instant.now());
+        UUID tripId = tripIdOf(tripNo);
+        tripCommands.complete(tripId, Instant.now());
 
         UUID billId = inTransaction(() -> bills.findByTrip(TenantContext.requireTenantId(),
-                trip.tripId()).orElseThrow(() ->
+                tripId).orElseThrow(() ->
                 new AssertionError("Completing trip " + tripNo + " raised no freight bill")).id());
         world.putRef("bill:FB-" + tripNo, billId);
+    }
+
+    /**
+     * The trip, whichever step family raised it.
+     *
+     * <p>These scenarios build their own trips with explicit timestamps, but
+     * the end-to-end walk in {@code spine.feature} raises one through
+     * execution's own steps -- and a completion step that only knew about its
+     * own map would make the two families uncombinable, which is the one thing
+     * a spine scenario needs them to be.
+     */
+    private UUID tripIdOf(String tripNo) {
+        TripUnderTest known = trips.get(tripNo);
+        return known != null ? known.tripId() : world.ref("trip:" + tripNo);
     }
 
     // ------------------------------------------------------------ settlement

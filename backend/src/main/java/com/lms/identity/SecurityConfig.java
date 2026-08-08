@@ -93,7 +93,14 @@ public class SecurityConfig {
                 // .github/scripts/check-conventions.sh, so that introducing
                 // cookie authentication later fails the build here rather than
                 // silently making this comment untrue.
-                .csrf(csrf -> csrf.disable()) // codeql[java/spring-disabled-csrf-protection]
+                //
+                // The query is excluded in .github/codeql/codeql-config.yml.
+                // An inline `// codeql[...]` comment was tried first and does
+                // nothing: that syntax is honoured only by CodeQL's own
+                // alert-suppression queries, which are not in the default
+                // suites, so the alert stayed open while the comment implied it
+                // had been handled.
+                .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
