@@ -16,6 +16,17 @@ version: 2
 updates:
   - package-ecosystem: maven
     directory: /backend
+    # A week between a version being published and Dependabot proposing it.
+    #
+    # The tj-actions/changed-files compromise reached thousands of repositories
+    # because automation pulled a malicious release within minutes of its
+    # publication. A cooldown does not make a bad version good; it buys the
+    # window in which somebody else notices, which is the only defence a
+    # project this size actually has. Security advisories are exempt from
+    # cooldown by design, so patches for known vulnerabilities still arrive
+    # immediately.
+    cooldown:
+      default-days: 7
     schedule:
       interval: weekly
       day: monday
@@ -36,6 +47,9 @@ updates:
   # updates the SHA while preserving the trailing version comment.
   - package-ecosystem: github-actions
     directory: /
+    # See the maven block above for why.
+    cooldown:
+      default-days: 7
     schedule:
       interval: weekly
       day: monday
@@ -45,6 +59,9 @@ updates:
 
   - package-ecosystem: docker
     directory: /deploy
+    # See the maven block above for why.
+    cooldown:
+      default-days: 7
     schedule:
       interval: weekly
       day: monday
