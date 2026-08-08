@@ -128,6 +128,36 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the certificate expiry list is served by the partial index")
+    void complianceExpiryList() {
+        // compliance_document_expiry_idx is partial on `expires_on IS NOT NULL`.
+        // The predicate below has to match that partiality or the planner
+        // cannot use it -- which is the kind of mismatch that only shows up as
+        // a slow screen months later.
+        assertIndexed("""
+                SELECT * FROM compliance_document
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND expires_on IS NOT NULL
+                   AND expires_on <= current_date + 30
+                 ORDER BY expires_on
+                """, "compliance_document");
+    }
+
+    @Test
+    @DisplayName("the fleet listing pages by registration without a sort")
+    void vehicleListingIsKeysetSeekable() {
+        // The keyset predicate and the ORDER BY have to ride the same unique
+        // index, or every page costs a sort of the whole fleet.
+        assertIndexed("""
+                SELECT * FROM vehicle
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND registration_no > 'MH-01-AB-0000'
+                 ORDER BY registration_no
+                 LIMIT 50
+                """, "vehicle");
+    }
+
+    @Test
     @DisplayName("the rate card in force on a date is index-served")
     void tariffInForceOnADate() {
         // Runs once per completed trip, and the shape matters as much as the

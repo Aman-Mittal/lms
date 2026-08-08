@@ -18,6 +18,7 @@ package com.lms.acceptance;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,6 +29,9 @@ import com.lms.masterdata.command.VehicleRepository;
 import com.lms.masterdata.command.domain.BusinessPartner;
 import com.lms.masterdata.command.domain.ComplianceDocument;
 import com.lms.masterdata.command.domain.Vehicle;
+import com.lms.masterdata.query.ComplianceDocumentView;
+import com.lms.masterdata.query.MasterDataQueryService;
+import com.lms.masterdata.query.VehicleView;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.tenant.TenantContext;
 import io.cucumber.java.en.Given;
@@ -50,6 +54,8 @@ public class FleetSteps {
     private VehicleRepository vehicles;
     @Autowired
     private DriverRepository drivers;
+    @Autowired
+    private MasterDataQueryService masterData;
     @Autowired
     private PlatformTransactionManager transactionManager;
 
@@ -208,6 +214,89 @@ public class FleetSteps {
     @Then("partner {string} cannot transact")
     public void partnerCannotTransact(String code) {
         assertThat(loadPartner(code).canTransact()).isFalse();
+    }
+
+    // ------------------------------------------------------------ read side
+
+    @Then("the fleet listing shows {int} vehicles")
+    public void fleetListingCount(int expected) {
+        assertThat(inTransaction(() -> masterData.listVehicles(null, null, null)).items())
+                .as("vehicles visible to this tenant")
+                .hasSize(expected);
+    }
+
+    @Then("the fleet listing shows {string} with a payload capacity of {int} kg")
+    public void fleetListingPayload(String registration, int expected) {
+        // Computed in SQL rather than per row in Java. It is the number
+        // planning loads against, and every client would otherwise have to
+        // subtract the two weights the same way and hope.
+        assertThat(vehicleRow(registration).payloadCapacityKg())
+                .isEqualByComparingTo(BigDecimal.valueOf(expected));
+    }
+
+    @Then("the fleet listing shows {string} expiring on the earliest of its certificates")
+    public void fleetListingEarliestExpiry(String registration) {
+        VehicleView row = vehicleRow(registration);
+        List<ComplianceDocumentView> documents = inTransaction(() ->
+                masterData.documentsFor("VEHICLE", vehicleIds.get(registration)));
+
+        LocalDate earliest = documents.stream()
+                .map(ComplianceDocumentView::expiresOn)
+                .filter(java.util.Objects::nonNull)
+                .min(LocalDate::compareTo)
+                .orElseThrow();
+
+        assertThat(row.earliestDocumentExpiry())
+                .as("the soonest lapse is what a dispatcher has to act on")
+                .isEqualTo(earliest);
+    }
+
+    @Then("the fleet listing shows {string} with {int} expired certificate(s)")
+    public void fleetListingExpiredCount(String registration, int expected) {
+        assertThat(vehicleRow(registration).expiredDocumentCount()).isEqualTo(expected);
+    }
+
+    @Then("{int} certificate(s) expire within {int} days")
+    public void expiringWithin(int expected, int days) {
+        assertThat(inTransaction(() -> masterData.documentsExpiringWithin(days)))
+                .as("certificates lapsing within %d days", days)
+                .hasSize(expected);
+    }
+
+    @Then("the expiry list reports {string} as {int} days overdue")
+    public void expiryListOverdue(String documentType, int daysOverdue) {
+        ComplianceDocumentView document = inTransaction(() ->
+                masterData.documentsExpiringWithin(365)).stream()
+                .filter(d -> d.documentType().equals(documentType))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No " + documentType + " on the expiry list"));
+
+        // Negative days rather than clamped at zero: "expired 40 days ago" and
+        // "expires today" are different situations, and flattening both to
+        // nought loses the one that needs escalating.
+        assertThat(document.daysToExpiry()).isEqualTo(-daysOverdue);
+        assertThat(document.expired()).isTrue();
+    }
+
+    @Then("the partner listing shows {string} as {string}")
+    public void partnerListingStatus(String code, String status) {
+        assertThat(inTransaction(() -> masterData.listPartners(null, null, null, null)).items())
+                .filteredOn(partner -> partner.code().equals(code))
+                .singleElement()
+                .extracting(com.lms.masterdata.query.PartnerView::status)
+                .isEqualTo(status);
+    }
+
+    @Then("the partner listing filtered to {string} shows {int} partner(s)")
+    public void partnerListingFiltered(String partnerType, int expected) {
+        assertThat(inTransaction(() ->
+                masterData.listPartners(partnerType, null, null, null)).items())
+                .hasSize(expected);
+    }
+
+    private VehicleView vehicleRow(String registration) {
+        return inTransaction(() -> masterData.findVehicle(vehicleIds.get(registration)))
+                .orElseThrow(() -> new AssertionError("No vehicle " + registration));
     }
 
     @Then("the transition is refused")

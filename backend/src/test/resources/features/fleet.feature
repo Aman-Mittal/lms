@@ -123,3 +123,65 @@ Feature: Fleet compliance and partner lifecycle
     Given a VENDOR partner "TRANS-1" named "Transporter One"
     When a vehicle "MH-02-CD-5678" owned by "TRANS-1" is registered
     Then vehicle registration is refused because the partner cannot transact
+
+  # ---------------------------------------------------------------- read side
+  #
+  # The command side had been driven directly by these scenarios for the whole
+  # of the build, and a suite that registers a vehicle and then asserts on the
+  # aggregate it just registered never notices that nobody can list vehicles.
+  # These scenarios are about the screens.
+
+  Scenario: The fleet listing computes payload capacity rather than making every client do it
+    # Gross less tare is what planning loads against -- what the lorry can carry
+    # once it has carried itself. Shipping both weights and letting each caller
+    # subtract them is how two clients come to disagree.
+    Given a vehicle "MH-01-AB-1234" with gross 16000 kg and tare 6000 kg and volume 40 m3
+    Then the fleet listing shows "MH-01-AB-1234" with a payload capacity of 10000 kg
+
+  Scenario: The fleet listing surfaces the soonest certificate to lapse
+    # Not a count of documents. The date a dispatcher has to act on is the
+    # earliest one, and seeing it a fortnight out is the difference between
+    # arranging cover and finding out at the gate.
+    Given a vehicle "MH-01-AB-1234" with gross 16000 kg and tare 6000 kg and volume 40 m3
+    And vehicle "MH-01-AB-1234" has an "INSURANCE" document expiring in 90 days
+    And vehicle "MH-01-AB-1234" has a "PERMIT" document expiring in 30 days
+    Then the fleet listing shows "MH-01-AB-1234" expiring on the earliest of its certificates
+    And the fleet listing shows "MH-01-AB-1234" with 0 expired certificates
+
+  Scenario: A lapsed certificate is counted on the row it belongs to
+    Given a vehicle "MH-01-AB-1234" with gross 16000 kg and tare 6000 kg and volume 40 m3
+    And vehicle "MH-01-AB-1234" has an "INSURANCE" document expiring in -40 days
+    Then the fleet listing shows "MH-01-AB-1234" with 1 expired certificate
+
+  Scenario: The expiry list includes what has already lapsed, not only what is about to
+    # A list of what is about to expire that silently omits what already has
+    # answers "is anything wrong" with "no" on the day it matters most.
+    Given a vehicle "MH-01-AB-1234" with gross 16000 kg and tare 6000 kg and volume 40 m3
+    And vehicle "MH-01-AB-1234" has an "INSURANCE" document expiring in -40 days
+    And vehicle "MH-01-AB-1234" has a "PERMIT" document expiring in 10 days
+    And vehicle "MH-01-AB-1234" has a "FITNESS" document expiring in 200 days
+    Then 2 certificates expire within 30 days
+    And the expiry list reports "INSURANCE" as 40 days overdue
+
+  Scenario: A certificate with no expiry never appears on the expiry list
+    Given a vehicle "MH-01-AB-1234" with gross 16000 kg and tare 6000 kg and volume 40 m3
+    And vehicle "MH-01-AB-1234" has a "REGISTRATION" document that never expires
+    Then 0 certificates expire within 3650 days
+
+  Scenario: Listings are confined to the caller's tenant
+    # The read side has to hold the same line the write side does. This scenario
+    # would pass against a query with no tenant predicate at all, because
+    # row-level security supplies one -- which is the point.
+    Given a vehicle "MH-01-AB-1234" with gross 16000 kg and tare 6000 kg and volume 40 m3
+    And a tenant "globex" named "Globex Freight"
+    And tenant "globex" has an organisational unit "/globex/" named "Globex HQ" of type "HQ"
+    And the tenant scope is "globex" at "/globex/"
+    And a vehicle "MH-02-CD-5678" with gross 16000 kg and tare 6000 kg and volume 40 m3
+    Then the fleet listing shows 1 vehicles
+
+  Scenario: The partner listing filters by type
+    Given a CUSTOMER partner "CUST-1" named "Acme Manufacturing"
+    And a VENDOR partner "VEND-1" named "Speedy Transport"
+    And a VENDOR partner "VEND-2" named "Reliable Roadways"
+    Then the partner listing filtered to "VENDOR" shows 2 partners
+    And the partner listing shows "CUST-1" as "DRAFT"
