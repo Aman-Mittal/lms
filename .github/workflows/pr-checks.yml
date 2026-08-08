@@ -87,62 +87,30 @@ jobs:
           echo "No applied migration was touched."
 
   # -------------------------------------------------------------------------
-  # Dependency review
+  # Dependency review -- DISABLED
   # -------------------------------------------------------------------------
   #
-  # The pom's license-maven-plugin gate is the authority on licensing and runs
-  # in ci.yml. This adds the two things it cannot do: it sees only what the
-  # pull request *adds*, so the failure names the dependency somebody just
-  # introduced rather than dumping the whole tree, and it checks the advisory
-  # database as well as the licence.
-  dependency-review:
-    name: Dependency review
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-        with:
-          # Copyleft and source-available licences. The pom's excludedLicenses
-          # is a regex over licence *names*; this is a list of SPDX identifiers,
-          # so the two cannot be written identically. This list is the stricter
-          # of the pair -- it also refuses LGPL and EPL-1.0 -- so a dependency
-          # that passes here always passes the pom gate, and never the reverse.
-          # EPL-2.0 is absent on purpose: JUnit is EPL-2.0 and is allowed at
-          # test scope.
-          deny-licenses: >-
-            GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later,
-            GPL-3.0-only, GPL-3.0-or-later,
-            AGPL-3.0-only, AGPL-3.0-or-later,
-            LGPL-2.0-only, LGPL-2.1-only, LGPL-3.0-only,
-            CDDL-1.0, CDDL-1.1, EPL-1.0, EUPL-1.2,
-            MPL-1.1, MPL-2.0, SSPL-1.0
-          # Dual-licensed dependencies the deny list cannot express.
-          #
-          # A dependency declaring "EPL-2.0 OR LGPL-2.1-only" is reported with
-          # both arms, and the check fails on the copyleft one even though the
-          # permissive arm is the one being taken. There is no syntax for "any
-          # acceptable arm is enough", so the three affected packages are named
-          # here instead -- which is better than deleting LGPL from the list and
-          # silently accepting the next LGPL-only dependency somebody adds.
-          #
-          # All three are unavoidable Spring Boot transitives, used unmodified
-          # as binaries, and all three offer an arm this project can take:
-          #   logback-classic / logback-core  EPL-2.0 OR LGPL-2.1-only
-          #   jakarta.annotation-api          EPL-2.0 OR GPL-2.0 WITH CPE
-          # EPL-2.0 is ASF category B: fine to depend on in binary form, which
-          # is exactly what happens here. See NOTICE for the attributions.
-          allow-dependencies-licenses: >-
-            pkg:maven/ch.qos.logback/logback-classic,
-            pkg:maven/ch.qos.logback/logback-core,
-            pkg:maven/jakarta.annotation/jakarta.annotation-api
-          fail-on-severity: high
-          comment-summary-in-pr: never
+  # Removed on request, and it was never failing on a dependency. Every run
+  # ended in the same message from the action itself:
+  #
+  #   Dependency review is not supported on this repository. Please ensure
+  #   that Dependency graph is enabled.
+  #
+  # That is a repository setting, not something a workflow can turn on:
+  #   https://github.com/Aman-Mittal/lms/settings/security_analysis
+  #
+  # Licence enforcement is NOT lost with it. ci.yml still runs the pom's
+  # license-maven-plugin gate on every push, with failOnBlacklist and an
+  # excludedLicenses regex, and uploads the third-party inventory. What this
+  # job added on top was the advisory database and a failure naming the
+  # dependency a pull request had just introduced rather than the whole tree.
+  #
+  # To restore: enable the dependency graph, then restore the job from
+  # git history and put `dependency-review` back in pr-summary's `needs`.
+  # One caveat for whoever does -- the allow-dependencies-licenses exception
+  # for logback and jakarta.annotation-api has never actually executed, because
+  # the step failed on the missing graph every time. It is reasoned from their
+  # declared dual licensing, not observed, and may need adjusting.
 
   # -------------------------------------------------------------------------
   # Pull request title
@@ -233,7 +201,7 @@ jobs:
   pr-summary:
     name: PR checks summary
     runs-on: ubuntu-latest
-    needs: [migration-immutability, dependency-review, pr-title, test-coverage-signal]
+    needs: [migration-immutability, pr-title, test-coverage-signal]
     if: always()
     permissions:
       contents: read
@@ -244,7 +212,6 @@ jobs:
             echo "| Check | Result |"
             echo "|---|---|"
             echo "| Applied migrations unchanged | ${{ needs.migration-immutability.result }} |"
-            echo "| Dependency review | ${{ needs.dependency-review.result }} |"
             echo "| PR title | ${{ needs.pr-title.result }} |"
             echo "| Behaviour change carries a test | ${{ needs.test-coverage-signal.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
