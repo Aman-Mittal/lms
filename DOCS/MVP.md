@@ -165,10 +165,20 @@ usable demo and a minute of staring at a loading page.
 
 ## Verified, not assumed
 
-`./mvnw verify` runs **260 tests**, including **124 Cucumber scenarios over
-1,845 steps**, all green, against real PostgreSQL via Testcontainers — never
+`./mvnw verify` runs **293 tests**, including **133 Cucumber scenarios over
+2,012 steps**, all green, against real PostgreSQL via Testcontainers — never
 H2, which has no row-level security and so cannot test the property most worth
 testing.
+
+`spine.feature` is the one that matters most: a single scenario walking an
+order through validation, consignment generation, load building, a routing
+guide whose first-ranked vendor declines, the compliance gate refusing a
+dispatch and then permitting it, three GPS coordinates moving the trip with
+nobody touching it, and a freight bill priced against the rate card in force
+on the dispatch date and matched against the vendor's invoice. It is composed
+entirely from the steps the individual features already use -- a walk needing
+its own vocabulary would be exercising a parallel implementation rather than
+the one those features describe.
 
 The Cucumber suite (`src/test/resources/features/`) is the readable
 specification. Its most important scenario runs a query with **no tenant
