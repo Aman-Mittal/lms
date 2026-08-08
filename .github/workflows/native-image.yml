@@ -112,6 +112,11 @@ jobs:
       - name: Smoke test the binary
         working-directory: backend
         run: |
+          # Trust authentication, matching deploy/docker-compose.yml. A
+          # throwaway container on a runner that is destroyed minutes later has
+          # no access control worth the name, and saying so is more honest than
+          # a published password that implies otherwise -- and does not leave a
+          # credential-shaped string in the repository for a scanner to find.
           docker run -d --name pg -e POSTGRES_DB=lms -e POSTGRES_USER=lms \
             -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres:17.7-alpine
           for i in $(seq 1 30); do
