@@ -122,6 +122,25 @@ jobs:
             LGPL-2.0-only, LGPL-2.1-only, LGPL-3.0-only,
             CDDL-1.0, CDDL-1.1, EPL-1.0, EUPL-1.2,
             MPL-1.1, MPL-2.0, SSPL-1.0
+          # Dual-licensed dependencies the deny list cannot express.
+          #
+          # A dependency declaring "EPL-2.0 OR LGPL-2.1-only" is reported with
+          # both arms, and the check fails on the copyleft one even though the
+          # permissive arm is the one being taken. There is no syntax for "any
+          # acceptable arm is enough", so the three affected packages are named
+          # here instead -- which is better than deleting LGPL from the list and
+          # silently accepting the next LGPL-only dependency somebody adds.
+          #
+          # All three are unavoidable Spring Boot transitives, used unmodified
+          # as binaries, and all three offer an arm this project can take:
+          #   logback-classic / logback-core  EPL-2.0 OR LGPL-2.1-only
+          #   jakarta.annotation-api          EPL-2.0 OR GPL-2.0 WITH CPE
+          # EPL-2.0 is ASF category B: fine to depend on in binary form, which
+          # is exactly what happens here. See NOTICE for the attributions.
+          allow-dependencies-licenses: >-
+            pkg:maven/ch.qos.logback/logback-classic,
+            pkg:maven/ch.qos.logback/logback-core,
+            pkg:maven/jakarta.annotation/jakarta.annotation-api
           fail-on-severity: high
           comment-summary-in-pr: never
 

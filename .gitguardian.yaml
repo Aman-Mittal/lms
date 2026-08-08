@@ -14,32 +14,33 @@
 
 # GitGuardian configuration.
 #
-# This repository contains no real credentials and never should. What the
-# scanner finds is the local-development database password used by
-# deploy/docker-compose.yml, which creates a throwaway container on a
-# developer's own machine.
+# This repository contains no credentials, and the two that a scanner used to
+# find have both been removed rather than silenced -- which is the only correct
+# response to a secret scanner.
 #
-# The right response to a secret scanner is to remove the secret, not to
-# silence the scanner, so that was done first: application.yaml no longer
-# carries a default password at all, because a fallback credential is a
-# credential -- an unset DATABASE_PASSWORD in a deployed environment should
-# stop the service, not make it try something guessable. What remains is a
-# compose default that exists so `docker compose up` stays one command.
+#   * application.yaml no longer carries a default database password. A
+#     fallback credential is a credential: an unset DATABASE_PASSWORD in a
+#     deployed environment should stop the service, not make it try something
+#     guessable.
+#   * deploy/docker-compose.yml no longer publishes one either. The local
+#     Postgres runs with trust authentication, bound to the loopback interface,
+#     so there is nothing password-shaped to commit. A default like `lms` would
+#     have been inert here and identical in every clone, which is how a
+#     throwaway string ends up somewhere real.
 #
-# Every genuine secret is an environment variable supplied at deploy time:
-# see deploy/.env.example for the full list and deploy/render.yaml for how
-# they are set in production.
+# Every genuine secret is an environment variable supplied at deploy time: see
+# deploy/.env.example for the full list and deploy/render.yaml for how they are
+# set in production.
+#
+# Note on this file's reach: ggshield reads it, for local runs and pre-commit.
+# The GitGuardian GitHub check does not -- its exclusions live in the
+# dashboard. Findings against commits already in this branch's history
+# therefore have to be resolved there; nothing in the working tree can clear
+# them.
 
 version: 2
 
 secret:
-  ignored-matches:
-    # The throwaway Postgres password in the local development stack. Both the
-    # container and the database it protects live and die on one developer's
-    # machine and are reachable from nowhere else.
-    - name: local docker-compose postgres password
-      match: lms
-
   ignored-paths:
     # Documents which variables exist and what shape they take. Every value in
     # it is blank or a placeholder, by design -- it is the file that tells a

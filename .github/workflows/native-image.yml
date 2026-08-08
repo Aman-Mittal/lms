@@ -76,7 +76,13 @@ jobs:
         with:
           java-version: "25"
           distribution: graalvm-community
-          cache: maven
+          # No dependency cache, deliberately. This workflow also runs on pull
+          # requests (behind the `native` label), and a cache written by a pull
+          # request build can be restored by the main-branch build that
+          # publishes the image -- so a poisoned entry would reach a published
+          # artefact that Render pulls with no credential at all. The download
+          # costs a couple of minutes on a job that already takes ten, and
+          # Actions minutes are unmetered on a public repository.
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Confirm the toolchain is the Community Edition
@@ -157,11 +163,19 @@ jobs:
 
       - name: Publishing reminder
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        # The reference is passed in as an environment variable rather than
+        # interpolated into the script. A `${{ }}` expansion is textual
+        # substitution into the shell source before it runs, so the safe habit
+        # is never to do it inside a run block -- and it is the habit, not the
+        # judgement call, that protects the one value that is not
+        # workflow-controlled.
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
         run: |
           {
             echo "### Published"
             echo ""
-            echo '`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}`'
+            echo "\`$IMAGE_REF\`"
             echo ""
             echo "The GHCR package must be set to **public** for Render to pull it"
             echo "without a registry credential. This is a one-time setting in the"

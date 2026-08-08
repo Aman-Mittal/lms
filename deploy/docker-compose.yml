@@ -29,13 +29,27 @@ services:
     environment:
       POSTGRES_DB: lms
       POSTGRES_USER: lms
-      # Overridable from deploy/.env. The default keeps `docker compose up`
-      # a single command, and is a throwaway local credential -- this
-      # database is created and destroyed on a developer's machine and is
-      # never reachable from anywhere else.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # No password at all, on purpose.
+      #
+      # The obvious alternative is a default like `lms`, which keeps
+      # `docker compose up` one command at the cost of committing a
+      # credential-shaped string to a public repository. It is inert -- the
+      # database it protects is created and destroyed on one machine -- but a
+      # secret scanner cannot know that, and neither can a reader. A published
+      # default password also teaches the wrong habit: it is the same string in
+      # every clone, so the first time somebody reuses this file somewhere real
+      # the password is already public.
+      #
+      # `trust` is honest instead. It says this database has no access control,
+      # which is exactly true of a throwaway container, rather than implying
+      # protection that a one-word published password does not provide.
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Bound to the loopback interface, not to every address on the machine.
+      # With trust authentication the difference is the whole security model:
+      # `5432:5432` would expose an unauthenticated database to anything that
+      # can route to this host, including a café network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -55,7 +69,9 @@ services:
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/lms
       DATABASE_USERNAME: lms
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      # Empty, matching the trust authentication above. Postgres ignores
+      # whatever is sent; setting anything here would only look like a secret.
+      DATABASE_PASSWORD: ""
       CORS_ALLOWED_ORIGINS: http://localhost:4200
       LOG_LEVEL_APP: DEBUG
       PORT: 8080
@@ -83,7 +99,7 @@ services:
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/lms
       DATABASE_USERNAME: lms
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_PASSWORD: ""
       CORS_ALLOWED_ORIGINS: http://localhost:4200
       PORT: 8080
     ports:
