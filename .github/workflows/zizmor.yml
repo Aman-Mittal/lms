@@ -51,6 +51,12 @@ jobs:
           persona: regular
           # SARIF upload needs code scanning to accept results from this
           # workflow. Left off so a permissions or configuration problem in the
-          # upload cannot fail the audit itself -- findings are in the job log,
-          # and the job's exit status is what gates the pull request.
+          # upload cannot fail the audit itself.
           advanced-security: false
+          # ...but "the findings are in the job log" was not good enough: the
+          # Actions log is readable only by repository admins, so a red audit
+          # told everybody else nothing but its exit code. Annotations put each
+          # finding on the file and line in the pull request diff, where the
+          # person who has to fix it is already looking. Mutually exclusive
+          # with advanced-security, which is off above, and not the default.
+          annotations: true
