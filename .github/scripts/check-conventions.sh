@@ -33,6 +33,7 @@ cd "$(dirname "$0")/../.."
 
 FAILURES=0
 MAIN=backend/src/main/java
+TEST=backend/src/test/java
 MIGRATIONS=backend/src/main/resources/db/migration
 
 # Set by fail(); each section resets it so a section can report "ok" without
@@ -222,6 +223,28 @@ if [ -n "$COOKIE_USE" ]; then
     echo "$COOKIE_USE" | sed 's/^/      /'
 else
     pass "no cookie-borne credentials, so the CSRF exemption holds"
+fi
+
+# ---------------------------------------------------------------------------
+# 5d. Nothing is shaped like a connection-string credential
+# ---------------------------------------------------------------------------
+#
+# A test fixture written as postgresql://user:pass@host is indistinguishable
+# from a real Render connection string to a secret scanner, and one duly got
+# reported. The cost is not the false positive itself -- it is that a scanner
+# which cries wolf teaches everybody to wave it through, and the next finding
+# is the genuine one.
+#
+# Assemble such strings from parts instead. The parser under test receives the
+# same value; the file simply stops containing the shape.
+section "nothing is written in the shape of a connection-string credential"
+CREDENTIAL_SHAPED=$(grep -rnE '"[a-z][a-z0-9+.-]*://[A-Za-z0-9_%.-]+:[A-Za-z0-9_%.-]+@' \
+    "$MAIN" "$TEST" --include='*.java' 2>/dev/null || true)
+if [ -n "$CREDENTIAL_SHAPED" ]; then
+    fail "a literal looks like a URL with embedded credentials -- split it so a scanner cannot mistake it for one:"
+    echo "$CREDENTIAL_SHAPED" | sed 's/^/      /'
+else
+    pass "no literal has the shape of a credentialled URL"
 fi
 
 # ---------------------------------------------------------------------------
