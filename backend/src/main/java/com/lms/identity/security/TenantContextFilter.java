@@ -29,6 +29,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -47,7 +48,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * visible cause.
  */
 @Component
+// Explicit, because IdempotencyFilter has to run after this one: a key is
+// scoped to a tenant, and there is no tenant until the token has been read.
+// Left to default, both would sit at LOWEST_PRECEDENCE and the ordering
+// between them would be an accident of bean names.
+@Order(TenantContextFilter.ORDER)
 public class TenantContextFilter extends OncePerRequestFilter {
+
+    /**
+     * Late in the chain, but before anything that needs a tenant.
+     *
+     * <p>Spring Security's own chain runs at -100, so by the time this runs the
+     * token has been verified and the security context populated.
+     */
+    public static final int ORDER = org.springframework.core.Ordered.LOWEST_PRECEDENCE - 100;
 
     private static final Logger log = LoggerFactory.getLogger(TenantContextFilter.class);
 

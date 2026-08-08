@@ -28,7 +28,6 @@ import com.lms.shared.tenant.TenantContext;
 import com.lms.shared.tenant.TenantSweep;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -41,7 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The claim is an {@code INSERT}, not a check-then-insert. Two concurrent
  * retries would both pass a {@code SELECT} and both proceed; letting the
  * primary key decide makes the race impossible rather than unlikely. The loser
- * catches {@link DuplicateKeyException} and reads the winner's outcome.
+ * inserts nothing and reads the winner's outcome.
  *
  * <p>Reuse of a key with a <em>different</em> body is rejected outright. That
  * is a client defect, and silently returning the earlier response would hide it
@@ -78,19 +77,29 @@ public class IdempotencyService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<RecordedOutcome> claim(String key, String method, String path, String body) {
         String hash = fingerprint(method, path, body);
-        try {
-            jdbc.sql("""
-                            INSERT INTO idempotency_key (tenant_id, key, request_hash, state)
-                            VALUES (:tenantId, :key, :hash, 'IN_PROGRESS')
-                            """)
-                    .param("tenantId", TenantContext.requireTenantId())
-                    .param("key", key)
-                    .param("hash", hash)
-                    .update();
-            return Optional.empty();
-        } catch (DuplicateKeyException alreadyClaimed) {
-            return Optional.of(existingOutcome(key, hash));
-        }
+
+        // ON CONFLICT DO NOTHING rather than catching a duplicate-key
+        // exception. Both make the primary key the arbiter, which is the point
+        // -- two concurrent retries would both pass a SELECT, so the insert has
+        // to decide. The difference is what happens to the loser: in
+        // PostgreSQL a constraint violation aborts the whole transaction, so
+        // the follow-up read of the winner's outcome failed with "current
+        // transaction is aborted" and the caller got a 500. The conflict clause
+        // leaves the transaction usable, so the loser can simply read.
+        //
+        // This never fired until an HTTP filter started calling it. A retry is
+        // the only path that reaches it, and nothing had retried.
+        int claimed = jdbc.sql("""
+                        INSERT INTO idempotency_key (tenant_id, key, request_hash, state)
+                        VALUES (:tenantId, :key, :hash, 'IN_PROGRESS')
+                        ON CONFLICT (tenant_id, key) DO NOTHING
+                        """)
+                .param("tenantId", TenantContext.requireTenantId())
+                .param("key", key)
+                .param("hash", hash)
+                .update();
+
+        return claimed == 1 ? Optional.empty() : Optional.of(existingOutcome(key, hash));
     }
 
     /** Records the outcome so a later retry receives the original response. */
