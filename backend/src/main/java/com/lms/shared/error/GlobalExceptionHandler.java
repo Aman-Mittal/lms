@@ -23,6 +23,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -61,6 +63,41 @@ public class GlobalExceptionHandler {
     public ProblemDetail onBusinessRuleViolation(BusinessRuleViolationException e) {
         log.info("Business rule refused the operation: {} -- {}", e.code(), e.getMessage());
         return problem(HttpStatus.CONFLICT, e.code(), e.getMessage());
+    }
+
+    /**
+     * A caller who is signed in but not permitted.
+     *
+     * <p>Without this the catch-all below claims it: Spring Security's
+     * translation filter only sees an access denial that propagates out of the
+     * filter chain, and one thrown by {@code @PreAuthorize} inside a handler
+     * never gets that far. The result was a 500 with a stack trace logged at
+     * error level for what is a routine, expected answer -- which both told the
+     * client the wrong thing and buried real failures in noise.
+     *
+     * <p>The detail is deliberately generic. Naming the missing permission
+     * would tell an attacker which one to go looking for, and the caller cannot
+     * grant it to themselves anyway.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail onAccessDenied(AccessDeniedException e) {
+        log.info("Refused an operation the caller lacks permission for");
+        return problem(HttpStatus.FORBIDDEN, "access-denied",
+                "You do not have permission to perform this operation");
+    }
+
+    /**
+     * No credentials at all, on a path that needs them.
+     *
+     * <p>401 rather than 403, and the difference is actionable: 401 means
+     * present a token, 403 means the token you presented is not enough. A
+     * client told 403 when it simply never authenticated will refresh nothing
+     * and retry forever.
+     */
+    @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
+    public ProblemDetail onMissingCredentials(AuthenticationCredentialsNotFoundException e) {
+        return problem(HttpStatus.UNAUTHORIZED, "authentication-required",
+                "This operation requires authentication");
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
