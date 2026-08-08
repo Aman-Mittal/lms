@@ -324,7 +324,7 @@ public class TripCommandService {
 
         events.publishEvent(new TripCompleted(tenantId, completed.id(), completed.tripNo(),
                 completed.loadId(), completed.vendorPartnerId(), completed.dispatchedAt(),
-                when, completed.originDwell(), Instant.now()));
+                when, completed.originDwell(), completed.payloadWeightKg(), Instant.now()));
     }
 
     // -------------------------------------------------------------- blockers

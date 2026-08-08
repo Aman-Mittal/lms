@@ -36,6 +36,71 @@ public record Json(String value) {
         return value == null ? null : new Json(value);
     }
 
+    /**
+     * A flat JSON object from alternating keys and values.
+     *
+     * <p>Exists for the audit trail, whose before-and-after snapshots are the
+     * only JSON this application composes by hand. A full serialiser would be
+     * the obvious answer and the wrong one: an audit snapshot has to be
+     * readable years later by somebody with no access to the class that wrote
+     * it, so it is written from an explicit list of fields rather than from
+     * whatever an aggregate happened to contain that release.
+     *
+     * <p>A null value becomes JSON {@code null}, which is the honest rendering
+     * of "this field had no value" and distinct from the field being absent.
+     *
+     * @throws IllegalArgumentException if the arguments do not pair up
+     */
+    public static Json object(String... keysAndValues) {
+        if (keysAndValues.length % 2 != 0) {
+            throw new IllegalArgumentException("Keys and values must pair up");
+        }
+        StringBuilder json = new StringBuilder("{");
+        for (int i = 0; i < keysAndValues.length; i += 2) {
+            if (i > 0) {
+                json.append(',');
+            }
+            json.append(quote(keysAndValues[i])).append(':');
+            if (keysAndValues[i + 1] == null) {
+                json.append("null");
+            } else {
+                json.append(quote(keysAndValues[i + 1]));
+            }
+        }
+        return new Json(json.append('}').toString());
+    }
+
+    /**
+     * Escapes a string into a JSON string literal.
+     *
+     * <p>Control characters are escaped as six-character Unicode sequences
+     * rather than dropped.
+     * A vendor's dispute note is free text somebody typed, and a stray newline
+     * in it must not be able to produce a document Postgres refuses -- which
+     * would fail the mutation being audited rather than the audit of it.
+     */
+    private static String quote(String raw) {
+        StringBuilder out = new StringBuilder(raw.length() + 2).append('"');
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            switch (c) {
+                case '"' -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        out.append(String.format("\\" + "u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        return out.append('"').toString();
+    }
+
     @Override
     public String toString() {
         return value;

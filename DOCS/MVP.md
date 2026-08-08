@@ -120,6 +120,41 @@ usable demo and a minute of staring at a loading page.
   departure date*, hazmat certification when the load carries dangerous goods,
   and the weighed payload against the manifest within tolerance.
 
+**Telematics (vision §3.7)**
+- Batched ingest with a sanity filter: a point implying an impossible speed, or
+  a lost fix reading as null island, is rejected without costing the other
+  points in the same flush. Points are processed in *device* order, not arrival
+  order, so a buffered flush cannot make the jump filter compare against the
+  future.
+- Geofence crossings drive the trip machine. Leaving the origin puts a trip in
+  transit; entering the destination marks it arrived. A vehicle sitting on a
+  boundary generates one crossing, not one per ping, because presence is a set
+  comparison rather than a per-point test.
+- Route deviation against the planned corridor, opened once and closed on
+  return. Retention collapses a finished trip's raw points into a simplified
+  polyline — what makes a 1 GB database survive a fleet.
+
+**Rating and settlement (vision §3.9)**
+- Rate cards are **versions**, not rows to edit. A trip is priced against the
+  card in force on the day it was *dispatched*, and the card used is recorded on
+  the bill — so a dispute raised in March is argued from January's card rather
+  than from today's numbers. The immutability is a database trigger, not a
+  service rule: a rule only in application code is one a migration or a console
+  session walks straight past.
+- Accessorials on top of the slab linehaul: detention on the dwell *beyond* the
+  free allowance, a fee per drop after the first, and a fuel surcharge applied
+  to the linehaul alone — detention is a lorry standing still and burns no
+  diesel.
+- Every bill carries its arithmetic line by line. A total with no breakdown is
+  unarguable, and the total is always the sum of the lines shown beneath it.
+- Tolerance matching is a percentage **and** an absolute floor, whichever is
+  greater. The percentage alone disputes a rounding difference on a small bill;
+  the absolute alone waves through a five-figure gap on a large one. An
+  underclaim beyond tolerance is disputed too — it is not free money, it means
+  the two sides' understanding of the rate has diverged.
+- A lane with no card produces an UNPRICED bill that says so, rather than
+  silence. A trip with no bill looks exactly like one nobody has got to yet.
+
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
   (crossing *and* containment), point-to-polyline distance for route deviation,
@@ -130,8 +165,8 @@ usable demo and a minute of staring at a loading page.
 
 ## Verified, not assumed
 
-`./mvnw verify` runs **189 tests**, including **83 Cucumber scenarios over
-1,296 steps**, all green, against real PostgreSQL via Testcontainers — never
+`./mvnw verify` runs **260 tests**, including **124 Cucumber scenarios over
+1,845 steps**, all green, against real PostgreSQL via Testcontainers — never
 H2, which has no row-level security and so cannot test the property most worth
 testing.
 
@@ -141,7 +176,7 @@ predicate at all** and asserts the result is still confined to one tenant, plus
 its companion asserting that an *unscoped* query returns nothing rather than
 everything. Tenant isolation is demonstrated, not configured and hoped for.
 
-That suite has already earned its keep. It caught three real defects that all
+That suite has already earned its keep. It caught six real defects that all
 passed compilation and looked correct:
 
 1. **RLS was completely inert.** The `postgres` container makes `POSTGRES_USER` a
@@ -166,6 +201,13 @@ passed compilation and looked correct:
    day it was written. Jobs now iterate tenants and work *scoped*, the same way
    request handling does, rather than bypassing RLS; `sourcing.feature` proves
    it by clearing the scope before invoking the real sweeper.
+6. **The audit trail could not write a snapshot.** `AuditTrail` binds through
+   `JdbcClient`, which is plain JDBC and does not consult Spring Data's
+   converters — so a `Json` value reached the driver as an unknown type and the
+   insert failed. Nothing noticed for as long as every caller passed nulls; the
+   first before-and-after snapshot, written by rate-card publishing, broke the
+   Background of every finance scenario at once. The values are now bound as
+   text and cast in SQL.
 
 ## Not built yet
 
@@ -177,10 +219,9 @@ its command and query services by the Cucumber suite; `api/openapi.yaml` and
 the controllers it describes are written together, not retrofitted, so neither
 exists yet.
 
-telematics ingest · rating and invoicing · the Angular console and its
-Playwright suite ·
-reverse auction · OCR · ERP sync · SAML/OIDC and MFA · multi-leg planning ·
-control tower · notifications · i18n.
+The Angular console and its Playwright suite · reverse auction · OCR · ERP
+sync · SAML/OIDC and MFA · multi-leg planning · control tower · notifications ·
+i18n · cold-storage archival.
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a
 production NFR. This deployment is a single 0.1-CPU instance and will sustain

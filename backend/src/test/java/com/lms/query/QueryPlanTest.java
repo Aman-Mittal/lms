@@ -128,6 +128,37 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the rate card in force on a date is index-served")
+    void tariffInForceOnADate() {
+        // Runs once per completed trip, and the shape matters as much as the
+        // presence: effective_from descending is what lets the plan stop at the
+        // first row instead of reading a lane's whole rate history to sort it.
+        assertIndexed("""
+                SELECT * FROM tariff
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND origin_terminal_id = '00000000-0000-0000-0000-000000000003'
+                   AND destination_terminal_id = '00000000-0000-0000-0000-000000000004'
+                   AND vehicle_type = 'RIGID'
+                   AND effective_from <= DATE '2026-01-15'
+                   AND (effective_to IS NULL OR effective_to >= DATE '2026-01-15')
+                 ORDER BY effective_from DESC
+                 LIMIT 1
+                """, "tariff");
+    }
+
+    @Test
+    @DisplayName("the settlement queue is index-served")
+    void freightBillsByStatus() {
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status = 'DISPUTED'
+                 ORDER BY created_at DESC
+                """, "freight_bill");
+    }
+
+    @Test
     @DisplayName("every tenant-scoped table leads its primary lookup index with tenant_id")
     void indexesLeadWithTenantId() {
         // Row-level security adds `tenant_id = …` to every query, so an index

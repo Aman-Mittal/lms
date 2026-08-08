@@ -16,6 +16,7 @@
 package com.lms.acceptance;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
@@ -88,6 +89,52 @@ public class SpineFixtures {
 
         UUID loadId = planning.openLoad(orgUnitId, loadNo, originTerminalId, vehicleId);
         planning.assignConsignment(loadId, consignments.get(0));
+        return loadId;
+    }
+
+    /**
+     * A milk run: one order dropping at several terminals, on one load.
+     *
+     * <p>Built as several order lines rather than several orders because that
+     * is how a multi-drop actually arrives -- one customer, one indent, several
+     * consignees -- and because it is the path that exercises consignment
+     * generation grouping by destination, which is what gives the load its drop
+     * count.
+     *
+     * <p>The weight is split evenly across the drops so the load's total is the
+     * figure the caller asked for; a rating scenario is about the drop fee, not
+     * about arithmetic on the way in.
+     */
+    public UUID awardedMultiDropLoad(UUID orgUnitId, String loadNo, UUID customerPartnerId,
+                                     UUID originTerminalId, UUID consigneePartnerId,
+                                     List<UUID> destinationTerminalIds, UUID vehicleId,
+                                     UUID vendorPartnerId, BigDecimal weightKg) {
+        UUID orderId = orders.raiseOrder(orgUnitId, customerPartnerId, "SO-FOR-" + loadNo,
+                originTerminalId, null, null, SalesOrder.OrderSource.MANUAL);
+
+        BigDecimal perDrop = weightKg.divide(
+                BigDecimal.valueOf(destinationTerminalIds.size()), 3, RoundingMode.HALF_UP);
+
+        int lineNo = 1;
+        for (UUID destination : destinationTerminalIds) {
+            orders.addLine(orderId, lineNo, "MAT-" + lineNo, "General cargo",
+                    MaterialClass.GENERAL, null, BigDecimal.ONE, "EA", perDrop,
+                    null, null, null, null, consigneePartnerId, destination);
+            lineNo++;
+        }
+
+        orders.validate(orderId);
+        List<UUID> consignments = planning.generateConsignments(orderId);
+
+        UUID loadId = planning.openLoad(orgUnitId, loadNo, originTerminalId, vehicleId);
+        // Assigned in the order the destinations were given, because the last
+        // one assigned becomes the load's final drop -- and the final drop is
+        // the lane the rate card is looked up on.
+        for (UUID consignmentId : consignments) {
+            planning.assignConsignment(loadId, consignmentId);
+        }
+        planning.planLoad(loadId);
+        loads.recordAwarded(loadId, vendorPartnerId);
         return loadId;
     }
 

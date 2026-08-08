@@ -142,3 +142,16 @@ lms:
     # Pings implying a speed above this are treated as GPS noise and discarded.
     max-plausible-speed-kmh: ${PING_MAX_SPEED_KMH:160}
     route-deviation-threshold-metres: ${ROUTE_DEVIATION_METRES:2000}
+  execution:
+    # How far a weighed payload may differ from the planned weight before
+    # dispatch is refused. Not zero: weighbridges have a tolerance, pallets
+    # absorb moisture, and a gate that refuses every load half a percent off
+    # its manifest is a gate somebody switches off.
+    weight-tolerance-pct: ${WEIGHT_TOLERANCE_PCT:5}
+  finance:
+    # A vendor invoice is approved for payment when it differs from the
+    # computed cost by no more than the greater of these two. Both are needed:
+    # the percentage alone disputes a rounding difference on a small bill, the
+    # absolute alone waves through a five-figure gap on a large one.
+    match-tolerance-pct: ${INVOICE_TOLERANCE_PCT:2}
+    match-tolerance-absolute: ${INVOICE_TOLERANCE_ABS:100}

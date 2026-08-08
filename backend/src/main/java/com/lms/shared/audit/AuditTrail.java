@@ -90,7 +90,8 @@ public class AuditTrail {
                             (id, tenant_id, actor_id, action, resource_type, resource_id,
                              correlation_id, before_state, after_state, occurred_at)
                         VALUES (:id, :tenantId, :actorId, :action, :resourceType, :resourceId,
-                                :correlationId, :before, :after, :occurredAt)
+                                :correlationId, CAST(:before AS jsonb), CAST(:after AS jsonb),
+                                :occurredAt)
                         """)
                 .param("id", UUID.randomUUID())
                 .param("tenantId", tenantId)
@@ -102,8 +103,13 @@ public class AuditTrail {
                 // every log line that request emitted, which is what turns a
                 // row into an investigation.
                 .param("correlationId", CorrelationIdFilter.current())
-                .param("before", before)
-                .param("after", after)
+                // Bound as text and cast, not as the Json wrapper. JdbcClient is
+                // plain JDBC and does not consult Spring Data's converters, so a
+                // Json here reaches the driver as an unknown type and the insert
+                // fails -- which, before anything wrote a non-null snapshot, was
+                // a latent bug nothing could have noticed.
+                .param("before", before == null ? null : before.value())
+                .param("after", after == null ? null : after.value())
                 .param("occurredAt", java.time.Instant.now().atOffset(ZoneOffset.UTC))
                 .update();
     }

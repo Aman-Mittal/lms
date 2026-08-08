@@ -54,7 +54,8 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
                     load.orgUnitId(), load.originTerminalId(), finalDrop(aboard),
                     load.vehicleId(), load.vehicleType(), load.awardedVendorPartnerId(),
                     load.plannedWeightKg(), load.plannedVolumeM3(),
-                    load.requiresHazmat(), aboard.size());
+                    chargeableWeight(aboard), load.requiresHazmat(), aboard.size(),
+                    dropCount(aboard));
         });
     }
 
@@ -102,6 +103,30 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
      * being built, and nothing downstream asks for a destination until the load
      * is closed.
      */
+    /**
+     * What the load is billed on: the sum of its consignments' chargeable
+     * weights, each already the greater of dead and volumetric.
+     *
+     * <p>Summed here rather than kept on the load because the load's own totals
+     * exist to answer "will it fit", and conflating the two would make a
+     * capacity check start refusing loads that fit perfectly well.
+     */
+    private static java.math.BigDecimal chargeableWeight(List<Consignment> aboard) {
+        return aboard.stream()
+                .map(Consignment::chargeableWeightKg)
+                .filter(java.util.Objects::nonNull)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+    }
+
+    /** Distinct destinations aboard -- see {@code LoadSummary.dropCount}. */
+    private static int dropCount(List<Consignment> aboard) {
+        return (int) aboard.stream()
+                .map(Consignment::destinationTerminalId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .count();
+    }
+
     private static UUID finalDrop(List<Consignment> aboard) {
         // findOnLoad orders by drop_sequence, so the last element is the
         // furthest point of the run.

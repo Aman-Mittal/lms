@@ -73,6 +73,7 @@ public class AuthorityHooks {
             "LOAD_CREATE", "LOAD_READ", "LOAD_ALLOCATE",
             "TRIP_READ", "TRIP_EXECUTE",
             "TELEMATICS_INGEST",
+            "TARIFF_MANAGE",
             "INVOICE_READ", "INVOICE_APPROVE",
             "AUDIT_READ");
 

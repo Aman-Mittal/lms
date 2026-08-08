@@ -79,8 +79,29 @@ public interface LoadLifecyclePort {
             UUID awardedVendorPartnerId,
             BigDecimal plannedWeightKg,
             BigDecimal plannedVolumeM3,
+            /**
+             * The aggregate weight freight is <em>billed</em> on, which is not
+             * the same number as {@code plannedWeightKg}.
+             *
+             * <p>The planned weight is what the lorry has to carry -- dead
+             * weight, and therefore what capacity is checked against. The
+             * chargeable weight is the greater of dead and volumetric, because
+             * a light bulky load consumes the vehicle just as completely as a
+             * heavy one. Billing on the planned weight would give away every
+             * cubic metre of a load of cushions.
+             */
+            BigDecimal chargeableWeightKg,
             boolean requiresHazmat,
-            int consignmentCount) {
+            int consignmentCount,
+            /**
+             * How many distinct places the load stops at.
+             *
+             * <p>Counted by terminal rather than by consignment: three
+             * consignments for three customers at one industrial estate is one
+             * drop and one detention window, and charging an additional-drop
+             * fee for each of them is how a vendor relationship goes wrong.
+             */
+            int dropCount) {
 
         /** Whether the load is closed to building and can be offered to vendors. */
         public boolean isSourceable() {

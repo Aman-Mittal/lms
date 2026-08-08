@@ -15,6 +15,7 @@
  */
 package com.lms.execution.events;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -36,5 +37,14 @@ public record TripCompleted(
         Instant dispatchedAt,
         Instant completedAt,
         Duration originDwell,
+        /**
+         * Gross less tare, as weighed at the origin.
+         *
+         * <p>Carried for the same reason as the dwell. A bill priced on what
+         * the lorry was planned to carry rather than on what it was weighed
+         * carrying is a bill nobody can defend, and the weighbridge ticket is
+         * the one measurement both parties witnessed.
+         */
+        BigDecimal payloadWeightKg,
         Instant occurredAt) {
 }
