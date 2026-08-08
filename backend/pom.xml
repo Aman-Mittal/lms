@@ -218,6 +218,26 @@
   </dependencies>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!--
+        The contract is served by the application, from the same file the drift
+        check reads and the console's client is generated from. Copying it in at
+        build time rather than keeping a second copy under src/main/resources:
+        two files would drift, and the one that drifted would be whichever
+        nobody was looking at.
+      -->
+      <resource>
+        <directory>${project.basedir}/../api</directory>
+        <targetPath>static</targetPath>
+        <includes>
+          <include>openapi.yaml</include>
+        </includes>
+      </resource>
+    </resources>
+
     <pluginManagement>
       <plugins>
         <!--

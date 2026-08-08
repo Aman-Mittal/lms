@@ -291,6 +291,21 @@ class RestApiTest {
         assertThat(body(duplicate).get("code").asString()).isEqualTo("partner-code-taken");
     }
 
+    @Test
+    @DisplayName("the contract is served, and served without a token")
+    void contractIsPubliclyServed() {
+        // The console on GitHub Pages generates its client from this file and
+        // cannot authenticate to fetch it. SecurityConfig has permitted the path
+        // since the beginning; nothing was publishing anything at it until the
+        // build started copying api/openapi.yaml into the served resources, so
+        // the rule was guarding a 404.
+        HttpResponse<String> response = send(HttpRequest.newBuilder(uri("/openapi.yaml"))
+                .GET().build());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("openapi: 3.1.0", "LMS Platform API");
+    }
+
     // ------------------------------------------------------------ internals
 
     private HttpResponse<String> post(String path, String body, String idempotencyKey,

@@ -1,0 +1,2825 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# The contract, hand-authored and treated as the source of truth.
+#
+# There is no springdoc in this project (DOCS/adr/0001). A generator that reads
+# the controllers can only ever describe what the code already does, which
+# makes the spec a report rather than an agreement -- and it puts a
+# reflection-heavy dependency into a native image to produce it. This file is
+# written first and the console's client is generated from it.
+#
+# The obvious failure of a hand-authored spec is silent drift, so
+# OpenApiContractTest compares every path and method here against the running
+# application's own handler mappings and fails the build in either direction:
+# an endpoint with no entry is invisible to every generated client, and an
+# entry with no endpoint generates a client method that answers 404.
+
+openapi: 3.1.0
+
+info:
+  title: LMS Platform API
+  version: 0.1.0
+  summary: Multi-tenant logistics execution -- orders through to settlement.
+  description: |
+    Every path below `/api/v1/auth` requires a bearer token. The token carries
+    the tenant, so no request names one: a caller cannot ask for another
+    tenant's data by changing a parameter, because there is no parameter to
+    change. PostgreSQL row-level security enforces the same boundary a second
+    time, underneath the application (DOCS/adr/0005).
+
+    Errors are RFC 7807 problem documents with a stable `code` field. Branch on
+    `code`, never on `detail`, which is prose and may be reworded.
+
+    Listings are keyset-paginated: pass the `nextCursor` of one page as the
+    `cursor` of the next. There is no total and no page number, deliberately --
+    both need the scan that keyset pagination exists to avoid, and on a
+    0.1-CPU instance that cost is the difference between a screen and a
+    timeout.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: https://lms-platform.onrender.com
+    description: Free-tier deployment. Sleeps after 15 minutes idle; the first
+      request after that wakes it.
+  - url: http://localhost:8080
+    description: Local stack, `docker compose -f deploy/docker-compose.yml up`.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Authentication
+    description: Obtaining and refreshing tokens (vision document 3.1).
+  - name: Users
+    description: Who exists, and what they may do.
+  - name: Partners
+    description: Customers, vendors and consignees, with their KYC lifecycle.
+  - name: Vehicles
+    description: The fleet and its statutory documents.
+  - name: Drivers
+    description: Drivers and their licences.
+  - name: Terminals
+    description: Sites and their geofences.
+  - name: Compliance
+    description: Certificates that have lapsed or are about to.
+  - name: Orders
+    description: Customer indents and their line items.
+  - name: Planning
+    description: Consignment generation and load building.
+  - name: Sourcing
+    description: Offering a load to vendors in rank order.
+  - name: Trips
+    description: The trip state machine, gate operations and the weighbridge.
+  - name: Telematics
+    description: Position ingest and live visibility.
+  - name: Settlement
+    description: Freight bills, tolerance matching and rate cards.
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        RS256, issued by `POST /api/v1/auth/login`. Carries the tenant, the
+        caller's organisational path and a `perms` claim listing permission
+        codes. Sixty minutes by default; refresh rather than re-authenticate.
+
+  parameters:
+    cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+      description: The `nextCursor` of the previous page. Omit for the first.
+    limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      description: Page size. Clamped to 200 whatever is asked for.
+    status:
+      name: status
+      in: query
+      required: false
+      schema: { type: string }
+      description: Restricts the listing to one status.
+    idempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 255 }
+      description: |
+        Opt-in deduplication. A retry with the same key returns the original
+        response and `Idempotent-Replay: true` rather than acting twice. Reusing
+        a key for a *different* request is refused with 409: that is a client
+        defect, and answering it with the earlier response would hide the defect
+        while returning an answer to a question nobody asked.
+
+  responses:
+    NoContent:
+      description: Done. Nothing to return.
+    Created:
+      description: Created.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/IdResponse" }
+    BadRequest:
+      description: The request was malformed. Fix it and try again.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Unauthorized:
+      description: No token, or a token that does not verify.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Authenticated, but without the permission this needs.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: No such resource in this tenant.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: |
+        Well-formed, and the domain refused it -- an expired certificate
+        blocking a dispatch, a load over vehicle capacity, an overlapping
+        terminal. Deliberately not 400: this is not a mistake in the request,
+        and reporting it as one sends the caller looking in the wrong place.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+
+    Problem:
+      type: object
+      description: RFC 7807. Branch on `code`, never on `detail`.
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code:
+          type: string
+          description: Stable machine-readable identifier, e.g. `dispatch-blocked`.
+          examples: [dispatch-blocked, not-found, access-denied]
+        errors:
+          type: object
+          additionalProperties: { type: string }
+          description: Present on validation failures; field name to message.
+      required: [status, code]
+
+    IdResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+      required: [id]
+
+    AuthResult:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken:
+          type: string
+          description: Opaque. Returned once and stored only as a hash.
+        expiresAt: { type: string, format: date-time }
+        userId: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        orgPath: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+      required: [accessToken, refreshToken, expiresAt]
+
+    LoginRequest:
+      type: object
+      description: |
+        The tenant code is required as well as the credentials. Email addresses
+        are unique per tenant rather than globally, so the same person may
+        legitimately hold accounts with two customers of the platform.
+      properties:
+        tenantCode: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        deviceFingerprint:
+          type: string
+          description: Optional. Binds a driver's long-lived refresh token to a device.
+      required: [tenantCode, email, password]
+
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken: { type: string }
+      required: [refreshToken]
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        status: { type: string, enum: [ACTIVE, SUSPENDED, LOCKED] }
+        orgPath: { type: string }
+        orgUnitName: { type: string }
+        lastLoginAt: { type: string, format: date-time }
+
+    Partner:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        legalName: { type: string }
+        partnerType: { type: string, enum: [CUSTOMER, VENDOR, BROKER, CONSIGNEE] }
+        status:
+          type: string
+          enum: [DRAFT, PENDING_VERIFICATION, ACTIVE, SUSPENDED, BLACKLISTED]
+        taxId: { type: string }
+        creditLimit: { type: number }
+        paymentTerms: { type: string }
+        onTimePct: { type: number }
+        claimsRatio: { type: number }
+        scorecardAt: { type: string, format: date-time }
+        expiredDocumentCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    RegisterPartnerRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        code: { type: string }
+        legalName: { type: string }
+        partnerType: { type: string, enum: [CUSTOMER, VENDOR, BROKER, CONSIGNEE] }
+        taxId: { type: string }
+      required: [orgUnitId, code, legalName, partnerType]
+
+    PartnerTransitionRequest:
+      type: object
+      description: |
+        A named transition rather than a settable status. The lifecycle is a
+        state machine with rules -- a blacklisted partner does not become active
+        because somebody sent a different string.
+      properties:
+        target:
+          type: string
+          enum: [DRAFT, PENDING_VERIFICATION, ACTIVE, SUSPENDED, BLACKLISTED]
+      required: [target]
+
+    Vehicle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        registrationNo: { type: string }
+        category: { type: string }
+        vehicleType: { type: string }
+        axleConfig: { type: string }
+        status: { type: string, enum: [AVAILABLE, ON_TRIP, MAINTENANCE, RETIRED] }
+        grossWeightKg: { type: number }
+        tareWeightKg: { type: number }
+        payloadCapacityKg:
+          type: number
+          description: Gross less tare -- what the lorry carries once it has carried itself.
+        maxVolumeM3: { type: number }
+        hazmatCertified: { type: boolean }
+        reeferCapable: { type: boolean }
+        ownerPartnerId: { type: string, format: uuid }
+        ownerPartnerName: { type: string }
+        earliestDocumentExpiry:
+          type: string
+          format: date
+          description: The soonest certificate to lapse; what a dispatcher must act on.
+        expiredDocumentCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    RegisterVehicleRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        ownerPartnerId: { type: string, format: uuid }
+        registrationNo: { type: string }
+        category: { type: string }
+        vehicleType: { type: string }
+        axleConfig: { type: string }
+        grossWeightKg: { type: number }
+        tareWeightKg: { type: number }
+        maxVolumeM3: { type: number }
+        hazmatCertified: { type: boolean }
+        reeferCapable: { type: boolean }
+      required: [orgUnitId, registrationNo, category, vehicleType, grossWeightKg, tareWeightKg]
+
+    Driver:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        phone: { type: string }
+        licenceNo: { type: string }
+        licenceClass: { type: string }
+        licenceExpiresOn: { type: string, format: date }
+        licenceExpired: { type: boolean }
+        hazmatEndorsed: { type: boolean }
+        status: { type: string, enum: [AVAILABLE, ON_TRIP, REST, INACTIVE] }
+        hosMinutesToday: { type: integer }
+        employerPartnerId: { type: string, format: uuid }
+        employerPartnerName: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    RegisterDriverRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        employerPartnerId: { type: string, format: uuid }
+        fullName: { type: string }
+        phone: { type: string }
+        licenceNo: { type: string }
+        licenceClass: { type: string }
+        licenceAuthority: { type: string }
+        licenceExpiresOn: { type: string, format: date }
+        hazmatEndorsed: { type: boolean }
+      required: [orgUnitId, fullName, phone, licenceNo, licenceClass, licenceExpiresOn]
+
+    ComplianceDocument:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ownerType: { type: string, enum: [PARTNER, VEHICLE, DRIVER, TRIP] }
+        ownerId: { type: string, format: uuid }
+        ownerLabel:
+          type: string
+          description: Registration, driver name or legal name, so one expiry
+            screen can show all three together.
+        documentType: { type: string }
+        documentNo: { type: string }
+        issuingAuthority: { type: string }
+        issuedOn: { type: string, format: date }
+        expiresOn: { type: string, format: date }
+        daysToExpiry:
+          type: integer
+          description: Negative once lapsed. "Expired 40 days ago" and "expires
+            today" are different situations and are not flattened together.
+        expired: { type: boolean }
+
+    AttachDocumentRequest:
+      type: object
+      properties:
+        documentType: { type: string }
+        documentNo: { type: string }
+        issuingAuthority: { type: string }
+        issuedOn: { type: string, format: date }
+        expiresOn:
+          type: string
+          format: date
+          description: Omit for a document that never expires. Not defaulted to a
+            far-future date -- the expiry index is partial on this being present.
+      required: [documentType, documentNo]
+
+    Point:
+      type: object
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lon: { type: number, minimum: -180, maximum: 180 }
+      required: [lat, lon]
+
+    Terminal:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        functionalCategory:
+          type: string
+          enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+        geofenceType: { type: string, enum: [POLYGON, POINT_RADIUS] }
+        polygon:
+          type: string
+          description: GeoJSON text, or null for a point-radius geofence.
+        centreLat: { type: number }
+        centreLon: { type: number }
+        radiusM: { type: number }
+        dockCount: { type: integer }
+        opensAt: { type: string }
+        closesAt: { type: string }
+        avgDwellMinutes: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    RegisterPolygonTerminalRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        category:
+          type: string
+          enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+        ring:
+          type: array
+          minItems: 3
+          items: { $ref: "#/components/schemas/Point" }
+        dockCount: { type: integer }
+        opensAt: { type: string }
+        closesAt: { type: string }
+        avgDwellMinutes: { type: integer }
+        permittedVehicleTypes:
+          type: array
+          items: { type: string }
+      required: [orgUnitId, code, name, category, ring]
+
+    RegisterPointRadiusTerminalRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        category:
+          type: string
+          enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+        centre: { $ref: "#/components/schemas/Point" }
+        radiusMetres: { type: number, exclusiveMinimum: 0 }
+        dockCount: { type: integer }
+        opensAt: { type: string }
+        closesAt: { type: string }
+        avgDwellMinutes: { type: integer }
+        permittedVehicleTypes:
+          type: array
+          items: { type: string }
+      required: [orgUnitId, code, name, category, centre, radiusMetres]
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderNo: { type: string }
+        status: { type: string }
+        customerPartnerId: { type: string, format: uuid }
+        customerName: { type: string }
+        originTerminalCode: { type: string }
+        totalDeadWeightKg: { type: number }
+        totalChargeableWeightKg:
+          type: number
+          description: The greater of dead and volumetric weight, which is what
+            freight is billed on.
+        lineCount: { type: integer }
+        containsHazmat: { type: boolean }
+        requestedPickupAt: { type: string, format: date-time }
+        requestedDeliveryAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    OrderLine:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lineNo: { type: integer }
+        materialCode: { type: string }
+        materialDescription: { type: string }
+        materialClass: { type: string }
+        hazmatUnCode: { type: string }
+        quantity: { type: number }
+        uom: { type: string }
+        deadWeightKg: { type: number }
+        volumetricWeightKg: { type: number }
+        chargeableWeightKg: { type: number }
+        consigneePartnerId: { type: string, format: uuid }
+        destinationTerminalCode: { type: string }
+
+    RaiseOrderRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        customerPartnerId: { type: string, format: uuid }
+        orderNo: { type: string }
+        originTerminalId: { type: string, format: uuid }
+        requestedPickupAt: { type: string, format: date-time }
+        requestedDeliveryAt: { type: string, format: date-time }
+        source: { type: string, enum: [MANUAL, API, EDI, PORTAL] }
+      required: [orgUnitId, customerPartnerId, orderNo, originTerminalId]
+
+    AddOrderLineRequest:
+      type: object
+      description: |
+        The three dimensions are optional together. Volumetric weight is only
+        meaningful with all three, and a partly dimensioned line would be billed
+        on dead weight while looking as though it had been measured.
+      properties:
+        lineNo: { type: integer, minimum: 1 }
+        materialCode: { type: string }
+        materialDescription: { type: string }
+        materialClass: { type: string }
+        hazmatUnCode: { type: string }
+        quantity: { type: number, exclusiveMinimum: 0 }
+        uom: { type: string }
+        deadWeightKg: { type: number, exclusiveMinimum: 0 }
+        lengthM: { type: number }
+        widthM: { type: number }
+        heightM: { type: number }
+        volumetricDivisor: { type: number }
+        consigneePartnerId: { type: string, format: uuid }
+        destinationTerminalId: { type: string, format: uuid }
+      required: [lineNo, materialCode, materialClass, quantity, uom, deadWeightKg, destinationTerminalId]
+
+    Consignment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        trackingRef: { type: string }
+        status: { type: string }
+        consigneeName: { type: string }
+        destinationTerminalCode: { type: string }
+        totalDeadWeightKg: { type: number }
+        totalVolumeM3: { type: number }
+        chargeableWeightKg: { type: number }
+        containsHazmat: { type: boolean }
+        materialClasses: { type: string }
+        loadNo: { type: string }
+
+    Load:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        loadNo: { type: string }
+        status: { type: string }
+        originTerminalCode: { type: string }
+        vehicleRegistrationNo: { type: string }
+        vehicleType: { type: string }
+        capacityWeightKg: { type: number }
+        plannedWeightKg: { type: number }
+        weightUtilisationPct: { type: number }
+        capacityVolumeM3: { type: number }
+        plannedVolumeM3: { type: number }
+        requiresHazmat: { type: boolean }
+        consignmentCount: { type: integer }
+        awardedVendorName: { type: string }
+
+    OpenLoadRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        loadNo: { type: string }
+        originTerminalId: { type: string, format: uuid }
+        vehicleId: { type: string, format: uuid }
+      required: [orgUnitId, loadNo, originTerminalId, vehicleId]
+
+    AssignConsignmentRequest:
+      type: object
+      properties:
+        consignmentId: { type: string, format: uuid }
+      required: [consignmentId]
+
+    Allocation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        loadId: { type: string, format: uuid }
+        loadNo: { type: string }
+        strategy: { type: string, enum: [CONTRACTUAL, ROUND_ROBIN] }
+        status: { type: string }
+        awardedVendorName: { type: string }
+        currentRank: { type: integer }
+        offerCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    Offer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        vendorPartnerId: { type: string, format: uuid }
+        vendorName: { type: string }
+        rankNo: { type: integer }
+        status: { type: string }
+        offeredAt: { type: string, format: date-time }
+        respondByAt: { type: string, format: date-time }
+        respondedAt: { type: string, format: date-time }
+
+    AllocateRequest:
+      type: object
+      properties:
+        loadId: { type: string, format: uuid }
+      required: [loadId]
+
+    VendorResponseRequest:
+      type: object
+      description: |
+        The vendor is named even though the caller is authenticated. Most
+        rejections reach the system by telephone, entered by a dispatcher acting
+        on the vendor's behalf -- who is not the vendor. The service checks the
+        offer is actually held by the vendor named.
+      properties:
+        vendorPartnerId: { type: string, format: uuid }
+      required: [vendorPartnerId]
+
+    Trip:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tripNo: { type: string }
+        status:
+          type: string
+          enum: [PLANNED, ASSIGNED, AT_ORIGIN, LOADED, DISPATCHED, IN_TRANSIT,
+                 AT_DESTINATION, COMPLETED, CANCELLED]
+        loadId: { type: string, format: uuid }
+        loadNo: { type: string }
+        vendorName: { type: string }
+        vehicleRegistrationNo: { type: string }
+        driverName: { type: string }
+        originTerminalCode: { type: string }
+        destinationTerminalCode: { type: string }
+        plannedStartAt: { type: string, format: date-time }
+        gateInAt: { type: string, format: date-time }
+        dispatchedAt: { type: string, format: date-time }
+        arrivedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        tareWeightKg: { type: number }
+        grossWeightKg: { type: number }
+        payloadWeightKg: { type: number }
+        plannedWeightKg: { type: number }
+        originDwellMinutes:
+          type: integer
+          description: Gate-in to gate-out. What detention is billed on.
+        documentCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    GateEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        terminalCode: { type: string }
+        eventType: { type: string, enum: [GATE_IN, GATE_OUT] }
+        occurredAt: { type: string, format: date-time }
+        remarks: { type: string }
+
+    RaiseTripRequest:
+      type: object
+      properties:
+        tripNo: { type: string }
+        loadId: { type: string, format: uuid }
+        plannedStartAt: { type: string, format: date-time }
+      required: [tripNo, loadId]
+
+    AssignTripRequest:
+      type: object
+      properties:
+        vehicleId: { type: string, format: uuid }
+        driverId: { type: string, format: uuid }
+      required: [vehicleId]
+
+    AttachTripDocumentRequest:
+      type: object
+      properties:
+        documentType: { type: string, examples: [CONSIGNMENT_NOTE, EWAY_BILL] }
+        documentRef:
+          type: string
+          description: A reference, not the file. There is no object storage in
+            the MVP, and the rule being enforced is "is it accounted for".
+      required: [documentType, documentRef]
+
+    GateInRequest:
+      type: object
+      properties:
+        terminalId: { type: string, format: uuid }
+        at: { type: string, format: date-time }
+        remarks: { type: string }
+      required: [terminalId]
+
+    WeighingRequest:
+      type: object
+      properties:
+        terminalId: { type: string, format: uuid }
+        type: { type: string, enum: [TARE, GROSS] }
+        weightKg: { type: number, exclusiveMinimum: 0 }
+        at: { type: string, format: date-time }
+      required: [terminalId, type, weightKg]
+
+    MilestoneRequest:
+      type: object
+      description: |
+        When it happened. Optional everywhere -- a gate clerk recording an event
+        as it happens should not have to send a clock reading, and a back-office
+        correction entered an hour later must be able to.
+      properties:
+        at: { type: string, format: date-time }
+
+    Ping:
+      type: object
+      properties:
+        vehicleId: { type: string, format: uuid }
+        recordedAt:
+          type: string
+          format: date-time
+          description: When the *device* recorded it. Arrival order is not
+            position order, and treating it as such produces a track that jumps
+            backwards through time.
+        lat: { type: number }
+        lon: { type: number }
+        speedKph: { type: number }
+        headingDeg: { type: number }
+        accuracyM: { type: number }
+        ignitionOn: { type: boolean }
+        source: { type: string }
+      required: [vehicleId, recordedAt, lat, lon]
+
+    PingBatchRequest:
+      type: object
+      properties:
+        pings:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: "#/components/schemas/Ping" }
+      required: [pings]
+
+    IngestResult:
+      type: object
+      description: |
+        Never a 4xx for a bad point. A device reporting one implausible
+        coordinate must not lose the twenty-nine good ones in the same flush,
+        and it could not fix the bad one if it were told.
+      properties:
+        accepted: { type: integer }
+        rejected: { type: integer }
+        rejections:
+          type: array
+          items:
+            type: object
+            properties:
+              vehicleId: { type: string, format: uuid }
+              recordedAt: { type: string, format: date-time }
+              reason: { type: string }
+
+    VehiclePosition:
+      type: object
+      properties:
+        vehicleId: { type: string, format: uuid }
+        registrationNo: { type: string }
+        lat: { type: number }
+        lon: { type: number }
+        speedKph: { type: number }
+        headingDeg: { type: number }
+        recordedAt: { type: string, format: date-time }
+        tripNo: { type: string }
+
+    GeofenceCrossing:
+      type: object
+      properties:
+        terminalCode: { type: string }
+        terminalName: { type: string }
+        crossing: { type: string, enum: [ENTERED, EXITED] }
+        occurredAt: { type: string, format: date-time }
+
+    TripProgress:
+      type: object
+      properties:
+        tripId: { type: string, format: uuid }
+        progressPct: { type: number }
+        remainingMetres: { type: number }
+        estimatedArrivalAt: { type: string, format: date-time }
+
+    Deviation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tripNo: { type: string }
+        vehicleRegistrationNo: { type: string }
+        offRouteMetres: { type: number }
+        openedAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time }
+
+    FreightBill:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        billNo: { type: string }
+        status:
+          type: string
+          enum: [DRAFT, UNPRICED, APPROVED_FOR_PAYMENT, DISPUTED, CANCELLED]
+        currency: { type: string }
+        tripId: { type: string, format: uuid }
+        tripNo: { type: string }
+        loadId: { type: string, format: uuid }
+        loadNo: { type: string }
+        vendorName: { type: string }
+        tariffCode:
+          type: string
+          description: The exact rate version this bill was priced against, kept
+            so a dispute months later is argued from that card rather than from
+            today's numbers.
+        pricedOn:
+          type: string
+          format: date
+          description: The dispatch date, which chose the tariff version.
+        chargeableWeightKg: { type: number }
+        detentionHours: { type: number }
+        dropCount: { type: integer }
+        baseFreight: { type: number }
+        detentionAmount: { type: number }
+        multiDropAmount: { type: number }
+        fuelSurchargeAmount: { type: number }
+        computedAmount: { type: number }
+        claimedAmount: { type: number }
+        varianceAmount:
+          type: number
+          description: Claimed less computed. Signed, so an underclaim stays
+            visible as one.
+        variancePct: { type: number }
+        resolution: { type: string }
+        matchedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    FreightBillLine:
+      type: object
+      properties:
+        lineNo: { type: integer }
+        chargeType:
+          type: string
+          enum: [BASE_FREIGHT, MINIMUM_CHARGE_UPLIFT, DETENTION, ADDITIONAL_DROP,
+                 FUEL_SURCHARGE]
+        narrative: { type: string }
+        quantity: { type: number }
+        unit: { type: string }
+        rate: { type: number }
+        amount: { type: number }
+
+    MatchRequest:
+      type: object
+      properties:
+        claimedAmount: { type: number, minimum: 0 }
+      required: [claimedAmount]
+
+    MatchResponse:
+      type: object
+      properties:
+        status: { type: string, enum: [APPROVED_FOR_PAYMENT, DISPUTED] }
+      required: [status]
+
+    ResolveDisputeRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Mandatory. An approval with no explanation is
+            indistinguishable from one nobody looked at.
+      required: [reason]
+
+    PublishTariffRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        code: { type: string }
+        vendorPartnerId: { type: string, format: uuid }
+        originTerminalId: { type: string, format: uuid }
+        destinationTerminalId: { type: string, format: uuid }
+        vehicleType: { type: string }
+        currency: { type: string, default: INR }
+        effectiveFrom:
+          type: string
+          format: date
+          description: Publishing closes the incumbent version the day before.
+        detentionFreeHours: { type: number, minimum: 0 }
+        detentionHourlyRate: { type: number, minimum: 0 }
+        additionalDropFee: { type: number, minimum: 0 }
+        minimumCharge: { type: number, minimum: 0 }
+      required: [orgUnitId, code, vendorPartnerId, originTerminalId,
+                 destinationTerminalId, vehicleType, effectiveFrom]
+
+    AddSlabRequest:
+      type: object
+      description: |
+        Bands are half-open. `maxWeightKg` is the first weight the band does not
+        cover, and omitting it opens the top band to any weight above the floor.
+      properties:
+        minWeightKg: { type: number, minimum: 0 }
+        maxWeightKg: { type: number }
+        rateBasis: { type: string, enum: [PER_KG, FLAT] }
+        rateAmount: { type: number, minimum: 0 }
+      required: [minWeightKg, rateBasis, rateAmount]
+
+    FuelSurchargeRequest:
+      type: object
+      properties:
+        month:
+          type: string
+          format: date
+          description: Any day in the month; normalised to the first.
+        surchargePct: { type: number }
+      required: [month, surchargePct]
+
+    PartnerSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Partner" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    VehicleSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Vehicle" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    DriverSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Driver" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    TerminalSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Terminal" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    OrderSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    LoadSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Load" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    ConsignmentSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Consignment" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    AllocationSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Allocation" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    TripSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Trip" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+    FreightBillSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FreightBill" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+paths:
+
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Exchange credentials for a token
+      description: |
+        The one endpoint that needs no token. Failures are deliberately vague:
+        naming which of the three was wrong would turn this into an account
+        enumeration oracle. Five consecutive failures lock the account for
+        fifteen minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshToken
+      summary: Exchange a refresh token for a new access token
+      description: |
+        The refresh token travels in the body, never a cookie -- which is what
+        makes CSRF protection unnecessary rather than merely disabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "200":
+          description: Refreshed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: Users visible to the caller
+      description: |
+        Bounded by the caller's own organisational path: a branch manager sees
+        their branch and everything under it and nothing above. There is no
+        unfiltered listing to ask for, which is why there are no parameters.
+      responses:
+        "200":
+          description: Users the caller may see.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: One user
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/users/{id}/permissions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Users]
+      operationId: getUserPermissions
+      summary: What one user is permitted to do
+      description: |
+        Separate from the user document: an administrator auditing access asks a
+        different question at a different time from a screen rendering a name,
+        and joining it in would make every listing pay for it.
+      responses:
+        "200":
+          description: Permission codes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/partners:
+    get:
+      tags: [Partners]
+      operationId: listPartners
+      summary: A page of partners
+      parameters:
+        - name: partnerType
+          in: query
+          schema: { type: string, enum: [CUSTOMER, VENDOR, BROKER, CONSIGNEE] }
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of partners.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Partners]
+      operationId: registerPartner
+      summary: Register a partner
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterPartnerRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/partners/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Partners]
+      operationId: getPartner
+      summary: One partner
+      responses:
+        "200":
+          description: The partner.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Partner" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/partners/{id}/documents:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Partners]
+      operationId: listPartnerDocuments
+      summary: Certificates filed against a partner
+      responses:
+        "200":
+          description: Documents, soonest expiry first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ComplianceDocument" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Partners]
+      operationId: attachPartnerDocument
+      summary: File a certificate against a partner
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachDocumentRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/partners/{id}/transitions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Partners]
+      operationId: transitionPartner
+      summary: Move a partner along its KYC lifecycle
+      description: |
+        A named transition rather than a settable status. Refused with 409 when
+        the move is not one the lifecycle allows.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PartnerTransitionRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/vehicles:
+    get:
+      tags: [Vehicles]
+      operationId: listVehicles
+      summary: A page of vehicles
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of vehicles.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VehicleSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Vehicles]
+      operationId: registerVehicle
+      summary: Register a vehicle
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterVehicleRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/vehicles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Vehicles]
+      operationId: getVehicle
+      summary: One vehicle
+      responses:
+        "200":
+          description: The vehicle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Vehicle" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/vehicles/{id}/documents:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Vehicles]
+      operationId: listVehicleDocuments
+      summary: Statutory documents for a vehicle
+      responses:
+        "200":
+          description: Documents, soonest expiry first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ComplianceDocument" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Vehicles]
+      operationId: attachVehicleDocument
+      summary: File a statutory document against a vehicle
+      description: |
+        An expired document here is a hard stop at dispatch, not a warning.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachDocumentRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/drivers:
+    get:
+      tags: [Drivers]
+      operationId: listDrivers
+      summary: A page of drivers
+      description: |
+        Paged by licence number rather than by name. Names are not unique -- two
+        drivers called Ravi Kumar is ordinary -- and a cursor on a non-unique
+        column skips rows at every page boundary.
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of drivers.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DriverSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Drivers]
+      operationId: registerDriver
+      summary: Register a driver
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterDriverRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/drivers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Drivers]
+      operationId: getDriver
+      summary: One driver
+      responses:
+        "200":
+          description: The driver.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Driver" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/drivers/{id}/documents:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Drivers]
+      operationId: listDriverDocuments
+      summary: Documents filed against a driver
+      responses:
+        "200":
+          description: Documents, soonest expiry first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ComplianceDocument" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Drivers]
+      operationId: attachDriverDocument
+      summary: File a document against a driver
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachDocumentRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/terminals:
+    get:
+      tags: [Terminals]
+      operationId: listTerminals
+      summary: A page of terminals
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string, enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE] }
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of terminals.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TerminalSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/terminals/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Terminals]
+      operationId: getTerminal
+      summary: One terminal
+      responses:
+        "200":
+          description: The terminal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Terminal" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/terminals/polygon:
+    post:
+      tags: [Terminals]
+      operationId: registerPolygonTerminal
+      summary: Register a terminal with a polygon geofence
+      description: |
+        Refused with 409 if the ring overlaps an existing terminal of the same
+        functional category, and with 400 if the ring is self-intersecting --
+        point-in-polygon is genuinely ambiguous for a bow-tie, so the honest
+        answer is to refuse rather than pick a lobe.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterPolygonTerminalRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/terminals/point-radius:
+    post:
+      tags: [Terminals]
+      operationId: registerPointRadiusTerminal
+      summary: Register a terminal with a point-radius geofence
+      description: |
+        Two endpoints rather than one with a discriminator: a polygon with a
+        radius, or a centre with no point, should not be expressible.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterPointRadiusTerminalRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/compliance/expiring:
+    get:
+      tags: [Compliance]
+      operationId: listExpiringDocuments
+      summary: Certificates that have lapsed or are about to
+      description: |
+        Spans vehicles, drivers and partners, because the question does.
+        Includes what has already expired: a list of what is about to lapse that
+        omits what already has answers 'is anything wrong' with 'no' on the day
+        it matters most.
+      parameters:
+        - name: withinDays
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 3650, default: 30 }
+          description: How far ahead to look. Already-expired documents are
+            always included.
+      responses:
+        "200":
+          description: Soonest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ComplianceDocument" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/orders:
+    get:
+      tags: [Orders]
+      operationId: listOrders
+      summary: A page of orders
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of orders.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Orders]
+      operationId: raiseOrder
+      summary: Raise an order
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RaiseOrderRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Orders]
+      operationId: getOrder
+      summary: One order
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/orders/{id}/lines:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Orders]
+      operationId: listOrderLines
+      summary: Lines on an order
+      responses:
+        "200":
+          description: Lines in order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OrderLine" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Orders]
+      operationId: addOrderLine
+      summary: Add a line
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddOrderLineRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/orders/{id}/validate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Orders]
+      operationId: validateOrder
+      summary: Validate an order
+      description: |
+        Computes chargeable weight and refuses incompatible material on one
+        order. Either succeeds or explains why, which is not something a status
+        field could express.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/orders/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Orders]
+      operationId: cancelOrder
+      summary: Cancel an order
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/orders/{id}/consignments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Planning]
+      operationId: generateConsignments
+      summary: Generate consignments from an order
+      description: |
+        One consignment per consignee and destination. The grouping rule belongs
+        to planning; letting a client post consignments would move it to the
+        client.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "201":
+          description: The consignments generated.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IdResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/consignments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Planning]
+      operationId: getConsignment
+      summary: One consignment
+      responses:
+        "200":
+          description: The consignment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Consignment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/consignments/by-tracking-ref/{trackingRef}:
+    parameters:
+      - name: trackingRef
+        in: path
+        required: true
+        schema: { type: string }
+        description: The consignment's public tracking reference.
+    get:
+      tags: [Planning]
+      operationId: trackConsignment
+      summary: Look a consignment up by its public tracking reference
+      responses:
+        "200":
+          description: The consignment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Consignment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/consignments/unassigned:
+    get:
+      tags: [Planning]
+      operationId: listUnassignedConsignments
+      summary: Consignments not yet on a load
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of unassigned consignments.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsignmentSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/loads:
+    get:
+      tags: [Planning]
+      operationId: listLoads
+      summary: A page of loads
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of loads.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoadSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Planning]
+      operationId: openLoad
+      summary: Open a load against a vehicle
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OpenLoadRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/loads/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Planning]
+      operationId: getLoad
+      summary: One load
+      responses:
+        "200":
+          description: The load.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Load" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/loads/{id}/consignments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Planning]
+      operationId: listLoadConsignments
+      summary: What is aboard a load
+      responses:
+        "200":
+          description: Consignments in drop sequence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Consignment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Planning]
+      operationId: assignConsignment
+      summary: Put a consignment on a load
+      description: |
+        Refused with 409 when it would exceed the vehicle's weight or volume, or
+        when the material is incompatible with something already aboard. The
+        capacity rule is also a database CHECK constraint.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignConsignmentRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/loads/{id}/plan:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Planning]
+      operationId: planLoad
+      summary: Close a load to further building, making it sourceable
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/allocations:
+    get:
+      tags: [Sourcing]
+      operationId: listAllocations
+      summary: A page of allocations
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of allocations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AllocationSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Sourcing]
+      operationId: allocateLoad
+      summary: Offer a load to vendors
+      description: |
+        Walks the routing guide in rank order. An exhausted cascade is terminal
+        and needs a human: a load nobody will take is a commercial problem, and
+        re-offering automatically would spin against unwilling vendors while the
+        freight sits.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AllocateRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/allocations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Sourcing]
+      operationId: getAllocation
+      summary: One allocation
+      responses:
+        "200":
+          description: The allocation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Allocation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/allocations/{id}/offers:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Sourcing]
+      operationId: listOffers
+      summary: Every offer made under an allocation
+      responses:
+        "200":
+          description: Offers in rank order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Offer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/allocations/{id}/accept:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Sourcing]
+      operationId: acceptOffer
+      summary: A vendor takes the load
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorResponseRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/allocations/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Sourcing]
+      operationId: rejectOffer
+      summary: A vendor declines, cascading to the next rank
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorResponseRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/allocations/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Sourcing]
+      operationId: cancelAllocation
+      summary: Abandon the allocation
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips:
+    get:
+      tags: [Trips]
+      operationId: listTrips
+      summary: A page of trips
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of trips.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Trips]
+      operationId: raiseTrip
+      summary: Raise a trip against an awarded load
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RaiseTripRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Trips]
+      operationId: getTrip
+      summary: One trip
+      responses:
+        "200":
+          description: The trip.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/trips/{id}/gate-log:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Trips]
+      operationId: getGateLog
+      summary: Gate events for a trip
+      description: |
+        Append-only in practice: this is the evidence in a detention dispute.
+      responses:
+        "200":
+          description: Events in order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GateEvent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/trips/{id}/assignment:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: assignTrip
+      summary: Nominate the vehicle and driver
+      description: |
+        Compliance is checked here as well as at dispatch. A lorry whose
+        insurance lapses on Tuesday assigned to a Wednesday departure fails now,
+        while there is time to find another.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignTripRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/documents:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: attachTripDocument
+      summary: Attach a statutory document to the trip
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachTripDocumentRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/gate-in:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: gateIn
+      summary: Record arrival at the origin. The detention clock starts here.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GateInRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/weighings:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: recordWeighing
+      summary: Record a weighbridge ticket
+      description: |
+        The tare must be taken before the gross. The other way round means the
+        'tare' was measured with freight aboard, and the payload computed from
+        it is quietly wrong rather than obviously wrong.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WeighingRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/loaded:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: markLoaded
+      summary: Loading is finished and the vehicle weighed laden
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/dispatch:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: dispatchTrip
+      summary: The compliance gate
+      description: |
+        Four checks, reported together so a dispatcher standing at a gate with a
+        driver waiting learns everything that is wrong in one go: the trip's own
+        statutory documents, the vehicle's and driver's documents against the
+        departure date, hazmat certification where the load needs it, and the
+        weighed payload against the manifest within tolerance.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/in-transit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: beginTransit
+      summary: Mark the trip moving
+      description: |
+        Normally driven by a geofence exit. This exists for the case telematics
+        cannot cover: a vehicle with no working tracker still has to be
+        dispatchable.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/arrival:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: recordArrival
+      summary: Mark the trip at its destination
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/trips/{id}/completion:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Trips]
+      operationId: completeTrip
+      summary: Proof of delivery accepted
+      description: |
+        Raises the freight bill, priced against the rate card in force on the
+        dispatch date.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/telematics/pings:
+    post:
+      tags: [Telematics]
+      operationId: ingestPings
+      summary: Ingest a batch of positions
+      description: |
+        Answers 202 with a report of what happened. Geofence crossings evaluated
+        here drive the trip state machine: leaving the origin puts a trip in
+        transit, entering the destination marks it arrived.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PingBatchRequest" }
+      responses:
+        "202":
+          description: Accepted for processing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/telematics/positions:
+    get:
+      tags: [Telematics]
+      operationId: listPositions
+      summary: Where every vehicle was last seen
+      responses:
+        "200":
+          description: Latest position per vehicle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VehiclePosition" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/telematics/positions/{vehicleId}:
+    parameters:
+      - name: vehicleId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the vehicle.
+    get:
+      tags: [Telematics]
+      operationId: getPosition
+      summary: Where one vehicle was last seen
+      responses:
+        "200":
+          description: The latest position.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VehiclePosition" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/telematics/trips/{tripId}/crossings:
+    parameters:
+      - name: tripId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the trip.
+    get:
+      tags: [Telematics]
+      operationId: listCrossings
+      summary: Geofence crossings recorded against a trip
+      responses:
+        "200":
+          description: Crossings in order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GeofenceCrossing" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/telematics/trips/{tripId}/track:
+    parameters:
+      - name: tripId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the trip.
+    get:
+      tags: [Telematics]
+      operationId: getTrack
+      summary: The shape of a trip's journey
+      description: |
+        Raw points while the trip runs, the simplified polyline once retention
+        has collapsed it. The caller cannot tell which and should not need to.
+      responses:
+        "200":
+          description: "`[lon, lat]` pairs, GeoJSON order."
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: array
+                  items: { type: number }
+                  minItems: 2
+                  maxItems: 2
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/telematics/trips/{tripId}/progress:
+    parameters:
+      - name: tripId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the trip.
+    get:
+      tags: [Telematics]
+      operationId: getProgress
+      summary: How far along a trip is
+      responses:
+        "200":
+          description: Progress and an estimated arrival.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripProgress" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/telematics/deviations:
+    get:
+      tags: [Telematics]
+      operationId: listOpenDeviations
+      summary: Vehicles currently off their corridor
+      responses:
+        "200":
+          description: Open deviations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Deviation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/freight-bills:
+    get:
+      tags: [Settlement]
+      operationId: listFreightBills
+      summary: A page of freight bills
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of bills.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FreightBillSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/freight-bills/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Settlement]
+      operationId: getFreightBill
+      summary: One bill
+      description: |
+        There is no endpoint to create one. A bill is raised when a trip
+        completes, because pricing depends on the dispatch date and the origin
+        dwell -- facts the movement produces, not facts a caller supplies.
+      responses:
+        "200":
+          description: The bill.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FreightBill" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/freight-bills/{id}/lines:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Settlement]
+      operationId: getFreightBillLines
+      summary: The arithmetic behind the total
+      description: |
+        A bill carrying only a total is unarguable. These lines are the entire
+        content of the conversation that follows a dispute.
+      responses:
+        "200":
+          description: Lines in order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FreightBillLine" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/freight-bills/{id}/match:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Settlement]
+      operationId: matchFreightBill
+      summary: Record the vendor's invoice and settle it
+      description: |
+        Approved when the difference is within the greater of a percentage and
+        an absolute floor; disputed otherwise. An underclaim beyond tolerance is
+        disputed too -- it means the two sides' understanding of the rate has
+        diverged, and next month it points the other way.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MatchRequest" }
+      responses:
+        "200":
+          description: What the comparison settled to.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MatchResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/freight-bills/{id}/resolve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Settlement]
+      operationId: resolveDispute
+      summary: Settle a dispute in the vendor's favour, on the record
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveDisputeRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/tariffs:
+    post:
+      tags: [Settlement]
+      operationId: publishTariff
+      summary: Publish a rate card version
+      description: |
+        POST only, and that is the contract rather than an omission. A rate card
+        is a version: correcting one means publishing a successor, which closes
+        the incumbent. The database refuses an edit by trigger, so the API does
+        not offer one.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublishTariffRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/tariffs/{id}/slabs:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Settlement]
+      operationId: addTariffSlab
+      summary: Add a weight band to an open rate card
+      description: |
+        Refused once the card has been superseded: adding a band to a closed
+        version would change what already-priced movements cost without touching
+        a single bill.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddSlabRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/tariffs/fuel-surcharges:
+    post:
+      tags: [Settlement]
+      operationId: recordFuelSurcharge
+      summary: Record the fuel surcharge for a month
+      description: |
+        A stored figure rather than a price feed. An external dependency on the
+        pricing path means invoices that cannot be raised because somebody
+        else's service is down.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FuelSurchargeRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }

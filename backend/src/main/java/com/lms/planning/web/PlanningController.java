@@ -60,12 +60,12 @@ public class PlanningController {
 
     // ---------------------------------------------------------- consignments
 
-    @PostMapping("/orders/{orderId}/consignments")
-    public ResponseEntity<List<IdResponse>> generate(@PathVariable UUID orderId) {
-        List<IdResponse> generated = planning.generateConsignments(orderId).stream()
+    @PostMapping("/orders/{id}/consignments")
+    public ResponseEntity<List<IdResponse>> generate(@PathVariable UUID id) {
+        List<IdResponse> generated = planning.generateConsignments(id).stream()
                 .map(IdResponse::new)
                 .toList();
-        return ResponseEntity.created(URI.create("/api/v1/orders/" + orderId + "/consignments"))
+        return ResponseEntity.created(URI.create("/api/v1/orders/" + id + "/consignments"))
                 .body(generated);
     }
 
