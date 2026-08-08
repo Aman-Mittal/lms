@@ -1,0 +1,53 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# GitGuardian configuration.
+#
+# This repository contains no credentials, and the two that a scanner used to
+# find have both been removed rather than silenced -- which is the only correct
+# response to a secret scanner.
+#
+#   * application.yaml no longer carries a default database password. A
+#     fallback credential is a credential: an unset DATABASE_PASSWORD in a
+#     deployed environment should stop the service, not make it try something
+#     guessable.
+#   * deploy/docker-compose.yml no longer publishes one either. The local
+#     Postgres runs with trust authentication, bound to the loopback interface,
+#     so there is nothing password-shaped to commit. A default like `lms` would
+#     have been inert here and identical in every clone, which is how a
+#     throwaway string ends up somewhere real.
+#
+# Every genuine secret is an environment variable supplied at deploy time: see
+# deploy/.env.example for the full list and deploy/render.yaml for how they are
+# set in production.
+#
+# Note on this file's reach: ggshield reads it, for local runs and pre-commit.
+# The GitGuardian GitHub check does not -- its exclusions live in the
+# dashboard. Findings against commits already in this branch's history
+# therefore have to be resolved there; nothing in the working tree can clear
+# them.
+
+version: 2
+
+secret:
+  ignored-paths:
+    # Documents which variables exist and what shape they take. Every value in
+    # it is blank or a placeholder, by design -- it is the file that tells a
+    # deployer what to set, not a file that sets anything.
+    - deploy/.env.example
+    # Generated build output; never committed, but excluded so a local scan of
+    # a dirty working tree does not spend time on it.
+    - backend/target/**
+    - frontend/dist/**
+    - frontend/node_modules/**

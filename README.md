@@ -1,4 +1,14 @@
 # lms
+
+> **Implementation status.** This document is the product vision — twelve
+> modules at enterprise scale. It describes the target, not what is built.
+> For what actually runs today, what has been measured, and what is still
+> missing, see **[DOCS/MVP.md](DOCS/MVP.md)**.
+>
+> Current state: platform foundations, multi-tenancy with verified row-level
+> isolation, identity/access, and the geospatial engine. Native image starts in
+> **0.643 s** using **71 MiB** of a 512 MB instance. 60 tests green.
+
 lms
 
 Enterprise Logistics Management Platform

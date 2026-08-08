@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+#
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Conventions this project holds that no compiler, linter or test will catch.
+#
+# Every rule here exists because breaking it produced a real failure in this
+# repository, or because breaking it would fail silently -- which is worse than
+# failing loudly and is exactly what an automated check is for.
+#
+# Runs on every push and every pull request, and is runnable locally:
+#
+#     .github/scripts/check-conventions.sh
+#
+# Exits non-zero on the first category with violations, having reported all of
+# them.
+
+set -uo pipefail
+
+cd "$(dirname "$0")/../.."
+
+FAILURES=0
+MAIN=backend/src/main/java
+TEST=backend/src/test/java
+MIGRATIONS=backend/src/main/resources/db/migration
+
+# Set by fail(); each section resets it so a section can report "ok" without
+# depending on whether an earlier section passed.
+SECTION_FAILURES=0
+
+fail() {
+    echo "::error::$1"
+    FAILURES=$((FAILURES + 1))
+    SECTION_FAILURES=$((SECTION_FAILURES + 1))
+}
+
+section() {
+    SECTION_FAILURES=0
+    echo "-- $1"
+}
+
+pass() {
+    echo "  ok  $1"
+}
+
+echo "== Conventions =="
+
+# ---------------------------------------------------------------------------
+# 1. Aggregate roots must carry @Version
+# ---------------------------------------------------------------------------
+#
+# The single most expensive mistake in this codebase, hit three times.
+#
+# Spring Data JDBC decides between INSERT and UPDATE by asking whether the
+# entity looks new. An entity with a client-assigned @Id and no @Version always
+# looks like an existing row, so save() issues an UPDATE that matches nothing --
+# and returns normally. The write is silently lost. It surfaces much later as
+# "the order has no lines" or "the document was never attached", nowhere near
+# the cause.
+#
+# Join tables are exempt because they are not entities: they are written with
+# plain SQL through PlanningLinks, which has no such ambiguity.
+
+section "aggregate roots declare @Version"
+UNVERSIONED=""
+while IFS= read -r file; do
+    grep -q "@Id" "$file" || continue
+    grep -q "@Version" "$file" || UNVERSIONED="${UNVERSIONED}${file}"$'\n'
+done < <(grep -rl "@Table(" "$MAIN" --include='*.java')
+
+if [ -n "$UNVERSIONED" ]; then
+    fail "@Table entities with @Id and no @Version -- save() will silently do nothing:"
+    echo "$UNVERSIONED" | sed '/^$/d' | sed 's/^/      /'
+else
+    pass "every @Table entity with an @Id declares @Version"
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Migrations
+# ---------------------------------------------------------------------------
+
+section "migrations are well formed"
+
+BAD_NAMES=$(find "$MIGRATIONS" -name '*.sql' -printf '%f\n' | grep -Ev '^V[0-9]+__[a-z0-9_]+\.sql$' || true)
+if [ -n "$BAD_NAMES" ]; then
+    fail "migration filenames must match V<n>__lower_snake_case.sql:"
+    echo "$BAD_NAMES" | sed 's/^/      /'
+else
+    pass "migration filenames are well formed"
+fi
+
+# Two migrations sharing a version number is not a build error. Flyway fails at
+# startup, which on Render means a deploy that goes down rather than one that
+# never comes up.
+DUPLICATE_VERSIONS=$(find "$MIGRATIONS" -name '*.sql' -printf '%f\n' \
+    | sed -E 's/^V([0-9]+)__.*/\1/' | sort -n | uniq -d || true)
+if [ -n "$DUPLICATE_VERSIONS" ]; then
+    fail "duplicate Flyway version numbers -- startup will fail, not the build: $DUPLICATE_VERSIONS"
+else
+    pass "Flyway version numbers are unique"
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Every business table is protected by row-level security
+# ---------------------------------------------------------------------------
+#
+# RLS is the tenant boundary (DOCS/adr/0005). A table created without a policy
+# is not a compile error, is not a test failure, and leaks across tenants the
+# first time a WHERE clause is forgotten. The one table that legitimately has
+# no tenant_id is Spring Modulith's event_publication, created verbatim in V1.
+
+section "new tables enable row-level security"
+for file in "$MIGRATIONS"/*.sql; do
+    grep -q "CREATE TABLE" "$file" || continue
+    case "$(basename "$file")" in
+        V1__*) continue ;;  # Modulith's own outbox table, copied from the jar.
+    esac
+    if ! grep -q "ROW LEVEL SECURITY" "$file"; then
+        fail "$(basename "$file") creates tables but never enables row-level security"
+    fi
+done
+[ "$SECTION_FAILURES" -eq 0 ] && pass "every table-creating migration enables row-level security"
+
+# ---------------------------------------------------------------------------
+# 4. Dependencies deliberately kept out
+# ---------------------------------------------------------------------------
+#
+# Lombok: annotation-processor-generated code is one more thing to reason about
+#   under AOT, and records cover what it would be used for.
+# springdoc: reflection-heavy, and the OpenAPI spec is the hand-authored
+#   contract source of truth rather than something derived from controllers.
+# PostGIS: GPLv2, which the Apache-2.0 compliance rails forbid (DOCS/adr/0004).
+
+section "excluded dependencies stay excluded"
+for forbidden in lombok springdoc postgis; do
+    if grep -rqi "$forbidden" backend/pom.xml; then
+        fail "backend/pom.xml references '$forbidden', which this project deliberately excludes"
+    fi
+done
+[ "$SECTION_FAILURES" -eq 0 ] && pass "no lombok, springdoc or postgis"
+
+# ---------------------------------------------------------------------------
+# 5. The ASF boilerplate header must not appear
+# ---------------------------------------------------------------------------
+#
+# This project is Apache-2.0 licensed but is NOT an Apache Software Foundation
+# project. The ASF boilerplate asserts contributor licence agreements that do
+# not exist here, so using it is a false provenance claim rather than a style
+# slip. Easy to introduce by copying a file from a sibling ASF repository.
+
+section "license headers claim the right provenance"
+# This script names the string in order to look for it, so it excludes itself.
+ASF_HITS=$(grep -rl "Licensed to the Apache Software Foundation" \
+    --include='*.java' --include='*.sql' --include='*.yml' --include='*.yaml' \
+    --include='*.xml' --include='*.sh' --include='*.ts' \
+    --exclude='check-conventions.sh' . 2>/dev/null || true)
+if [ -n "$ASF_HITS" ]; then
+    fail "ASF boilerplate header found -- this is not an ASF project, see DOCS/adr/0003"
+    echo "$ASF_HITS" | sed 's/^/      /'
+else
+    pass "no ASF provenance claims"
+fi
+
+# ---------------------------------------------------------------------------
+# 5b. Source files carry the licence header
+# ---------------------------------------------------------------------------
+#
+# Apache RAT is disabled as a pull-request gate. This is the part of what it
+# checked that has actually caught something: three files this month lost their
+# header to a shell quoting bug and nobody noticed until RAT said so.
+#
+# Deliberately much narrower than RAT -- it looks at first-party source only,
+# and only for the copyright line. RAT's value was never the breadth of its
+# scan; it was noticing when a new file arrived without a header. If this is
+# more than you want, delete this section; the ASF-provenance check above is
+# the one with legal consequences and it stands on its own.
+
+section "source files carry the licence header"
+MISSING_HEADER=""
+while IFS= read -r file; do
+    head -20 "$file" | grep -q "Copyright .* Aman Mittal" || MISSING_HEADER="${MISSING_HEADER}${file}"$'\n'
+done < <(find backend/src .github/scripts -type f \
+    \( -name '*.java' -o -name '*.sql' -o -name '*.feature' -o -name '*.sh' \) 2>/dev/null)
+
+if [ -n "$MISSING_HEADER" ]; then
+    fail "source files with no Apache-2.0 copyright header:"
+    echo "$MISSING_HEADER" | sed '/^$/d' | sed 's/^/      /'
+else
+    pass "every source file carries the licence header"
+fi
+
+# ---------------------------------------------------------------------------
+# 5c. No credential is ever carried in a cookie
+# ---------------------------------------------------------------------------
+#
+# CSRF protection is disabled in SecurityConfig, and that is correct only
+# because nothing in this API is attached to a request by the browser
+# automatically: the access token is an Authorization header, the refresh token
+# is a JSON body field, and there is no session.
+#
+# The day somebody stores a token in a cookie -- for a "remember me", or to
+# make a download link work -- that reasoning becomes false and the API becomes
+# CSRF-vulnerable, silently, with the comment in SecurityConfig still asserting
+# otherwise. This is what makes that comment checkable instead of aspirational.
+
+section "no credential is carried in a cookie"
+COOKIE_USE=$(grep -rnE "addCookie\(|ResponseCookie|CookieCsrfTokenRepository|SETCOOKIE|\"Set-Cookie\"" \
+    "$MAIN" --include='*.java' || true)
+if [ -n "$COOKIE_USE" ]; then
+    fail "cookies are being set -- re-examine the CSRF decision in SecurityConfig before allowing this:"
+    echo "$COOKIE_USE" | sed 's/^/      /'
+else
+    pass "no cookie-borne credentials, so the CSRF exemption holds"
+fi
+
+# ---------------------------------------------------------------------------
+# 5d. Nothing is shaped like a connection-string credential
+# ---------------------------------------------------------------------------
+#
+# A test fixture written as postgresql://user:pass@host is indistinguishable
+# from a real Render connection string to a secret scanner, and one duly got
+# reported. The cost is not the false positive itself -- it is that a scanner
+# which cries wolf teaches everybody to wave it through, and the next finding
+# is the genuine one.
+#
+# Assemble such strings from parts instead. The parser under test receives the
+# same value; the file simply stops containing the shape.
+section "nothing is written in the shape of a connection-string credential"
+CREDENTIAL_SHAPED=$(grep -rnE '"[a-z][a-z0-9+.-]*://[A-Za-z0-9_%.-]+:[A-Za-z0-9_%.-]+@' \
+    "$MAIN" "$TEST" --include='*.java' 2>/dev/null || true)
+if [ -n "$CREDENTIAL_SHAPED" ]; then
+    fail "a literal looks like a URL with embedded credentials -- split it so a scanner cannot mistake it for one:"
+    echo "$CREDENTIAL_SHAPED" | sed 's/^/      /'
+else
+    pass "no literal has the shape of a credentialled URL"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Pagination is keyset, never OFFSET
+# ---------------------------------------------------------------------------
+#
+# OFFSET n makes the database walk and discard n rows before returning
+# anything, so page 500 costs 500 times page 1 -- on a 0.1-CPU instance that is
+# the difference between a screen and a timeout. It is also incorrect under
+# concurrent writes: rows shift and pages silently skip or duplicate.
+
+section "pagination is keyset, not OFFSET"
+# Requires a bind parameter or a literal after the keyword, so that Slice's own
+# Javadoc explaining why OFFSET is avoided does not trip the check that enforces
+# it. Comment lines are dropped first for the same reason.
+OFFSET_HITS=$(grep -rnE "OFFSET[[:space:]]+[:?0-9]" "$MAIN" --include='*.java' \
+    | grep -vE "^[^:]+:[0-9]+:[[:space:]]*(\*|//)" || true)
+if [ -n "$OFFSET_HITS" ]; then
+    fail "OFFSET pagination found -- use com.lms.shared.query.Slice (keyset) instead"
+    echo "$OFFSET_HITS" | sed 's/^/      /'
+else
+    pass "no OFFSET pagination"
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Logging goes through the logger
+# ---------------------------------------------------------------------------
+#
+# Logs are structured JSON to stdout so an aggregator can ingest them without
+# Grok patterns (vision document 4.4). A println bypasses that, and a stack
+# trace printed to stderr loses the correlation id that makes it traceable.
+
+section "no stray console output"
+CONSOLE_HITS=$(grep -rnE "System\.(out|err)\.print|printStackTrace" "$MAIN" --include='*.java' || true)
+if [ -n "$CONSOLE_HITS" ]; then
+    fail "console output in main sources -- use SLF4J so the correlation id is carried"
+    echo "$CONSOLE_HITS" | sed 's/^/      /'
+else
+    pass "no console output in main sources"
+fi
+
+# ---------------------------------------------------------------------------
+
+echo
+if [ "$FAILURES" -gt 0 ]; then
+    echo "FAILED: $FAILURES convention violation(s)"
+    exit 1
+fi
+echo "All conventions hold."

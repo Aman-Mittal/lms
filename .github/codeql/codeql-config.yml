@@ -1,0 +1,57 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: LMS CodeQL configuration
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  # java/spring-disabled-csrf-protection, excluded with reasons.
+  #
+  # CSRF is an attack that works because a browser attaches credentials to a
+  # cross-site request without being asked. Nothing in this API is attached
+  # automatically:
+  #
+  #   * the only credential is `Authorization: Bearer`, which a browser never
+  #     sends on its own;
+  #   * the session policy is STATELESS, so there is no session cookie and no
+  #     session for a CSRF token to live in;
+  #   * the refresh token travels in the JSON body of POST /auth/refresh, never
+  #     a cookie;
+  #   * httpBasic and formLogin are disabled, so there is no other ambient
+  #     credential;
+  #   * CORS sets allowCredentials(false).
+  #
+  # Copilot's suggested fix -- replacing `.csrf(csrf -> csrf.disable())` with
+  # `.csrf(csrf -> {})` -- installs a HttpSessionCsrfTokenRepository with no
+  # session to use. Every POST, PUT and DELETE would answer 403 and the console
+  # would have no way to obtain a token. It does not add security; it removes
+  # the API.
+  #
+  # The premise this rests on -- that no credential is ever carried in a cookie
+  # -- is not left as a comment to be forgotten. Section 5c of
+  # .github/scripts/check-conventions.sh fails the build on any cookie use, so
+  # introducing cookie authentication later breaks the build here rather than
+  # silently making this exclusion untrue.
+  #
+  # Note for whoever reads this next: an inline `// codeql[query-id]` comment in
+  # the source does NOT dismiss a GitHub code-scanning alert. That syntax is
+  # honoured only by CodeQL's own alert-suppression queries, which are not in
+  # the default suites. This file is what actually excludes the query, and it
+  # governs only the advanced workflow -- if "Default setup" is also enabled in
+  # the repository settings, that second analysis ignores this file and its
+  # alerts must be dismissed in the Security tab instead.
+  - exclude:
+      id: java/spring-disabled-csrf-protection

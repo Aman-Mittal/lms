@@ -1,0 +1,273 @@
+/*
+ * Copyright 2026 Aman Mittal
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.lms.acceptance;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import com.lms.identity.command.AuthService;
+import com.lms.shared.error.AuthenticationFailedException;
+import io.cucumber.java.Before;
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.Then;
+import io.cucumber.java.en.When;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** Step definitions for {@code identity.feature}. */
+public class IdentitySteps {
+
+    @Autowired
+    private TestFixtures fixtures;
+    @Autowired
+    private AuthService authService;
+    @Autowired
+    private JwtDecoder jwtDecoder;
+    @Autowired
+    private ScenarioWorld world;
+    @Autowired
+    private org.springframework.jdbc.core.simple.JdbcClient jdbc;
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    private AuthService.AuthResult lastResult;
+    private final List<String> failureMessages = new ArrayList<>();
+    private List<String> listedEmails;
+    private List<Map<String, Object>> listedSubtree;
+
+    @Before
+    public void resetScenarioState() {
+        // ScenarioWorld is @ScenarioScope and resets itself; only this class's
+        // own scratch state needs clearing.
+        failureMessages.clear();
+        lastResult = null;
+        listedEmails = null;
+        listedSubtree = null;
+    }
+
+    // ---------------------------------------------------------------- given
+
+    @Given("a tenant {string} named {string}")
+    public void aTenant(String code, String name) {
+        // Codes are made unique per scenario so a shared container does not
+        // leak state between scenarios.
+        world.putTenant(code, fixtures.createTenant(world.uniqueCode(code), name));
+    }
+
+    @Given("tenant {string} has an organisational unit {string} named {string} of type {string}")
+    public void anOrgUnit(String tenantCode, String path, String name, String type) {
+        UUID tenantId = world.tenantId(tenantCode);
+        String parentPath = parentPathOf(path);
+        UUID parentId = parentPath == null ? null : world.orgUnitId(parentPath);
+        world.putOrgUnit(path, fixtures.createOrgUnit(tenantId, path, name, type, parentId));
+    }
+
+    @Given("tenant {string} has a user {string} with password {string} in unit {string}")
+    public void aUser(String tenantCode, String email, String password, String orgPath) {
+        fixtures.createUser(world.tenantId(tenantCode), world.orgUnitId(orgPath), orgPath, email, password);
+    }
+
+    @Given("the user {string} of tenant {string} is suspended")
+    public void suspendUser(String email, String tenantCode) {
+        fixtures.suspendUser(world.tenantId(tenantCode), email);
+    }
+
+    @Given("{string} has logged in to tenant {string} with password {string}")
+    public void hasLoggedIn(String email, String tenantCode, String password) {
+        logsIn(email, tenantCode, password);
+        assertThat(lastResult).as("precondition: login must succeed").isNotNull();
+    }
+
+    // ----------------------------------------------------------------- when
+
+    @When("{string} logs in to tenant {string} with password {string}")
+    public void logsIn(String email, String tenantCode, String password) {
+        // Unknown tenant codes are passed through verbatim so the "no such
+        // tenant" path is genuinely exercised.
+        String code = world.knowsTenant(tenantCode) ? world.uniqueCode(tenantCode) : tenantCode;
+        try {
+            lastResult = authService.login(code, email, password, null);
+        } catch (AuthenticationFailedException e) {
+            lastResult = null;
+            failureMessages.add(e.getMessage());
+        }
+    }
+
+    @When("users are listed without a tenant predicate while scoped to {string}")
+    public void listUsersScoped(String tenantCode) {
+        listedEmails = fixtures.listAllUserEmailsWithoutTenantPredicate(world.tenantId(tenantCode));
+    }
+
+    @When("users are listed without a tenant predicate and without any tenant scope")
+    public void listUsersUnscoped() {
+        listedEmails = fixtures.listAllUserEmailsWithoutTenantPredicate(null);
+    }
+
+    @When("the organisational subtree of {string} is listed for tenant {string}")
+    public void listSubtree(String orgPath, String tenantCode) {
+        listedSubtree = fixtures.listSubtree(world.tenantId(tenantCode), orgPath);
+    }
+
+    @When("the refresh token is exchanged")
+    public void exchangeRefreshToken() {
+        previousRefreshToken = lastResult.refreshToken();
+        lastResult = authService.refresh(previousRefreshToken);
+    }
+
+    private String previousRefreshToken;
+
+    // ----------------------------------------------------------------- then
+
+    @Given("the account {string} of tenant {string} is locked out")
+    public void lockAccount(String email, String tenantCode) {
+        // Driven through the real login path rather than by writing the column
+        // directly: a lockout produced by an UPDATE would still pass even if
+        // the counting logic were broken.
+        for (int attempt = 0; attempt < com.lms.identity.command.domain.AppUser.MAX_FAILED_ATTEMPTS;
+                attempt++) {
+            logsIn(email, tenantCode, "definitely-not-the-password");
+        }
+    }
+
+    @Then("the account {string} of tenant {string} is locked")
+    public void accountIsLocked(String email, String tenantCode) {
+        assertThat(userRow(email, tenantCode).get("locked_until"))
+                .as("account should be locked after repeated failures")
+                .isNotNull();
+    }
+
+    @Then("the account {string} of tenant {string} has no recorded failures")
+    public void noRecordedFailures(String email, String tenantCode) {
+        assertThat(((Number) userRow(email, tenantCode).get("failed_login_attempts")).intValue())
+                .isZero();
+    }
+
+    @Then("the audit log for tenant {string} contains {string}")
+    public void auditContains(String tenantCode, String action) {
+        java.util.UUID tenantId = world.tenantId(tenantCode);
+        List<String> actions = com.lms.shared.tenant.TenantContext.callWith(tenantId, null, () ->
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                        .execute(status -> jdbc.sql(
+                                        "SELECT action FROM audit_log WHERE tenant_id = :tenantId")
+                                .param("tenantId", tenantId)
+                                .query(String.class)
+                                .list()));
+
+        assertThat(actions).contains(action);
+    }
+
+    private java.util.Map<String, Object> userRow(String email, String tenantCode) {
+        java.util.UUID tenantId = world.tenantId(tenantCode);
+        return com.lms.shared.tenant.TenantContext.callWith(tenantId, null, () ->
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                        .execute(status -> jdbc.sql("""
+                                        SELECT failed_login_attempts, locked_until
+                                          FROM app_user
+                                         WHERE tenant_id = :tenantId AND lower(email) = lower(:email)
+                                        """)
+                                .param("tenantId", tenantId)
+                                .param("email", email)
+                                .query()
+                                .singleRow()));
+    }
+
+    @Then("authentication succeeds")
+    public void authenticationSucceeds() {
+        assertThat(lastResult).isNotNull();
+        assertThat(lastResult.accessToken()).isNotBlank();
+    }
+
+    @Then("authentication fails")
+    public void authenticationFails() {
+        assertThat(lastResult).isNull();
+        assertThat(failureMessages).isNotEmpty();
+    }
+
+    @Then("both authentication failures report the same message")
+    public void failuresAreIndistinguishable() {
+        assertThat(failureMessages).hasSize(2);
+        assertThat(failureMessages.get(0)).isEqualTo(failureMessages.get(1));
+    }
+
+    @Then("the access token carries the tenant of {string}")
+    public void tokenCarriesTenant(String tenantCode) {
+        Jwt jwt = jwtDecoder.decode(lastResult.accessToken());
+        assertThat(jwt.getClaimAsString("tenant")).isEqualTo(world.tenantId(tenantCode).toString());
+    }
+
+    @Then("the access token carries the organisational path {string}")
+    public void tokenCarriesOrgPath(String orgPath) {
+        Jwt jwt = jwtDecoder.decode(lastResult.accessToken());
+        assertThat(jwt.getClaimAsString("org")).isEqualTo(orgPath);
+    }
+
+    @Then("only users belonging to {string} are returned")
+    public void onlyScopedTenantUsers(String tenantCode) {
+        assertThat(listedEmails).isNotEmpty();
+        assertThat(listedEmails).allSatisfy(email ->
+                assertThat(email).endsWith("@" + tenantCode + ".test"));
+    }
+
+    @Then("no users are returned")
+    public void noUsersReturned() {
+        assertThat(listedEmails).isEmpty();
+    }
+
+    @Then("the subtree contains {string} and {string}")
+    public void subtreeContains(String first, String second) {
+        assertThat(paths()).contains(first, second);
+    }
+
+    @Then("the subtree does not contain {string}")
+    public void subtreeExcludes(String path) {
+        assertThat(paths()).doesNotContain(path);
+    }
+
+    @Then("a new access token is issued")
+    public void newAccessTokenIssued() {
+        assertThat(lastResult).isNotNull();
+        assertThat(lastResult.accessToken()).isNotBlank();
+        assertThat(lastResult.refreshToken()).isNotEqualTo(previousRefreshToken);
+    }
+
+    @Then("the previous refresh token is no longer accepted")
+    public void previousRefreshTokenRejected() {
+        try {
+            authService.refresh(previousRefreshToken);
+            org.junit.jupiter.api.Assertions.fail("A rotated refresh token must not be reusable");
+        } catch (AuthenticationFailedException expected) {
+            assertThat(expected).hasMessageContaining("invalid or expired");
+        }
+    }
+
+    // -------------------------------------------------------------- helpers
+
+    private List<String> paths() {
+        return listedSubtree.stream().map(row -> (String) row.get("path")).toList();
+    }
+
+    private static String parentPathOf(String path) {
+        String trimmed = path.substring(0, path.length() - 1);
+        int lastSlash = trimmed.lastIndexOf('/');
+        return lastSlash <= 0 ? null : trimmed.substring(0, lastSlash + 1);
+    }
+
+}
