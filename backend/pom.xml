@@ -54,7 +54,7 @@
 
     <spring-modulith.version>2.1.0</spring-modulith.version>
     <mapstruct.version>1.6.3</mapstruct.version>
-    <cucumber.version>7.34.6</cucumber.version>
+    <cucumber.version>7.34.7</cucumber.version>
     <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
 
     <!-- The native binary is launched directly; no fat jar layering needed. -->
