@@ -144,6 +144,58 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the LTL rate card in force between two zones is index-served")
+    void ltlRateCardInForce() {
+        // Runs once per booked docket. Descending effective_from lets the plan
+        // stop at the first version that had started by the booking date.
+        assertIndexed("""
+                SELECT * FROM ltl_rate_card
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND origin_zone = 'WEST'
+                   AND destination_zone = 'NORTH'
+                   AND effective_from <= DATE '2026-01-15'
+                 ORDER BY effective_from DESC
+                 LIMIT 1
+                """, "ltl_rate_card");
+    }
+
+    @Test
+    @DisplayName("a terminal's LTL zone placement is index-served")
+    void ltlZonePlacement() {
+        // Read three times per docket priced: both hubs and the delivery point.
+        assertIndexed("""
+                SELECT zone_code, out_of_delivery_area FROM ltl_zone_terminal
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND terminal_id = '00000000-0000-0000-0000-000000000002'
+                """, "ltl_zone_terminal");
+    }
+
+    @Test
+    @DisplayName("the docket receivable listing pages by docket number without a sort")
+    void docketReceivablesByDocketNo() {
+        assertIndexed("""
+                SELECT * FROM docket_receivable
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND docket_no > 'DKT-0000000000'
+                 ORDER BY docket_no
+                 LIMIT 50
+                """, "docket_receivable");
+    }
+
+    @Test
+    @DisplayName("a customer's docket statement pages by docket number without a sort")
+    void docketReceivablesForCustomer() {
+        assertIndexed("""
+                SELECT * FROM docket_receivable
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND customer_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND docket_no > 'DKT-0000000000'
+                 ORDER BY docket_no
+                 LIMIT 50
+                """, "docket_receivable");
+    }
+
+    @Test
     @DisplayName("the fleet listing pages by registration without a sort")
     void vehicleListingIsKeysetSeekable() {
         // The keyset predicate and the ORDER BY have to ride the same unique
