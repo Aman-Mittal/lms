@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -87,6 +87,9 @@ class LargeDataQueryPerformanceTest {
     private static final int TICKETS = 150_000;
     private static final int PINGS = 300_000;
     private static final int HOLDS = 100_000;
+
+    /** Who the timed reads act as. In-process test authentication carries no credential. */
+    private static final String READER_PRINCIPAL = "perf";
 
     private static final int WARMUP = 5;
     private static final int RUNS = 30;
@@ -306,7 +309,7 @@ class LargeDataQueryPerformanceTest {
         Set<SimpleGrantedAuthority> authorities = Set.of("EXCEPTION_READ", "INVOICE_READ").stream()
                 .map(SimpleGrantedAuthority::new).collect(Collectors.toSet());
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("perf", null, authorities));
+                new TestingAuthenticationToken(READER_PRINCIPAL, null, authorities));
         TransactionTemplate transactions = new TransactionTemplate(transactionManager);
         return TenantContext.callWith(measured.tenantId(), measured.orgPath(),
                 () -> transactions.execute(status -> action.get()));

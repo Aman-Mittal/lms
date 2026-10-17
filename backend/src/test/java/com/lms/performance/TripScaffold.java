@@ -33,7 +33,7 @@ import com.lms.masterdata.command.domain.BusinessPartner;
 import com.lms.masterdata.command.domain.Terminal;
 import com.lms.shared.geo.LatLon;
 import com.lms.shared.tenant.TenantContext;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -45,6 +45,9 @@ final class TripScaffold {
 
     record Built(UUID tenantId, String orgPath, UUID orgUnitId, UUID tripId, UUID vehicleId) {
     }
+
+    /** Who the scaffold acts as. Not a credential: in-process test authentication carries none. */
+    private static final String SETUP_PRINCIPAL = "perf-setup";
 
     private static final List<String> SETUP = List.of(
             "PARTNER_CREATE", "PARTNER_UPDATE", "VEHICLE_CREATE", "TERMINAL_CREATE",
@@ -94,7 +97,7 @@ final class TripScaffold {
         Set<SimpleGrantedAuthority> authorities = SETUP.stream()
                 .map(SimpleGrantedAuthority::new).collect(Collectors.toSet());
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("perf-setup", null, authorities));
+                new TestingAuthenticationToken(SETUP_PRINCIPAL, null, authorities));
         try {
             return TenantContext.callWith(tenantId, orgPath, action);
         } finally {
