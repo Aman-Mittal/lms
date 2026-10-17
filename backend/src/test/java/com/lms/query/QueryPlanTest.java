@@ -120,6 +120,63 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("what is in a bin is index-served")
+    void stockInABin() {
+        // Asked on every putaway and adjustment to check capacity, and again
+        // inside the ledger trigger under a lock on the bin -- so a slow plan
+        // here holds that lock for the length of the scan.
+        assertIndexed("""
+                SELECT coalesce(sum(on_hand), 0) FROM stock_balance
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND location_type = 'BIN'
+                   AND location_id = '00000000-0000-0000-0000-000000000002'
+                """, "stock_balance");
+    }
+
+    @Test
+    @DisplayName("where a SKU can be picked from is index-served")
+    void pickableStockOfASku() {
+        // One probe per outbound line on every pick.
+        assertIndexed("""
+                SELECT location_id, lot_no, on_hand FROM stock_balance
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND sku_id = '00000000-0000-0000-0000-000000000002'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000003'
+                   AND location_type = 'BIN'
+                   AND on_hand > 0
+                """, "stock_balance");
+    }
+
+    @Test
+    @DisplayName("the stock screen pages a warehouse without a sort")
+    void warehouseStockPage() {
+        assertIndexed("""
+                SELECT * FROM stock_balance
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND id > '00000000-0000-0000-0000-000000000009'
+                 ORDER BY id
+                 LIMIT 51
+                """, "stock_balance");
+    }
+
+    @Test
+    @DisplayName("a SKU's ledger pages newest first without a sort")
+    void skuMovementHistory() {
+        // The ledger only grows, so this is the table that will be largest in
+        // the warehouse schema; the keyset has to ride stock_movement_sku_idx.
+        assertIndexed("""
+                SELECT * FROM stock_movement
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND sku_id = '00000000-0000-0000-0000-000000000002'
+                   AND (occurred_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                            '00000000-0000-0000-0000-000000000009')
+                 ORDER BY occurred_at DESC, id DESC
+                 LIMIT 51
+                """, "stock_movement");
+    }
+
+    @Test
     @DisplayName("active refresh token lookup by hash is index-served")
     void refreshTokenByHash() {
         assertIndexed("""
