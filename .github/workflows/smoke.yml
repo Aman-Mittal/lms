@@ -1,0 +1,60 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Smoke test a running deployment, on demand.
+#
+# deploy/smoke.sh checks the things a health probe cannot: the contract is
+# served, the demo tenant exists, a real sign-in works, and every module's read
+# side answers. The same script runs in the test suite and against each native
+# binary CI builds; this runs it against Render after a deploy.
+#
+# Needs one repository secret, DEMO_ADMIN_PASSWORD -- the value Render
+# generated for the service (its Environment tab).
+
+name: Smoke (deployed)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Base URL of the deployment
+        required: true
+        default: https://lms-platform.onrender.com
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-deployed
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Smoke the deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Inputs and secrets reach the script as environment variables, never
+      # by textual substitution into the shell source.
+      - name: Run deploy/smoke.sh
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          DEMO_ADMIN_PASSWORD: ${{ secrets.DEMO_ADMIN_PASSWORD }}
+          # A sleeping free instance takes about a minute to wake.
+          READY_TIMEOUT_SECONDS: "180"
+        run: bash deploy/smoke.sh
