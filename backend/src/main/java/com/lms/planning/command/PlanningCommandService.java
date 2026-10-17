@@ -27,11 +27,13 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.lms.masterdata.api.FleetCapacityPort;
+import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
 import com.lms.order.api.OrderPlanningPort;
 import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.LoadUnit;
 import com.lms.planning.events.ConsignmentsGenerated;
+import com.lms.planning.events.DocketBooked;
 import com.lms.planning.events.LoadPlanned;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
@@ -97,6 +99,13 @@ public class PlanningCommandService {
             return List.of();
         }
 
+        // The mode and the hub pair are the order's, so every consignment cut
+        // from it is the same kind: all full-truckload consignments, or all
+        // dockets between the same two hubs.
+        OrderPlanningPort.OrderTerms terms = orderPlanning.termsOf(orderId);
+        boolean ltl = terms.freightMode() == FreightMode.LTL;
+        List<DocketBooked> dockets = new ArrayList<>();
+
         Map<GroupKey, List<OrderPlanningPort.PlannableLine>> groups = new LinkedHashMap<>();
         for (OrderPlanningPort.PlannableLine line : lines) {
             groups.computeIfAbsent(
@@ -128,9 +137,20 @@ public class PlanningCommandService {
                             () -> EnumSet.noneOf(MaterialClass.class)));
 
             Consignment consignment = consignments.save(Consignment.generate(
-                    UUID.randomUUID(), tenantId, orderId, nextTrackingRef(tenantId),
+                    UUID.randomUUID(), tenantId, orderId,
+                    nextTrackingRef(tenantId, ltl ? "DKT-" : "LR-"),
                     group.getKey().consigneePartnerId(), group.getKey().destinationTerminalId(),
-                    deadWeight, volume, chargeable, hazmat, classes));
+                    deadWeight, volume, chargeable, hazmat, classes,
+                    terms.freightMode(), terms.customerPartnerId(),
+                    ltl ? terms.originHubTerminalId() : null,
+                    ltl ? terms.destinationHubTerminalId() : null));
+
+            if (ltl) {
+                dockets.add(new DocketBooked(tenantId, consignment.id(), consignment.trackingRef(),
+                        orderId, terms.customerPartnerId(), consignment.consigneePartnerId(),
+                        consignment.originHubTerminalId(), consignment.destinationHubTerminalId(),
+                        consignment.destinationTerminalId(), deadWeight, volume, Instant.now()));
+            }
 
             for (OrderPlanningPort.PlannableLine member : members) {
                 links.linkOrderLine(tenantId, consignment.id(), member.lineId());
@@ -146,16 +166,33 @@ public class PlanningCommandService {
         // no consignment holds.
         orderPlanning.markLinesPlanned(orderId, plannedLineIds);
 
-        events.publishEvent(new ConsignmentsGenerated(tenantId, orderId, created, refs, Instant.now()));
+        events.publishEvent(new ConsignmentsGenerated(tenantId, orderId, created, refs,
+                terms.freightMode().name(), Instant.now()));
+        // One per docket, so a receivable can be raised -- and deduplicated --
+        // per shipment rather than per order.
+        dockets.forEach(events::publishEvent);
         return created;
     }
 
     // ------------------------------------------------------------ 3.4.2
 
-    /** Opens an empty load sized against a specific, available vehicle. */
+    /** Opens an empty full-truckload load sized against a specific, available vehicle. */
     @Transactional
     @PreAuthorize("hasAuthority('LOAD_CREATE')")
     public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId) {
+        return openLoad(orgUnitId, loadNo, originTerminalId, vehicleId, FreightMode.FTL);
+    }
+
+    /**
+     * Opens an empty load in a stated freight mode.
+     *
+     * <p>For LTL the origin is the hub dockets are consolidated at: only
+     * dockets booked through that hub can be put on the vehicle.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE')")
+    public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId,
+                         FreightMode freightMode) {
         UUID tenantId = TenantContext.requireTenantId();
 
         loads.findByLoadNo(tenantId, loadNo).ifPresent(existing -> {
@@ -170,7 +207,7 @@ public class PlanningCommandService {
         return loads.save(LoadUnit.open(UUID.randomUUID(), tenantId, orgUnitId, loadNo,
                 originTerminalId, capacity.vehicleId(), capacity.vehicleType(),
                 capacity.hazmatCertified(), capacity.payloadCapacityKg(),
-                capacity.maxVolumeM3())).id();
+                capacity.maxVolumeM3(), freightMode)).id();
     }
 
     /**
@@ -196,6 +233,10 @@ public class PlanningCommandService {
                             + " and cannot be added to a load");
         }
 
+        load.requireSameMode(consignment.freightMode(), consignment.trackingRef());
+        if (consignment.isDocket()) {
+            rejectOffNetwork(tenantId, load, consignment);
+        }
         rejectIncompatibleWithLoad(tenantId, load, consignment);
 
         // Capacity and hazmat certification are the aggregate's own rules; it
@@ -235,7 +276,7 @@ public class PlanningCommandService {
         events.publishEvent(new LoadPlanned(tenantId, planned.id(), planned.loadNo(),
                 planned.originTerminalId(), planned.vehicleType(), onLoad.size(),
                 planned.plannedWeightKg(), planned.weightUtilisationPct(),
-                planned.requiresHazmat(), Instant.now()));
+                planned.requiresHazmat(), planned.freightMode().name(), Instant.now()));
     }
 
     // --------------------------------------------------------------- helpers
@@ -274,6 +315,33 @@ public class PlanningCommandService {
         }
     }
 
+    /**
+     * The consolidation rules of a part load, beyond those every load has.
+     *
+     * <p>A consolidated vehicle runs one line haul, from the hub where dockets
+     * were gathered to the hub they are delivered from. A docket booked through
+     * another origin hub is not in the yard to be loaded, and one bound for
+     * another destination hub would ride to the wrong city. Both are refused
+     * by name, because the fix for each is different: find the right vehicle
+     * at the right hub, or open a second line haul.
+     */
+    private void rejectOffNetwork(UUID tenantId, LoadUnit load, Consignment docket) {
+        if (!docket.originHubTerminalId().equals(load.originTerminalId())) {
+            throw new BusinessRuleViolationException("docket-not-at-load-origin",
+                    "Docket " + docket.trackingRef() + " is booked through another origin hub "
+                            + "than the one load " + load.loadNo() + " is consolidated at");
+        }
+        consignments.findOnLoad(tenantId, load.id()).stream()
+                .map(Consignment::destinationHubTerminalId)
+                .filter(hub -> hub != null && !hub.equals(docket.destinationHubTerminalId()))
+                .findFirst()
+                .ifPresent(other -> {
+                    throw new BusinessRuleViolationException("docket-destination-hub-differs",
+                            "Docket " + docket.trackingRef() + " is bound for another destination "
+                                    + "hub than the dockets already on load " + load.loadNo());
+                });
+    }
+
     private static void rejectIncompatible(List<OrderPlanningPort.PlannableLine> members) {
         for (int i = 0; i < members.size(); i++) {
             for (int j = i + 1; j < members.size(); j++) {
@@ -295,7 +363,11 @@ public class PlanningCommandService {
     }
 
     /**
-     * A fresh lorry receipt number.
+     * A fresh lorry receipt or docket number.
+     *
+     * <p>Dockets are numbered in their own series ({@code DKT-}) so that a
+     * reference quoted down the phone says which kind of shipment it is --
+     * a part load is traced through hubs, a full truckload is not.
      *
      * <p>Random rather than sequential. A sequential counter would need either
      * a database sequence read on every generation or a lock, and it would leak
@@ -303,9 +375,9 @@ public class PlanningCommandService {
      * Collisions are caught by {@code consignment_ref_unique} rather than
      * assumed away.
      */
-    private String nextTrackingRef(UUID tenantId) {
+    private String nextTrackingRef(UUID tenantId, String series) {
         for (int attempt = 0; attempt < 5; attempt++) {
-            String candidate = "LR-" + UUID.randomUUID().toString()
+            String candidate = series + UUID.randomUUID().toString()
                     .replace("-", "").substring(0, 10).toUpperCase(java.util.Locale.ROOT);
             if (consignments.findByTrackingRef(tenantId, candidate).isEmpty()) {
                 return candidate;

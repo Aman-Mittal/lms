@@ -35,5 +35,7 @@ public record LoadPlanned(
         BigDecimal plannedWeightKg,
         BigDecimal weightUtilisationPct,
         boolean requiresHazmat,
+        /** FTL or LTL, by name. */
+        String freightMode,
         Instant occurredAt) {
 }
