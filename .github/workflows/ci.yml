@@ -30,9 +30,13 @@ on:
 permissions:
   contents: read
 
+# On a topic branch or pull request a newer push supersedes the run in
+# progress. On main every commit is a merge that will be deployed, and
+# cancelling its run leaves that commit with no verdict -- so there a newer
+# push queues behind it instead.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   JAVA_VERSION: "25"
