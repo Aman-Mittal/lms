@@ -480,6 +480,11 @@
       Performance suite: `./mvnw verify -Pperformance`. Runs only the tests
       tagged `performance` (large-data query timings and application
       restarts), which are too slow to run on every push.
+
+      The tag filter alone is not enough: the Cucumber @Suite runners then
+      discover nothing, and a suite that discovers nothing fails the build.
+      That failure is worth keeping in the default build, where it means a
+      broken suite, so this profile narrows to the performance package instead.
     -->
     <profile>
       <id>performance</id>
@@ -487,6 +492,19 @@
         <test.groups.included>performance</test.groups.included>
         <test.groups.excluded></test.groups.excluded>
       </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>com/lms/performance/**/*Test.java</include>
+              </includes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
 
     <!--
