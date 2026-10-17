@@ -40,6 +40,10 @@ public class FinanceQueryService {
                    b.base_freight, b.detention_amount, b.multi_drop_amount,
                    b.fuel_surcharge_amount, b.computed_amount, b.claimed_amount,
                    b.variance_amount, b.variance_pct, b.resolution, b.matched_at,
+                   (SELECT string_agg(h.ticket_no, ', ' ORDER BY h.placed_at)
+                      FROM settlement_hold h
+                     WHERE h.tenant_id = b.tenant_id AND h.trip_id = b.trip_id
+                       AND h.released_at IS NULL) AS settlement_held_by,
                    b.created_at
               FROM freight_bill b
               JOIN trip t ON t.id = b.trip_id

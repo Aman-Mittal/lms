@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,6 +32,7 @@ import com.lms.finance.events.FreightBillRaised;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
+import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,6 +57,7 @@ public class BillingService {
     private final RatingEngine rating;
     private final AuditTrail audit;
     private final ApplicationEventPublisher events;
+    private final SettlementHolds holds;
 
     /**
      * How far a vendor's invoice may differ from the computed cost before it is
@@ -72,7 +75,7 @@ public class BillingService {
                           TariffRepository tariffs, TariffSlabRepository slabs,
                           FuelSurchargeIndexRepository fuelIndex, LoadLifecyclePort loads,
                           RatingEngine rating, AuditTrail audit,
-                          ApplicationEventPublisher events,
+                          ApplicationEventPublisher events, SettlementHolds holds,
                           @Value("${lms.finance.match-tolerance-pct:2}") BigDecimal tolerancePct,
                           @Value("${lms.finance.match-tolerance-absolute:100}")
                           BigDecimal toleranceAbsolute) {
@@ -85,6 +88,7 @@ public class BillingService {
         this.rating = rating;
         this.audit = audit;
         this.events = events;
+        this.holds = holds;
         this.tolerancePct = tolerancePct;
         this.toleranceAbsolute = toleranceAbsolute;
     }
@@ -165,6 +169,7 @@ public class BillingService {
     @PreAuthorize("hasAuthority('INVOICE_APPROVE')")
     public FreightBill.BillStatus matchVendorClaim(UUID billId, BigDecimal claimedAmount) {
         FreightBill bill = require(billId);
+        refuseWhileHeld(bill);
         FreightBill matched = bills.save(
                 bill.matchAgainst(claimedAmount, tolerancePct, toleranceAbsolute, Instant.now()));
 
@@ -185,6 +190,7 @@ public class BillingService {
     @PreAuthorize("hasAuthority('INVOICE_APPROVE')")
     public void resolveDispute(UUID billId, String reason) {
         FreightBill bill = require(billId);
+        refuseWhileHeld(bill);
         FreightBill resolved = bills.save(bill.resolveDispute(reason, Instant.now()));
 
         audit.record("INVOICE_DISPUTE_RESOLVED", "FREIGHT_BILL", resolved.id(),
@@ -193,6 +199,25 @@ public class BillingService {
     }
 
     // ------------------------------------------------------------- internals
+
+    /**
+     * Vision document 3.8: a critical exception suspends settlement until a
+     * manager closes it.
+     *
+     * <p>Checked before matching, not only before approving, because matching
+     * is what approves: a claim inside tolerance goes straight to
+     * APPROVED_FOR_PAYMENT. The bill itself is still raised and priced while
+     * held -- knowing what the trip would cost is useful to whoever is
+     * investigating; paying it is what has to wait.
+     */
+    private void refuseWhileHeld(FreightBill bill) {
+        List<String> holding = holds.holdingTickets(bill.tripId());
+        if (!holding.isEmpty()) {
+            throw new BusinessRuleViolationException("settlement-on-hold",
+                    "Bill " + bill.billNo() + " cannot be settled while exception "
+                            + String.join(", ", holding) + " is open on its trip");
+        }
+    }
 
     /**
      * What the movement is billed on.

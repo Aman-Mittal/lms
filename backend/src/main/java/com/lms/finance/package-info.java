@@ -28,8 +28,13 @@
  * the moment a trip finishes. The asymmetry is deliberate: pricing must happen
  * after the movement, so it can be an event; the lane a load ran on is a fact
  * finance has to ask for, because a bill cannot wait for it.
+ *
+ * <p>Listens to {@code controltower::events} for the 3.8 rule that a critical
+ * exception suspends settlement. The control tower decides what is critical;
+ * finance decides what "suspended" means for a bill, which is that nothing
+ * may approve it for payment until the ticket is closed.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
-        allowedDependencies = {"planning::api", "execution::events"})
+        allowedDependencies = {"planning::api", "execution::events", "controltower::events"})
 package com.lms.finance;
