@@ -306,7 +306,7 @@ class LargeDataQueryPerformanceTest {
         Set<SimpleGrantedAuthority> authorities = Set.of("EXCEPTION_READ", "INVOICE_READ").stream()
                 .map(SimpleGrantedAuthority::new).collect(Collectors.toSet());
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("perf", "n/a", authorities));
+                new UsernamePasswordAuthenticationToken("perf", null, authorities));
         TransactionTemplate transactions = new TransactionTemplate(transactionManager);
         return TenantContext.callWith(measured.tenantId(), measured.orgPath(),
                 () -> transactions.execute(status -> action.get()));

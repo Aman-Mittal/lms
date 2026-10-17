@@ -38,7 +38,7 @@ set -euo pipefail
 BASE_URL="${BASE_URL:?set BASE_URL, e.g. http://localhost:8080}"
 DEMO_TENANT="${DEMO_TENANT:-demo}"
 DEMO_ADMIN_EMAIL="${DEMO_ADMIN_EMAIL:-admin@demo.local}"
-DEMO_ADMIN_PASSWORD="${DEMO_ADMIN_PASSWORD:?set DEMO_ADMIN_PASSWORD}"
+: "${DEMO_ADMIN_PASSWORD:?set DEMO_ADMIN_PASSWORD}"
 # A free Render instance takes about a minute to wake; allow for two.
 READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-150}"
 

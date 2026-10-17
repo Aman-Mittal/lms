@@ -94,7 +94,7 @@ final class TripScaffold {
         Set<SimpleGrantedAuthority> authorities = SETUP.stream()
                 .map(SimpleGrantedAuthority::new).collect(Collectors.toSet());
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("perf-setup", "n/a", authorities));
+                new UsernamePasswordAuthenticationToken("perf-setup", null, authorities));
         try {
             return TenantContext.callWith(tenantId, orgPath, action);
         } finally {

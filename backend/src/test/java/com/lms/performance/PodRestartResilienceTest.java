@@ -239,7 +239,7 @@ class PodRestartResilienceTest {
         Set<SimpleGrantedAuthority> authorities = permissions.stream()
                 .map(SimpleGrantedAuthority::new).collect(Collectors.toSet());
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("restart", "n/a", authorities));
+                new UsernamePasswordAuthenticationToken("restart", null, authorities));
         try {
             return TenantContext.callWith(tenant.tenantId(), tenant.orgPath(), action);
         } finally {
