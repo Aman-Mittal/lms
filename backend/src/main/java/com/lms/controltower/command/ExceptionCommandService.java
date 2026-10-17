@@ -194,9 +194,13 @@ public class ExceptionCommandService {
      *
      * <p>Audited with before and after state, because for a critical ticket
      * this is a financial act: it is the moment held settlement may proceed.
+     * For the same reason it is subject to the tenant's access policies on the
+     * ticket -- by default, closing one that holds settlement needs an approval
+     * limit large enough to release money.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('EXCEPTION_CLOSE')")
+    @PreAuthorize("hasAuthority('EXCEPTION_CLOSE')"
+            + " and @abac.permits('EXCEPTION_CLOSE', 'EXCEPTION_TICKET', #ticketId)")
     public void close(UUID ticketId, String note) {
         UUID tenantId = TenantContext.requireTenantId();
         ExceptionTicket ticket = require(ticketId);

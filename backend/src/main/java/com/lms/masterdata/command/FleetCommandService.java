@@ -99,8 +99,15 @@ public class FleetCommandService {
                 licenceExpiresOn, hazmatEndorsed)).id();
     }
 
+    /**
+     * Registers a partner in DRAFT under an organisational unit.
+     *
+     * <p>Subject to the tenant's access policies on where it is registered:
+     * by default a caller may register only under their own unit or one
+     * beneath it, so a branch cannot create partners in a sibling branch.
+     */
     @Transactional
-    @PreAuthorize("hasAuthority('PARTNER_CREATE')")
+    @PreAuthorize("hasAuthority('PARTNER_CREATE') and @abac.permitsIn('PARTNER_CREATE', #orgUnitId)")
     public UUID registerPartner(UUID orgUnitId, String code, String legalName,
                                 BusinessPartner.PartnerType type, String taxId) {
         UUID tenantId = TenantContext.requireTenantId();

@@ -66,6 +66,7 @@ public class AuthorityHooks {
      */
     static final List<String> ALL_PERMISSIONS = List.of(
             "PARTNER_CREATE", "PARTNER_READ", "PARTNER_UPDATE",
+            "ACCESS_POLICY_MANAGE",
             "VEHICLE_CREATE", "VEHICLE_READ", "VEHICLE_UPDATE",
             "DRIVER_CREATE", "DRIVER_READ",
             "TERMINAL_CREATE", "TERMINAL_READ",

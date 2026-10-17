@@ -32,8 +32,12 @@
  * <p>Depends on {@code execution::api} to know which trip and vehicle a ticket
  * is about, and on {@code telematics::events} for the detections it turns
  * into tickets.
+ *
+ * <p>Uses {@code identity::access} to tell the access decision point whether a
+ * ticket is holding money, which is what decides who may close it.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Exception & Control Tower",
-        allowedDependencies = {"execution::api", "telematics::api", "telematics::events"})
+        allowedDependencies = {"execution::api", "telematics::api", "telematics::events",
+                "identity::access"})
 package com.lms.controltower;
