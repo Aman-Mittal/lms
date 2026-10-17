@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
 import com.lms.order.command.OrderCommandService;
 import com.lms.order.command.domain.SalesOrder;
@@ -85,7 +86,9 @@ public class OrderController {
         UUID id = orders.raiseOrder(request.orgUnitId(), request.customerPartnerId(),
                 request.orderNo(), request.originTerminalId(), request.requestedPickupAt(),
                 request.requestedDeliveryAt(),
-                request.source() == null ? SalesOrder.OrderSource.MANUAL : request.source());
+                request.source() == null ? SalesOrder.OrderSource.MANUAL : request.source(),
+                request.freightMode(), request.originHubTerminalId(),
+                request.destinationHubTerminalId());
         return ResponseEntity.created(URI.create("/api/v1/orders/" + id))
                 .body(new IdResponse(id));
     }
@@ -122,7 +125,12 @@ public class OrderController {
             @NotNull UUID originTerminalId,
             Instant requestedPickupAt,
             Instant requestedDeliveryAt,
-            SalesOrder.OrderSource source) {
+            SalesOrder.OrderSource source,
+            /** FTL when omitted, so every existing client keeps its behaviour. */
+            FreightMode freightMode,
+            /** Required for LTL, refused for FTL. */
+            UUID originHubTerminalId,
+            UUID destinationHubTerminalId) {
     }
 
     /**
