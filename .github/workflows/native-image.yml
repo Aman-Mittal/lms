@@ -49,7 +49,11 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Lowercase, written out. github.repository is "Aman-Mittal/lms", and an OCI
+  # repository name may not contain capitals -- buildx refuses the tag, after
+  # a ten-minute native compile, and nothing is ever published. Expressions
+  # have no lower(), and this must match the image deploy/render.yaml pulls.
+  IMAGE_NAME: aman-mittal/lms
 
 jobs:
   native-image:

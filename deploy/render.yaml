@@ -66,6 +66,18 @@ services:
 
       - key: LOG_LEVEL_APP
         value: INFO
+      - key: LOG_FORMAT
+        value: ecs
+
+      # A fresh free-tier database has no tenant and no user, so nobody could
+      # sign in. This seeds a "demo" tenant and one administrator on every
+      # start (idempotently -- the free database is recreated every 30 days).
+      # Render generates the password once; read it from the service's
+      # Environment tab. Sign in with tenant "demo", admin@demo.local.
+      - key: LMS_DEMO_SEED
+        value: "true"
+      - key: DEMO_ADMIN_PASSWORD
+        generateValue: true
 
       # The 1 GB database cannot hold telematics history indefinitely.
       - key: PING_RETENTION_DAYS
