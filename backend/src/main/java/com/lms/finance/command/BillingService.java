@@ -164,9 +164,14 @@ public class BillingService {
 
     /**
      * Records the vendor's invoice and decides whether it is payable (3.9.2).
+     *
+     * <p>Held to the approver's limit on the amount being claimed: a claim
+     * inside tolerance is approved for payment by this very call, so the
+     * limit has to apply before it, not to a later step.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('INVOICE_APPROVE')")
+    @PreAuthorize("hasAuthority('INVOICE_APPROVE')"
+            + " and @abac.permits('INVOICE_APPROVE', 'FREIGHT_BILL', #billId, {amount: #claimedAmount})")
     public FreightBill.BillStatus matchVendorClaim(UUID billId, BigDecimal claimedAmount) {
         FreightBill bill = require(billId);
         refuseWhileHeld(bill);
@@ -185,9 +190,15 @@ public class BillingService {
         return matched.status();
     }
 
-    /** Settles a dispute in the vendor's favour, with the reason on the record. */
+    /**
+     * Settles a dispute in the vendor's favour, with the reason on the record.
+     *
+     * <p>Held to the approver's limit on the amount claimed, because settling
+     * in the vendor's favour is agreeing to pay the claim.
+     */
     @Transactional
-    @PreAuthorize("hasAuthority('INVOICE_APPROVE')")
+    @PreAuthorize("hasAuthority('INVOICE_APPROVE')"
+            + " and @abac.permits('INVOICE_APPROVE', 'FREIGHT_BILL', #billId)")
     public void resolveDispute(UUID billId, String reason) {
         FreightBill bill = require(billId);
         refuseWhileHeld(bill);

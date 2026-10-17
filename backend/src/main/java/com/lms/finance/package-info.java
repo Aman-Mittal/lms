@@ -33,8 +33,14 @@
  * exception suspends settlement. The control tower decides what is critical;
  * finance decides what "suspended" means for a bill, which is that nothing
  * may approve it for payment until the ticket is closed.
+ *
+ * <p>Uses {@code identity::access} to describe a freight bill to the access
+ * decision point -- its amount, vendor and owning unit -- and to confine a
+ * vendor-portal user's reads to that vendor's own bills. Identity decides;
+ * finance only states the facts about its own records.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
-        allowedDependencies = {"planning::api", "execution::events", "controltower::events"})
+        allowedDependencies = {"planning::api", "execution::events", "controltower::events",
+                "identity::access"})
 package com.lms.finance;
