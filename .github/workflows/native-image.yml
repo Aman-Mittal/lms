@@ -49,7 +49,11 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Lowercase, written out. github.repository is "Aman-Mittal/lms", and an OCI
+  # repository name may not contain capitals -- buildx refuses the tag, after
+  # a ten-minute native compile, and nothing is ever published. Expressions
+  # have no lower(), and this must match the image deploy/render.yaml pulls.
+  IMAGE_NAME: aman-mittal/lms
 
 jobs:
   native-image:
@@ -63,7 +67,7 @@ jobs:
       # Only this job writes packages, and only on main (see the push step).
       packages: write
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -123,30 +127,33 @@ jobs:
             docker exec pg pg_isready -U lms -d lms && break || sleep 2
           done
 
+          # The demo seed is switched on with a password minted for this run
+          # only, so the smoke script can sign in exactly as a visitor to the
+          # Render deployment would. Readiness alone is not enough: a native
+          # binary missing reflection metadata starts, reports UP, and then
+          # answers 500 to the first JSON it has to write.
+          export DEMO_ADMIN_PASSWORD="$(openssl rand -hex 16)"
           DATABASE_URL=jdbc:postgresql://localhost:5432/lms \
           DATABASE_USERNAME=lms DATABASE_PASSWORD= PORT=8080 \
+          LMS_DEMO_SEED=true \
             ./target/lms-platform &
           APP_PID=$!
 
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8080/actuator/health/readiness; then
-              echo "Native binary started and reports ready."
-              kill "$APP_PID"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::Native binary failed to become ready."
+          status=0
+          BASE_URL=http://localhost:8080 READY_TIMEOUT_SECONDS=60 bash ../deploy/smoke.sh || status=$?
           kill "$APP_PID" 2>/dev/null || true
-          exit 1
+          if [ "$status" -ne 0 ]; then
+            echo "::error::The native binary failed the smoke test."
+          fi
+          exit "$status"
 
       - name: Set up Buildx
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -154,7 +161,7 @@ jobs:
 
       - name: Build and push image
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/Dockerfile

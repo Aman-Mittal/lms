@@ -46,7 +46,12 @@ RUN --mount=type=cache,target=/root/.m2 \
 # jvm-build -- fast path, used by docker-compose for local development
 # ---------------------------------------------------------------------------
 FROM ${JVM_BUILDER_IMAGE} AS jvm-build
-WORKDIR /build
+# The module builds from backend/ with the contract beside it, exactly as in
+# the checkout: pom.xml reads ../api/openapi.yaml to generate the test client
+# and to serve the spec from the binary. Copying backend/ alone fails the
+# build -- the generator runs during `package` even with -DskipTests.
+WORKDIR /build/backend
+COPY api/ /build/api/
 COPY backend/.mvn/ .mvn/
 COPY backend/mvnw backend/pom.xml ./
 COPY backend/src/ src/
@@ -61,7 +66,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM ${JVM_RUNTIME_IMAGE} AS jvm
 WORKDIR /app
 RUN useradd --system --uid 10001 --no-create-home lms
-COPY --from=jvm-build /build/target/*.jar /app/application.jar
+COPY --from=jvm-build /build/backend/target/*.jar /app/application.jar
 USER 10001
 EXPOSE 8080
 # MaxRAMPercentage rather than a fixed -Xmx: the container limit is the source
@@ -75,7 +80,9 @@ ENTRYPOINT ["java", "-jar", "/app/application.jar"]
 #                 which is why this runs in CI rather than on Render.
 # ---------------------------------------------------------------------------
 FROM ${NATIVE_BUILDER_IMAGE} AS native-build
-WORKDIR /build
+# Same layout as jvm-build, for the same reason: ../api must exist.
+WORKDIR /build/backend
+COPY api/ /build/api/
 COPY backend/.mvn/ .mvn/
 COPY backend/mvnw backend/pom.xml ./
 COPY backend/src/ src/
@@ -95,7 +102,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 # ---------------------------------------------------------------------------
 FROM ${NATIVE_RUNTIME_IMAGE} AS native
 WORKDIR /app
-COPY --from=native-build /build/target/lms-platform /app/lms-platform
+COPY --from=native-build /build/backend/target/lms-platform /app/lms-platform
 # `nonroot` in the distroless base is uid 65532.
 USER 65532:65532
 EXPOSE 8080

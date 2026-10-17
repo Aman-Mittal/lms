@@ -18,7 +18,9 @@ package com.lms.planning.command;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
+import com.lms.order.api.FreightMode;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.LoadUnit;
@@ -50,12 +52,19 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
 
         return loads.findById(loadId).map(load -> {
             List<Consignment> aboard = consignments.findOnLoad(tenantId, loadId);
+            // A consolidated LTL vehicle is hired for its line haul, so its lane
+            // ends at the destination hub and its stops are hubs. Last-mile
+            // delivery of each docket from there is not this vehicle's journey.
+            boolean ltl = load.freightMode() == FreightMode.LTL;
+            Function<Consignment, UUID> stop = ltl
+                    ? Consignment::destinationHubTerminalId
+                    : Consignment::destinationTerminalId;
             return new LoadSummary(load.id(), load.loadNo(), load.status().name(),
-                    load.orgUnitId(), load.originTerminalId(), finalDrop(aboard),
+                    load.orgUnitId(), load.originTerminalId(), finalDrop(aboard, stop),
                     load.vehicleId(), load.vehicleType(), load.awardedVendorPartnerId(),
                     load.plannedWeightKg(), load.plannedVolumeM3(),
                     chargeableWeight(aboard), load.requiresHazmat(), aboard.size(),
-                    dropCount(aboard));
+                    dropCount(aboard, stop), load.freightMode().name());
         });
     }
 
@@ -119,18 +128,18 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     }
 
     /** Distinct destinations aboard -- see {@code LoadSummary.dropCount}. */
-    private static int dropCount(List<Consignment> aboard) {
+    private static int dropCount(List<Consignment> aboard, Function<Consignment, UUID> stop) {
         return (int) aboard.stream()
-                .map(Consignment::destinationTerminalId)
+                .map(stop)
                 .filter(java.util.Objects::nonNull)
                 .distinct()
                 .count();
     }
 
-    private static UUID finalDrop(List<Consignment> aboard) {
+    private static UUID finalDrop(List<Consignment> aboard, Function<Consignment, UUID> stop) {
         // findOnLoad orders by drop_sequence, so the last element is the
         // furthest point of the run.
-        return aboard.isEmpty() ? null : aboard.get(aboard.size() - 1).destinationTerminalId();
+        return aboard.isEmpty() ? null : stop.apply(aboard.get(aboard.size() - 1));
     }
 
     private LoadUnit require(UUID loadId) {

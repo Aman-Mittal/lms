@@ -56,6 +56,32 @@ public interface OrderPlanningPort {
     void markLinesPlanned(UUID orderId, Set<UUID> plannedLineIds);
 
     /**
+     * The order-level facts a consignment inherits: who is paying, in which
+     * freight mode, and -- for a part load -- between which hubs.
+     *
+     * <p>Separate from {@link PlannableLine} because they belong to the order,
+     * not to any one line, and repeating them per line would invite a caller
+     * to wonder what it means when two lines disagree.
+     *
+     * @throws com.lms.shared.error.ResourceNotFoundException if there is no
+     *         such order
+     */
+    OrderTerms termsOf(UUID orderId);
+
+    /**
+     * @param originHubTerminalId      null unless the order is LTL
+     * @param destinationHubTerminalId null unless the order is LTL
+     */
+    record OrderTerms(
+            UUID orderId,
+            UUID customerPartnerId,
+            FreightMode freightMode,
+            UUID originTerminalId,
+            UUID originHubTerminalId,
+            UUID destinationHubTerminalId) {
+    }
+
+    /**
      * One line of demand, reduced to what grouping and capacity arithmetic
      * needs.
      *
