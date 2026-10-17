@@ -30,6 +30,15 @@
  * <p>The dependency runs one way only. Planning reads from order and tells it
  * what has been planned; order never imports planning, which is what keeps
  * these two out of a cycle that {@code ModularityTests} would reject.
+ *
+ * <p>Freight modes (issue #18) are a planning concern because they change what
+ * may share a vehicle. An LTL order's consignments are dockets -- numbered in
+ * their own series and carrying a customer and a hub pair -- and an LTL load
+ * consolidates dockets from many customers, provided they are gathered at the
+ * load's origin hub and bound for one destination hub. Capacity, dangerous
+ * goods certification and material compatibility apply to a consolidated load
+ * exactly as to any other. Each docket is announced as {@code DocketBooked} so
+ * that finance can bill it to its customer without reading planning's tables.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",
