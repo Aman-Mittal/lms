@@ -19,7 +19,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** A consignment as a tracking screen shows it. */
+/** A consignment -- or, for a part load, a docket -- as a tracking screen shows it. */
 public record ConsignmentView(
         UUID id,
         String trackingRef,
@@ -34,5 +34,9 @@ public record ConsignmentView(
         boolean containsHazmat,
         String materialClasses,
         String loadNo,
+        /** LTL consignments are dockets, and carry the hub pair below. */
+        String freightMode,
+        String originHubCode,
+        String destinationHubCode,
         Instant createdAt) {
 }

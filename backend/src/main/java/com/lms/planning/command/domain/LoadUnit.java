@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.lms.order.api.FreightMode;
 import com.lms.shared.error.BusinessRuleViolationException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
@@ -55,6 +56,12 @@ public record LoadUnit(
         boolean requiresHazmat,
         UUID awardedVendorPartnerId,
         LoadStatus status,
+        /**
+         * FTL loads carry FTL consignments and LTL loads carry dockets; the
+         * two never mix. A docket on an FTL lorry would be billed per docket
+         * for space the customer of the lorry had already paid for.
+         */
+        FreightMode freightMode,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -97,6 +104,26 @@ public record LoadUnit(
                                 UUID originTerminalId, UUID vehicleId, String vehicleType,
                                 boolean vehicleHazmatCertified,
                                 BigDecimal capacityWeightKg, BigDecimal capacityVolumeM3) {
+        return open(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId, vehicleType,
+                vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3, FreightMode.FTL);
+    }
+
+    /**
+     * Opens a load in a stated freight mode.
+     *
+     * <p>An LTL load is a consolidation: its origin is the hub its dockets are
+     * gathered at, and it is open to dockets from any number of customers.
+     */
+    public static LoadUnit open(UUID id, UUID tenantId, UUID orgUnitId, String loadNo,
+                                UUID originTerminalId, UUID vehicleId, String vehicleType,
+                                boolean vehicleHazmatCertified,
+                                BigDecimal capacityWeightKg, BigDecimal capacityVolumeM3,
+                                FreightMode freightMode) {
+        FreightMode mode = FreightMode.orDefault(freightMode);
+        if (!mode.isSupported()) {
+            throw new BusinessRuleViolationException("freight-mode-not-supported",
+                    "Freight mode " + mode + " is reserved and cannot be planned yet");
+        }
         if (capacityWeightKg == null || capacityWeightKg.signum() <= 0) {
             throw new IllegalArgumentException("Load capacity weight must be positive");
         }
@@ -105,8 +132,24 @@ public record LoadUnit(
         }
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
-                BigDecimal.ZERO, BigDecimal.ZERO, false, null, LoadStatus.DRAFT, null,
+                BigDecimal.ZERO, BigDecimal.ZERO, false, null, LoadStatus.DRAFT, mode, null,
                 Instant.now(), Instant.now());
+    }
+
+    /**
+     * Refuses a consignment of the other freight mode.
+     *
+     * <p>Checked before capacity, because it is the more fundamental refusal:
+     * telling a planner a docket would overload an FTL lorry invites them to
+     * find a bigger FTL lorry, which is the wrong fix.
+     */
+    public void requireSameMode(FreightMode consignmentMode, String trackingRef) {
+        if (FreightMode.orDefault(consignmentMode) != freightMode) {
+            throw new BusinessRuleViolationException("load-freight-mode-mismatch",
+                    "Load " + loadNo + " is " + freightMode + " and cannot take "
+                            + FreightMode.orDefault(consignmentMode) + " consignment "
+                            + trackingRef);
+        }
     }
 
     public BigDecimal remainingWeightKg() {
@@ -175,7 +218,7 @@ public record LoadUnit(
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
                 newWeight, newVolume, requiresHazmat || hazmat, awardedVendorPartnerId, status,
-                version, createdAt, Instant.now());
+                freightMode, version, createdAt, Instant.now());
     }
 
     public LoadUnit transitionTo(LoadStatus target) {
@@ -189,7 +232,7 @@ public record LoadUnit(
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
                 plannedWeightKg, plannedVolumeM3, requiresHazmat, awardedVendorPartnerId, target,
-                version, createdAt, Instant.now());
+                freightMode, version, createdAt, Instant.now());
     }
 
     /**
@@ -209,7 +252,8 @@ public record LoadUnit(
                 awarded.originTerminalId, awarded.vehicleId, awarded.vehicleType,
                 awarded.vehicleHazmatCertified, awarded.capacityWeightKg, awarded.capacityVolumeM3,
                 awarded.plannedWeightKg, awarded.plannedVolumeM3, awarded.requiresHazmat,
-                vendorPartnerId, awarded.status, awarded.version, awarded.createdAt, Instant.now());
+                vendorPartnerId, awarded.status, awarded.freightMode, awarded.version,
+                awarded.createdAt, Instant.now());
     }
 
     /** Percentage of weight capacity used, for the utilisation the platform exists to improve. */
