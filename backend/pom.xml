@@ -70,7 +70,7 @@
     -->
     <test.groups.included></test.groups.included>
     <test.groups.excluded>performance</test.groups.excluded>
-    <feign.version>13.6</feign.version>
+    <feign.version>13.17</feign.version>
 
     <!-- The native binary is launched directly; no fat jar layering needed. -->
     <spring-boot.build-image.skip>true</spring-boot.build-image.skip>
