@@ -18,6 +18,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
+import com.lms.order.api.FreightMode;
 import com.lms.planning.command.PlanningCommandService;
 import com.lms.planning.query.ConsignmentView;
 import com.lms.planning.query.LoadView;
@@ -118,7 +119,7 @@ public class PlanningController {
     @PostMapping("/loads")
     public ResponseEntity<IdResponse> openLoad(@Valid @RequestBody OpenLoadRequest request) {
         UUID id = planning.openLoad(request.orgUnitId(), request.loadNo(),
-                request.originTerminalId(), request.vehicleId());
+                request.originTerminalId(), request.vehicleId(), request.freightMode());
         return ResponseEntity.created(URI.create("/api/v1/loads/" + id))
                 .body(new IdResponse(id));
     }
@@ -141,7 +142,12 @@ public class PlanningController {
             @NotNull UUID orgUnitId,
             @NotBlank String loadNo,
             @NotNull UUID originTerminalId,
-            @NotNull UUID vehicleId) {
+            @NotNull UUID vehicleId,
+            /**
+             * FTL when omitted. An LTL load's origin is the hub its dockets are
+             * consolidated at.
+             */
+            FreightMode freightMode) {
     }
 
     public record AssignConsignmentRequest(@NotNull UUID consignmentId) {

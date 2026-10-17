@@ -17,8 +17,12 @@
 /**
  * Identity, access and multi-tenancy (vision document 2.1 and 3.1).
  *
- * <p>Tenants, the organisational hierarchy, users, authentication, RBAC, and
- * the audit log.
+ * <p>Tenants, the organisational hierarchy, users, authentication, RBAC, the
+ * audit log, and attribute-based access control layered on RBAC: policies as
+ * per-tenant data, decided by the {@code @abac} bean that services call from
+ * {@code @PreAuthorize}. Other modules see only the {@code access} named
+ * interface -- the caller's attributes, and the hook through which they
+ * describe their own records to the decision point.
  *
  * <p>{@code allowedDependencies} is empty by design. Identity is the base of
  * the platform: it answers "who is calling and what may they see", and it must

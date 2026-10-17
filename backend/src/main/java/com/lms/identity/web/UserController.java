@@ -14,14 +14,22 @@
  * limitations under the License.
  */package com.lms.identity.web;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
+import com.lms.identity.access.SubjectAttributes;
+import com.lms.identity.command.AccessPolicyCommandService;
+import com.lms.identity.query.AccessQueryService;
+import com.lms.identity.query.UserAccessAttributesView;
 import com.lms.identity.query.UserQueryService;
 import com.lms.identity.query.UserView;
 import com.lms.shared.error.ResourceNotFoundException;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,9 +46,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     private final UserQueryService users;
+    private final AccessQueryService access;
+    private final AccessPolicyCommandService accessCommands;
 
-    public UserController(UserQueryService users) {
+    public UserController(UserQueryService users, AccessQueryService access,
+                          AccessPolicyCommandService accessCommands) {
         this.users = users;
+        this.access = access;
+        this.accessCommands = accessCommands;
     }
 
     @GetMapping
@@ -65,5 +78,29 @@ public class UserController {
     @GetMapping("/{id}/permissions")
     public List<String> permissions(@PathVariable UUID id) {
         return users.findPermissions(id);
+    }
+
+    /** The attributes the user's next access token will carry. */
+    @GetMapping("/{id}/access-attributes")
+    public UserAccessAttributesView accessAttributes(@PathVariable UUID id) {
+        return access.attributesOf(id)
+                .orElseThrow(() -> new ResourceNotFoundException("AppUser", id));
+    }
+
+    /**
+     * Replaces the user's access attributes. A field left out is cleared,
+     * which means "unrestricted" -- this is a PUT of the whole set, so a
+     * forgotten field cannot quietly keep an old limit alive.
+     */
+    @PutMapping("/{id}/access-attributes")
+    public ResponseEntity<Void> setAccessAttributes(@PathVariable UUID id,
+                                                    @RequestBody AccessAttributesRequest request) {
+        accessCommands.setUserAttributes(id, new SubjectAttributes(request.region(),
+                request.freightModes(), request.partnerId(), request.approvalLimit()));
+        return ResponseEntity.noContent().build();
+    }
+
+    public record AccessAttributesRequest(String region, List<String> freightModes,
+                                          UUID partnerId, BigDecimal approvalLimit) {
     }
 }

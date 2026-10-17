@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.lms.order.api.FreightMode;
 import com.lms.shared.error.BusinessRuleViolationException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
@@ -49,6 +50,16 @@ public record SalesOrder(
         Instant requestedPickupAt,
         Instant requestedDeliveryAt,
         OrderSource source,
+        /**
+         * FTL unless stated. Fixed when the order is raised: changing the mode
+         * of an order already planned would leave consignments numbered,
+         * consolidated and priced under the other mode's rules.
+         */
+        FreightMode freightMode,
+        /** Where an LTL booking enters the network; null for FTL. */
+        UUID originHubTerminalId,
+        /** Where an LTL booking leaves the line haul for delivery; null for FTL. */
+        UUID destinationHubTerminalId,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -84,10 +95,32 @@ public record SalesOrder(
         TRANSITIONS.put(OrderStatus.CANCELLED, EnumSet.noneOf(OrderStatus.class));
     }
 
+    /** A full-truckload order: the behaviour every order had before freight modes. */
     public static SalesOrder raise(UUID id, UUID tenantId, UUID orgUnitId, UUID customerPartnerId,
                                    String orderNo, UUID originTerminalId,
                                    Instant requestedPickupAt, Instant requestedDeliveryAt,
                                    OrderSource source) {
+        return raise(id, tenantId, orgUnitId, customerPartnerId, orderNo, originTerminalId,
+                requestedPickupAt, requestedDeliveryAt, source, FreightMode.FTL, null, null);
+    }
+
+    /**
+     * An order in a stated freight mode.
+     *
+     * <p>Reserved modes are refused rather than stored and ignored. An order
+     * accepted as RAIL and then planned onto a lorry would be a promise the
+     * platform quietly broke.
+     *
+     * <p>An LTL order must name both hubs, and an FTL order must name neither.
+     * The hubs are what a docket is consolidated and rated on; on a full
+     * truckload they would be data nothing reads, and an operator who filled
+     * them in would reasonably believe they had changed something.
+     */
+    public static SalesOrder raise(UUID id, UUID tenantId, UUID orgUnitId, UUID customerPartnerId,
+                                   String orderNo, UUID originTerminalId,
+                                   Instant requestedPickupAt, Instant requestedDeliveryAt,
+                                   OrderSource source, FreightMode freightMode,
+                                   UUID originHubTerminalId, UUID destinationHubTerminalId) {
         if (orderNo == null || orderNo.isBlank()) {
             throw new IllegalArgumentException("Order number is mandatory");
         }
@@ -100,9 +133,25 @@ public record SalesOrder(
                     "Requested delivery " + requestedDeliveryAt
                             + " is before requested pickup " + requestedPickupAt);
         }
+        FreightMode mode = FreightMode.orDefault(freightMode);
+        if (!mode.isSupported()) {
+            throw new BusinessRuleViolationException("freight-mode-not-supported",
+                    "Freight mode " + mode + " is reserved and cannot be booked yet");
+        }
+        boolean namesHubs = originHubTerminalId != null || destinationHubTerminalId != null;
+        if (mode == FreightMode.LTL
+                && (originHubTerminalId == null || destinationHubTerminalId == null)) {
+            throw new BusinessRuleViolationException("ltl-order-needs-hubs",
+                    "Part-load order " + orderNo + " must name both an origin and a destination hub");
+        }
+        if (mode == FreightMode.FTL && namesHubs) {
+            throw new BusinessRuleViolationException("hubs-only-for-ltl",
+                    "Order " + orderNo + " is a full truckload, which does not travel through hubs");
+        }
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo,
                 OrderStatus.DRAFT, originTerminalId, requestedPickupAt, requestedDeliveryAt,
-                source == null ? OrderSource.MANUAL : source, null, Instant.now(), Instant.now());
+                source == null ? OrderSource.MANUAL : source, mode,
+                originHubTerminalId, destinationHubTerminalId, null, Instant.now(), Instant.now());
     }
 
     /** Whether lines may still be added or amended. */
@@ -126,6 +175,7 @@ public record SalesOrder(
         }
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, target,
                 originTerminalId, requestedPickupAt, requestedDeliveryAt, source,
+                freightMode, originHubTerminalId, destinationHubTerminalId,
                 version, createdAt, Instant.now());
     }
 

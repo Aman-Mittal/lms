@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 
+import com.lms.identity.access.SubjectAttributes;
 import com.lms.identity.command.domain.AppUser;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -35,8 +36,10 @@ import org.springframework.stereotype.Service;
  *
  * <p>Access tokens carry the claims the rest of the platform depends on:
  * {@code tenant} (which the tenant filter turns into the row-level-security
- * scope), {@code org} (the materialised path that bounds visibility), and
- * {@code perms}.
+ * scope), {@code org} (the materialised path that bounds visibility),
+ * {@code perms}, and -- when set on the user -- the attributes access
+ * policies read: {@code region}, {@code modes}, {@code partner} and
+ * {@code approvalLimit}.
  *
  * <p>Refresh tokens are deliberately <em>not</em> JWTs. They must be revocable,
  * and a self-contained token cannot be revoked without a lookup -- at which
@@ -65,10 +68,25 @@ public class TokenService {
      * @param permissions permission codes granted through the user's roles
      */
     public IssuedToken issueAccessToken(AppUser user, String orgPath, List<String> permissions) {
+        return issueAccessToken(user, orgPath, permissions, SubjectAttributes.NONE);
+    }
+
+    /**
+     * Issues a signed access token carrying the user's access attributes.
+     *
+     * <p>An attribute is a claim only when it is set. Absent means "not
+     * restricted along this dimension", and leaving the claim out says so in
+     * fewer bytes than a null would -- and keeps tokens for the many
+     * unrestricted users exactly as they were.
+     *
+     * @param attributes region, freight modes, partner and approval limit
+     */
+    public IssuedToken issueAccessToken(AppUser user, String orgPath, List<String> permissions,
+                                        SubjectAttributes attributes) {
         Instant now = Instant.now();
         Instant expiry = now.plus(properties.accessTokenTtl());
 
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
                 .issuer(ISSUER)
                 .issuedAt(now)
                 .expiresAt(expiry)
@@ -77,8 +95,21 @@ public class TokenService {
                 .claim("org", orgPath)
                 .claim("email", user.email())
                 .claim("name", user.fullName())
-                .claim("perms", permissions)
-                .build();
+                .claim("perms", permissions);
+        if (attributes.region() != null) {
+            builder.claim(SubjectAttributes.CLAIM_REGION, attributes.region());
+        }
+        if (attributes.freightModes() != null) {
+            builder.claim(SubjectAttributes.CLAIM_MODES, attributes.freightModes());
+        }
+        if (attributes.partnerId() != null) {
+            builder.claim(SubjectAttributes.CLAIM_PARTNER, attributes.partnerId().toString());
+        }
+        if (attributes.approvalLimit() != null) {
+            builder.claim(SubjectAttributes.CLAIM_APPROVAL_LIMIT,
+                    attributes.approvalLimit().toPlainString());
+        }
+        JwtClaimsSet claims = builder.build();
 
         JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).build();
         String value = encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
