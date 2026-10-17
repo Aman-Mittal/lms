@@ -382,8 +382,9 @@
 
       <!--
         Generates a typed Feign client from the hand-authored contract into
-        target/generated-test-sources. The contract stays the source of truth
-        (no springdoc): the server is checked against it by
+        target/generated-test-sources. The contract stays the hand-written
+        source of truth, never derived from the controllers: the server is
+        checked against it by
         OpenApiContractTest, and the client derived from it is exercised
         against the running server by the *ApiTest classes.
       -->
