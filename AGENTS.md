@@ -427,8 +427,8 @@ includes production, after the image has been built and pushed.
   scenario is a rule nobody can point at, and `pr-checks.yml` fails a pull
   request that changes `command/` or `domain/` code without touching a test.
 - A single feature walking the entire order-to-invoice path is the definition
-  of done for the MVP. It does not exist yet: today the suite covers identity,
-  master data, fleet compliance, and order through load building.
+  of done for the MVP. `e2e/order_to_bill.feature` is that feature, run over
+  HTTP (below); the acceptance suite covers each context's rules in-process.
 - API tests (`*ApiTest`) drive the running application over HTTP through a
   Feign client **generated from `api/openapi.yaml`** at build time
   (`openapi-generator-maven-plugin`, test scope only). `OpenApiContractTest`
@@ -436,6 +436,25 @@ includes production, after the image has been built and pushed.
   spec is *usable* -- a renamed field or an undocumented enum value fails to
   deserialise there. Feign refuses a null body argument, so endpoints whose
   body is optional are called with an empty one.
+- **End-to-end Cucumber** (`src/test/resources/e2e/`, runner `RunEndToEndTest`,
+  glue `com.lms.e2e`) walks order to paid bill entirely over HTTP with the
+  generated client, signed in as the seeded demo administrator. It is separate
+  from the acceptance suite on purpose: in-process steps cannot notice a
+  controller mapping a field wrongly or a spec naming a field the server never
+  sends. The demo tenant is shared by every scenario, so codes are salted and
+  each scenario shifts its geography -- terminals of one category may not
+  overlap, and the suite must not dodge that rule.
+- **Smoke**: `deploy/smoke.sh` is the one smoke check. `SmokeScriptTest` runs it
+  against the application in every build, the native-image workflow runs it
+  against each binary, and the *Smoke (deployed)* workflow runs it against
+  Render. Change the script, not three copies of it.
+- **Performance** tests carry `@Tag("performance")` and are excluded from the
+  default build; run them with `./mvnw verify -Pperformance` (also weekly in
+  the *Performance* workflow, or on a PR labelled `performance`). Assert
+  relative properties -- a deep keyset page costs what the first page costs --
+  over absolute timings, which vary by machine. Restart tests start a pod with
+  `SpringApplicationBuilder.run("--key=value")`: builder `.properties()` are
+  defaults that `application.yaml` silently overrides.
 - Assert on behaviour, not on log output.
 
 ---
