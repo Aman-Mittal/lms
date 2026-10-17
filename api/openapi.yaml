@@ -94,6 +94,8 @@ tags:
     description: Scheduled multi-stop pickup circuits -- routes, generated runs and their stops.
   - name: Telematics
     description: Position ingest and live visibility.
+  - name: Multimodal
+    description: Road-rail-road itineraries and rail terminal events (vision document 3.4).
   - name: Settlement
     description: Freight bills, tolerance matching and rate cards.
   - name: Control tower
@@ -1262,6 +1264,175 @@ components:
         offRouteMetres: { type: number }
         openedAt: { type: string, format: date-time }
         closedAt: { type: string, format: date-time }
+
+    ItineraryLeg:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        seq: { type: integer, description: Position in the itinerary; the first leg is 1. }
+        mode:
+          type: string
+          enum: [ROAD, RAIL]
+        status:
+          type: string
+          enum: [PLANNED, PLACED, LOADED, DEPARTED, ARRIVED, RELEASED]
+          description: A road leg only ever reads PLANNED, DEPARTED or ARRIVED.
+        fromTerminalId: { type: string, format: uuid }
+        fromTerminalCode: { type: string }
+        toTerminalId: { type: string, format: uuid }
+        toTerminalCode: { type: string }
+        plannedDepartureAt: { type: string, format: date-time }
+        plannedArrivalAt: { type: string, format: date-time }
+        transferDwellMinutes:
+          type: integer
+          description: Time needed at this leg's origin after the previous leg
+            arrives, before this one may start.
+        tripId: { type: string, format: uuid, description: ROAD legs only. }
+        tripNo: { type: string }
+        unitType:
+          type: string
+          enum: [WAGON, CONTAINER]
+          description: RAIL legs only.
+        unitCount: { type: integer }
+        bookingRef: { type: string }
+        trainNo: { type: string }
+        carrierPartnerId: { type: string, format: uuid }
+        carrierCode: { type: string }
+        costAmount: { type: number }
+        placedAt: { type: string, format: date-time }
+        loadedAt: { type: string, format: date-time }
+        departedAt: { type: string, format: date-time }
+        arrivedAt: { type: string, format: date-time }
+        releasedAt: { type: string, format: date-time }
+        startedEarly:
+          type: boolean
+          description: A road leg whose trip was dispatched before the hand-off
+            allowed. Recorded rather than refused -- dispatch is the trip's gate.
+        connectionMissedAt:
+          type: string
+          format: date-time
+          description: When the previous leg's arrival made this leg's planned
+            start impossible.
+        earliestStartAt:
+          type: string
+          format: date-time
+          description: The previous leg's arrival plus the transfer dwell, set
+            when the connection was missed.
+
+    CarrierCost:
+      type: object
+      description: What one carrier is owed across the legs it runs.
+      properties:
+        carrierPartnerId: { type: string, format: uuid }
+        carrierCode: { type: string }
+        legCount: { type: integer }
+        totalCost: { type: number }
+
+    ItinerarySummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        itineraryNo: { type: string }
+        shipmentRef: { type: string }
+        status:
+          type: string
+          enum: [PLANNED, IN_PROGRESS, COMPLETED]
+          description: Derived from the legs. COMPLETED once the last leg has arrived.
+        currency: { type: string }
+        legCount: { type: integer }
+        totalCost:
+          type: number
+          description: Every leg's cost, summed. Each leg's carrier is still
+            paid separately.
+        connectionMissed: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    Itinerary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        itineraryNo: { type: string }
+        shipmentRef: { type: string }
+        status:
+          type: string
+          enum: [PLANNED, IN_PROGRESS, COMPLETED]
+        currency: { type: string }
+        legCount: { type: integer }
+        totalCost: { type: number }
+        connectionMissed: { type: boolean }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        legs:
+          type: array
+          items: { $ref: "#/components/schemas/ItineraryLeg" }
+        costByCarrier:
+          type: array
+          items: { $ref: "#/components/schemas/CarrierCost" }
+
+    ItinerarySlice:
+      type: object
+      description: One page, newest first. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ItinerarySummary" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    PlanItineraryLegRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [ROAD, RAIL]
+        fromTerminalId: { type: string, format: uuid }
+        toTerminalId: { type: string, format: uuid }
+        plannedDepartureAt: { type: string, format: date-time }
+        plannedArrivalAt: { type: string, format: date-time }
+        transferDwellMinutes: { type: integer, minimum: 0, default: 0 }
+        tripId:
+          type: string
+          format: uuid
+          description: Required for ROAD, forbidden for RAIL. The trip must not
+            have been dispatched yet.
+        unitType:
+          type: string
+          enum: [WAGON, CONTAINER]
+          description: Required for RAIL.
+        unitCount: { type: integer, minimum: 1, description: Required for RAIL. }
+        bookingRef: { type: string, description: The railway's booking reference. Required for RAIL. }
+        trainNo: { type: string }
+        carrierPartnerId: { type: string, format: uuid }
+        costAmount: { type: number, minimum: 0 }
+      required: [mode, fromTerminalId, toTerminalId, plannedDepartureAt, plannedArrivalAt,
+                 carrierPartnerId, costAmount]
+
+    PlanItineraryRequest:
+      type: object
+      properties:
+        shipmentRef: { type: string, minLength: 1 }
+        currency: { type: string, description: Optional. INR when not given. }
+        legs:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { $ref: "#/components/schemas/PlanItineraryLegRequest" }
+      required: [shipmentRef, legs]
+
+    RailMilestoneRequest:
+      type: object
+      properties:
+        milestone:
+          type: string
+          enum: [PLACED, LOADED, DEPARTED, ARRIVED, RELEASED]
+        at:
+          type: string
+          format: date-time
+          description: Optional. When it happened; now if not given.
+      required: [milestone]
 
     FreightBill:
       type: object
@@ -3949,6 +4120,112 @@ paths:
                 items: { $ref: "#/components/schemas/Deviation" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/itineraries:
+    get:
+      tags: [Multimodal]
+      operationId: listItineraries
+      summary: Itineraries, newest first
+      description: Requires `MULTIMODAL_READ`.
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of itineraries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItinerarySlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Multimodal]
+      operationId: planItinerary
+      summary: Plan a shipment over ordered road and rail legs
+      description: |
+        Requires `MULTIMODAL_PLAN`. Legs must be contiguous -- each starts at the
+        terminal where the previous one ends -- and each must be planned to
+        start no earlier than the previous leg's planned arrival plus its own
+        transfer dwell. A ROAD leg names an existing trip that has not yet been
+        dispatched; a RAIL leg names a booking, a unit type and a unit count.
+        Every leg names its carrier and its cost.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanItineraryRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/itineraries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Multimodal]
+      operationId: getItinerary
+      summary: One itinerary with its legs and the cost owed to each carrier
+      description: Requires `MULTIMODAL_READ`.
+      responses:
+        "200":
+          description: The itinerary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Itinerary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/itineraries/{id}/legs/{seq}/milestones:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the itinerary.
+      - name: seq
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+        description: The leg's position in the itinerary.
+    post:
+      tags: [Multimodal]
+      operationId: recordRailMilestone
+      summary: Report a rail terminal event on a leg
+      description: |
+        Requires `MULTIMODAL_TRACK`. RAIL legs only -- a road leg moves with its
+        trip. Milestones go one step at a time: PLACED, LOADED, DEPARTED,
+        ARRIVED, RELEASED. DEPARTED is refused (`handoff-too-early`,
+        `handoff-predecessor-not-arrived`) before the previous leg's arrival
+        plus this leg's transfer dwell. Reporting the current milestone again
+        with the same time is a no-op. An ARRIVED that comes too late for the
+        next leg's planned start marks that leg's connection missed.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RailMilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/freight-bills:
     get:
