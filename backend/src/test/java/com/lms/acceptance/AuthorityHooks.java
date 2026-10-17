@@ -75,6 +75,7 @@ public class AuthorityHooks {
             "TELEMATICS_INGEST",
             "TARIFF_MANAGE",
             "INVOICE_READ", "INVOICE_APPROVE",
+            "EXCEPTION_READ", "EXCEPTION_RAISE", "EXCEPTION_MANAGE", "EXCEPTION_CLOSE",
             "AUDIT_READ");
 
     /**
