@@ -83,6 +83,34 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the access policies for one action are index-served")
+    void accessPoliciesForAnAction() {
+        // Asked by the decision point on every guarded call that has a policy,
+        // so it must never become a walk of the tenant's whole rule set.
+        assertIndexed("""
+                SELECT code, effect, condition::text AS condition
+                  FROM access_policy
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND action = 'INVOICE_APPROVE'
+                   AND enabled
+                 ORDER BY code
+                """, "access_policy");
+    }
+
+    @Test
+    @DisplayName("a vendor-portal user's bill listing is index-served")
+    void partnerScopedBillListing() {
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND bill_no > 'FB-0000'
+                 ORDER BY bill_no
+                 LIMIT 51
+                """, "freight_bill");
+    }
+
+    @Test
     @DisplayName("organisational subtree prefix match is index-served")
     void orgSubtreePrefix() {
         // The reason org_unit_path_prefix_idx uses text_pattern_ops: without it
