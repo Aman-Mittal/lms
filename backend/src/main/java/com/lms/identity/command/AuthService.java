@@ -197,7 +197,7 @@ public class AuthService {
 
         return new AuthResult(
                 access.value(), access.expiresAt(), refresh.rawValue(), refresh.expiresAt(),
-                user.id(), user.tenantId(), orgPath, permissions);
+                user.id(), user.tenantId(), user.orgUnitId(), orgPath, permissions);
     }
 
     /**
@@ -213,6 +213,12 @@ public class AuthService {
             Instant refreshTokenExpiresAt,
             UUID userId,
             UUID tenantId,
+            /**
+             * The unit the user belongs to. Every create request names the
+             * unit it files the record under, and a client that could not
+             * learn its own would have nothing to send but a guess.
+             */
+            UUID orgUnitId,
             String orgPath,
             List<String> permissions) {
 
