@@ -56,6 +56,14 @@
     <mapstruct.version>1.6.3</mapstruct.version>
     <cucumber.version>7.34.6</cucumber.version>
     <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
+    <!--
+      Test scope only. The API tests drive the running application through a
+      Feign client generated from api/openapi.yaml, so a contract that has
+      drifted from the server fails to compile or to deserialise rather than
+      passing quietly.
+    -->
+    <openapi-generator.version>7.14.0</openapi-generator.version>
+    <feign.version>13.6</feign.version>
 
     <!-- The native binary is launched directly; no fat jar layering needed. -->
     <spring-boot.build-image.skip>true</spring-boot.build-image.skip>
@@ -215,6 +223,54 @@
       <artifactId>testcontainers-junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
+    <!--
+      Generated Feign client (see openapi-generator-maven-plugin below).
+      Feign and the generator's runtime use Jackson 2, which lives under
+      com.fasterxml and does not collide with the application's Jackson 3.
+      Test scope throughout: none of it reaches the shipped artefact.
+    -->
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-core</artifactId>
+      <version>${feign.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-jackson</artifactId>
+      <version>${feign.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-slf4j</artifactId>
+      <version>${feign.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.openfeign.form</groupId>
+      <artifactId>feign-form</artifactId>
+      <version>3.8.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>2.18.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.github.scribejava</groupId>
+      <artifactId>scribejava-core</artifactId>
+      <version>8.3.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
+      <version>3.0.2</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -322,6 +378,51 @@
             <arg>-Amapstruct.unmappedTargetPolicy=ERROR</arg>
           </compilerArgs>
         </configuration>
+      </plugin>
+
+      <!--
+        Generates a typed Feign client from the hand-authored contract into
+        target/generated-test-sources. The contract stays the hand-written
+        source of truth, never derived from the controllers: the server is
+        checked against it by
+        OpenApiContractTest, and the client derived from it is exercised
+        against the running server by the *ApiTest classes.
+      -->
+      <plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <version>${openapi-generator.version}</version>
+        <executions>
+          <execution>
+            <id>generate-feign-client</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <inputSpec>${project.basedir}/../api/openapi.yaml</inputSpec>
+              <generatorName>java</generatorName>
+              <library>feign</library>
+              <output>${project.build.directory}/generated-test-sources/openapi</output>
+              <addTestCompileSourceRoot>true</addTestCompileSourceRoot>
+              <addCompileSourceRoot>false</addCompileSourceRoot>
+              <apiPackage>com.lms.client.api</apiPackage>
+              <modelPackage>com.lms.client.model</modelPackage>
+              <invokerPackage>com.lms.client</invokerPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <useJakartaEe>true</useJakartaEe>
+                <openApiNullable>false</openApiNullable>
+                <dateLibrary>java8</dateLibrary>
+                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+              </configOptions>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
 
       <!--

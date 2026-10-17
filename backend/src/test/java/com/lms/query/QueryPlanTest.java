@@ -189,6 +189,62 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the exception board pages newest first without a sort")
+    void exceptionBoard() {
+        // Keyset on (raised_at, id), descending. The row comparison and the
+        // ORDER BY must both ride exception_ticket_board_idx, or every page of
+        // the board sorts every ticket the tenant ever raised.
+        assertIndexed("""
+                SELECT * FROM exception_ticket
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (raised_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                          '00000000-0000-0000-0000-000000000009')
+                 ORDER BY raised_at DESC, id DESC
+                 LIMIT 51
+                """, "exception_ticket");
+    }
+
+    @Test
+    @DisplayName("the exception board narrowed to one status is index-served")
+    void exceptionBoardByStatus() {
+        assertIndexed("""
+                SELECT * FROM exception_ticket
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status = 'RAISED'
+                 ORDER BY raised_at DESC, id DESC
+                 LIMIT 51
+                """, "exception_ticket");
+    }
+
+    @Test
+    @DisplayName("the settlement hold check is index-served")
+    void openSettlementHolds() {
+        // Asked on every vendor-invoice match. Served by the partial index, so
+        // its predicate has to say released_at IS NULL exactly as the index does.
+        assertIndexed("""
+                SELECT ticket_no FROM settlement_hold
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                   AND released_at IS NULL
+                 ORDER BY placed_at
+                """, "settlement_hold");
+    }
+
+    @Test
+    @DisplayName("a vehicle's latest fix is index-served")
+    void latestVehicleFix() {
+        // Runs on every exception raised by hand, against the largest table in
+        // the schema.
+        assertIndexed("""
+                SELECT lat, lon, recorded_at FROM gps_ping
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND vehicle_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY recorded_at DESC
+                 LIMIT 1
+                """, "gps_ping");
+    }
+
+    @Test
     @DisplayName("every tenant-scoped table leads its primary lookup index with tenant_id")
     void indexesLeadWithTenantId() {
         // Row-level security adds `tenant_id = …` to every query, so an index

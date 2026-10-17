@@ -8,7 +8,7 @@ before touching the codebase.
 ## 1. What this project is
 
 An MVP of the platform described in `README.md`. The vision document specifies
-twelve modules; the MVP implements a **thin end-to-end spine** through eight of
+twelve modules; the MVP implements a **thin end-to-end spine** through nine of
 them. It is not a prototype — every path in scope is real, tested, and walkable.
 It is also not complete — see "Deliberately deferred" below and do not pretend
 otherwise in docs, comments, or commit messages.
@@ -145,7 +145,8 @@ These have already cost time. Do not rediscover them.
 Each bounded context is a top-level package under `com.lms`:
 
 ```
-identity  masterdata  order  planning  sourcing  execution  telematics  finance  shared
+identity  masterdata  order  planning  sourcing  execution  telematics  finance
+controltower  shared
 ```
 
 - A context **must not** call another context's classes directly. Cross-context
@@ -428,6 +429,13 @@ includes production, after the image has been built and pushed.
 - A single feature walking the entire order-to-invoice path is the definition
   of done for the MVP. It does not exist yet: today the suite covers identity,
   master data, fleet compliance, and order through load building.
+- API tests (`*ApiTest`) drive the running application over HTTP through a
+  Feign client **generated from `api/openapi.yaml`** at build time
+  (`openapi-generator-maven-plugin`, test scope only). `OpenApiContractTest`
+  proves every served path is in the spec; the generated client proves the
+  spec is *usable* -- a renamed field or an undocumented enum value fails to
+  deserialise there. Feign refuses a null body argument, so endpoints whose
+  body is optional are called with an empty one.
 - Assert on behaviour, not on log output.
 
 ---
@@ -436,8 +444,10 @@ includes production, after the image has been built and pushed.
 
 Not built, and interfaces are left open for them. Do not describe these as
 implemented: reverse auction / spot bidding, OCR pipeline, ERP synchronisation,
-SAML/OIDC SSO and MFA, multi-leg modal planning, TSP route sequencing, control
-tower / exception management, notification engine, i18n, cold-storage archival.
+SAML/OIDC SSO and MFA, multi-leg modal planning, TSP route sequencing,
+notification engine, i18n, cold-storage archival. Within the control tower
+(§3.8), only route deviation raises tickets automatically; stoppage, ETA and
+temperature detectors are not built, and those categories are raised by hand.
 
 The vision document's §5.1 target of 20 000 GPS pings/second is a **production**
 NFR. The free-tier deployment sustains roughly 50–100/second. Say so plainly

@@ -155,6 +155,26 @@ usable demo and a minute of staring at a loading page.
 - A lane with no card produces an UNPRICED bill that says so, rather than
   silence. A trip with no bill looks exactly like one nobody has got to yet.
 
+**Exception and control tower (vision §3.8)**
+- Tickets against a trip walk RAISED, ASSIGNED, UNDER_INVESTIGATION, RESOLVED,
+  CLOSED as an explicit transition table. Severity is fixed by the category
+  (accident, theft and breakdown are P1; route deviation, extended stoppage and
+  temperature excursion P2; ETA delay and document mismatch P3), never picked.
+- The vehicle's position is **captured at raising**: its own telematics fix if
+  under thirty minutes old, else the reporter's coordinates, else the stale fix
+  with its true timestamp, else an explicit NONE. A ticket never implies it
+  knows more than it does.
+- A route deviation from telematics raises a P2 ticket with nobody pressing
+  anything, idempotently on the detection -- the outbox delivers at least once.
+- **P1 and P2 tickets freeze settlement** of the trip: finance refuses to match
+  or settle its bill until a manager closes the ticket. The hold is finance's
+  own table, fed by events, with commuting upserts so a close that overtakes
+  its raise after a restart still releases the money. Two critical tickets are
+  two holds.
+- Closing a critical ticket is refused to whoever resolved it. Closing is what
+  releases a vendor's money, and a release one person can both justify and
+  approve is not a control.
+
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
   (crossing *and* containment), point-to-polyline distance for route deviation,
@@ -165,8 +185,8 @@ usable demo and a minute of staring at a loading page.
 
 ## Verified, not assumed
 
-`./mvnw verify` runs **293 tests**, including **133 Cucumber scenarios over
-2,012 steps**, all green, against real PostgreSQL via Testcontainers — never
+`./mvnw verify` runs **322 tests**, including **154 Cucumber scenarios over
+2,999 steps**, all green, against real PostgreSQL via Testcontainers — never
 H2, which has no row-level security and so cannot test the property most worth
 testing.
 
@@ -230,7 +250,7 @@ the controllers it describes are written together, not retrofitted, so neither
 exists yet.
 
 The Angular console and its Playwright suite · reverse auction · OCR · ERP
-sync · SAML/OIDC and MFA · multi-leg planning · control tower · notifications ·
+sync · SAML/OIDC and MFA · multi-leg planning · notifications ·
 i18n · cold-storage archival.
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a
