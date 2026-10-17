@@ -34,18 +34,13 @@
  * finance decides what "suspended" means for a bill, which is that nothing
  * may approve it for payment until the ticket is closed.
  *
- * <p>Listens to {@code planning::events} for part-load dockets (issue #18).
- * LTL rating lives here rather than in a module of its own because it is
- * rating: zone-to-zone cards are versioned and immutable exactly as tariffs
- * are, and the point of consolidation -- that the dockets on a lorry earn more
- * than the lorry costs -- can only be seen where both the customer receivable
- * and the carrier payable are kept. A separate module would have to read the
- * other's tables to answer that. Freight modes themselves belong to order and
- * planning, which decide what a docket is and what may share a vehicle; this
- * module only prices what they booked, and depends on them one way.
+ * <p>Uses {@code identity::access} to describe a freight bill to the access
+ * decision point -- its amount, vendor and owning unit -- and to confine a
+ * vendor-portal user's reads to that vendor's own bills. Identity decides;
+ * finance only states the facts about its own records.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
-        allowedDependencies = {"planning::api", "planning::events", "execution::events",
-                "controltower::events"})
+        allowedDependencies = {"planning::api", "execution::events", "controltower::events",
+                "identity::access"})
 package com.lms.finance;
