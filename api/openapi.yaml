@@ -78,6 +78,8 @@ tags:
     description: Drivers and their licences.
   - name: Terminals
     description: Sites and their geofences.
+  - name: Warehouse
+    description: Bins, SKUs, receipt, putaway, the stock ledger, pick-pack and cross-dock.
   - name: Compliance
     description: Certificates that have lapsed or are about to.
   - name: Orders
@@ -1010,6 +1012,334 @@ components:
           description: Mandatory. An approval with no explanation is
             indistinguishable from one nobody looked at.
       required: [reason]
+
+    Bin:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        code: { type: string }
+        capacityUnits: { type: integer }
+        occupiedUnits:
+          type: integer
+          description: Units in the bin now, across every SKU and lot.
+
+    BinSlice:
+      type: object
+      description: One page, by bin code. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Bin" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    CreateBinRequest:
+      type: object
+      properties:
+        code: { type: string, minLength: 1 }
+        capacityUnits:
+          type: integer
+          minimum: 1
+          description: The most units the bin may hold, whatever the SKU.
+      required: [code, capacityUnits]
+
+    Sku:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        description: { type: string }
+        ownerPartnerId: { type: string, format: uuid }
+        uom: { type: string }
+
+    SkuSlice:
+      type: object
+      description: One page, by SKU code. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Sku" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    CreateSkuRequest:
+      type: object
+      properties:
+        code: { type: string, minLength: 1 }
+        description: { type: string, minLength: 1 }
+        ownerPartnerId:
+          type: string
+          format: uuid
+          description: Optional. Whose goods these are, for a warehouse run on
+            a customer's behalf.
+        uom:
+          type: string
+          description: Unit of measure. Defaults to EA.
+      required: [code, description]
+
+    AsnExpectedLine:
+      type: object
+      properties:
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity: { type: integer, minimum: 1 }
+      required: [skuId, quantity]
+
+    CreateAsnRequest:
+      type: object
+      properties:
+        warehouseId:
+          type: string
+          format: uuid
+          description: A terminal whose category is WAREHOUSE.
+        asnNo: { type: string, minLength: 1 }
+        supplierPartnerId: { type: string, format: uuid }
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/AsnExpectedLine" }
+      required: [warehouseId, asnNo, lines]
+
+    AsnLine:
+      type: object
+      description: |
+        `receivedQty` is everything counted at the dock, damaged units
+        included. Short and excess are derived from the count, never entered.
+        All counts are absent, and short and excess zero, until the ASN is
+        received.
+      properties:
+        lineNo: { type: integer }
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        lotNo: { type: string }
+        expectedQty: { type: integer }
+        receivedQty: { type: integer }
+        damagedQty: { type: integer }
+        shortQty: { type: integer }
+        excessQty: { type: integer }
+
+    Asn:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        asnNo: { type: string }
+        warehouseId: { type: string, format: uuid }
+        supplierPartnerId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [EXPECTED, RECEIVED]
+        crossDock: { type: boolean }
+        handlingUnitId:
+          type: string
+          format: uuid
+          description: The outbound unit a cross-docked receipt went into.
+        receivedBy: { type: string }
+        receivedAt: { type: string, format: date-time }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/AsnLine" }
+
+    ReceiptCount:
+      type: object
+      properties:
+        lineNo: { type: integer, minimum: 1 }
+        receivedQty: { type: integer, minimum: 0 }
+        damagedQty:
+          type: integer
+          minimum: 0
+          description: The part of `receivedQty` that cannot go into stock.
+      required: [lineNo, receivedQty, damagedQty]
+
+    ReceiveAsnRequest:
+      type: object
+      properties:
+        lines:
+          type: array
+          description: A line not listed is recorded as received zero -- wholly short.
+          items: { $ref: "#/components/schemas/ReceiptCount" }
+        crossDock:
+          type: boolean
+          description: Route the undamaged units straight into a new outbound
+            handling unit instead of leaving them on the dock for putaway.
+
+    PutawayRequest:
+      type: object
+      properties:
+        binId: { type: string, format: uuid }
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity: { type: integer, minimum: 1 }
+      required: [binId, skuId, quantity]
+
+    StockBalance:
+      type: object
+      description: What one location holds of one SKU and lot.
+      properties:
+        id: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        locationType:
+          type: string
+          enum: [DOCK, BIN, OUTBOUND, HU]
+          description: |
+            DOCK -- received, not yet put away. BIN -- in storage. OUTBOUND --
+            picked for an order, not yet packed. HU -- packed, not yet dispatched.
+        locationId: { type: string, format: uuid }
+        locationCode:
+          type: string
+          description: The bin code, for a bin. Absent otherwise.
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        lotNo: { type: string }
+        onHand: { type: integer }
+
+    StockBalanceSlice:
+      type: object
+      description: One page. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StockBalance" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    StockMovement:
+      type: object
+      description: One signed change of stock at one location. Never edited.
+      properties:
+        id: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        movementType:
+          type: string
+          enum: [RECEIPT, PUTAWAY, PICK, PACK, CROSS_DOCK, DISPATCH, ADJUST]
+        locationType:
+          type: string
+          enum: [DOCK, BIN, OUTBOUND, HU]
+        locationId: { type: string, format: uuid }
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity: { type: integer }
+        referenceId: { type: string, format: uuid }
+        reason: { type: string }
+        actor: { type: string }
+        occurredAt: { type: string, format: date-time }
+
+    StockMovementSlice:
+      type: object
+      description: One page, newest first. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StockMovement" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    AdjustStockRequest:
+      type: object
+      properties:
+        binId: { type: string, format: uuid }
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity:
+          type: integer
+          description: Signed. Negative for a loss found on counting. Never zero.
+        reason: { type: string, minLength: 1 }
+      required: [binId, skuId, quantity, reason]
+
+    OutboundOrderLineRequest:
+      type: object
+      properties:
+        skuId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+      required: [skuId, quantity]
+
+    CreateOutboundOrderRequest:
+      type: object
+      properties:
+        warehouseId: { type: string, format: uuid }
+        orderNo: { type: string, minLength: 1 }
+        shipTo:
+          type: string
+          description: Free text naming where it is going.
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/OutboundOrderLineRequest" }
+      required: [warehouseId, orderNo, lines]
+
+    OutboundOrderLine:
+      type: object
+      properties:
+        lineNo: { type: integer }
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        orderedQty: { type: integer }
+        pickedQty: { type: integer }
+        shortQty: { type: integer }
+
+    OutboundOrder:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderNo: { type: string }
+        warehouseId: { type: string, format: uuid }
+        shipTo: { type: string }
+        status:
+          type: string
+          enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED]
+        createdAt: { type: string, format: date-time }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OutboundOrderLine" }
+
+    HandlingUnitContent:
+      type: object
+      properties:
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        lotNo: { type: string }
+        quantity: { type: integer }
+
+    HandlingUnit:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        huNo: { type: string }
+        warehouseId: { type: string, format: uuid }
+        source:
+          type: string
+          enum: [PACK, CROSS_DOCK]
+        outboundOrderId: { type: string, format: uuid }
+        asnId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [PACKED, DISPATCHED]
+        dispatchRef: { type: string }
+        dispatchedAt: { type: string, format: date-time }
+        contents:
+          type: array
+          description: What is in it. Empty once dispatched -- the goods have
+            left the ledger, and its movements still record them.
+          items: { $ref: "#/components/schemas/HandlingUnitContent" }
+
+    DispatchRequest:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: What transport calls it -- a load, a trip, a docket.
 
     PublishTariffRequest:
       type: object
@@ -3287,6 +3617,411 @@ paths:
         "204": { $ref: "#/components/responses/NoContent" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/warehouses/{warehouseId}/bins:
+    parameters:
+      - name: warehouseId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: A terminal whose category is WAREHOUSE.
+    get:
+      tags: [Warehouse]
+      operationId: listBins
+      summary: A warehouse's bins by code, with how full each is
+      description: Requires `WAREHOUSE_READ`.
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of bins.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BinSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Warehouse]
+      operationId: createBin
+      summary: Add a bin to a warehouse
+      description: |
+        Requires `WAREHOUSE_SETUP`. Refused unless the terminal is a
+        WAREHOUSE, and when the warehouse already has a bin with that code.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateBinRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/skus:
+    get:
+      tags: [Warehouse]
+      operationId: listSkus
+      summary: The tenant's SKUs by code
+      description: Requires `WAREHOUSE_READ`.
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of SKUs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkuSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Warehouse]
+      operationId: createSku
+      summary: Register a SKU
+      description: Requires `WAREHOUSE_SETUP`. Codes are unique per tenant.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSkuRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/asns:
+    post:
+      tags: [Warehouse]
+      operationId: createAsn
+      summary: Record an advance shipping notice
+      description: Requires `WAREHOUSE_OPERATE`. Lines are numbered in the order given.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAsnRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/asns/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Warehouse]
+      operationId: getAsn
+      summary: One ASN, with each line's count and variance
+      description: Requires `WAREHOUSE_READ`.
+      responses:
+        "200":
+          description: The ASN.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asn" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/asns/{id}/receipt:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: receiveAsn
+      summary: Count the delivery in at the dock
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Once per ASN. Undamaged units become
+        stock on the dock -- or, with `crossDock`, go straight into a new
+        outbound handling unit. Short, excess and damaged quantities are
+        recorded per line and published as variances.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReceiveAsnRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/putaways:
+    post:
+      tags: [Warehouse]
+      operationId: putaway
+      summary: Move received stock from the dock into a bin
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Refused with `bin-over-capacity` when
+        the bin has no room, and `dock-stock-insufficient` when the dock does
+        not hold that much of the SKU and lot.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PutawayRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/stock:
+    get:
+      tags: [Warehouse]
+      operationId: listStock
+      summary: What a warehouse holds, by location, SKU and lot
+      description: Requires `WAREHOUSE_READ`. Empty balances are left out.
+      parameters:
+        - name: warehouseId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: skuId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: binId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of balances.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockBalanceSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/stock/movements:
+    get:
+      tags: [Warehouse]
+      operationId: listStockMovements
+      summary: A SKU's ledger, newest first
+      description: Requires `WAREHOUSE_READ`.
+      parameters:
+        - name: skuId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of movements.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockMovementSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/stock/adjustments:
+    post:
+      tags: [Warehouse]
+      operationId: adjustStock
+      summary: Correct a bin's stock after a count
+      description: |
+        Requires `INVENTORY_ADJUST`. Recorded as a new ADJUST movement -- the
+        ledger is never edited. Refused with `stock-cannot-go-negative` when a
+        loss exceeds what the bin holds. Answers with the movement's id.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdjustStockRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/outbound-orders:
+    post:
+      tags: [Warehouse]
+      operationId: createOutboundOrder
+      summary: Record goods to be picked and sent out
+      description: Requires `WAREHOUSE_OPERATE`.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOutboundOrderRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/outbound-orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Warehouse]
+      operationId: getOutboundOrder
+      summary: One outbound order, with what was picked per line
+      description: Requires `WAREHOUSE_READ`.
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OutboundOrder" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/outbound-orders/{id}/pick:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: pickOutboundOrder
+      summary: Pick every line from the bins
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Once per order. Takes what the bins hold
+        and no more: a line that cannot be filled is picked short, the order
+        becomes SHORT_PICKED and the shortfall is published.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/outbound-orders/{id}/pack:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: packOutboundOrder
+      summary: Pack everything picked into one new handling unit
+      description: Requires `WAREHOUSE_OPERATE`. Answers with the handling unit's id.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/handling-units/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Warehouse]
+      operationId: getHandlingUnit
+      summary: One handling unit and what is in it
+      description: Requires `WAREHOUSE_READ`.
+      responses:
+        "200":
+          description: The handling unit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HandlingUnit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/handling-units/{id}/dispatch:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: dispatchHandlingUnit
+      summary: Hand a packed unit over to transport
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Once per unit. Its contents leave the
+        ledger, and the hand-off is published with them. Nothing consumes
+        that event yet: turning a dispatched unit into a planning consignment
+        is not built.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DispatchRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
 
