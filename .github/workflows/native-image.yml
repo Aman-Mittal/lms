@@ -19,6 +19,11 @@
 # would struggle with it. The repository is public, so Actions minutes are
 # unmetered and this can run on every push to main without rationing.
 #
+# The binary is compiled exactly once per run, inside `docker build`, and the
+# image that comes out is the one that is smoke-tested and the one that is
+# pushed. Compiling once on the runner for the smoke test and again in the
+# image doubled the job's length and tested a binary that was never shipped.
+#
 # The resulting package is published PUBLIC, which is what lets Render pull it
 # with no registry credential at all.
 
@@ -43,9 +48,13 @@ on:
 permissions:
   contents: read
 
+# On a pull request a newer push supersedes the run in progress. On main it
+# must not: merges land minutes apart, a run takes longer than that, and
+# cancelling meant no main build ever finished and nothing was published. A
+# newer main push queues behind the running one instead.
 concurrency:
   group: native-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   REGISTRY: ghcr.io
@@ -54,11 +63,13 @@ env:
   # a ten-minute native compile, and nothing is ever published. Expressions
   # have no lower(), and this must match the image deploy/render.yaml pulls.
   IMAGE_NAME: aman-mittal/lms
+  LOCAL_TAG: lms-platform:ci
 
 jobs:
   native-image:
     name: Build native image
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     if: >-
       github.event_name != 'pull_request'
       || contains(github.event.pull_request.labels.*.name, 'native')
@@ -71,50 +82,47 @@ jobs:
         with:
           persist-credentials: false
 
-      # GraalVM Community Edition: GPLv2 WITH Classpath Exception.
-      # This distribution is pinned deliberately. Oracle GraalVM ships under
-      # the proprietary GFTC and would invalidate this project's Apache-2.0
-      # distribution -- see DOCS/adr/0003.
-      - name: Set up GraalVM Community Edition
-        uses: graalvm/setup-graalvm@0def53c0fd8534bc13416c9469f5be45265824fd # v1.6.3
-        with:
-          java-version: "25"
-          distribution: graalvm-community
-          # No dependency cache, deliberately. This workflow also runs on pull
-          # requests (behind the `native` label), and a cache written by a pull
-          # request build can be restored by the main-branch build that
-          # publishes the image -- so a poisoned entry would reach a published
-          # artefact that Render pulls with no credential at all. The download
-          # costs a couple of minutes on a job that already takes ten, and
-          # Actions minutes are unmetered on a public repository.
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Confirm the toolchain is the Community Edition
+      # GraalVM Community Edition: GPLv2 WITH Classpath Exception. Oracle
+      # GraalVM ships under the proprietary GFTC and would invalidate this
+      # project's Apache-2.0 distribution -- see DOCS/adr/0003. The compiler
+      # now runs inside the Dockerfile's builder stage, so that pin is what
+      # is checked.
+      - name: Confirm the builder is GraalVM Community Edition
         run: |
-          native-image --version | tee ni-version.txt
-          if grep -qi "Oracle GraalVM" ni-version.txt; then
-            echo "::error::Oracle GraalVM detected. Only GPLv2+CE distributions are permitted (DOCS/adr/0003)."
+          if ! grep -Eq '^ARG NATIVE_BUILDER_IMAGE=ghcr\.io/graalvm/native-image-community@sha256:[0-9a-f]{64}$' deploy/Dockerfile; then
+            echo "::error::deploy/Dockerfile must pin the native builder to ghcr.io/graalvm/native-image-community by digest (DOCS/adr/0003)."
             exit 1
           fi
 
-      # `package`, not the bare `native:compile` goal -- the goal on its own
-      # skips resource processing, so application.yaml never reaches
-      # target/classes and AOT fails on a datasource it cannot configure.
-      - name: Compile native image
-        working-directory: backend
-        run: ./mvnw -B -ntp -Pnative -DskipTests package
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Report binary size
-        working-directory: backend
+      # The one native compile. Layer cache is read and written only on main:
+      # GitHub scopes caches by ref, and keeping pull requests out of it
+      # entirely means nothing a pull request builds can reach the image that
+      # main publishes.
+      - name: Build the native image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: native
+          load: true
+          push: false
+          tags: ${{ env.LOCAL_TAG }}
+          cache-from: ${{ github.ref == 'refs/heads/main' && 'type=gha' || '' }}
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
+
+      - name: Report image size
         run: |
-          SIZE=$(du -h target/lms-platform | cut -f1)
-          echo "Native binary: ${SIZE}" >> "$GITHUB_STEP_SUMMARY"
+          SIZE=$(docker image inspect "$LOCAL_TAG" --format '{{.Size}}' | numfmt --to=iec)
+          echo "Native image: ${SIZE}" >> "$GITHUB_STEP_SUMMARY"
 
       # A binary that cannot start is not a build success. This catches the
       # classic native-image failure mode -- missing reflection metadata that
-      # only surfaces at runtime -- before anything is published.
-      - name: Smoke test the binary
-        working-directory: backend
+      # only surfaces at runtime -- before anything is published, and it runs
+      # the container that will be pushed, not a look-alike.
+      - name: Smoke test the image
         run: |
           # Trust authentication, matching deploy/docker-compose.yml. A
           # throwaway container on a runner that is destroyed minutes later has
@@ -133,23 +141,20 @@ jobs:
           # binary missing reflection metadata starts, reports UP, and then
           # answers 500 to the first JSON it has to write.
           export DEMO_ADMIN_PASSWORD="$(openssl rand -hex 16)"
-          DATABASE_URL=jdbc:postgresql://localhost:5432/lms \
-          DATABASE_USERNAME=lms DATABASE_PASSWORD= PORT=8080 \
-          LMS_DEMO_SEED=true \
-            ./target/lms-platform &
-          APP_PID=$!
+          docker run -d --name app --network host \
+            -e DATABASE_URL=jdbc:postgresql://localhost:5432/lms \
+            -e DATABASE_USERNAME=lms -e DATABASE_PASSWORD= -e PORT=8080 \
+            -e LMS_DEMO_SEED=true -e DEMO_ADMIN_PASSWORD \
+            "$LOCAL_TAG"
 
           status=0
-          BASE_URL=http://localhost:8080 READY_TIMEOUT_SECONDS=60 bash ../deploy/smoke.sh || status=$?
-          kill "$APP_PID" 2>/dev/null || true
+          BASE_URL=http://localhost:8080 READY_TIMEOUT_SECONDS=60 bash deploy/smoke.sh || status=$?
           if [ "$status" -ne 0 ]; then
-            echo "::error::The native binary failed the smoke test."
+            echo "::error::The native image failed the smoke test."
+            docker logs app 2>&1 | tail -n 200
           fi
+          docker rm -f app pg >/dev/null 2>&1 || true
           exit "$status"
-
-      - name: Set up Buildx
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -159,7 +164,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      # Same inputs as the build above, so every layer -- the native compile
+      # included -- comes from the builder's cache: this step pushes what was
+      # just smoke-tested rather than building anything new.
+      - name: Push image
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -171,7 +179,6 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Publishing reminder
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
