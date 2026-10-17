@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -79,6 +79,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PodRestartResilienceTest {
 
     private static final Logger log = LoggerFactory.getLogger(PodRestartResilienceTest.class);
+    /** Who in-process setup acts as. Not a credential. */
+    private static final String SETUP_PRINCIPAL = "restart";
     private static final String DEMO_PASSWORD = "restart test demo password";
 
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17.7-alpine")
@@ -239,7 +241,7 @@ class PodRestartResilienceTest {
         Set<SimpleGrantedAuthority> authorities = permissions.stream()
                 .map(SimpleGrantedAuthority::new).collect(Collectors.toSet());
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("restart", null, authorities));
+                new TestingAuthenticationToken(SETUP_PRINCIPAL, null, authorities));
         try {
             return TenantContext.callWith(tenant.tenantId(), tenant.orgPath(), action);
         } finally {
