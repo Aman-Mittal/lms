@@ -52,5 +52,12 @@ public record FreightBillView(
         BigDecimal variancePct,
         String resolution,
         Instant matchedAt,
+        /**
+         * The open exception tickets freezing this bill's settlement, comma
+         * separated, or null when nothing is. Vision document 3.8: a reviewer
+         * looking at a bill that will not approve needs to see why without
+         * asking another screen.
+         */
+        String settlementHeldBy,
         Instant createdAt) {
 }

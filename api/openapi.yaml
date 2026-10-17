@@ -66,6 +66,10 @@ tags:
     description: Obtaining and refreshing tokens (vision document 3.1).
   - name: Users
     description: Who exists, and what they may do.
+  - name: Access policies
+    description: |
+      Attribute-based rules layered on permissions -- approval limits,
+      organisational subtrees, partner scope -- held as per-tenant data.
   - name: Partners
     description: Customers, vendors and consignees, with their KYC lifecycle.
   - name: Vehicles
@@ -74,20 +78,30 @@ tags:
     description: Drivers and their licences.
   - name: Terminals
     description: Sites and their geofences.
+  - name: Warehouse
+    description: Bins, SKUs, receipt, putaway, the stock ledger, pick-pack and cross-dock.
   - name: Compliance
     description: Certificates that have lapsed or are about to.
   - name: Orders
     description: Customer indents and their line items.
   - name: Planning
     description: Consignment generation and load building.
+  - name: LTL rating
+    description: Part-load zones, zone-to-zone rate cards and the receivable each docket earns.
   - name: Sourcing
     description: Offering a load to vendors in rank order.
   - name: Trips
     description: The trip state machine, gate operations and the weighbridge.
+  - name: Milk runs
+    description: Scheduled multi-stop pickup circuits -- routes, generated runs and their stops.
   - name: Telematics
     description: Position ingest and live visibility.
+  - name: Multimodal
+    description: Road-rail-road itineraries and rail terminal events (vision document 3.4).
   - name: Settlement
     description: Freight bills, tolerance matching and rate cards.
+  - name: Control tower
+    description: Exception tickets and their lifecycle (vision document 3.8).
 
 components:
 
@@ -200,17 +214,24 @@ components:
       type: object
       properties:
         accessToken: { type: string }
+        accessTokenExpiresAt: { type: string, format: date-time }
         refreshToken:
           type: string
           description: Opaque. Returned once and stored only as a hash.
-        expiresAt: { type: string, format: date-time }
+        refreshTokenExpiresAt: { type: string, format: date-time }
+        tokenType: { type: string, enum: [Bearer] }
         userId: { type: string, format: uuid }
         tenantId: { type: string, format: uuid }
+        orgUnitId:
+          type: string
+          format: uuid
+          description: The caller's own organisational unit -- what create
+            requests name as `orgUnitId` when filing under the caller's unit.
         orgPath: { type: string }
         permissions:
           type: array
           items: { type: string }
-      required: [accessToken, refreshToken, expiresAt]
+      required: [accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt]
 
     LoginRequest:
       type: object
@@ -243,6 +264,120 @@ components:
         orgPath: { type: string }
         orgUnitName: { type: string }
         lastLoginAt: { type: string, format: date-time }
+
+    AccessCondition:
+      type: object
+      additionalProperties: true
+      description: |
+        A boolean expression over `subject.*`, `resource.*` and `env.*`
+        attributes. One of:
+
+        - `{"allOf": [condition, ...]}`, `{"anyOf": [condition, ...]}`,
+          `{"not": condition}`;
+        - `{"attr": name, "op": op, "value": literal}` or
+          `{"attr": name, "op": op, "ref": name}`, where `op` is one of `eq`,
+          `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `startsWith`;
+        - `{"attr": name, "op": "present"}` or `"absent"`.
+
+        Subject attributes are `userId`, `permissions`, `orgPath`, `region`,
+        `freightModes`, `partnerId` and `approvalLimit`; environment attributes
+        are `hour` and `dayOfWeek` (UTC); resource attributes depend on the
+        resource. A comparison with a missing operand is false, so a rule
+        never bites on an attribute a user does not carry.
+      examples:
+        - { attr: resource.amount, op: gt, ref: subject.approvalLimit }
+
+    AccessPolicy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        action:
+          type: string
+          description: The permission code this policy refines, e.g. `INVOICE_APPROVE`.
+        effect: { type: string, enum: [PERMIT, DENY] }
+        description: { type: string }
+        condition: { $ref: "#/components/schemas/AccessCondition" }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, code, action, effect, description, condition, enabled]
+
+    AccessPolicySlice:
+      type: object
+      description: One page, in code order.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AccessPolicy" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    CreateAccessPolicyRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+        action:
+          type: string
+          description: Must be an existing permission code.
+        effect:
+          type: string
+          enum: [PERMIT, DENY]
+          description: |
+            DENY vetoes when the condition holds. If an action has any PERMIT
+            policies, at least one of them must hold as well.
+        description: { type: string }
+        condition: { $ref: "#/components/schemas/AccessCondition" }
+        enabled:
+          type: boolean
+          description: Defaults to true.
+      required: [code, action, effect, description, condition]
+
+    ReviseAccessPolicyRequest:
+      type: object
+      description: Code and action are fixed once a policy exists.
+      properties:
+        effect: { type: string, enum: [PERMIT, DENY] }
+        description: { type: string }
+        condition: { $ref: "#/components/schemas/AccessCondition" }
+        enabled: { type: boolean }
+      required: [effect, description, condition, enabled]
+
+    UserAccessAttributes:
+      type: object
+      description: Null means unrestricted along that dimension.
+      properties:
+        userId: { type: string, format: uuid }
+        region: { type: string }
+        freightModes:
+          type: array
+          items: { type: string, enum: [FTL, LTL, RAIL, WAREHOUSE] }
+        partnerId:
+          type: string
+          format: uuid
+          description: Set for an external portal user acting for this partner.
+        approvalLimit: { type: number }
+      required: [userId]
+
+    SetUserAccessAttributesRequest:
+      type: object
+      description: |
+        The whole set. A field left out is cleared, so a forgotten field cannot
+        keep an old limit alive.
+      properties:
+        region:
+          type: string
+          pattern: "^[A-Z0-9_-]{1,32}$"
+        freightModes:
+          type: array
+          items: { type: string, enum: [FTL, LTL, RAIL, WAREHOUSE] }
+        partnerId: { type: string, format: uuid }
+        approvalLimit: { type: number, minimum: 0 }
 
     Partner:
       type: object
@@ -511,6 +646,17 @@ components:
         requestedPickupAt: { type: string, format: date-time }
         requestedDeliveryAt: { type: string, format: date-time }
         source: { type: string, enum: [MANUAL, API, EDI, PORTAL] }
+        freightMode:
+          $ref: "#/components/schemas/FreightMode"
+        originHubTerminalId:
+          type: string
+          format: uuid
+          description: Required for LTL, where each consignment becomes a docket
+            consolidated at this hub. Refused for FTL.
+        destinationHubTerminalId:
+          type: string
+          format: uuid
+          description: Required for LTL, refused for FTL.
       required: [orgUnitId, customerPartnerId, orderNo, originTerminalId]
 
     AddOrderLineRequest:
@@ -550,6 +696,12 @@ components:
         containsHazmat: { type: boolean }
         materialClasses: { type: string }
         loadNo: { type: string }
+        freightMode:
+          type: string
+          description: LTL consignments are dockets, numbered `DKT-` rather than
+            `LR-`, and carry the hub pair below.
+        originHubCode: { type: string }
+        destinationHubCode: { type: string }
 
     Load:
       type: object
@@ -576,6 +728,8 @@ components:
         loadNo: { type: string }
         originTerminalId: { type: string, format: uuid }
         vehicleId: { type: string, format: uuid }
+        freightMode:
+          $ref: "#/components/schemas/FreightMode"
       required: [orgUnitId, loadNo, originTerminalId, vehicleId]
 
     AssignConsignmentRequest:
@@ -583,6 +737,105 @@ components:
       properties:
         consignmentId: { type: string, format: uuid }
       required: [consignmentId]
+
+    FreightMode:
+      type: string
+      enum: [FTL, LTL, RAIL, MILK_RUN]
+      default: FTL
+      description: |
+        FTL when omitted, which is what every order and load was before freight
+        modes existed. RAIL and MILK_RUN are reserved names and are refused with
+        `freight-mode-not-supported`.
+
+    AssignLtlZoneRequest:
+      type: object
+      properties:
+        zoneCode:
+          type: string
+          description: Normalised to upper case. A hub's zone decides the lane a
+            docket is rated on.
+        outOfDeliveryArea:
+          type: boolean
+          description: True when delivering to this terminal earns the ODA
+            surcharge.
+      required: [zoneCode]
+
+    PublishLtlRateCardRequest:
+      type: object
+      description: |
+        One immutable version of the price between two zones. The version in
+        force on a date is the latest to have started by then; a successor must
+        start after it, or it is refused with `ltl-rate-card-backdated`.
+      properties:
+        code: { type: string }
+        originZone: { type: string }
+        destinationZone: { type: string }
+        currency: { type: string, default: INR }
+        effectiveFrom: { type: string, format: date }
+        rateBasis: { type: string, enum: [PER_KG, PER_CFT] }
+        rateAmount: { type: number, minimum: 0 }
+        minimumChargeableWeightKg: { type: number, minimum: 0 }
+        kgPerCft:
+          type: number
+          exclusiveMinimum: 0
+          description: Volumetric conversion -- each cubic foot is billed as
+            this many kilograms.
+        docketCharge: { type: number, minimum: 0 }
+        odaSurcharge: { type: number, minimum: 0 }
+      required: [code, originZone, destinationZone, effectiveFrom, rateBasis,
+                 rateAmount, kgPerCft]
+
+    DocketReceivable:
+      type: object
+      description: |
+        What one LTL docket is billed to its customer, raised by the platform
+        when the docket is booked. Separate from the freight bill, which is what
+        the consolidated vehicle is paid to its carrier.
+      properties:
+        id: { type: string, format: uuid }
+        docketId: { type: string, format: uuid }
+        docketNo: { type: string }
+        status: { type: string, enum: [PRICED, UNPRICED] }
+        customerPartnerId: { type: string, format: uuid }
+        customerName: { type: string }
+        currency: { type: string }
+        rateCardCode: { type: string }
+        pricedOn: { type: string, format: date }
+        originZone: { type: string }
+        destinationZone: { type: string }
+        deadWeightKg: { type: number }
+        volumeCft: { type: number }
+        volumetricWeightKg: { type: number }
+        chargeableWeightKg:
+          type: number
+          description: The greatest of dead weight, volumetric weight and the
+            card's minimum.
+        minimumApplied: { type: boolean }
+        outOfDeliveryArea: { type: boolean }
+        rateBasis: { type: string, enum: [PER_KG, PER_CFT] }
+        rateAmount: { type: number }
+        freightAmount: { type: number }
+        docketCharge: { type: number }
+        odaSurcharge: { type: number }
+        totalAmount: { type: number }
+        reason:
+          type: string
+          description: Why an UNPRICED docket could not be priced.
+        createdAt: { type: string, format: date-time }
+
+    DocketReceivableSlice:
+      type: object
+      description: One page. No total and no page number -- both need the scan
+        keyset pagination exists to avoid.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DocketReceivable" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
 
     Allocation:
       type: object
@@ -717,6 +970,218 @@ components:
       properties:
         at: { type: string, format: date-time }
 
+    MilkRunRoute:
+      type: object
+      description: |
+        One version of a milk-run circuit. Versions are never edited: a
+        successor is published from a date and the incumbent closes the day
+        before, so the plan in force on any past day stays answerable.
+      properties:
+        id: { type: string, format: uuid }
+        code:
+          type: string
+          description: The route's identity across versions.
+        name: { type: string }
+        plantTerminalId: { type: string, format: uuid }
+        plantCode: { type: string }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo:
+          type: string
+          format: date
+          description: Inclusive last day. Absent on the version in force.
+        daysOfWeek:
+          type: string
+          description: Canonical and Monday first, e.g. `MON,WED,FRI`.
+        departureTime:
+          type: string
+          description: Local time at the plant, e.g. `06:30:00`.
+        timeZone: { type: string }
+        runRate: { type: number }
+        perStopFee: { type: number }
+        currency: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    MilkRunRouteSlice:
+      type: object
+      description: One page of routes in force, by code. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MilkRunRoute" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    MilkRunRouteStop:
+      type: object
+      properties:
+        sequence: { type: integer }
+        terminalId: { type: string, format: uuid }
+        terminalCode: { type: string }
+        terminalName: { type: string }
+        windowOpenMin:
+          type: integer
+          description: Minutes after the circuit departs that the pickup window opens.
+        windowCloseMin: { type: integer }
+        plannedDwellMin: { type: integer }
+
+    MilkRunStopPlan:
+      type: object
+      properties:
+        terminalId: { type: string, format: uuid }
+        windowOpenMin: { type: integer, minimum: 0 }
+        windowCloseMin: { type: integer, minimum: 0 }
+        plannedDwellMin: { type: integer, minimum: 0 }
+      required: [terminalId, windowOpenMin, windowCloseMin, plannedDwellMin]
+
+    PublishMilkRunRouteRequest:
+      type: object
+      properties:
+        code: { type: string, minLength: 1 }
+        name: { type: string }
+        plantTerminalId: { type: string, format: uuid }
+        effectiveFrom:
+          type: string
+          format: date
+          description: Publishing closes the version in force the day before.
+        days:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [MON, TUE, WED, THU, FRI, SAT, SUN]
+        departureTime:
+          type: string
+          description: Local time at the plant, `HH:mm` or `HH:mm:ss`.
+        timeZone:
+          type: string
+          default: UTC
+          description: IANA zone the departure time is read in.
+        runRate:
+          type: number
+          minimum: 0
+          description: Paid for running the circuit at all.
+        perStopFee:
+          type: number
+          minimum: 0
+          description: Paid for each supplier actually visited; skipped ones earn nothing.
+        currency: { type: string, default: INR }
+        stops:
+          type: array
+          minItems: 1
+          maxItems: 30
+          description: Supplier pickups in circuit order. Each supplier once; never the plant.
+          items: { $ref: "#/components/schemas/MilkRunStopPlan" }
+      required: [code, plantTerminalId, effectiveFrom, days, departureTime, runRate,
+                 perStopFee, stops]
+
+    CircuitRun:
+      type: object
+      description: One day's execution of one route, priced with the version in force that day.
+      properties:
+        id: { type: string, format: uuid }
+        routeId: { type: string, format: uuid }
+        routeCode: { type: string }
+        runDate: { type: string, format: date }
+        plannedDeparture: { type: string, format: date-time }
+        plantTerminalId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [PLANNED, IN_PROGRESS, COMPLETED]
+        tripId: { type: string, format: uuid }
+        tripNo: { type: string }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        completionSource:
+          type: string
+          enum: [GEOFENCE, MANUAL]
+        runRate: { type: number }
+        perStopFee: { type: number }
+        currency: { type: string }
+        stopsVisited: { type: integer }
+        stopsSkipped: { type: integer }
+        chargeAmount:
+          type: number
+          description: Run rate plus the per-stop fee for each supplier visited. Set on completion.
+        totalPickedUpKg: { type: number }
+
+    CircuitRunSlice:
+      type: object
+      description: One page of circuits by day, then route. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CircuitRun" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    CircuitRunStop:
+      type: object
+      properties:
+        sequence: { type: integer }
+        terminalId: { type: string, format: uuid }
+        terminalCode: { type: string }
+        windowOpensAt: { type: string, format: date-time }
+        windowClosesAt: { type: string, format: date-time }
+        plannedDwellMin: { type: integer }
+        status:
+          type: string
+          enum: [PENDING, ARRIVED, DEPARTED, SKIPPED]
+        arrivedAt: { type: string, format: date-time }
+        departedAt: { type: string, format: date-time }
+        arrivalSource:
+          type: string
+          enum: [GEOFENCE, MANUAL]
+        minutesLate:
+          type: integer
+          description: Zero when on time; minutes after the window closed, rounded up, when not.
+        pickedUpKg: { type: number }
+        skipReason: { type: string }
+
+    GenerateCircuitRunsRequest:
+      type: object
+      properties:
+        fromDate:
+          type: string
+          format: date
+          description: First day to plan. Today (UTC) if omitted.
+        days:
+          type: integer
+          minimum: 1
+          maximum: 31
+          default: 7
+
+    GenerateCircuitRunsResult:
+      type: object
+      properties:
+        generated:
+          type: integer
+          description: Runs newly planned. Zero when every one already existed.
+      required: [generated]
+
+    AssignCircuitTripRequest:
+      type: object
+      properties:
+        tripId: { type: string, format: uuid }
+      required: [tripId]
+
+    CircuitPickupRequest:
+      type: object
+      properties:
+        quantityKg: { type: number, minimum: 0 }
+      required: [quantityKg]
+
+    CircuitSkipRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 1 }
+      required: [reason]
+
     Ping:
       type: object
       properties:
@@ -802,6 +1267,175 @@ components:
         openedAt: { type: string, format: date-time }
         closedAt: { type: string, format: date-time }
 
+    ItineraryLeg:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        seq: { type: integer, description: Position in the itinerary; the first leg is 1. }
+        mode:
+          type: string
+          enum: [ROAD, RAIL]
+        status:
+          type: string
+          enum: [PLANNED, PLACED, LOADED, DEPARTED, ARRIVED, RELEASED]
+          description: A road leg only ever reads PLANNED, DEPARTED or ARRIVED.
+        fromTerminalId: { type: string, format: uuid }
+        fromTerminalCode: { type: string }
+        toTerminalId: { type: string, format: uuid }
+        toTerminalCode: { type: string }
+        plannedDepartureAt: { type: string, format: date-time }
+        plannedArrivalAt: { type: string, format: date-time }
+        transferDwellMinutes:
+          type: integer
+          description: Time needed at this leg's origin after the previous leg
+            arrives, before this one may start.
+        tripId: { type: string, format: uuid, description: ROAD legs only. }
+        tripNo: { type: string }
+        unitType:
+          type: string
+          enum: [WAGON, CONTAINER]
+          description: RAIL legs only.
+        unitCount: { type: integer }
+        bookingRef: { type: string }
+        trainNo: { type: string }
+        carrierPartnerId: { type: string, format: uuid }
+        carrierCode: { type: string }
+        costAmount: { type: number }
+        placedAt: { type: string, format: date-time }
+        loadedAt: { type: string, format: date-time }
+        departedAt: { type: string, format: date-time }
+        arrivedAt: { type: string, format: date-time }
+        releasedAt: { type: string, format: date-time }
+        startedEarly:
+          type: boolean
+          description: A road leg whose trip was dispatched before the hand-off
+            allowed. Recorded rather than refused -- dispatch is the trip's gate.
+        connectionMissedAt:
+          type: string
+          format: date-time
+          description: When the previous leg's arrival made this leg's planned
+            start impossible.
+        earliestStartAt:
+          type: string
+          format: date-time
+          description: The previous leg's arrival plus the transfer dwell, set
+            when the connection was missed.
+
+    CarrierCost:
+      type: object
+      description: What one carrier is owed across the legs it runs.
+      properties:
+        carrierPartnerId: { type: string, format: uuid }
+        carrierCode: { type: string }
+        legCount: { type: integer }
+        totalCost: { type: number }
+
+    ItinerarySummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        itineraryNo: { type: string }
+        shipmentRef: { type: string }
+        status:
+          type: string
+          enum: [PLANNED, IN_PROGRESS, COMPLETED]
+          description: Derived from the legs. COMPLETED once the last leg has arrived.
+        currency: { type: string }
+        legCount: { type: integer }
+        totalCost:
+          type: number
+          description: Every leg's cost, summed. Each leg's carrier is still
+            paid separately.
+        connectionMissed: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    Itinerary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        itineraryNo: { type: string }
+        shipmentRef: { type: string }
+        status:
+          type: string
+          enum: [PLANNED, IN_PROGRESS, COMPLETED]
+        currency: { type: string }
+        legCount: { type: integer }
+        totalCost: { type: number }
+        connectionMissed: { type: boolean }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        legs:
+          type: array
+          items: { $ref: "#/components/schemas/ItineraryLeg" }
+        costByCarrier:
+          type: array
+          items: { $ref: "#/components/schemas/CarrierCost" }
+
+    ItinerarySlice:
+      type: object
+      description: One page, newest first. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ItinerarySummary" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    PlanItineraryLegRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [ROAD, RAIL]
+        fromTerminalId: { type: string, format: uuid }
+        toTerminalId: { type: string, format: uuid }
+        plannedDepartureAt: { type: string, format: date-time }
+        plannedArrivalAt: { type: string, format: date-time }
+        transferDwellMinutes: { type: integer, minimum: 0, default: 0 }
+        tripId:
+          type: string
+          format: uuid
+          description: Required for ROAD, forbidden for RAIL. The trip must not
+            have been dispatched yet.
+        unitType:
+          type: string
+          enum: [WAGON, CONTAINER]
+          description: Required for RAIL.
+        unitCount: { type: integer, minimum: 1, description: Required for RAIL. }
+        bookingRef: { type: string, description: The railway's booking reference. Required for RAIL. }
+        trainNo: { type: string }
+        carrierPartnerId: { type: string, format: uuid }
+        costAmount: { type: number, minimum: 0 }
+      required: [mode, fromTerminalId, toTerminalId, plannedDepartureAt, plannedArrivalAt,
+                 carrierPartnerId, costAmount]
+
+    PlanItineraryRequest:
+      type: object
+      properties:
+        shipmentRef: { type: string, minLength: 1 }
+        currency: { type: string, description: Optional. INR when not given. }
+        legs:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { $ref: "#/components/schemas/PlanItineraryLegRequest" }
+      required: [shipmentRef, legs]
+
+    RailMilestoneRequest:
+      type: object
+      properties:
+        milestone:
+          type: string
+          enum: [PLACED, LOADED, DEPARTED, ARRIVED, RELEASED]
+        at:
+          type: string
+          format: date-time
+          description: Optional. When it happened; now if not given.
+      required: [milestone]
+
     FreightBill:
       type: object
       properties:
@@ -841,6 +1475,12 @@ components:
         variancePct: { type: number }
         resolution: { type: string }
         matchedAt: { type: string, format: date-time }
+        settlementHeldBy:
+          type: string
+          description: Open exception tickets freezing this bill's settlement,
+            comma separated. Null when nothing is holding it. While set,
+            matching and dispute settlement are refused with
+            `settlement-on-hold`.
         createdAt: { type: string, format: date-time }
 
     FreightBillLine:
@@ -877,6 +1517,334 @@ components:
           description: Mandatory. An approval with no explanation is
             indistinguishable from one nobody looked at.
       required: [reason]
+
+    Bin:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        code: { type: string }
+        capacityUnits: { type: integer }
+        occupiedUnits:
+          type: integer
+          description: Units in the bin now, across every SKU and lot.
+
+    BinSlice:
+      type: object
+      description: One page, by bin code. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Bin" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    CreateBinRequest:
+      type: object
+      properties:
+        code: { type: string, minLength: 1 }
+        capacityUnits:
+          type: integer
+          minimum: 1
+          description: The most units the bin may hold, whatever the SKU.
+      required: [code, capacityUnits]
+
+    Sku:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        description: { type: string }
+        ownerPartnerId: { type: string, format: uuid }
+        uom: { type: string }
+
+    SkuSlice:
+      type: object
+      description: One page, by SKU code. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Sku" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    CreateSkuRequest:
+      type: object
+      properties:
+        code: { type: string, minLength: 1 }
+        description: { type: string, minLength: 1 }
+        ownerPartnerId:
+          type: string
+          format: uuid
+          description: Optional. Whose goods these are, for a warehouse run on
+            a customer's behalf.
+        uom:
+          type: string
+          description: Unit of measure. Defaults to EA.
+      required: [code, description]
+
+    AsnExpectedLine:
+      type: object
+      properties:
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity: { type: integer, minimum: 1 }
+      required: [skuId, quantity]
+
+    CreateAsnRequest:
+      type: object
+      properties:
+        warehouseId:
+          type: string
+          format: uuid
+          description: A terminal whose category is WAREHOUSE.
+        asnNo: { type: string, minLength: 1 }
+        supplierPartnerId: { type: string, format: uuid }
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/AsnExpectedLine" }
+      required: [warehouseId, asnNo, lines]
+
+    AsnLine:
+      type: object
+      description: |
+        `receivedQty` is everything counted at the dock, damaged units
+        included. Short and excess are derived from the count, never entered.
+        All counts are absent, and short and excess zero, until the ASN is
+        received.
+      properties:
+        lineNo: { type: integer }
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        lotNo: { type: string }
+        expectedQty: { type: integer }
+        receivedQty: { type: integer }
+        damagedQty: { type: integer }
+        shortQty: { type: integer }
+        excessQty: { type: integer }
+
+    Asn:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        asnNo: { type: string }
+        warehouseId: { type: string, format: uuid }
+        supplierPartnerId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [EXPECTED, RECEIVED]
+        crossDock: { type: boolean }
+        handlingUnitId:
+          type: string
+          format: uuid
+          description: The outbound unit a cross-docked receipt went into.
+        receivedBy: { type: string }
+        receivedAt: { type: string, format: date-time }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/AsnLine" }
+
+    ReceiptCount:
+      type: object
+      properties:
+        lineNo: { type: integer, minimum: 1 }
+        receivedQty: { type: integer, minimum: 0 }
+        damagedQty:
+          type: integer
+          minimum: 0
+          description: The part of `receivedQty` that cannot go into stock.
+      required: [lineNo, receivedQty, damagedQty]
+
+    ReceiveAsnRequest:
+      type: object
+      properties:
+        lines:
+          type: array
+          description: A line not listed is recorded as received zero -- wholly short.
+          items: { $ref: "#/components/schemas/ReceiptCount" }
+        crossDock:
+          type: boolean
+          description: Route the undamaged units straight into a new outbound
+            handling unit instead of leaving them on the dock for putaway.
+
+    PutawayRequest:
+      type: object
+      properties:
+        binId: { type: string, format: uuid }
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity: { type: integer, minimum: 1 }
+      required: [binId, skuId, quantity]
+
+    StockBalance:
+      type: object
+      description: What one location holds of one SKU and lot.
+      properties:
+        id: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        locationType:
+          type: string
+          enum: [DOCK, BIN, OUTBOUND, HU]
+          description: |
+            DOCK -- received, not yet put away. BIN -- in storage. OUTBOUND --
+            picked for an order, not yet packed. HU -- packed, not yet dispatched.
+        locationId: { type: string, format: uuid }
+        locationCode:
+          type: string
+          description: The bin code, for a bin. Absent otherwise.
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        lotNo: { type: string }
+        onHand: { type: integer }
+
+    StockBalanceSlice:
+      type: object
+      description: One page. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StockBalance" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    StockMovement:
+      type: object
+      description: One signed change of stock at one location. Never edited.
+      properties:
+        id: { type: string, format: uuid }
+        warehouseId: { type: string, format: uuid }
+        movementType:
+          type: string
+          enum: [RECEIPT, PUTAWAY, PICK, PACK, CROSS_DOCK, DISPATCH, ADJUST]
+        locationType:
+          type: string
+          enum: [DOCK, BIN, OUTBOUND, HU]
+        locationId: { type: string, format: uuid }
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity: { type: integer }
+        referenceId: { type: string, format: uuid }
+        reason: { type: string }
+        actor: { type: string }
+        occurredAt: { type: string, format: date-time }
+
+    StockMovementSlice:
+      type: object
+      description: One page, newest first. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StockMovement" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    AdjustStockRequest:
+      type: object
+      properties:
+        binId: { type: string, format: uuid }
+        skuId: { type: string, format: uuid }
+        lotNo: { type: string }
+        quantity:
+          type: integer
+          description: Signed. Negative for a loss found on counting. Never zero.
+        reason: { type: string, minLength: 1 }
+      required: [binId, skuId, quantity, reason]
+
+    OutboundOrderLineRequest:
+      type: object
+      properties:
+        skuId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+      required: [skuId, quantity]
+
+    CreateOutboundOrderRequest:
+      type: object
+      properties:
+        warehouseId: { type: string, format: uuid }
+        orderNo: { type: string, minLength: 1 }
+        shipTo:
+          type: string
+          description: Free text naming where it is going.
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/OutboundOrderLineRequest" }
+      required: [warehouseId, orderNo, lines]
+
+    OutboundOrderLine:
+      type: object
+      properties:
+        lineNo: { type: integer }
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        orderedQty: { type: integer }
+        pickedQty: { type: integer }
+        shortQty: { type: integer }
+
+    OutboundOrder:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderNo: { type: string }
+        warehouseId: { type: string, format: uuid }
+        shipTo: { type: string }
+        status:
+          type: string
+          enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED]
+        createdAt: { type: string, format: date-time }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OutboundOrderLine" }
+
+    HandlingUnitContent:
+      type: object
+      properties:
+        skuId: { type: string, format: uuid }
+        skuCode: { type: string }
+        lotNo: { type: string }
+        quantity: { type: integer }
+
+    HandlingUnit:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        huNo: { type: string }
+        warehouseId: { type: string, format: uuid }
+        source:
+          type: string
+          enum: [PACK, CROSS_DOCK]
+        outboundOrderId: { type: string, format: uuid }
+        asnId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [PACKED, DISPATCHED]
+        dispatchRef: { type: string }
+        dispatchedAt: { type: string, format: date-time }
+        contents:
+          type: array
+          description: What is in it. Empty once dispatched -- the goods have
+            left the ledger, and its movements still record them.
+          items: { $ref: "#/components/schemas/HandlingUnitContent" }
+
+    DispatchRequest:
+      type: object
+      properties:
+        reference:
+          type: string
+          description: What transport calls it -- a load, a trip, a docket.
 
     PublishTariffRequest:
       type: object
@@ -1052,6 +2020,186 @@ components:
         hasMore: { type: boolean }
       required: [items, hasMore]
 
+    ExceptionCategory:
+      type: string
+      description: |
+        Decides the severity; it is never chosen per ticket.
+        P1 -- ACCIDENT, THEFT, BREAKDOWN.
+        P2 -- ROUTE_DEVIATION, EXTENDED_STOPPAGE, TEMPERATURE_EXCURSION.
+        P3 -- ETA_DELAY, DOCUMENT_MISMATCH.
+      enum: [ACCIDENT, THEFT, BREAKDOWN, ROUTE_DEVIATION, EXTENDED_STOPPAGE,
+             TEMPERATURE_EXCURSION, ETA_DELAY, DOCUMENT_MISMATCH]
+
+    Exception:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ticketNo: { type: string }
+        tripId: { type: string, format: uuid }
+        tripNo: { type: string }
+        vehicleId: { type: string, format: uuid }
+        registrationNo: { type: string }
+        category: { $ref: "#/components/schemas/ExceptionCategory" }
+        severity:
+          type: string
+          enum: [P1, P2, P3]
+        status:
+          type: string
+          enum: [RAISED, ASSIGNED, UNDER_INVESTIGATION, RESOLVED, CLOSED]
+        description: { type: string }
+        source:
+          type: string
+          enum: [MANUAL, ROUTE_DEVIATION]
+        lat: { type: number }
+        lon: { type: number }
+        positionSource:
+          type: string
+          enum: [TELEMATICS, REPORTED, DETECTOR, NONE]
+          description: Where the coordinates captured at raising came from.
+        positionAt:
+          type: string
+          format: date-time
+          description: When the captured position was true -- a stale fix says
+            so rather than passing for current.
+        suspendsSettlement:
+          type: boolean
+          description: True for P1 and P2. The trip's freight bill cannot be
+            matched or settled until this ticket is closed.
+        raisedBy: { type: string }
+        raisedAt: { type: string, format: date-time }
+        assigneeUserId: { type: string, format: uuid }
+        assigneeName: { type: string }
+        assignedAt: { type: string, format: date-time }
+        resolution: { type: string }
+        resolvedBy: { type: string }
+        resolvedAt: { type: string, format: date-time }
+        closedBy: { type: string }
+        closedAt: { type: string, format: date-time }
+
+    ExceptionSlice:
+      type: object
+      description: One page, newest first. No total and no page number.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Exception" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    ExceptionActivity:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [RAISED, ASSIGNED, INVESTIGATION_STARTED, RESOLVED, REOPENED, CLOSED]
+        fromStatus: { type: string }
+        toStatus: { type: string }
+        note: { type: string }
+        actor: { type: string }
+        occurredAt: { type: string, format: date-time }
+
+    ExceptionSummary:
+      type: object
+      description: Counts over tickets that are not yet closed.
+      properties:
+        openP1: { type: integer }
+        openP2: { type: integer }
+        openP3: { type: integer }
+        unassigned: { type: integer }
+        settlementHolds:
+          type: integer
+          description: Open tickets currently freezing a vendor's settlement.
+
+    RaiseExceptionRequest:
+      type: object
+      properties:
+        tripId: { type: string, format: uuid }
+        category: { $ref: "#/components/schemas/ExceptionCategory" }
+        description: { type: string, minLength: 1 }
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: Optional. Where the reporter says it happened; used when
+            the vehicle has no fix from the last thirty minutes. Supply both
+            or neither.
+        lon: { type: number, minimum: -180, maximum: 180 }
+      required: [tripId, category, description]
+
+    AssignExceptionRequest:
+      type: object
+      properties:
+        assigneeUserId: { type: string, format: uuid }
+        note: { type: string }
+      required: [assigneeUserId]
+
+    ExceptionNoteRequest:
+      type: object
+      properties:
+        note: { type: string }
+
+    ResolveExceptionRequest:
+      type: object
+      properties:
+        resolution: { type: string, minLength: 1 }
+      required: [resolution]
+
+    ReopenExceptionRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 1 }
+      required: [reason]
+
+    RoutingGuide:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        originTerminalCode: { type: string }
+        destinationTerminalCode: { type: string }
+        vehicleType: { type: string }
+        strategy: { type: string, enum: [CONTRACTUAL, ROUND_ROBIN] }
+        active: { type: boolean }
+        entries:
+          type: array
+          description: Vendors in rank order.
+          items:
+            type: object
+            properties:
+              rankNo: { type: integer }
+              vendorPartnerId: { type: string, format: uuid }
+              vendorName: { type: string }
+              responseSlaMinutes: { type: integer }
+              agreedRate: { type: number }
+
+    DefineGuideRequest:
+      type: object
+      properties:
+        orgUnitId: { type: string, format: uuid }
+        originTerminalId: { type: string, format: uuid }
+        destinationTerminalId: { type: string, format: uuid }
+        vehicleType: { type: string }
+        strategy:
+          type: string
+          enum: [CONTRACTUAL, ROUND_ROBIN]
+          description: Defaults to CONTRACTUAL.
+      required: [orgUnitId, originTerminalId, destinationTerminalId, vehicleType]
+
+    AddVendorRequest:
+      type: object
+      properties:
+        vendorPartnerId: { type: string, format: uuid }
+        rankNo: { type: integer, minimum: 1 }
+        responseSlaMinutes:
+          type: integer
+          minimum: 1
+          description: How long the vendor has to answer an offer before it
+            cascades to the next rank.
+        agreedRate: { type: number, minimum: 0 }
+      required: [vendorPartnerId, rankNo, responseSlaMinutes]
+
 paths:
 
   /api/v1/auth/login:
@@ -1180,6 +2328,139 @@ paths:
                 items: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/users/{id}/access-attributes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Access policies]
+      operationId: getUserAccessAttributes
+      summary: The attributes a user's next token will carry
+      description: Requires `ACCESS_POLICY_MANAGE`.
+      responses:
+        "200":
+          description: The user's access attributes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserAccessAttributes" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    put:
+      tags: [Access policies]
+      operationId: setUserAccessAttributes
+      summary: Replace a user's access attributes
+      description: |
+        Requires `ACCESS_POLICY_MANAGE`. Takes effect at the user's next sign-in
+        or token refresh, not on the token they hold now.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetUserAccessAttributesRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/access-policies:
+    get:
+      tags: [Access policies]
+      operationId: listAccessPolicies
+      summary: A page of the tenant's access policies
+      description: Requires `ACCESS_POLICY_MANAGE`.
+      parameters:
+        - name: action
+          in: query
+          required: false
+          schema: { type: string }
+          description: Restricts the listing to policies refining one permission code.
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of policies.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessPolicySlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Access policies]
+      operationId: createAccessPolicy
+      summary: Add an access policy
+      description: |
+        Requires `ACCESS_POLICY_MANAGE`. The condition is validated on write: an
+        unknown operator or attribute is a 400, not a rule that silently never
+        matches. Applies from the next request.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAccessPolicyRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/access-policies/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Access policies]
+      operationId: getAccessPolicy
+      summary: One access policy
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessPolicy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    put:
+      tags: [Access policies]
+      operationId: reviseAccessPolicy
+      summary: Replace what a policy says
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviseAccessPolicyRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [Access policies]
+      operationId: deleteAccessPolicy
+      summary: Remove a policy
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/partners:
@@ -1984,6 +3265,79 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/v1/ltl/zones/{terminalId}:
+    parameters:
+      - name: terminalId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: The terminal being zoned -- a hub, or a delivery point.
+    put:
+      tags: [LTL rating]
+      operationId: assignLtlZone
+      summary: Place a terminal in a rating zone
+      description: |
+        Replaces any earlier placement. Applies to the next docket priced; a
+        receivable already raised keeps the zones it was priced with.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignLtlZoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/ltl/rate-cards:
+    post:
+      tags: [LTL rating]
+      operationId: publishLtlRateCard
+      summary: Publish a zone-to-zone rate card version
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublishLtlRateCardRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/ltl/receivables:
+    get:
+      tags: [LTL rating]
+      operationId: listDocketReceivables
+      summary: A page of docket receivables
+      description: |
+        Keyed on the docket number. Narrow to one customer for a statement.
+        There is no endpoint to create one: a receivable is raised when an LTL
+        docket is booked.
+      parameters:
+        - name: customerPartnerId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Restricts the listing to one customer's dockets.
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of receivables.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocketReceivableSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/allocations:
     get:
       tags: [Sourcing]
@@ -2139,6 +3493,102 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/routing-guides:
+    post:
+      tags: [Sourcing]
+      operationId: defineRoutingGuide
+      summary: Open a routing guide for a lane and vehicle type
+      description: |
+        Requires `ROUTING_GUIDE_MANAGE`. One guide per lane and vehicle type,
+        retired ones included (`routing-guide-exists`): old allocations point at
+        the guide they went out under, so a lane's vendors are changed by
+        editing its entries rather than by writing a second guide.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DefineGuideRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/routing-guides/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Sourcing]
+      operationId: getRoutingGuide
+      summary: A guide and its vendors in rank order
+      responses:
+        "200":
+          description: The guide.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoutingGuide" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/routing-guides/{id}/vendors:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Sourcing]
+      operationId: addRoutingGuideVendor
+      summary: Put a vendor on the guide at a rank
+      description: |
+        Requires `ROUTING_GUIDE_MANAGE`. Refused for a vendor that is not ACTIVE
+        (`vendor-not-active`), a rank already held (`rank-taken`), a vendor
+        already on the guide (`vendor-already-ranked`) or a retired guide.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddVendorRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/routing-guides/{id}/retire:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Sourcing]
+      operationId: retireRoutingGuide
+      summary: Stop the guide being used for new allocations
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/trips:
     get:
@@ -2464,6 +3914,389 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/v1/milk-run-routes:
+    get:
+      tags: [Milk runs]
+      operationId: listMilkRunRoutes
+      summary: Routes in force, by code
+      description: Requires `MILKRUN_READ`. Superseded versions remain reachable by id.
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of routes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MilkRunRouteSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Milk runs]
+      operationId: publishMilkRunRoute
+      summary: Publish a version of a milk-run route
+      description: |
+        Requires `MILKRUN_PLAN`. Closes the version in force the day before
+        `effectiveFrom`; a successor that does not start after the incumbent is
+        refused. Every terminal must be on this tenant's network. Circuits
+        already generated keep the version they were generated from.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublishMilkRunRouteRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/milk-run-routes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Milk runs]
+      operationId: getMilkRunRoute
+      summary: One route version
+      responses:
+        "200":
+          description: The route version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MilkRunRoute" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/milk-run-routes/{id}/stops:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Milk runs]
+      operationId: getMilkRunRouteStops
+      summary: A route version's supplier stops, in circuit order
+      responses:
+        "200":
+          description: The stops.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MilkRunRouteStop" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/milk-runs:
+    get:
+      tags: [Milk runs]
+      operationId: listCircuitRuns
+      summary: Circuits by day, then route
+      description: Requires `MILKRUN_READ`.
+      parameters:
+        - name: fromDate
+          in: query
+          required: false
+          schema: { type: string, format: date }
+          description: First day to include.
+        - name: routeCode
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "#/components/parameters/status"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of circuits.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircuitRunSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/milk-runs/generate:
+    post:
+      tags: [Milk runs]
+      operationId: generateCircuitRuns
+      summary: Plan circuits ahead from the routes' schedules
+      description: |
+        Requires `MILKRUN_PLAN`. Idempotent per route and day: a day that
+        already has a circuit for a route is left alone, so calling this
+        twice plans nothing the second time. The same generation runs
+        in-process at startup and hourly.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GenerateCircuitRunsRequest" }
+      responses:
+        "200":
+          description: How many circuits were newly planned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenerateCircuitRunsResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/milk-runs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Milk runs]
+      operationId: getCircuitRun
+      summary: One circuit
+      responses:
+        "200":
+          description: The circuit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircuitRun" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/milk-runs/{id}/stops:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Milk runs]
+      operationId: getCircuitRunStops
+      summary: What happened at each supplier, in circuit order
+      responses:
+        "200":
+          description: The stops.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CircuitRunStop" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/milk-runs/{id}/trip:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Milk runs]
+      operationId: assignCircuitTrip
+      summary: Hand a planned circuit to an execution trip
+      description: |
+        Requires `MILKRUN_EXECUTE`. From then on, geofence crossings telematics
+        reports for the trip record the circuit's stops: entering a supplier is
+        an arrival, leaving it a departure, entering the plant completes the
+        circuit. A trip carries at most one circuit.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignCircuitTripRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/milk-runs/{id}/stops/{sequence}/arrival:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+      - name: sequence
+        in: path
+        required: true
+        schema: { type: integer }
+        description: The stop's position in the circuit, from 1.
+    post:
+      tags: [Milk runs]
+      operationId: recordCircuitStopArrival
+      summary: Record reaching a supplier by hand
+      description: |
+        Requires `MILKRUN_EXECUTE`. Judged exactly as a geofence arrival:
+        after the window closes it is late, and any earlier supplier still
+        waiting is skipped.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/milk-runs/{id}/stops/{sequence}/departure:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+      - name: sequence
+        in: path
+        required: true
+        schema: { type: integer }
+        description: The stop's position in the circuit, from 1.
+    post:
+      tags: [Milk runs]
+      operationId: recordCircuitStopDeparture
+      summary: Record leaving a supplier by hand
+      description: Requires `MILKRUN_EXECUTE`.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/milk-runs/{id}/stops/{sequence}/pickup:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+      - name: sequence
+        in: path
+        required: true
+        schema: { type: integer }
+        description: The stop's position in the circuit, from 1.
+    post:
+      tags: [Milk runs]
+      operationId: recordCircuitStopPickup
+      summary: Record what was collected at a supplier
+      description: |
+        Requires `MILKRUN_EXECUTE`. Replaces any earlier figure. Allowed after
+        the circuit has reached the plant, because the quantity usually comes
+        off the goods-received note.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CircuitPickupRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/milk-runs/{id}/stops/{sequence}/skip:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+      - name: sequence
+        in: path
+        required: true
+        schema: { type: integer }
+        description: The stop's position in the circuit, from 1.
+    post:
+      tags: [Milk runs]
+      operationId: skipCircuitStop
+      summary: Record that a supplier will not be collected from
+      description: Requires `MILKRUN_EXECUTE`. Only a supplier not yet reached can be skipped.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CircuitSkipRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/milk-runs/{id}/completion:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Milk runs]
+      operationId: completeCircuitRun
+      summary: Record reaching the plant by hand
+      description: |
+        Requires `MILKRUN_EXECUTE`. Any supplier still waiting is skipped, and
+        the circuit is priced: the run rate plus the per-stop fee for each
+        supplier visited.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /api/v1/telematics/pings:
     post:
       tags: [Telematics]
@@ -2618,6 +4451,112 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /api/v1/itineraries:
+    get:
+      tags: [Multimodal]
+      operationId: listItineraries
+      summary: Itineraries, newest first
+      description: Requires `MULTIMODAL_READ`.
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of itineraries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItinerarySlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Multimodal]
+      operationId: planItinerary
+      summary: Plan a shipment over ordered road and rail legs
+      description: |
+        Requires `MULTIMODAL_PLAN`. Legs must be contiguous -- each starts at the
+        terminal where the previous one ends -- and each must be planned to
+        start no earlier than the previous leg's planned arrival plus its own
+        transfer dwell. A ROAD leg names an existing trip that has not yet been
+        dispatched; a RAIL leg names a booking, a unit type and a unit count.
+        Every leg names its carrier and its cost.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanItineraryRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/itineraries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Multimodal]
+      operationId: getItinerary
+      summary: One itinerary with its legs and the cost owed to each carrier
+      description: Requires `MULTIMODAL_READ`.
+      responses:
+        "200":
+          description: The itinerary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Itinerary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/itineraries/{id}/legs/{seq}/milestones:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the itinerary.
+      - name: seq
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+        description: The leg's position in the itinerary.
+    post:
+      tags: [Multimodal]
+      operationId: recordRailMilestone
+      summary: Report a rail terminal event on a leg
+      description: |
+        Requires `MULTIMODAL_TRACK`. RAIL legs only -- a road leg moves with its
+        trip. Milestones go one step at a time: PLACED, LOADED, DEPARTED,
+        ARRIVED, RELEASED. DEPARTED is refused (`handoff-too-early`,
+        `handoff-predecessor-not-arrived`) before the previous leg's arrival
+        plus this leg's transfer dwell. Reporting the current milestone again
+        with the same time is a no-op. An ARRIVED that comes too late for the
+        next leg's planned start marks that leg's connection missed.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RailMilestoneRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /api/v1/freight-bills:
     get:
       tags: [Settlement]
@@ -2748,6 +4687,411 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/v1/warehouses/{warehouseId}/bins:
+    parameters:
+      - name: warehouseId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: A terminal whose category is WAREHOUSE.
+    get:
+      tags: [Warehouse]
+      operationId: listBins
+      summary: A warehouse's bins by code, with how full each is
+      description: Requires `WAREHOUSE_READ`.
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of bins.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BinSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Warehouse]
+      operationId: createBin
+      summary: Add a bin to a warehouse
+      description: |
+        Requires `WAREHOUSE_SETUP`. Refused unless the terminal is a
+        WAREHOUSE, and when the warehouse already has a bin with that code.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateBinRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/skus:
+    get:
+      tags: [Warehouse]
+      operationId: listSkus
+      summary: The tenant's SKUs by code
+      description: Requires `WAREHOUSE_READ`.
+      parameters:
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of SKUs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SkuSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Warehouse]
+      operationId: createSku
+      summary: Register a SKU
+      description: Requires `WAREHOUSE_SETUP`. Codes are unique per tenant.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSkuRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/asns:
+    post:
+      tags: [Warehouse]
+      operationId: createAsn
+      summary: Record an advance shipping notice
+      description: Requires `WAREHOUSE_OPERATE`. Lines are numbered in the order given.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAsnRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/asns/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Warehouse]
+      operationId: getAsn
+      summary: One ASN, with each line's count and variance
+      description: Requires `WAREHOUSE_READ`.
+      responses:
+        "200":
+          description: The ASN.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asn" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/asns/{id}/receipt:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: receiveAsn
+      summary: Count the delivery in at the dock
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Once per ASN. Undamaged units become
+        stock on the dock -- or, with `crossDock`, go straight into a new
+        outbound handling unit. Short, excess and damaged quantities are
+        recorded per line and published as variances.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReceiveAsnRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/putaways:
+    post:
+      tags: [Warehouse]
+      operationId: putaway
+      summary: Move received stock from the dock into a bin
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Refused with `bin-over-capacity` when
+        the bin has no room, and `dock-stock-insufficient` when the dock does
+        not hold that much of the SKU and lot.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PutawayRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/stock:
+    get:
+      tags: [Warehouse]
+      operationId: listStock
+      summary: What a warehouse holds, by location, SKU and lot
+      description: Requires `WAREHOUSE_READ`. Empty balances are left out.
+      parameters:
+        - name: warehouseId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: skuId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: binId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of balances.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockBalanceSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/stock/movements:
+    get:
+      tags: [Warehouse]
+      operationId: listStockMovements
+      summary: A SKU's ledger, newest first
+      description: Requires `WAREHOUSE_READ`.
+      parameters:
+        - name: skuId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of movements.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StockMovementSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/stock/adjustments:
+    post:
+      tags: [Warehouse]
+      operationId: adjustStock
+      summary: Correct a bin's stock after a count
+      description: |
+        Requires `INVENTORY_ADJUST`. Recorded as a new ADJUST movement -- the
+        ledger is never edited. Refused with `stock-cannot-go-negative` when a
+        loss exceeds what the bin holds. Answers with the movement's id.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdjustStockRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/outbound-orders:
+    post:
+      tags: [Warehouse]
+      operationId: createOutboundOrder
+      summary: Record goods to be picked and sent out
+      description: Requires `WAREHOUSE_OPERATE`.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOutboundOrderRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/outbound-orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Warehouse]
+      operationId: getOutboundOrder
+      summary: One outbound order, with what was picked per line
+      description: Requires `WAREHOUSE_READ`.
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OutboundOrder" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/outbound-orders/{id}/pick:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: pickOutboundOrder
+      summary: Pick every line from the bins
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Once per order. Takes what the bins hold
+        and no more: a line that cannot be filled is picked short, the order
+        becomes SHORT_PICKED and the shortfall is published.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/outbound-orders/{id}/pack:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: packOutboundOrder
+      summary: Pack everything picked into one new handling unit
+      description: Requires `WAREHOUSE_OPERATE`. Answers with the handling unit's id.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/handling-units/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Warehouse]
+      operationId: getHandlingUnit
+      summary: One handling unit and what is in it
+      description: Requires `WAREHOUSE_READ`.
+      responses:
+        "200":
+          description: The handling unit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HandlingUnit" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/handling-units/{id}/dispatch:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Warehouse]
+      operationId: dispatchHandlingUnit
+      summary: Hand a packed unit over to transport
+      description: |
+        Requires `WAREHOUSE_OPERATE`. Once per unit. Its contents leave the
+        ledger, and the hand-off is published with them. Nothing consumes
+        that event yet: turning a dispatched unit into a planning consignment
+        is not built.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DispatchRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /api/v1/tariffs:
     post:
       tags: [Settlement]
@@ -2821,5 +5165,259 @@ paths:
         "201": { $ref: "#/components/responses/Created" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/exceptions:
+    get:
+      tags: [Control tower]
+      operationId: listExceptions
+      summary: The exception board, newest first
+      description: Requires `EXCEPTION_READ`.
+      parameters:
+        - $ref: "#/components/parameters/status"
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [P1, P2, P3]
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of tickets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExceptionSlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Control tower]
+      operationId: raiseException
+      summary: Raise an exception against a trip
+      description: |
+        Requires `EXCEPTION_RAISE`. The severity follows from the category. The
+        vehicle's position is captured now: its own telematics fix if one is
+        less than thirty minutes old, otherwise the reported `lat`/`lon`,
+        otherwise the stale fix with its true timestamp, otherwise none -- and
+        the ticket says which. A P1 or P2 ticket freezes settlement of the
+        trip until it is closed.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RaiseExceptionRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/exceptions/summary:
+    get:
+      tags: [Control tower]
+      operationId: summariseExceptions
+      summary: Open tickets by severity, unassigned, and settlement holds
+      description: Requires `EXCEPTION_READ`.
+      responses:
+        "200":
+          description: The headline numbers.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExceptionSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/exceptions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Control tower]
+      operationId: getException
+      summary: One ticket
+      responses:
+        "200":
+          description: The ticket.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Exception" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/exceptions/{id}/history:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Control tower]
+      operationId: getExceptionHistory
+      summary: Every step the ticket has been through, oldest first
+      responses:
+        "200":
+          description: The ticket's history.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ExceptionActivity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/exceptions/{id}/assign:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Control tower]
+      operationId: assignException
+      summary: Give the ticket an owner, or a new one
+      description: |
+        Requires `EXCEPTION_MANAGE`. From RAISED it moves to ASSIGNED; later it
+        only changes the owner.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignExceptionRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/exceptions/{id}/investigate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Control tower]
+      operationId: investigateException
+      summary: The owner starts working it
+      description: |
+        Requires `EXCEPTION_MANAGE`. Only from ASSIGNED.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExceptionNoteRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/exceptions/{id}/resolve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Control tower]
+      operationId: resolveException
+      summary: The owner considers it dealt with
+      description: |
+        Requires `EXCEPTION_MANAGE`. The resolution is mandatory.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveExceptionRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/exceptions/{id}/reopen:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Control tower]
+      operationId: reopenException
+      summary: A manager sends a resolution back
+      description: |
+        Requires `EXCEPTION_CLOSE`.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReopenExceptionRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/exceptions/{id}/close:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    post:
+      tags: [Control tower]
+      operationId: closeException
+      summary: A manager closes the ticket
+      description: |
+        Requires `EXCEPTION_CLOSE`. Releases any settlement hold the ticket placed.
+        For a ticket that holds settlement, the manager closing it must not be
+        the person who resolved it (`exception-close-needs-second-person`).
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExceptionNoteRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/Conflict" }

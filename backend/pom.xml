@@ -56,6 +56,21 @@
     <mapstruct.version>1.6.3</mapstruct.version>
     <cucumber.version>7.34.6</cucumber.version>
     <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
+    <!--
+      Test scope only. The API tests drive the running application through a
+      Feign client generated from api/openapi.yaml, so a contract that has
+      drifted from the server fails to compile or to deserialise rather than
+      passing quietly.
+    -->
+    <openapi-generator.version>7.14.0</openapi-generator.version>
+    <!--
+      JUnit tags the default build skips. The performance suite bulk-loads
+      hundreds of thousands of rows and restarts the application; it runs with
+      -Pperformance and in its own workflow, not on every push.
+    -->
+    <test.groups.included></test.groups.included>
+    <test.groups.excluded>performance</test.groups.excluded>
+    <feign.version>13.6</feign.version>
 
     <!-- The native binary is launched directly; no fat jar layering needed. -->
     <spring-boot.build-image.skip>true</spring-boot.build-image.skip>
@@ -215,6 +230,54 @@
       <artifactId>testcontainers-junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
+    <!--
+      Generated Feign client (see openapi-generator-maven-plugin below).
+      Feign and the generator's runtime use Jackson 2, which lives under
+      com.fasterxml and does not collide with the application's Jackson 3.
+      Test scope throughout: none of it reaches the shipped artefact.
+    -->
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-core</artifactId>
+      <version>${feign.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-jackson</artifactId>
+      <version>${feign.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-slf4j</artifactId>
+      <version>${feign.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.openfeign.form</groupId>
+      <artifactId>feign-form</artifactId>
+      <version>3.8.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>2.18.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.github.scribejava</groupId>
+      <artifactId>scribejava-core</artifactId>
+      <version>8.3.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
+      <version>3.0.2</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -324,6 +387,60 @@
         </configuration>
       </plugin>
 
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <groups>${test.groups.included}</groups>
+          <excludedGroups>${test.groups.excluded}</excludedGroups>
+        </configuration>
+      </plugin>
+
+      <!--
+        Generates a typed Feign client from the hand-authored contract into
+        target/generated-test-sources. The contract stays the hand-written
+        source of truth, never derived from the controllers: the server is
+        checked against it by
+        OpenApiContractTest, and the client derived from it is exercised
+        against the running server by the *ApiTest classes.
+      -->
+      <plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <version>${openapi-generator.version}</version>
+        <executions>
+          <execution>
+            <id>generate-feign-client</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <inputSpec>${project.basedir}/../api/openapi.yaml</inputSpec>
+              <generatorName>java</generatorName>
+              <library>feign</library>
+              <output>${project.build.directory}/generated-test-sources/openapi</output>
+              <addTestCompileSourceRoot>true</addTestCompileSourceRoot>
+              <addCompileSourceRoot>false</addCompileSourceRoot>
+              <apiPackage>com.lms.client.api</apiPackage>
+              <modelPackage>com.lms.client.model</modelPackage>
+              <invokerPackage>com.lms.client</invokerPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <useJakartaEe>true</useJakartaEe>
+                <openApiNullable>false</openApiNullable>
+                <dateLibrary>java8</dateLibrary>
+                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+              </configOptions>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <!--
         Dependency license gate. Fails the build on any dependency whose license
         is not on the allowlist. EPL-2.0 appears only in test scope (JUnit), so
@@ -359,6 +476,37 @@
   </build>
 
   <profiles>
+    <!--
+      Performance suite: `./mvnw verify -Pperformance`. Runs only the tests
+      tagged `performance` (large-data query timings and application
+      restarts), which are too slow to run on every push.
+
+      The tag filter alone is not enough: the Cucumber @Suite runners then
+      discover nothing, and a suite that discovers nothing fails the build.
+      That failure is worth keeping in the default build, where it means a
+      broken suite, so this profile narrows to the performance package instead.
+    -->
+    <profile>
+      <id>performance</id>
+      <properties>
+        <test.groups.included>performance</test.groups.included>
+        <test.groups.excluded></test.groups.excluded>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>com/lms/performance/**/*Test.java</include>
+              </includes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
     <!--
       Native image build: `./mvnw -Pnative package`.
 

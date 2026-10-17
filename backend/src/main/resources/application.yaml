@@ -155,3 +155,12 @@ lms:
     # absolute alone waves through a five-figure gap on a large one.
     match-tolerance-pct: ${INVOICE_TOLERANCE_PCT:2}
     match-tolerance-absolute: ${INVOICE_TOLERANCE_ABS:100}
+  demo:
+    # Off by default. When on, every start ensures a "demo" tenant and one
+    # administrator holding every permission (DemoTenantSeeder) -- the only way
+    # to sign in to a fresh database, since tenants have no self-service
+    # registration. There is deliberately no default password.
+    enabled: ${LMS_DEMO_SEED:false}
+    tenant-code: ${DEMO_TENANT_CODE:demo}
+    admin-email: ${DEMO_ADMIN_EMAIL:admin@demo.local}
+    admin-password: ${DEMO_ADMIN_PASSWORD:}
