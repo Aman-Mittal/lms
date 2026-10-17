@@ -54,7 +54,7 @@
 
     <spring-modulith.version>2.1.1</spring-modulith.version>
     <mapstruct.version>1.6.3</mapstruct.version>
-    <cucumber.version>7.34.6</cucumber.version>
+    <cucumber.version>8.0.4</cucumber.version>
     <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
     <!--
       Test scope only. The API tests drive the running application through a
