@@ -36,5 +36,10 @@ public record OrderValidated(
         int lineCount,
         BigDecimal totalChargeableWeightKg,
         boolean containsHazmat,
+        /**
+         * FTL or LTL, by name. A name rather than the enum so that a listener
+         * outside the order and planning pair needs nothing but this record.
+         */
+        String freightMode,
         Instant occurredAt) {
 }

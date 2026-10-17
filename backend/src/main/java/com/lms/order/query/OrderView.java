@@ -37,5 +37,6 @@ public record OrderView(
         int plannedLineCount,
         BigDecimal totalDeadWeightKg,
         boolean containsHazmat,
+        String freightMode,
         Instant createdAt) {
 }

@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
 import com.lms.order.command.domain.OrderLine;
 import com.lms.order.command.domain.SalesOrder;
@@ -57,11 +58,30 @@ public class OrderCommandService {
         this.events = events;
     }
 
+    /** Raises a full-truckload order, which is what an order without a mode has always been. */
     @Transactional
     @PreAuthorize("hasAuthority('ORDER_CREATE')")
     public UUID raiseOrder(UUID orgUnitId, UUID customerPartnerId, String orderNo,
                            UUID originTerminalId, Instant requestedPickupAt,
                            Instant requestedDeliveryAt, SalesOrder.OrderSource source) {
+        return raiseOrder(orgUnitId, customerPartnerId, orderNo, originTerminalId,
+                requestedPickupAt, requestedDeliveryAt, source, FreightMode.FTL, null, null);
+    }
+
+    /**
+     * Raises an order in a stated freight mode.
+     *
+     * <p>An LTL order names the hub it enters the network at and the hub its
+     * freight is delivered from; each consignment generated from it becomes a
+     * docket between those two hubs.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('ORDER_CREATE')")
+    public UUID raiseOrder(UUID orgUnitId, UUID customerPartnerId, String orderNo,
+                           UUID originTerminalId, Instant requestedPickupAt,
+                           Instant requestedDeliveryAt, SalesOrder.OrderSource source,
+                           FreightMode freightMode, UUID originHubTerminalId,
+                           UUID destinationHubTerminalId) {
         UUID tenantId = TenantContext.requireTenantId();
 
         orders.findByOrderNo(tenantId, orderNo).ifPresent(existing -> {
@@ -71,7 +91,8 @@ public class OrderCommandService {
 
         return orders.save(SalesOrder.raise(UUID.randomUUID(), tenantId, orgUnitId,
                 customerPartnerId, orderNo, originTerminalId,
-                requestedPickupAt, requestedDeliveryAt, source)).id();
+                requestedPickupAt, requestedDeliveryAt, source, freightMode,
+                originHubTerminalId, destinationHubTerminalId)).id();
     }
 
     /**
@@ -143,7 +164,8 @@ public class OrderCommandService {
 
         events.publishEvent(new OrderValidated(tenantId, orderId, order.orderNo(),
                 order.customerPartnerId(), orderLines.size(), totalChargeable,
-                orderLines.stream().anyMatch(OrderLine::isHazmat), Instant.now()));
+                orderLines.stream().anyMatch(OrderLine::isHazmat), order.freightMode().name(),
+                Instant.now()));
     }
 
     @Transactional
