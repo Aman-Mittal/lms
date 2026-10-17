@@ -184,6 +184,12 @@ public record Terminal(
      * strayed from the corridor between two terminals.
      */
     public LatLon centre() {
+        if (centreLat == null || centreLon == null) {
+            // A polygon stores no centre of its own; derive the one this
+            // method has always promised rather than failing on a null.
+            return new LatLon((minLat.doubleValue() + maxLat.doubleValue()) / 2,
+                    (minLon.doubleValue() + maxLon.doubleValue()) / 2);
+        }
         return new LatLon(centreLat.doubleValue(), centreLon.doubleValue());
     }
 

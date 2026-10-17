@@ -101,7 +101,17 @@ public interface LoadLifecyclePort {
              * drop and one detention window, and charging an additional-drop
              * fee for each of them is how a vendor relationship goes wrong.
              */
-            int dropCount) {
+            int dropCount,
+            /**
+             * FTL or LTL, by name.
+             *
+             * <p>For an LTL load the lane above runs hub to hub -- origin
+             * hub to the destination hub its dockets share -- and the drop
+             * count counts hubs, not consignees. The vehicle is hired for the
+             * line haul; delivering each docket from the far hub is a
+             * different movement.
+             */
+            String freightMode) {
 
         /** Whether the load is closed to building and can be offered to vendors. */
         public boolean isSourceable() {

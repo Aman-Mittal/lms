@@ -88,6 +88,15 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
         orders.save(order.withCoverage((int) planned, (int) total));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public OrderTerms termsOf(UUID orderId) {
+        SalesOrder order = require(orderId);
+        return new OrderTerms(order.id(), order.customerPartnerId(), order.freightMode(),
+                order.originTerminalId(), order.originHubTerminalId(),
+                order.destinationHubTerminalId());
+    }
+
     private static PlannableLine toPlannable(OrderLine line) {
         return new PlannableLine(line.id(), line.consigneePartnerId(), line.destinationTerminalId(),
                 line.materialClass(), line.isHazmat(),

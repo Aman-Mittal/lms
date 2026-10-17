@@ -73,6 +73,7 @@ public class AuthorityHooks {
             "ORDER_CREATE", "ORDER_READ", "ORDER_UPDATE",
             "LOAD_CREATE", "LOAD_READ", "LOAD_ALLOCATE",
             "TRIP_READ", "TRIP_EXECUTE",
+            "MILKRUN_READ", "MILKRUN_PLAN", "MILKRUN_EXECUTE",
             "TELEMATICS_INGEST",
             "MULTIMODAL_READ", "MULTIMODAL_PLAN", "MULTIMODAL_TRACK",
             "TARIFF_MANAGE", "ROUTING_GUIDE_MANAGE",

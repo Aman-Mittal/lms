@@ -123,6 +123,80 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the circuit a trip is carrying is found by index")
+    void circuitRunByTrip() {
+        // Runs on every geofence crossing of every trip, most of which carry
+        // no circuit at all -- the miss has to be as cheap as the hit.
+        assertIndexed("""
+                SELECT * FROM circuit_run
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                """, "circuit_run");
+    }
+
+    @Test
+    @DisplayName("the circuit listing pages by day and route without a sort")
+    void circuitRunListingIsKeysetSeekable() {
+        // The same unique key that makes generation idempotent orders the
+        // listing, so the cursor rides it.
+        assertIndexed("""
+                SELECT * FROM circuit_run
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND run_date >= DATE '2030-01-07'
+                   AND (run_date, route_code) > (DATE '2030-01-07', 'MR-NORTH')
+                 ORDER BY run_date, route_code
+                 LIMIT 50
+                """, "circuit_run");
+    }
+
+    @Test
+    @DisplayName("a circuit's stops are read by index")
+    void circuitRunStops() {
+        assertIndexed("""
+                SELECT * FROM circuit_run_stop
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND run_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY sequence
+                """, "circuit_run_stop");
+    }
+
+    @Test
+    @DisplayName("the route versions the circuit planner reads are index-served")
+    void milkRunRoutesCoveringAWindow() {
+        assertIndexed("""
+                SELECT * FROM milk_run_route
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND effective_from <= DATE '2030-01-13'
+                   AND (effective_to IS NULL OR effective_to >= DATE '2030-01-07')
+                 ORDER BY code, effective_from DESC
+                """, "milk_run_route");
+    }
+
+    @Test
+    @DisplayName("the routes in force page by code without a sort")
+    void milkRunRouteListingIsKeysetSeekable() {
+        assertIndexed("""
+                SELECT * FROM milk_run_route
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND effective_to IS NULL
+                   AND code > 'MR-NORTH'
+                 ORDER BY code
+                 LIMIT 50
+                """, "milk_run_route");
+    }
+
+    @Test
+    @DisplayName("a route version's stops are read by index")
+    void milkRunRouteStops() {
+        assertIndexed("""
+                SELECT * FROM milk_run_route_stop
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND route_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY sequence
+                """, "milk_run_route_stop");
+    }
+
+    @Test
     @DisplayName("terminal bounding-box candidate filter is index-served")
     void terminalBoundingBox() {
         // This is the substitute for a spatial index (DOCS/adr/0004) and runs on
@@ -207,6 +281,58 @@ class QueryPlanTest {
                    AND expires_on <= current_date + 30
                  ORDER BY expires_on
                 """, "compliance_document");
+    }
+
+    @Test
+    @DisplayName("the LTL rate card in force between two zones is index-served")
+    void ltlRateCardInForce() {
+        // Runs once per booked docket. Descending effective_from lets the plan
+        // stop at the first version that had started by the booking date.
+        assertIndexed("""
+                SELECT * FROM ltl_rate_card
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND origin_zone = 'WEST'
+                   AND destination_zone = 'NORTH'
+                   AND effective_from <= DATE '2026-01-15'
+                 ORDER BY effective_from DESC
+                 LIMIT 1
+                """, "ltl_rate_card");
+    }
+
+    @Test
+    @DisplayName("a terminal's LTL zone placement is index-served")
+    void ltlZonePlacement() {
+        // Read three times per docket priced: both hubs and the delivery point.
+        assertIndexed("""
+                SELECT zone_code, out_of_delivery_area FROM ltl_zone_terminal
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND terminal_id = '00000000-0000-0000-0000-000000000002'
+                """, "ltl_zone_terminal");
+    }
+
+    @Test
+    @DisplayName("the docket receivable listing pages by docket number without a sort")
+    void docketReceivablesByDocketNo() {
+        assertIndexed("""
+                SELECT * FROM docket_receivable
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND docket_no > 'DKT-0000000000'
+                 ORDER BY docket_no
+                 LIMIT 50
+                """, "docket_receivable");
+    }
+
+    @Test
+    @DisplayName("a customer's docket statement pages by docket number without a sort")
+    void docketReceivablesForCustomer() {
+        assertIndexed("""
+                SELECT * FROM docket_receivable
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND customer_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND docket_no > 'DKT-0000000000'
+                 ORDER BY docket_no
+                 LIMIT 50
+                """, "docket_receivable");
     }
 
     @Test

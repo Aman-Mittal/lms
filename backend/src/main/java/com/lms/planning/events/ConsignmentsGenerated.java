@@ -30,6 +30,11 @@ public record ConsignmentsGenerated(
         UUID orderId,
         List<UUID> consignmentIds,
         List<String> trackingRefs,
+        /**
+         * FTL or LTL, by name. For LTL every reference is a docket number, and
+         * each docket is also announced on its own as {@link DocketBooked}.
+         */
+        String freightMode,
         Instant occurredAt) {
 
     public ConsignmentsGenerated {
