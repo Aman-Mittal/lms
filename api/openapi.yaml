@@ -66,6 +66,10 @@ tags:
     description: Obtaining and refreshing tokens (vision document 3.1).
   - name: Users
     description: Who exists, and what they may do.
+  - name: Access policies
+    description: |
+      Attribute-based rules layered on permissions -- approval limits,
+      organisational subtrees, partner scope -- held as per-tenant data.
   - name: Partners
     description: Customers, vendors and consignees, with their KYC lifecycle.
   - name: Vehicles
@@ -245,6 +249,120 @@ components:
         orgPath: { type: string }
         orgUnitName: { type: string }
         lastLoginAt: { type: string, format: date-time }
+
+    AccessCondition:
+      type: object
+      additionalProperties: true
+      description: |
+        A boolean expression over `subject.*`, `resource.*` and `env.*`
+        attributes. One of:
+
+        - `{"allOf": [condition, ...]}`, `{"anyOf": [condition, ...]}`,
+          `{"not": condition}`;
+        - `{"attr": name, "op": op, "value": literal}` or
+          `{"attr": name, "op": op, "ref": name}`, where `op` is one of `eq`,
+          `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `startsWith`;
+        - `{"attr": name, "op": "present"}` or `"absent"`.
+
+        Subject attributes are `userId`, `permissions`, `orgPath`, `region`,
+        `freightModes`, `partnerId` and `approvalLimit`; environment attributes
+        are `hour` and `dayOfWeek` (UTC); resource attributes depend on the
+        resource. A comparison with a missing operand is false, so a rule
+        never bites on an attribute a user does not carry.
+      examples:
+        - { attr: resource.amount, op: gt, ref: subject.approvalLimit }
+
+    AccessPolicy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        action:
+          type: string
+          description: The permission code this policy refines, e.g. `INVOICE_APPROVE`.
+        effect: { type: string, enum: [PERMIT, DENY] }
+        description: { type: string }
+        condition: { $ref: "#/components/schemas/AccessCondition" }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, code, action, effect, description, condition, enabled]
+
+    AccessPolicySlice:
+      type: object
+      description: One page, in code order.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AccessPolicy" }
+        nextCursor:
+          type: string
+          description: Pass as `cursor` for the next page. Null on the last.
+        hasMore: { type: boolean }
+      required: [items, hasMore]
+
+    CreateAccessPolicyRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+        action:
+          type: string
+          description: Must be an existing permission code.
+        effect:
+          type: string
+          enum: [PERMIT, DENY]
+          description: |
+            DENY vetoes when the condition holds. If an action has any PERMIT
+            policies, at least one of them must hold as well.
+        description: { type: string }
+        condition: { $ref: "#/components/schemas/AccessCondition" }
+        enabled:
+          type: boolean
+          description: Defaults to true.
+      required: [code, action, effect, description, condition]
+
+    ReviseAccessPolicyRequest:
+      type: object
+      description: Code and action are fixed once a policy exists.
+      properties:
+        effect: { type: string, enum: [PERMIT, DENY] }
+        description: { type: string }
+        condition: { $ref: "#/components/schemas/AccessCondition" }
+        enabled: { type: boolean }
+      required: [effect, description, condition, enabled]
+
+    UserAccessAttributes:
+      type: object
+      description: Null means unrestricted along that dimension.
+      properties:
+        userId: { type: string, format: uuid }
+        region: { type: string }
+        freightModes:
+          type: array
+          items: { type: string, enum: [FTL, LTL, RAIL, WAREHOUSE] }
+        partnerId:
+          type: string
+          format: uuid
+          description: Set for an external portal user acting for this partner.
+        approvalLimit: { type: number }
+      required: [userId]
+
+    SetUserAccessAttributesRequest:
+      type: object
+      description: |
+        The whole set. A field left out is cleared, so a forgotten field cannot
+        keep an old limit alive.
+      properties:
+        region:
+          type: string
+          pattern: "^[A-Z0-9_-]{1,32}$"
+        freightModes:
+          type: array
+          items: { type: string, enum: [FTL, LTL, RAIL, WAREHOUSE] }
+        partnerId: { type: string, format: uuid }
+        approvalLimit: { type: number, minimum: 0 }
 
     Partner:
       type: object
@@ -1321,6 +1439,139 @@ paths:
                 items: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/users/{id}/access-attributes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Access policies]
+      operationId: getUserAccessAttributes
+      summary: The attributes a user's next token will carry
+      description: Requires `ACCESS_POLICY_MANAGE`.
+      responses:
+        "200":
+          description: The user's access attributes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserAccessAttributes" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    put:
+      tags: [Access policies]
+      operationId: setUserAccessAttributes
+      summary: Replace a user's access attributes
+      description: |
+        Requires `ACCESS_POLICY_MANAGE`. Takes effect at the user's next sign-in
+        or token refresh, not on the token they hold now.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetUserAccessAttributesRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /api/v1/access-policies:
+    get:
+      tags: [Access policies]
+      operationId: listAccessPolicies
+      summary: A page of the tenant's access policies
+      description: Requires `ACCESS_POLICY_MANAGE`.
+      parameters:
+        - name: action
+          in: query
+          required: false
+          schema: { type: string }
+          description: Restricts the listing to policies refining one permission code.
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: One page of policies.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessPolicySlice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Access policies]
+      operationId: createAccessPolicy
+      summary: Add an access policy
+      description: |
+        Requires `ACCESS_POLICY_MANAGE`. The condition is validated on write: an
+        unknown operator or attribute is a 400, not a rule that silently never
+        matches. Applies from the next request.
+      parameters:
+        - $ref: "#/components/parameters/idempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAccessPolicyRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/access-policies/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: Identifier of the resource.
+    get:
+      tags: [Access policies]
+      operationId: getAccessPolicy
+      summary: One access policy
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessPolicy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    put:
+      tags: [Access policies]
+      operationId: reviseAccessPolicy
+      summary: Replace what a policy says
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviseAccessPolicyRequest" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    delete:
+      tags: [Access policies]
+      operationId: deleteAccessPolicy
+      summary: Remove a policy
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/partners:
