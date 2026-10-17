@@ -27,6 +27,7 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
 import com.lms.shared.error.BusinessRuleViolationException;
 import org.springframework.data.annotation.Id;
@@ -65,6 +66,19 @@ public record Consignment(
          * it is generated.
          */
         String materialClasses,
+        /**
+         * Inherited from the order. An LTL consignment is a <em>docket</em>:
+         * the same tracking unit, numbered in the docket series and carrying
+         * its own customer and hub pair, because it will share a vehicle with
+         * other customers' dockets and be billed on its own.
+         */
+        FreightMode freightMode,
+        /** Who is billed for a docket; recorded for FTL too, since it is free to know. */
+        UUID customerPartnerId,
+        /** The hub a docket is consolidated at; null for FTL. */
+        UUID originHubTerminalId,
+        /** The hub a docket's line haul runs to; null for FTL. */
+        UUID destinationHubTerminalId,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -90,18 +104,38 @@ public record Consignment(
         TRANSITIONS.put(ConsignmentStatus.CANCELLED, EnumSet.noneOf(ConsignmentStatus.class));
     }
 
+    /**
+     * A consignment for one consignee at one destination.
+     *
+     * @param originHubTerminalId      required for LTL, must be null otherwise
+     * @param destinationHubTerminalId required for LTL, must be null otherwise
+     */
     public static Consignment generate(UUID id, UUID tenantId, UUID orderId, String trackingRef,
                                        UUID consigneePartnerId, UUID destinationTerminalId,
                                        BigDecimal totalDeadWeightKg, BigDecimal totalVolumeM3,
                                        BigDecimal chargeableWeightKg, boolean containsHazmat,
-                                       Collection<MaterialClass> materialClasses) {
+                                       Collection<MaterialClass> materialClasses,
+                                       FreightMode freightMode, UUID customerPartnerId,
+                                       UUID originHubTerminalId, UUID destinationHubTerminalId) {
         if (totalDeadWeightKg == null || totalDeadWeightKg.signum() <= 0) {
             throw new IllegalArgumentException("A consignment must carry some weight");
+        }
+        FreightMode mode = FreightMode.orDefault(freightMode);
+        if (mode == FreightMode.LTL && (originHubTerminalId == null
+                || destinationHubTerminalId == null || customerPartnerId == null)) {
+            throw new IllegalArgumentException(
+                    "A docket needs a customer and both hubs to be consolidated and billed");
         }
         return new Consignment(id, tenantId, orderId, trackingRef, consigneePartnerId,
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
                 containsHazmat, ConsignmentStatus.PLANNED, encodeClasses(materialClasses),
+                mode, customerPartnerId, originHubTerminalId, destinationHubTerminalId,
                 null, Instant.now(), Instant.now());
+    }
+
+    /** Whether this is an LTL docket rather than a full-truckload consignment. */
+    public boolean isDocket() {
+        return freightMode == FreightMode.LTL;
     }
 
     /**
@@ -136,6 +170,7 @@ public record Consignment(
         }
         return new Consignment(id, tenantId, orderId, trackingRef, consigneePartnerId,
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
-                containsHazmat, target, materialClasses, version, createdAt, Instant.now());
+                containsHazmat, target, materialClasses, freightMode, customerPartnerId,
+                originHubTerminalId, destinationHubTerminalId, version, createdAt, Instant.now());
     }
 }

@@ -41,5 +41,6 @@ public record LoadView(
         BigDecimal volumeUtilisationPct,
         int consignmentCount,
         boolean requiresHazmat,
+        String freightMode,
         Instant createdAt) {
 }
