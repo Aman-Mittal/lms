@@ -123,6 +123,80 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the circuit a trip is carrying is found by index")
+    void circuitRunByTrip() {
+        // Runs on every geofence crossing of every trip, most of which carry
+        // no circuit at all -- the miss has to be as cheap as the hit.
+        assertIndexed("""
+                SELECT * FROM circuit_run
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                """, "circuit_run");
+    }
+
+    @Test
+    @DisplayName("the circuit listing pages by day and route without a sort")
+    void circuitRunListingIsKeysetSeekable() {
+        // The same unique key that makes generation idempotent orders the
+        // listing, so the cursor rides it.
+        assertIndexed("""
+                SELECT * FROM circuit_run
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND run_date >= DATE '2030-01-07'
+                   AND (run_date, route_code) > (DATE '2030-01-07', 'MR-NORTH')
+                 ORDER BY run_date, route_code
+                 LIMIT 50
+                """, "circuit_run");
+    }
+
+    @Test
+    @DisplayName("a circuit's stops are read by index")
+    void circuitRunStops() {
+        assertIndexed("""
+                SELECT * FROM circuit_run_stop
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND run_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY sequence
+                """, "circuit_run_stop");
+    }
+
+    @Test
+    @DisplayName("the route versions the circuit planner reads are index-served")
+    void milkRunRoutesCoveringAWindow() {
+        assertIndexed("""
+                SELECT * FROM milk_run_route
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND effective_from <= DATE '2030-01-13'
+                   AND (effective_to IS NULL OR effective_to >= DATE '2030-01-07')
+                 ORDER BY code, effective_from DESC
+                """, "milk_run_route");
+    }
+
+    @Test
+    @DisplayName("the routes in force page by code without a sort")
+    void milkRunRouteListingIsKeysetSeekable() {
+        assertIndexed("""
+                SELECT * FROM milk_run_route
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND effective_to IS NULL
+                   AND code > 'MR-NORTH'
+                 ORDER BY code
+                 LIMIT 50
+                """, "milk_run_route");
+    }
+
+    @Test
+    @DisplayName("a route version's stops are read by index")
+    void milkRunRouteStops() {
+        assertIndexed("""
+                SELECT * FROM milk_run_route_stop
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND route_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY sequence
+                """, "milk_run_route_stop");
+    }
+
+    @Test
     @DisplayName("terminal bounding-box candidate filter is index-served")
     void terminalBoundingBox() {
         // This is the substitute for a spatial index (DOCS/adr/0004) and runs on
