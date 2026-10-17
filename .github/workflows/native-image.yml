@@ -49,7 +49,11 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Lowercase, written out. github.repository is "Aman-Mittal/lms", and an OCI
+  # repository name may not contain capitals -- buildx refuses the tag, after
+  # a ten-minute native compile, and nothing is ever published. Expressions
+  # have no lower(), and this must match the image deploy/render.yaml pulls.
+  IMAGE_NAME: aman-mittal/lms
 
 jobs:
   native-image:
@@ -63,7 +67,7 @@ jobs:
       # Only this job writes packages, and only on main (see the push step).
       packages: write
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
