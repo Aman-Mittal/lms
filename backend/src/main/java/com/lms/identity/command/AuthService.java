@@ -77,6 +77,7 @@ public class AuthService {
      */
     private final TransactionTemplate failureTransactions;
     private final AuditTrail audit;
+    private final SubjectAttributeReader attributes;
 
     public AuthService(TenantRepository tenants,
                        AppUserRepository users,
@@ -85,7 +86,8 @@ public class AuthService {
                        PasswordEncoder passwordEncoder,
                        TokenService tokenService,
                        PlatformTransactionManager transactionManager,
-                       AuditTrail audit) {
+                       AuditTrail audit,
+                       SubjectAttributeReader attributes) {
         this.tenants = tenants;
         this.users = users;
         this.orgUnits = orgUnits;
@@ -97,6 +99,7 @@ public class AuthService {
         this.failureTransactions.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.audit = audit;
+        this.attributes = attributes;
     }
 
     public AuthResult login(String tenantCode, String email, String password, String deviceFingerprint) {
@@ -181,7 +184,11 @@ public class AuthService {
                         "User " + user.id() + " references a missing organisational unit"));
 
         List<String> permissions = users.findPermissionCodes(user.id());
-        TokenService.IssuedToken access = tokenService.issueAccessToken(user, orgPath, permissions);
+        // Re-read on every issue, refresh included, so a changed approval
+        // limit or partner reaches the user within one token lifetime without
+        // anybody having to sign out.
+        TokenService.IssuedToken access = tokenService.issueAccessToken(user, orgPath, permissions,
+                attributes.of(user.id()));
         TokenService.RefreshToken refresh = tokenService.issueRefreshToken();
 
         refreshTokens.store(UUID.randomUUID(), user.tenantId(), user.id(), refresh.hash(),
@@ -190,7 +197,7 @@ public class AuthService {
 
         return new AuthResult(
                 access.value(), access.expiresAt(), refresh.rawValue(), refresh.expiresAt(),
-                user.id(), user.tenantId(), orgPath, permissions);
+                user.id(), user.tenantId(), user.orgUnitId(), orgPath, permissions);
     }
 
     /**
@@ -206,6 +213,12 @@ public class AuthService {
             Instant refreshTokenExpiresAt,
             UUID userId,
             UUID tenantId,
+            /**
+             * The unit the user belongs to. Every create request names the
+             * unit it files the record under, and a client that could not
+             * learn its own would have nothing to send but a guess.
+             */
+            UUID orgUnitId,
             String orgPath,
             List<String> permissions) {
 
