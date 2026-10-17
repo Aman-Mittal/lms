@@ -74,7 +74,7 @@ public class AuthorityHooks {
             "LOAD_CREATE", "LOAD_READ", "LOAD_ALLOCATE",
             "TRIP_READ", "TRIP_EXECUTE",
             "TELEMATICS_INGEST",
-            "TARIFF_MANAGE",
+            "TARIFF_MANAGE", "ROUTING_GUIDE_MANAGE",
             "INVOICE_READ", "INVOICE_APPROVE",
             "EXCEPTION_READ", "EXCEPTION_RAISE", "EXCEPTION_MANAGE", "EXCEPTION_CLOSE",
             "AUDIT_READ");
