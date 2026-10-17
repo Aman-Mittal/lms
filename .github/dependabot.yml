@@ -40,8 +40,11 @@ updates:
           - "org.testcontainers*"
           - "org.junit*"
           - "org.assertj*"
+    # Conventional Commits, as the PR title check requires: "build(deps): ...".
+    # A prefix that is not one of its types turns every Dependabot PR red.
     commit-message:
-      prefix: "deps"
+      prefix: "build"
+      include: "scope"
 
   # Actions are pinned to full commit SHAs; Dependabot understands this and
   # updates the SHA while preserving the trailing version comment.
@@ -67,4 +70,5 @@ updates:
       day: monday
     open-pull-requests-limit: 3
     commit-message:
-      prefix: "docker"
+      prefix: "build"
+      include: "scope"
