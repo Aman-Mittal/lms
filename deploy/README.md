@@ -39,6 +39,21 @@ build runs on Render.
    `admin@demo.local`, and the password Render generated for
    `DEMO_ADMIN_PASSWORD` (the service's *Environment* tab).
 
+## Checking a deployment
+
+`deploy/smoke.sh` checks what a health probe cannot: the contract is served,
+the demo tenant exists, a real sign-in works, an anonymous read is refused and
+every module's read side answers.
+
+```bash
+BASE_URL=https://lms-platform.onrender.com DEMO_ADMIN_PASSWORD=... bash deploy/smoke.sh
+```
+
+Or run the **Smoke (deployed)** workflow from the Actions tab, after adding
+the generated password as the repository secret `DEMO_ADMIN_PASSWORD`. The same
+script runs in the test suite and against every native binary CI builds, so a
+broken check is noticed long before it is needed.
+
 ## Why there is a demo seed
 
 Tenants have no self-service registration, so an empty database is a service

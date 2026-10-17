@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -102,6 +103,45 @@ public class SourcingQueryService {
                 .list();
 
         return Slice.of(rows, pageSize, AllocationView::loadNo);
+    }
+
+    /**
+     * A guide and its vendors.
+     *
+     * <p>Two statements rather than one join folded in Java: the header row and
+     * the rank list are different shapes, and a guide has a handful of entries,
+     * so the second round trip costs less than the code to unflatten a join.
+     */
+    @PreAuthorize("hasAnyAuthority('ROUTING_GUIDE_MANAGE', 'LOAD_ALLOCATE')")
+    public Optional<RoutingGuideView> findGuide(UUID guideId) {
+        List<RoutingGuideView.Entry> entries = jdbc.sql("""
+                        SELECT e.rank_no, e.vendor_partner_id, p.legal_name AS vendor_name,
+                               e.response_sla_minutes, e.agreed_rate
+                          FROM routing_guide_entry e
+                          JOIN business_partner p ON p.id = e.vendor_partner_id
+                         WHERE e.guide_id = :guideId
+                         ORDER BY e.rank_no
+                        """)
+                .param("guideId", guideId)
+                .query((rs, row) -> new RoutingGuideView.Entry(rs.getInt("rank_no"),
+                        rs.getObject("vendor_partner_id", UUID.class), rs.getString("vendor_name"),
+                        rs.getInt("response_sla_minutes"), rs.getBigDecimal("agreed_rate")))
+                .list();
+
+        return jdbc.sql("""
+                        SELECT g.id, o.code AS origin_code, d.code AS destination_code,
+                               g.vehicle_type, g.strategy, g.active
+                          FROM routing_guide g
+                          JOIN terminal o ON o.id = g.origin_terminal_id
+                          JOIN terminal d ON d.id = g.destination_terminal_id
+                         WHERE g.id = :guideId
+                        """)
+                .param("guideId", guideId)
+                .query((rs, row) -> new RoutingGuideView(rs.getObject("id", UUID.class),
+                        rs.getString("origin_code"), rs.getString("destination_code"),
+                        rs.getString("vehicle_type"), rs.getString("strategy"),
+                        rs.getBoolean("active"), entries))
+                .optional();
     }
 
     /** The full cascade trail for one allocation, oldest offer first. */
