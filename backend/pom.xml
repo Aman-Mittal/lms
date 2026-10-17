@@ -63,6 +63,13 @@
       passing quietly.
     -->
     <openapi-generator.version>7.14.0</openapi-generator.version>
+    <!--
+      JUnit tags the default build skips. The performance suite bulk-loads
+      hundreds of thousands of rows and restarts the application; it runs with
+      -Pperformance and in its own workflow, not on every push.
+    -->
+    <test.groups.included></test.groups.included>
+    <test.groups.excluded>performance</test.groups.excluded>
     <feign.version>13.6</feign.version>
 
     <!-- The native binary is launched directly; no fat jar layering needed. -->
@@ -380,6 +387,15 @@
         </configuration>
       </plugin>
 
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <groups>${test.groups.included}</groups>
+          <excludedGroups>${test.groups.excluded}</excludedGroups>
+        </configuration>
+      </plugin>
+
       <!--
         Generates a typed Feign client from the hand-authored contract into
         target/generated-test-sources. The contract stays the hand-written
@@ -460,6 +476,37 @@
   </build>
 
   <profiles>
+    <!--
+      Performance suite: `./mvnw verify -Pperformance`. Runs only the tests
+      tagged `performance` (large-data query timings and application
+      restarts), which are too slow to run on every push.
+
+      The tag filter alone is not enough: the Cucumber @Suite runners then
+      discover nothing, and a suite that discovers nothing fails the build.
+      That failure is worth keeping in the default build, where it means a
+      broken suite, so this profile narrows to the performance package instead.
+    -->
+    <profile>
+      <id>performance</id>
+      <properties>
+        <test.groups.included>performance</test.groups.included>
+        <test.groups.excluded></test.groups.excluded>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>com/lms/performance/**/*Test.java</include>
+              </includes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
     <!--
       Native image build: `./mvnw -Pnative package`.
 
