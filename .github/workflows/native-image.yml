@@ -127,22 +127,25 @@ jobs:
             docker exec pg pg_isready -U lms -d lms && break || sleep 2
           done
 
+          # The demo seed is switched on with a password minted for this run
+          # only, so the smoke script can sign in exactly as a visitor to the
+          # Render deployment would. Readiness alone is not enough: a native
+          # binary missing reflection metadata starts, reports UP, and then
+          # answers 500 to the first JSON it has to write.
+          export DEMO_ADMIN_PASSWORD="$(openssl rand -hex 16)"
           DATABASE_URL=jdbc:postgresql://localhost:5432/lms \
           DATABASE_USERNAME=lms DATABASE_PASSWORD= PORT=8080 \
+          LMS_DEMO_SEED=true \
             ./target/lms-platform &
           APP_PID=$!
 
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8080/actuator/health/readiness; then
-              echo "Native binary started and reports ready."
-              kill "$APP_PID"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::Native binary failed to become ready."
+          status=0
+          BASE_URL=http://localhost:8080 READY_TIMEOUT_SECONDS=60 bash ../deploy/smoke.sh || status=$?
           kill "$APP_PID" 2>/dev/null || true
-          exit 1
+          if [ "$status" -ne 0 ]; then
+            echo "::error::The native binary failed the smoke test."
+          fi
+          exit "$status"
 
       - name: Set up Buildx
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
