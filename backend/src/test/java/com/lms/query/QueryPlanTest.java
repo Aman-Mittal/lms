@@ -109,6 +109,44 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the itinerary listing pages newest first without a sort")
+    void itineraryListing() {
+        assertIndexed("""
+                SELECT * FROM itinerary
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "itinerary");
+    }
+
+    @Test
+    @DisplayName("an itinerary's legs are index-served in order")
+    void itineraryLegs() {
+        // Read on every terminal event and every trip event that touches an
+        // itinerary, and by each correlated subquery of the listing.
+        assertIndexed("""
+                SELECT * FROM itinerary_leg
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND itinerary_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY seq
+                """, "itinerary_leg");
+    }
+
+    @Test
+    @DisplayName("the leg a trip runs is index-served")
+    void legByTrip() {
+        // Asked on every trip dispatch and completion, almost always to learn
+        // that the trip runs no leg at all.
+        assertIndexed("""
+                SELECT * FROM itinerary_leg
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                """, "itinerary_leg");
+    }
+
+    @Test
     @DisplayName("compliance document expiry lookup is index-served")
     void complianceDocumentExpiry() {
         assertIndexed("""
