@@ -186,6 +186,93 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the client contract in force on a date is index-served")
+    void clientContractInForceOnADate() {
+        // Runs once per distinct charge date in every billing run.
+        assertIndexed("""
+                SELECT * FROM client_contract
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND effective_from <= DATE '2026-01-15'
+                   AND (effective_to IS NULL OR effective_to >= DATE '2026-01-15')
+                 ORDER BY effective_from DESC
+                 LIMIT 1
+                """, "client_contract");
+    }
+
+    @Test
+    @DisplayName("a client's charges for one billing month are index-served and keyset-seekable")
+    void clientChargesForAPeriod() {
+        // The billing run's read and the charge listing share
+        // client_charge_period_idx; the listing's cursor rides its trailing id.
+        assertIndexed("""
+                SELECT * FROM client_charge
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND billing_period = DATE '2026-01-01'
+                   AND id > '00000000-0000-0000-0000-000000000009'
+                 ORDER BY id
+                 LIMIT 51
+                """, "client_charge");
+    }
+
+    @Test
+    @DisplayName("a client's invoices page newest period first without a sort")
+    void clientInvoicesNewestFirst() {
+        // Also the period-close check: is there an invoice for this client and
+        // month? Both ride the unique (tenant, client, period_start) index.
+        assertIndexed("""
+                SELECT * FROM client_invoice
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND period_start < DATE '2026-01-01'
+                 ORDER BY period_start DESC
+                 LIMIT 51
+                """, "client_invoice");
+    }
+
+    @Test
+    @DisplayName("the client margin view is index-served end to end")
+    void clientMarginView() {
+        // One period's invoices, then per invoice its transport lines and its
+        // charges joined to the carrier's freight bill by trip. Any of the four
+        // falling back to a sequential scan makes the view cost the whole
+        // tenant's billing history.
+        String sql = """
+                SELECT i.id,
+                       (SELECT sum(l.amount) FROM client_invoice_line l
+                         WHERE l.tenant_id = i.tenant_id AND l.invoice_id = i.id
+                           AND l.service_type = 'TRANSPORT') AS transport,
+                       (SELECT sum(coalesce(fb.computed_amount, 0) * ch.cost_share)
+                          FROM client_charge ch
+                          LEFT JOIN freight_bill fb
+                                 ON fb.tenant_id = ch.tenant_id AND fb.trip_id = ch.trip_id
+                         WHERE ch.tenant_id = i.tenant_id AND ch.invoice_id = i.id
+                           AND ch.service_type = 'TRANSPORT') AS payable
+                  FROM client_invoice i
+                 WHERE i.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND i.period_start = DATE '2026-01-01'
+                   AND i.client_partner_id > '00000000-0000-0000-0000-000000000002'
+                 ORDER BY i.client_partner_id
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "client_invoice");
+        assertIndexed(sql, "client_charge");
+        assertIndexed(sql, "freight_bill");
+    }
+
+    @Test
+    @DisplayName("the client portal binding lookup is index-served")
+    void clientPortalBinding() {
+        // Asked on every client-billing read and command.
+        assertIndexed("""
+                SELECT client_partner_id FROM client_portal_user
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND user_id = '00000000-0000-0000-0000-000000000002'
+                """, "client_portal_user");
+    }
+
+    @Test
     @DisplayName("the rate card in force on a date is index-served")
     void tariffInForceOnADate() {
         // Runs once per completed trip, and the shape matters as much as the
