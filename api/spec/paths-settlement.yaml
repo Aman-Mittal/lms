@@ -49,6 +49,9 @@
       There is no endpoint to create one. A bill is raised when a trip
       completes, because pricing depends on the dispatch date and the origin
       dwell -- facts the movement produces, not facts a caller supplies.
+      A milk-run circuit's bill is raised when the circuit reaches its
+      plant, and supersedes (cancels) an unsettled bill for the trip that
+      carried it, so one movement is never payable twice.
     responses:
       "200":
         description: The bill.
