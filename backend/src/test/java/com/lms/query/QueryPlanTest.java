@@ -320,6 +320,62 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the missed-connection sweep's candidates are index-served")
+    void legsAwaitingAnOverduePredecessor() {
+        // Run every few minutes for every tenant. The partial index holds only
+        // legs not yet started and not yet marked, and each predecessor is a
+        // point lookup on (itinerary, seq).
+        assertIndexed("""
+                SELECT n.* FROM itinerary_leg n
+                  JOIN itinerary_leg p
+                    ON p.tenant_id = n.tenant_id
+                   AND p.itinerary_id = n.itinerary_id
+                   AND p.seq = n.seq - 1
+                 WHERE n.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND n.departed_at IS NULL
+                   AND n.connection_missed_at IS NULL
+                   AND n.seq > 1
+                   AND p.arrived_at IS NULL
+                   AND p.planned_arrival_at + n.transfer_dwell_minutes * INTERVAL '1 minute'
+                       < TIMESTAMPTZ '2026-10-01 00:00:00+00'
+                   AND n.planned_departure_at < TIMESTAMPTZ '2026-10-01 00:00:00+00'
+                       + n.transfer_dwell_minutes * INTERVAL '1 minute'
+                 ORDER BY n.planned_departure_at, n.id
+                 LIMIT 200
+                """, "itinerary_leg");
+    }
+
+    @Test
+    @DisplayName("the rail rate card in force on a day is index-served")
+    void railTariffInForce() {
+        // Asked for every rail leg planned without a cost.
+        assertIndexed("""
+                SELECT * FROM rail_tariff
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND carrier_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND origin_terminal_id = '00000000-0000-0000-0000-000000000003'
+                   AND destination_terminal_id = '00000000-0000-0000-0000-000000000004'
+                   AND effective_from <= DATE '2026-10-01'
+                   AND (effective_to IS NULL OR effective_to >= DATE '2026-10-01')
+                 ORDER BY effective_from DESC
+                 LIMIT 1
+                """, "rail_tariff");
+    }
+
+    @Test
+    @DisplayName("the rail rate card listing pages newest first without a sort")
+    void railTariffListing() {
+        assertIndexed("""
+                SELECT * FROM rail_tariff
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "rail_tariff");
+    }
+
+    @Test
     @DisplayName("compliance document expiry lookup is index-served")
     void complianceDocumentExpiry() {
         assertIndexed("""
