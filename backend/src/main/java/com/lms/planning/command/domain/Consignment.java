@@ -91,9 +91,44 @@ public record Consignment(
         Instant createdAt,
         Instant updatedAt) {
 
+    /**
+     * Where a consignment is in its journey.
+     *
+     * <p>A full truckload moves once, origin to consignee, on one load:
+     * <pre>
+     *   PLANNED -> ASSIGNED_TO_LOAD -> IN_TRANSIT -> DELIVERED
+     * </pre>
+     *
+     * <p>A part-load docket moves twice. The line haul carries it from its
+     * origin hub to its destination hub with other customers' dockets; a local
+     * delivery load then carries it from that hub to its consignee:
+     * <pre>
+     *   PLANNED
+     *     -> ASSIGNED_TO_LOAD        on a LINE_HAUL load at its origin hub
+     *     -> IN_TRANSIT              the line haul is dispatched
+     *     -> ARRIVED_AT_HUB          the line haul's trip completes at the destination hub
+     *     -> ASSIGNED_TO_DELIVERY    on a DELIVERY load from that hub
+     *     -> OUT_FOR_DELIVERY        the delivery load is dispatched
+     *     -> DELIVERED               the delivery load's trip completes
+     * </pre>
+     *
+     * <p>Each hand-over can be undone only while nothing has moved:
+     * ASSIGNED_TO_LOAD falls back to PLANNED, and ASSIGNED_TO_DELIVERY to
+     * ARRIVED_AT_HUB, when the load is broken up before it leaves. A docket at
+     * a hub is still somebody's freight in somebody's yard, so it can no
+     * longer be cancelled -- only delivered.
+     *
+     * <p>The three hub states are part-load only; the database refuses them
+     * on a full-truckload row.
+     */
     public enum ConsignmentStatus {
-        PLANNED, ASSIGNED_TO_LOAD, IN_TRANSIT, DELIVERED, CANCELLED
+        PLANNED, ASSIGNED_TO_LOAD, IN_TRANSIT, ARRIVED_AT_HUB, ASSIGNED_TO_DELIVERY,
+        OUT_FOR_DELIVERY, DELIVERED, CANCELLED
     }
+
+    private static final Set<ConsignmentStatus> HUB_STATES = EnumSet.of(
+            ConsignmentStatus.ARRIVED_AT_HUB, ConsignmentStatus.ASSIGNED_TO_DELIVERY,
+            ConsignmentStatus.OUT_FOR_DELIVERY);
 
     private static final Map<ConsignmentStatus, Set<ConsignmentStatus>> TRANSITIONS =
             new EnumMap<>(ConsignmentStatus.class);
@@ -106,7 +141,15 @@ public record Consignment(
         TRANSITIONS.put(ConsignmentStatus.ASSIGNED_TO_LOAD,
                 EnumSet.of(ConsignmentStatus.IN_TRANSIT, ConsignmentStatus.PLANNED,
                         ConsignmentStatus.CANCELLED));
+        // DELIVERED for a full truckload; ARRIVED_AT_HUB for a docket, whose
+        // line haul ends at a hub rather than at the consignee.
         TRANSITIONS.put(ConsignmentStatus.IN_TRANSIT,
+                EnumSet.of(ConsignmentStatus.DELIVERED, ConsignmentStatus.ARRIVED_AT_HUB));
+        TRANSITIONS.put(ConsignmentStatus.ARRIVED_AT_HUB,
+                EnumSet.of(ConsignmentStatus.ASSIGNED_TO_DELIVERY));
+        TRANSITIONS.put(ConsignmentStatus.ASSIGNED_TO_DELIVERY,
+                EnumSet.of(ConsignmentStatus.OUT_FOR_DELIVERY, ConsignmentStatus.ARRIVED_AT_HUB));
+        TRANSITIONS.put(ConsignmentStatus.OUT_FOR_DELIVERY,
                 EnumSet.of(ConsignmentStatus.DELIVERED));
         TRANSITIONS.put(ConsignmentStatus.DELIVERED, EnumSet.noneOf(ConsignmentStatus.class));
         TRANSITIONS.put(ConsignmentStatus.CANCELLED, EnumSet.noneOf(ConsignmentStatus.class));
@@ -202,6 +245,11 @@ public record Consignment(
         if (!TRANSITIONS.getOrDefault(status, Set.of()).contains(target)) {
             throw new BusinessRuleViolationException("consignment-illegal-transition",
                     "Consignment " + trackingRef + " cannot move from " + status + " to " + target);
+        }
+        if (HUB_STATES.contains(target) && !isDocket()) {
+            throw new BusinessRuleViolationException("consignment-illegal-transition",
+                    "Consignment " + trackingRef + " is a full truckload and never passes "
+                            + "through a hub, so it cannot be " + target);
         }
         return new Consignment(id, tenantId, orderId, trackingRef, consigneePartnerId,
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
