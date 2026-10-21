@@ -154,6 +154,7 @@ class AccessPolicyApiTest {
                 "milk-run-write-org-subtree",
                 "order-write-org-subtree",
                 "partner-write-org-subtree",
+                "rail-tariff-write-org-subtree",
                 "routing-guide-write-org-subtree",
                 "terminal-write-org-subtree",
                 "trip-write-org-subtree",
