@@ -50,6 +50,8 @@ public class FinanceQueryService {
                    b.load_id, l.load_no,
                    vp.legal_name AS vendor_name,
                    tf.code AS tariff_code,
+                   CASE WHEN b.circuit_run_id IS NULL THEN 'TRIP' ELSE 'MILK_RUN' END AS source,
+                   b.circuit_run_id, cr.route_code,
                    b.priced_on, b.chargeable_weight_kg, b.detention_hours, b.drop_count,
                    b.base_freight, b.detention_amount, b.multi_drop_amount,
                    b.fuel_surcharge_amount, b.computed_amount, b.claimed_amount,
@@ -64,6 +66,7 @@ public class FinanceQueryService {
               JOIN load_unit l ON l.id = b.load_id
               JOIN business_partner vp ON vp.id = b.vendor_partner_id
               LEFT JOIN tariff tf ON tf.id = b.tariff_id
+              LEFT JOIN circuit_run cr ON cr.id = b.circuit_run_id
             """;
 
     /**
