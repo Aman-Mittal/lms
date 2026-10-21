@@ -176,3 +176,162 @@ Feature: A third-party logistics provider bills each client for what it did
     And "CUST" has 1 transport charge for trip "T1"
     When the month 35 days ago is billed for "CUST"
     Then the margin on "CUST" for the month 35 days ago is 5000 on a receivable of 25000 and a carrier payable of 20000
+
+  # -------------------------------------------------------------------- tax
+
+  Scenario: Tax is charged on each line at the contract's warehouse rate and rounded on that line
+    # Three labels at 0.25 are three lines of 0.045 tax each, rounded to 0.05:
+    # 0.15 in all, not 18 % of 0.75 rounded once (0.14). The client can check
+    # every line on its own.
+    Given a trading partner "CLIENT-T"
+    And client "CLIENT-T" holds contract "T-2026" effective 90 days ago:
+      | storage per pallet-day | 12   |
+      | handling in per pallet | 25   |
+      | service LABEL per UNIT | 0.25 |
+      | transport tax percent  | 5    |
+      | warehouse tax percent  | 18   |
+    And "CLIENT-T" stored 300 pallet-days on day 5 of last month
+    And "CLIENT-T" had 1 units of value-added service "LABEL" on day 6 of last month
+    And "CLIENT-T" had 1 units of value-added service "LABEL" on day 7 of last month
+    And "CLIENT-T" had 1 units of value-added service "LABEL" on day 8 of last month
+    When last month is billed for "CLIENT-T"
+    Then the last-month invoice of "CLIENT-T" has a taxable amount of 3600.75, tax of 648.15 and a total of 4248.90
+    And every line of the last-month invoice of "CLIENT-T" carries its own tax, rounded half-up
+
+  # ----------------------------------------------------------- credit notes
+
+  Scenario: A credit note corrects an issued invoice without changing it
+    Given a trading partner "CLIENT-T"
+    And client "CLIENT-T" holds contract "T-2026" effective 90 days ago:
+      | storage per pallet-day | 12 |
+      | handling in per pallet | 25 |
+      | warehouse tax percent  | 18 |
+    And "CLIENT-T" received 40 pallets into the warehouse on day 2 of last month
+    And "CLIENT-T" stored 300 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-T"
+    When a credit note for 500 is issued against the last-month invoice of "CLIENT-T" because "Twenty pallets were stored on the client's own racking"
+    # 500 spread over 1000 and 3600 in proportion: 108.70 and 391.30, whose
+    # tax at 18 % is 19.57 and 70.43.
+    Then the credit note credits 500 plus 90 tax
+    And the last-month invoice of "CLIENT-T" has a taxable amount of 4600, tax of 828 and a total of 5428
+    And the last-month invoice of "CLIENT-T" shows 590 credited
+    And the credit note is in the audit trail with its reason
+    And the margin on "CLIENT-T" for last month is a receivable of 4100 after 500 credited
+
+  Scenario: A credit note can never take back more than the invoice charged
+    Given a trading partner "CLIENT-T"
+    And client "CLIENT-T" holds contract "T-2026" effective 90 days ago:
+      | storage per pallet-day | 12 |
+      | warehouse tax percent  | 18 |
+    And "CLIENT-T" stored 100 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-T"
+    And a credit note for 1000 is issued against the last-month invoice of "CLIENT-T" because "Rate dispute"
+    When a credit note for 200.01 is issued against the last-month invoice of "CLIENT-T" because "Second thoughts"
+    Then client billing refuses mentioning "200.00 left to credit"
+    When a credit note for line 1 in full is issued against the last-month invoice of "CLIENT-T" because "The rest of the line"
+    Then the credit note credits 200 plus 36 tax
+    And the last-month invoice of "CLIENT-T" shows 1416 credited
+    When a credit note for 0.01 is issued against the last-month invoice of "CLIENT-T" because "One cent more"
+    Then client billing refuses mentioning "left to credit"
+    When a credit note for line 1 in full is issued against the last-month invoice of "CLIENT-T" because "Once more"
+    Then client billing refuses mentioning "already been credited in full"
+
+  Scenario: Issuing a credit note is its own permission
+    Given "CLIENT-A" stored 100 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-A"
+    And the signed-in user lacks "CLIENT_CREDIT_NOTE_ISSUE"
+    When a credit note for 100 is issued against the last-month invoice of "CLIENT-A" because "Goodwill"
+    Then the client billing request is refused as unauthorised
+
+  # -------------------------------------------------------------- statement
+
+  Scenario: The statement shows invoices and credit notes with a running balance across pages
+    Given a trading partner "CLIENT-T"
+    And client "CLIENT-T" holds contract "T-2026" effective 100 days ago:
+      | storage per pallet-day | 12 |
+      | warehouse tax percent  | 18 |
+    And "CLIENT-T" stored 100 pallet-days on day 5 of the month before last
+    And the month before last is billed for "CLIENT-T"
+    And "CLIENT-T" stored 50 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-T"
+    And a credit note for 100 is issued against the last-month invoice of "CLIENT-T" because "Goodwill"
+    When the statement of "CLIENT-T" is read 2 entries a page
+    Then the statement reads:
+      | type        | debit | credit | balance |
+      | INVOICE     | 1416  | 0      | 1416    |
+      | INVOICE     | 708   | 0      | 2124    |
+      | CREDIT_NOTE | 0     | 118    | 2006    |
+
+  # -------------------------------------------------- storage from the ledger
+
+  Scenario: Storage is computed from the stock the client owns in the warehouse, once
+    # A pallet here is ten units of the client's SKUs, and a part pallet takes a
+    # whole position: 95 units are 10 pallets for days 1-10, 50 units are 5
+    # pallets for days 11-20, then nothing. 10 x 10 + 10 x 5 = 150 pallet-days.
+    # Another client's stock in the same warehouse is not this client's bill.
+    Given a warehouse "WH-1" at 19.100,72.900
+    And a trading partner "CLIENT-L"
+    And client "CLIENT-L" holds contract "L-2026" effective 90 days ago:
+      | storage per pallet-day   | 12 |
+      | storage units per pallet | 10 |
+    And stock item "L-WIDGET" belongs to client "CLIENT-L"
+    And stock item "B-GADGET" belongs to client "CLIENT-B"
+    And 95 units of "L-WIDGET" came into "WH-1" on day 1 of last month
+    And 500 units of "B-GADGET" came into "WH-1" on day 1 of last month
+    And 45 units of "L-WIDGET" left "WH-1" on day 11 of last month
+    And 50 units of "L-WIDGET" left "WH-1" on day 21 of last month
+    When storage for last month is computed from the warehouse ledger for "CLIENT-L"
+    And storage for last month is computed from the warehouse ledger for "CLIENT-L" again
+    Then the ledger storage of "CLIENT-L" for last month is 150 pallet-days from 1450 unit-days
+    And "CLIENT-L" has 1 charge for last month
+    When last month is billed for "CLIENT-L"
+    Then the last-month invoice of "CLIENT-L" has a "STORAGE" line of 1800
+
+  Scenario: Stock received before the month is held from its first day
+    Given a warehouse "WH-1" at 19.100,72.900
+    And a trading partner "CLIENT-L"
+    And client "CLIENT-L" holds contract "L-2026" effective 100 days ago:
+      | storage per pallet-day   | 12 |
+      | storage units per pallet | 10 |
+    And stock item "L-WIDGET" belongs to client "CLIENT-L"
+    And 100 units of "L-WIDGET" came into "WH-1" on day 20 of the month before last
+    And 100 units of "L-WIDGET" left "WH-1" on day 11 of last month
+    When storage for last month is computed from the warehouse ledger for "CLIENT-L"
+    Then the ledger storage of "CLIENT-L" for last month is 100 pallet-days from 1000 unit-days
+
+  Scenario: Storage is recorded by hand or computed from the ledger, never both
+    Given a warehouse "WH-1" at 19.100,72.900
+    And stock item "A-WIDGET" belongs to client "CLIENT-A"
+    And 10 units of "A-WIDGET" came into "WH-1" on day 1 of last month
+    And "CLIENT-A" stored 10 pallet-days on day 3 of last month
+    When storage for last month is computed from the warehouse ledger for "CLIENT-A"
+    Then client billing refuses mentioning "already recorded by hand"
+    Given a trading partner "CLIENT-L"
+    And client "CLIENT-L" holds contract "L-2026" effective 90 days ago:
+      | storage per pallet-day | 12 |
+    And stock item "L-WIDGET" belongs to client "CLIENT-L"
+    And 10 units of "L-WIDGET" came into "WH-1" on day 1 of last month
+    And storage for last month is computed from the warehouse ledger for "CLIENT-L"
+    When "CLIENT-L" stored 10 pallet-days on day 3 of last month
+    Then client billing refuses mentioning "already computed from the warehouse ledger"
+
+  Scenario: Quarantined stock counts as held until it is written off
+    # Damaged goods in quarantine are still in the building, occupying a
+    # position. A release to a bin moves them without changing what is held;
+    # only a write-off takes them out. 10 held on days 1-20, 4 after the
+    # write-off of 6 on day 21 (the other 4 were released to a bin on day 11).
+    Given a warehouse "WH-1" at 19.100,72.900
+    And warehouse "WH-1" has a bin "A-01" holding at most 50 units
+    And a trading partner "CLIENT-L"
+    And client "CLIENT-L" holds contract "L-2026" effective 90 days ago:
+      | storage per pallet-day   | 12 |
+      | storage units per pallet | 5  |
+    And stock item "L-WIDGET" belongs to client "CLIENT-L"
+    And 10 damaged units of "L-WIDGET" were quarantined at "WH-1" on day 1 of last month
+    And 4 quarantined units of "L-WIDGET" at "WH-1" were released to bin "A-01" on day 11 of last month
+    And 6 quarantined units of "L-WIDGET" at "WH-1" were written off on day 21 of last month
+    When storage for last month is computed from the warehouse ledger for "CLIENT-L"
+    Then the warehouse ledger shows 10 units held for "CLIENT-L" on day 1 of last month
+    And the warehouse ledger shows 10 units held for "CLIENT-L" on day 11 of last month
+    And the warehouse ledger shows 10 units held for "CLIENT-L" on day 20 of last month
+    And the warehouse ledger shows 4 units held for "CLIENT-L" on day 21 of last month
