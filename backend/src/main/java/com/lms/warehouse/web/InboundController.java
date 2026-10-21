@@ -20,8 +20,10 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import com.lms.warehouse.command.InboundCommandService;
+import com.lms.warehouse.query.AsnSummaryView;
 import com.lms.warehouse.query.AsnView;
 import com.lms.warehouse.query.WarehouseQueryService;
 import jakarta.validation.Valid;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Goods in: ASNs, the receipt against them, and putaway. */
@@ -57,6 +60,14 @@ public class InboundController {
                                 line.lotNo(), line.quantity()))
                         .toList());
         return ResponseEntity.created(URI.create("/api/v1/asns/" + id)).body(new IdResponse(id));
+    }
+
+    @GetMapping("/api/v1/asns")
+    public Slice<AsnSummaryView> asns(@RequestParam UUID warehouseId,
+                                      @RequestParam(required = false) String status,
+                                      @RequestParam(required = false) String cursor,
+                                      @RequestParam(required = false) Integer limit) {
+        return queries.asns(warehouseId, status, cursor, limit);
     }
 
     @GetMapping("/api/v1/asns/{id}")
