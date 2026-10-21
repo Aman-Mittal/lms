@@ -1,0 +1,270 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/exceptions:
+  get:
+    tags: [Control tower]
+    operationId: listExceptions
+    summary: The exception board, newest first
+    description: Requires `EXCEPTION_READ`.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - name: severity
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [P1, P2, P3]
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of tickets.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExceptionSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Control tower]
+    operationId: raiseException
+    summary: Raise an exception against a trip
+    description: |
+      Requires `EXCEPTION_RAISE`. The severity follows from the category. The
+      vehicle's position is captured now: its own telematics fix if one is
+      less than thirty minutes old, otherwise the reported `lat`/`lon`,
+      otherwise the stale fix with its true timestamp, otherwise none -- and
+      the ticket says which. A P1 or P2 ticket freezes settlement of the
+      trip until it is closed.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RaiseExceptionRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/exceptions/summary:
+  get:
+    tags: [Control tower]
+    operationId: summariseExceptions
+    summary: Open tickets by severity, unassigned, and settlement holds
+    description: Requires `EXCEPTION_READ`.
+    responses:
+      "200":
+        description: The headline numbers.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExceptionSummary" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+
+/api/v1/exceptions/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Control tower]
+    operationId: getException
+    summary: One ticket
+    responses:
+      "200":
+        description: The ticket.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Exception" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/exceptions/{id}/history:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Control tower]
+    operationId: getExceptionHistory
+    summary: Every step the ticket has been through, oldest first
+    responses:
+      "200":
+        description: The ticket's history.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ExceptionActivity" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/exceptions/{id}/assign:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Control tower]
+    operationId: assignException
+    summary: Give the ticket an owner, or a new one
+    description: |
+      Requires `EXCEPTION_MANAGE`. From RAISED it moves to ASSIGNED; later it
+      only changes the owner.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AssignExceptionRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/exceptions/{id}/investigate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Control tower]
+    operationId: investigateException
+    summary: The owner starts working it
+    description: |
+      Requires `EXCEPTION_MANAGE`. Only from ASSIGNED.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ExceptionNoteRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/exceptions/{id}/resolve:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Control tower]
+    operationId: resolveException
+    summary: The owner considers it dealt with
+    description: |
+      Requires `EXCEPTION_MANAGE`. The resolution is mandatory.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ResolveExceptionRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/exceptions/{id}/reopen:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Control tower]
+    operationId: reopenException
+    summary: A manager sends a resolution back
+    description: |
+      Requires `EXCEPTION_CLOSE`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReopenExceptionRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/exceptions/{id}/close:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Control tower]
+    operationId: closeException
+    summary: A manager closes the ticket
+    description: |
+      Requires `EXCEPTION_CLOSE`. Releases any settlement hold the ticket placed.
+      For a ticket that holds settlement, the manager closing it must not be
+      the person who resolved it (`exception-close-needs-second-person`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ExceptionNoteRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
