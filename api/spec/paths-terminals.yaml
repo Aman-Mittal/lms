@@ -1,0 +1,105 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/terminals:
+  get:
+    tags: [Terminals]
+    operationId: listTerminals
+    summary: A page of terminals
+    parameters:
+      - name: category
+        in: query
+        schema: { type: string, enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE] }
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of terminals.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TerminalSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/terminals/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Terminals]
+    operationId: getTerminal
+    summary: One terminal
+    responses:
+      "200":
+        description: The terminal.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Terminal" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/terminals/polygon:
+  post:
+    tags: [Terminals]
+    operationId: registerPolygonTerminal
+    summary: Register a terminal with a polygon geofence
+    description: |
+      Refused with 409 if the ring overlaps an existing terminal of the same
+      functional category, and with 400 if the ring is self-intersecting --
+      point-in-polygon is genuinely ambiguous for a bow-tie, so the honest
+      answer is to refuse rather than pick a lobe.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RegisterPolygonTerminalRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/terminals/point-radius:
+  post:
+    tags: [Terminals]
+    operationId: registerPointRadiusTerminal
+    summary: Register a terminal with a point-radius geofence
+    description: |
+      Two endpoints rather than one with a discriminator: a polygon with a
+      radius, or a centre with no point, should not be expressible.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RegisterPointRadiusTerminalRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

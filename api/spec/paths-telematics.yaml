@@ -1,0 +1,170 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/telematics/pings:
+  post:
+    tags: [Telematics]
+    operationId: ingestPings
+    summary: Ingest a batch of positions
+    description: |
+      Answers 202 with a report of what happened. Geofence crossings evaluated
+      here drive the trip state machine: leaving the origin puts a trip in
+      transit, entering the destination marks it arrived.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PingBatchRequest" }
+    responses:
+      "202":
+        description: Accepted for processing.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IngestResult" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/telematics/positions:
+  get:
+    tags: [Telematics]
+    operationId: listPositions
+    summary: Where every vehicle was last seen
+    responses:
+      "200":
+        description: Latest position per vehicle.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VehiclePosition" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+
+/api/v1/telematics/positions/{vehicleId}:
+  parameters:
+    - name: vehicleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the vehicle.
+  get:
+    tags: [Telematics]
+    operationId: getPosition
+    summary: Where one vehicle was last seen
+    responses:
+      "200":
+        description: The latest position.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VehiclePosition" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/telematics/trips/{tripId}/crossings:
+  parameters:
+    - name: tripId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+  get:
+    tags: [Telematics]
+    operationId: listCrossings
+    summary: Geofence crossings recorded against a trip
+    responses:
+      "200":
+        description: Crossings in order.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/GeofenceCrossing" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/telematics/trips/{tripId}/track:
+  parameters:
+    - name: tripId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+  get:
+    tags: [Telematics]
+    operationId: getTrack
+    summary: The shape of a trip's journey
+    description: |
+      Raw points while the trip runs, the simplified polyline once retention
+      has collapsed it. The caller cannot tell which and should not need to.
+    responses:
+      "200":
+        description: "`[lon, lat]` pairs, GeoJSON order."
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: array
+                items: { type: number }
+                minItems: 2
+                maxItems: 2
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/telematics/trips/{tripId}/progress:
+  parameters:
+    - name: tripId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+  get:
+    tags: [Telematics]
+    operationId: getProgress
+    summary: How far along a trip is
+    responses:
+      "200":
+        description: Progress and an estimated arrival.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TripProgress" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/telematics/deviations:
+  get:
+    tags: [Telematics]
+    operationId: listOpenDeviations
+    summary: Vehicles currently off their corridor
+    responses:
+      "200":
+        description: Open deviations.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/Deviation" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
