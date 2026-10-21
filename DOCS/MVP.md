@@ -23,21 +23,33 @@ aspirational — if it says it works, it was run.
 
 ## What runs today
 
-A Spring Boot 4.1 modular monolith on Java 25, compiled to a GraalVM native
-image, deployable to Render's free tier.
+A Spring Boot 4.1 modular monolith on Java 25 (thirteen bounded contexts and a
+shared kernel; see `AGENTS.md` section 4), compiled to a GraalVM native image,
+deployable to Render's free tier. The REST API is contract-first: `api/openapi.yaml`
+is the head and the paths and schemas live in `api/spec/`, spliced together at
+build time.
 
-| Measurement | Value | How it was obtained |
-|---|---|---|
-| Native startup | **0.643 s** | `Started LmsApplication in …`, native binary, cold container |
-| Resident memory (idle) | **70.65 MiB / 512 MiB (13.8%)** | `docker stats`, container capped at 512 MB |
-| Container image | **146 MB** | distroless base + static binary |
-| Native compile time | **~3 min** | GraalVM CE 25.2.4, 16 GB build host |
-| JVM startup (comparison) | ~6 s | same code, `jvm` Dockerfile target |
-| JVM resident memory | ~172 MiB | same code, JVM target |
+### One measured deployment check
 
-The startup figure is what makes the free tier viable: the instance sleeps after
-15 minutes of inactivity, and a sub-second wake is the difference between a
-usable demo and a minute of staring at a loading page.
+This is a **point-in-time local measurement**, not a production figure and not
+a benchmark. On 2026-10-21 the container image built from `main` at `c7fe1d9`
+was run with `--memory=512m --cpus=0.1` (Render's free web service limits)
+against a fresh PostgreSQL, using the blueprint's environment:
+
+| Measurement | Value |
+|---|---|
+| Ready, including all 21 migrations (the number then on main) | 15 s |
+| Resident memory, idle | ~82 MiB of 512 MiB |
+| `deploy/smoke.sh` | all checks green |
+| 200 signed-in requests, 10 concurrent | all 200 OK; p50 195 ms, p95 663 ms |
+| Out-of-memory kills | none |
+| Database size afterwards | 12 MB |
+
+Nothing else in this document is a timing or memory figure. Earlier versions
+of this file quoted a 0.643 s native start, a 146 MB image and JVM comparisons;
+those were not backed by anything the repository can reproduce and have been
+removed. The instance still sleeps after 15 minutes of inactivity, so the first
+request after a quiet spell pays the start-up cost above.
 
 ## Implemented
 
@@ -164,8 +176,12 @@ usable demo and a minute of staring at a loading page.
   under thirty minutes old, else the reporter's coordinates, else the stale fix
   with its true timestamp, else an explicit NONE. A ticket never implies it
   knows more than it does.
-- A route deviation from telematics raises a P2 ticket with nobody pressing
-  anything, idempotently on the detection -- the outbox delivers at least once.
+- Detectors raise tickets with nobody pressing anything, idempotently on the
+  detection -- the outbox delivers at least once: route deviation (P2) from
+  telematics, missed rail connections from multimodal, skipped and late
+  milk-run stops, warehouse receipt variances and pick shortfalls. A ticket
+  raised from the last four may concern an itinerary, a circuit, an ASN or an
+  outbound order rather than a trip; one with no trip never holds settlement.
 - **P1 and P2 tickets freeze settlement** of the trip: finance refuses to match
   or settle its bill until a manager closes the ticket. The hold is finance's
   own table, fed by events, with commuting upserts so a close that overtakes
@@ -175,18 +191,121 @@ usable demo and a minute of staring at a loading page.
   releases a vendor's money, and a release one person can both justify and
   approve is not a control.
 
+**Access policies (vision §3.1)** — attribute-based access control on RBAC
+- A permission says what kind of action; a policy says how far. Policies are
+  per-tenant rows, decided by the `@abac` bean from `@PreAuthorize`, read
+  against attributes carried in the caller's token and the record's own
+  (amount, owning unit, vendor, partner, freight mode).
+- Every tenant starts with default policies (invoice approval limit, closing a
+  money-holding exception, organisational-subtree writes for partners, vehicles,
+  orders, loads, trips, drivers, terminals, routing guides, milk-run planning,
+  warehouse setup, client contracts, rail
+  tariffs, inventory adjustment, and for client billing: running the billing
+  run, recording usage, computing storage and issuing credit notes, each limited
+  to the caller's own organisational unit and below). They bite only on an attribute a user
+  actually carries, so a user with none keeps what their permissions allowed.
+
+**Freight modes: FTL and LTL (vision §3.3, §3.4)**
+- An order is full truckload or part load. A part-load order names its origin
+  and destination hubs, and both must really be HUB terminals.
+  Its consignments are dockets in their own `DKT-` series; full truckloads keep
+  `LR-` lorry receipts. RAIL is not bookable as a plain order mode.
+- An LTL load consolidates dockets from many customers gathered at one origin
+  hub and bound for one destination hub; capacity, dangerous goods and
+  compatibility rules apply as for any load. A docket then travels twice: line
+  haul hub to hub, then a delivery load from the destination hub.
+- Rating: terminals belong to zones, rate cards are versioned zone-to-zone and
+  immutable, and each docket gets its own receivable from its own chargeable
+  weight (per-kg rate, minimum weight, cubic-foot volumetric weight, docket
+  charge, out-of-delivery-area surcharge). The carrier's freight bill for the
+  vehicle is a separate document.
+
+**Milk runs (vision §3.4)**
+- Versioned routes: an ordered list of supplier pickups, each with a window
+  measured from departure, ending at a plant, with a schedule and a price (a
+  fixed rate per run plus a fee per supplier visited).
+- Circuits are generated ahead in-process, per tenant, at startup and on a
+  fixed delay, idempotent per route and day. A circuit is carried by a trip;
+  geofence crossings record each stop's arrival and departure, with manual
+  recording when the tracker is silent. Skipped stops are not paid.
+- The priced, completed circuit becomes the carrier's payable in finance.
+
+**Rail and multimodal itineraries (vision §3.4)**
+- An itinerary is ordered legs: ROAD legs are execution trips the module
+  follows but never drives; RAIL legs are bookings that move by reported
+  terminal milestones (placed, loaded, departed, arrived, released), since rail
+  is not tracked by GPS.
+- Rail runs between two RAILHEAD terminals. Rail carriers publish versioned
+  rate cards per railhead pair; a rail leg planned without a cost is priced from
+  the card in force on its planned departure day. The itinerary reports its
+  cost by carrier.
+- The hand-off rule: a leg cannot start before its predecessor has arrived and
+  the transfer dwell has passed. A rail departure that breaks it is refused; a
+  road dispatch cannot be refused from here, so it is recorded as an early
+  start. A predecessor that arrives too late, or never, makes a missed
+  connection (an in-process sweep catches the second case), which the control
+  tower turns into a ticket.
+
+**Warehousing**
+- Terminals of category WAREHOUSE gain bins of fixed capacity and SKUs. Goods
+  arrive on an ASN and are counted at the dock, recording short, excess and
+  damaged quantities; they are put away to bins, picked against outbound orders
+  (singly or in a wave), packed into handling units and dispatched.
+- Inventory is an append-only ledger of stock movements; quantity at a location
+  is derived, never edited, and the database refuses negative stock, an overfull
+  bin and any edit of a movement. A correction is a new adjustment.
+- A pick that cannot be filled stays owed as a back-order, filled by a later
+  pick into a further handling unit. Damaged stock sits in quarantine until an
+  adjustment releases or writes it off. A cross-docked receipt skips the bins.
+- A dispatched handling unit with a destination, consignee and weighed gross
+  becomes a full-truckload consignment in planning, ready to go on a load.
+
+**Third-party logistics client billing**
+- A client is a CUSTOMER partner holding a versioned, immutable client
+  contract. Completed full-truckload trips become transport charges for each
+  contracted client aboard (part-load dockets are billed as docket receivables
+  instead, never twice); warehousing arrives as idempotent service usage
+  (storage pallet-days, handling in and out, value-added services).
+- A month is invoiced once per client however often the run is repeated, a
+  billed month is closed (late charges go on the next invoice), and an invoice
+  carries a line per charge that adds up. Each client sees only its own
+  charges and invoices; margins (client charge against the carrier's bill) are
+  for staff.
+- Tax: a contract version carries a transport tax rate and a warehouse tax rate
+  (percent). Each invoice line stores its taxable amount, rate and tax, rounded
+  half-up to two decimals per line; the invoice total is taxable plus tax.
+- Credit notes: an issued invoice is never edited. A credit note against it is
+  either one pre-tax amount, spread over the lines in proportion to what remains
+  creditable on each, or explicit per-line amounts. Tax is reversed at each
+  line's rate, a line can never be credited beyond what it charged (the service
+  checks and a database trigger holds the limit), and issuing needs its own
+  permission and is audited.
+- Storage from the ledger: instead of reported pallet-days, the units of the
+  client's own SKUs held at the end of each day are read from the warehouse
+  ledger (quarantined stock counts as held), converted to pallets with the
+  contract's units-per-pallet, rounded up per day, and recorded once per client
+  and day so the computation is idempotent. `storage-computations` runs it and
+  `storage` reads the days.
+- Statement: `GET /api/v1/client-billing/clients/{clientId}/statement` lists the
+  client's invoices (debit) and credit notes (credit) oldest first with a
+  running balance over the whole history. The balance is invoiced less credited:
+  payments received are not modelled.
+
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
   (crossing *and* containment), point-to-polyline distance for route deviation,
   bounding boxes as an index substitute.
-- 49 unit tests covering the cases that actually bite: vertex-on-ray,
+- Unit tests covering the cases that actually bite: vertex-on-ray,
   point-on-edge, concave polygons, antipodal points, degenerate segments,
   self-intersecting rings, lon/lat order.
 
 ## Verified, not assumed
 
-`./mvnw verify` runs **322 tests**, including **154 Cucumber scenarios over
-2,999 steps**, all green, against real PostgreSQL via Testcontainers — never
+`./mvnw clean verify` runs **681 tests** (the count Surefire reported on
+2026-10-21), all green. They include **305 acceptance scenarios over 7,571 steps**, which call
+each context's services in-process, and **8 end-to-end scenarios over 102
+steps**, which go over HTTP through the client generated from the contract.
+Both run against real PostgreSQL via Testcontainers, never
 H2, which has no row-level security and so cannot test the property most worth
 testing.
 
@@ -199,6 +318,14 @@ on the dispatch date and matched against the vendor's invoice. It is composed
 entirely from the steps the individual features already use -- a walk needing
 its own vocabulary would be exercising a parallel implementation rather than
 the one those features describe.
+
+The end-to-end suite (`src/test/resources/e2e/`) signs in as the seeded demo
+administrator and uses nothing but the generated client: the original order to
+paid-bill walk and a theft-hold scenario, plus one scenario each for a
+part-load docket priced by zone (LTL), a milk-run circuit billed to its
+carrier, a road-rail-road itinerary costed by carrier, a warehouse receipt with
+a variance handed off to planning, and a 3PL client's taxed monthly invoice, a credit note against it and the
+client statement.
 
 The Cucumber suite (`src/test/resources/features/`) is the readable
 specification. Its most important scenario runs a query with **no tenant
@@ -244,14 +371,20 @@ passed compilation and looked correct:
 Deferred, with interfaces left open. Do not read the vision document as a
 description of current behaviour:
 
-**The REST layer.** Only `/auth` exists. Every other context is driven through
-its command and query services by the Cucumber suite; `api/openapi.yaml` and
-the controllers it describes are written together, not retrofitted, so neither
-exists yet.
-
 The Angular console and its Playwright suite · reverse auction · OCR · ERP
-sync · SAML/OIDC and MFA · multi-leg planning · notifications ·
-i18n · cold-storage archival.
+sync · SAML/OIDC and MFA · TSP route sequencing · automatic multimodal route
+search (a person assembles an itinerary's legs) · notifications · i18n ·
+cold-storage archival.
+
+Left open by the freight-mode, warehouse and billing work, on purpose:
+
+- Rail carriers are not settled through finance freight bills.
+- Pick waves cannot be listed, only fetched by id.
+- A back-order cannot be cancelled.
+- A warehouse hand-off consignment has no sales order, so client billing skips it.
+- Payments and receipts are not modelled against client invoices; the
+  statement balance is invoiced less credited.
+- Of the control-tower detectors, stoppage, ETA and temperature are not built.
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a
 production NFR. This deployment is a single 0.1-CPU instance and will sustain
@@ -267,7 +400,7 @@ docker compose -f deploy/docker-compose.yml up
 docker compose -f deploy/docker-compose.yml --profile native up
 
 # Tests
-cd backend && ./mvnw verify
+cd backend && ./mvnw clean verify
 ```
 
 Requires Java 25 (the native toolchain floor, not a preference) and Docker.
@@ -282,9 +415,11 @@ as a **public** package; Render pulls it with no registry credential at all.
 
 **One step remains unverified**: Render's documentation does not explicitly
 confirm image-backed deploys on the *free* instance type. The image and
-blueprint are ready; creating the service requires a Render account. If free
-instances turn out to be build-from-repo only, the fallback is the `jvm`
-Dockerfile target, at roughly 6 s cold start instead of 0.6 s.
+blueprint are ready, and the container was exercised under the free tier's
+memory and CPU limits locally (see the measurement above), but creating the
+service requires a Render account. If free instances turn out to be
+build-from-repo only, the fallback is the `jvm` Dockerfile target, which has
+not been measured here.
 
 Also note: Render's free Postgres **expires 30 days after creation**.
 Migrations and seed data are idempotent and run unattended on startup so that

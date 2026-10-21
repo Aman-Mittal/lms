@@ -8,10 +8,14 @@ before touching the codebase.
 ## 1. What this project is
 
 An MVP of the platform described in `README.md`. The vision document specifies
-twelve modules; the MVP implements a **thin end-to-end spine** through nine of
-them. It is not a prototype — every path in scope is real, tested, and walkable.
-It is also not complete — see "Deliberately deferred" below and do not pretend
-otherwise in docs, comments, or commit messages.
+twelve modules; the code is a **modular monolith of thirteen bounded contexts
+plus a shared kernel** (§4 lists them). It began as a thin order-to-bill spine
+and has since grown the freight modes (full and part truckload, milk run,
+rail/multimodal), warehousing, third-party-logistics client billing and
+attribute-based access control. It is not a prototype — every path in scope is
+real, tested, and walkable. It is also not complete — see "Deliberately
+deferred" below and do not pretend otherwise in docs, comments, or commit
+messages.
 
 The hard constraint behind nearly every design decision: the backend runs on a
 **Render free web service — 512 MB RAM, 0.1 CPU**, backed by a **1 GB Postgres
@@ -27,8 +31,8 @@ infrastructure, it needs an ADR.
 |---|---|---|
 | Java | **25 LTS** | Required, not preferred — see the note below. |
 | Maven | via `./mvnw` | Wrapper is script-only — there is no committed jar. Never invoke a global `mvn`. |
-| Spring Boot | **4.1.0** | |
-| Spring Modulith | **2.1.0** | |
+| Spring Boot | **4.1.1** | |
+| Spring Modulith | **2.1.1** | |
 | Node | 24.x | Frontend only. |
 
 Always run Maven through `backend/mvnw`.
@@ -46,7 +50,7 @@ These have already cost time. Do not rediscover them.
   but your GraalVM installation does not" — a message that sounds like a
   corrupt cache and is actually a version floor. The JVM build works fine on
   21; only the native build breaks, so this fails late.
-- **Jackson 3, not Jackson 2.** Spring Boot 4 ships Jackson `3.1.4`. Databind and
+- **Jackson 3, not Jackson 2.** Spring Boot 4 ships Jackson 3. Databind and
   core live under **`tools.jackson.*`**, *not* `com.fasterxml.jackson.databind`.
   Annotations are the exception — they remain `com.fasterxml.jackson.annotation`.
   Importing the `com.fasterxml` databind packages will not compile.
@@ -131,6 +135,22 @@ These have already cost time. Do not rediscover them.
 - **Bind parameters used only in `IS NULL` need an explicit cast.** Postgres has
   nothing to infer a type from and fails with "could not determine data type of
   parameter". Write `CAST(:id AS uuid) IS NULL`, not `:id IS NULL`.
+- **Stale `__Accessor_` classes break a plain `verify` after a native build.**
+  An earlier native or AOT build leaves `target/classes/*__Accessor_*.class`
+  files behind. A later `./mvnw verify` that does not clean then fails with
+  "No accessor to get property". Always `./mvnw clean verify`, and always after
+  a native build.
+- **The OpenAPI contract is split, and fragments must stay self-contained.**
+  `api/openapi.yaml` is only the head. Parameters, responses, schemas and paths
+  live in `api/spec/` (`paths-<tag>.yaml`, `schemas-<tag>.yaml`,
+  `parameters.yaml`, `responses.yaml`), and a Maven antrun step
+  (`bundle-openapi`) splices them into `target/openapi/openapi.yaml`, which is
+  what the client generator and `OpenApiContractTest` read. Fragments keep
+  `#/components/...` references, never cross-file ones: with a cross-file
+  `$ref`, openapi-generator invents its own model names and the client stops
+  matching the spec. Add a new schema or path to its tag's own fragment.
+- **XML comments in `pom.xml` must not contain `--`.** It is illegal inside an
+  XML comment, and the parse error does not point at the comment.
 - **No Lombok.** Use Java records and Spring Data JDBC constructor binding.
 - **No `springdoc-openapi`.** `api/openapi.yaml` is hand-authored and is the
   contract source of truth. Do not generate the spec from annotations; generate
@@ -146,8 +166,25 @@ Each bounded context is a top-level package under `com.lms`:
 
 ```
 identity  masterdata  order  planning  sourcing  execution  telematics  finance
-controltower  shared
+controltower  milkrun  multimodal  warehouse  clientbilling  shared
 ```
+
+| Module | Role |
+|---|---|
+| `identity` | Tenants, org hierarchy, users, authentication, RBAC, audit log, and attribute-based access control (policies as per-tenant data, decided by the `@abac` bean). Depends on nothing. |
+| `masterdata` | Business partners and KYC, vehicles, drivers, dispatch readiness, terminals as geofences (including HUB, WAREHOUSE and RAILHEAD categories). |
+| `order` | Demand ingestion and validation: orders, lines, chargeable weight, dangerous goods, freight mode (FTL or LTL with hubs). |
+| `planning` | Consignment generation (lorry receipts and LTL dockets), load building, consolidation; turns a warehouse hand-off into a consignment. |
+| `sourcing` | Routing guides, cascading and round-robin allocation, offer timeouts. |
+| `execution` | Trip state machine, gate log, weighbridge, dispatch gate, LTL delivery leg. |
+| `telematics` | GPS ingest, geofence crossings, route deviation, retention. |
+| `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables. |
+| `controltower` | Exception tickets from people and detectors (route deviation, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
+| `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
+| `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep. |
+| `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
+| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
+| `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
 - A context **must not** call another context's classes directly. Cross-context
   communication is `ApplicationEventPublisher` and domain events only.
@@ -378,7 +415,7 @@ a judgement call to make in a PR — it needs an ADR.
 ```bash
 # Backend
 cd backend
-./mvnw verify                      # unit + integration tests + license gate
+./mvnw clean verify                # unit + integration + e2e tests + license gate (always clean: see §3)
 ./mvnw test -Dtest=ModularityTests # boundary check alone
 ./mvnw -Pnative -DskipTests package  # native image (GraalVM 25, ~6-8 GB RAM, ~3 min)
 
@@ -438,7 +475,15 @@ includes production, after the image has been built and pushed.
   body is optional are called with an empty one.
 - **End-to-end Cucumber** (`src/test/resources/e2e/`, runner `RunEndToEndTest`,
   glue `com.lms.e2e`) walks order to paid bill entirely over HTTP with the
-  generated client, signed in as the seeded demo administrator. It is separate
+  generated client, signed in as the seeded demo administrator. Beside
+  `order_to_bill.feature` there is one feature per freight mode and billing
+  flow (`ltl_docket`, `milk_run`, `rail_itinerary`, `warehouse_flow`,
+  `client_billing`), each with its own step class and each tagged (`@ltl`,
+  `@milkrun`, `@rail`, `@warehouse`, `@clientbilling`) so one can be run alone
+  with `-Dcucumber.filter.tags=@rail`. `HttpWorld` is the shared plumbing
+  (sign-in, salted codes, shifted geography, a trip ready to dispatch); step
+  texts must stay unique across every class in the package. Each mode keeps to
+  its own latitude band so scenarios of different modes cannot overlap terminals. It is separate
   from the acceptance suite on purpose: in-process steps cannot notice a
   controller mapping a field wrongly or a spec naming a field the server never
   sends. The demo tenant is shared by every scenario, so codes are salted and
@@ -463,10 +508,28 @@ includes production, after the image has been built and pushed.
 
 Not built, and interfaces are left open for them. Do not describe these as
 implemented: reverse auction / spot bidding, OCR pipeline, ERP synchronisation,
-SAML/OIDC SSO and MFA, multi-leg modal planning, TSP route sequencing,
-notification engine, i18n, cold-storage archival. Within the control tower
-(§3.8), only route deviation raises tickets automatically; stoppage, ETA and
-temperature detectors are not built, and those categories are raised by hand.
+SAML/OIDC SSO and MFA, TSP route sequencing (a milk run's stop order is
+authored, not optimised), notification engine, i18n, cold-storage archival.
+Multimodal itineraries exist, but the planner does not search for them: a
+person assembles the legs.
+
+Within the control tower (§3.8), tickets are raised automatically from route
+deviation (telematics), missed connections (multimodal), skipped and late
+milk-run stops, receipt variances and pick shortfalls (warehouse). Stoppage,
+ETA and temperature detectors are not built, and those categories are raised
+by hand.
+
+Gaps the freight-mode, warehouse and billing work left open on purpose:
+
+- Rail carriers are not settled through finance freight bills; a rail leg's
+  cost is recorded and reported by carrier, not paid through settlement.
+- Pick waves can be released and fetched by id but not listed.
+- A back-order cannot be cancelled; it is filled by a later pick.
+- A warehouse hand-off consignment has no sales order, so client billing
+  skips it (client charges are drawn from order-backed consignments).
+- Payments and receipts are not modelled against client invoices. The client
+  statement lists invoices and credit notes with a running balance, which is
+  invoiced less credited, not what the client still owes.
 
 The vision document's §5.1 target of 20 000 GPS pings/second is a **production**
 NFR. The free-tier deployment sustains roughly 50–100/second. Say so plainly
