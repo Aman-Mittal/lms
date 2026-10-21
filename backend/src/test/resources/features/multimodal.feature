@@ -19,10 +19,13 @@ Feature: Road to the railhead, rail for the trunk, road to the customer
   platform already runs, and moves when the trip is dispatched and delivered.
   A rail leg is a booking for wagons or containers, and moves by terminal
   events -- placed, loaded, departed, arrived, released -- because a rake is
-  not tracked by GPS. A leg cannot start before the leg before it has arrived
-  and the transfer dwell has passed, and when a leg arrives too late for the
-  next one's planned start, the connection is missed and said so. Every leg is
-  costed and its carrier paid separately; the itinerary's cost is their sum.
+  not tracked by GPS, and runs from one railhead to another. A leg cannot
+  start before the leg before it has arrived and the transfer dwell has
+  passed, and when a leg arrives too late for the next one's planned start --
+  or never arrives at all -- the connection is missed and said so. Every leg
+  is costed and its carrier paid separately; the itinerary's cost is their
+  sum. A rail leg planned without a cost is priced from the rail carrier's
+  rate card in force on its departure day.
 
   Background:
     Given a tenant "acme" named "Acme Logistics"
@@ -34,6 +37,7 @@ Feature: Road to the railhead, rail for the trunk, road to the customer
     And a depot "DEST-A" at 28.500,77.300
     And a railhead "RAIL-NGP" at 21.150,79.090
     And a railhead "RAIL-DLI" at 28.640,77.220
+    And a railhead "RAIL-BPL" at 23.260,77.410
     And a carrier "VENDOR-1"
     And a carrier "VENDOR-2"
     And a carrier "RAILCO"
@@ -69,7 +73,8 @@ Feature: Road to the railhead, rail for the trunk, road to the customer
     Then leg 3 of shipment "SHP-1" is "ARRIVED"
     And leg 3 of shipment "SHP-1" started on time
     And shipment "SHP-1" is "COMPLETED"
-    And shipment "SHP-1" has no missed connection
+    When the missed-connection sweep runs
+    Then shipment "SHP-1" has no missed connection
     And shipment "SHP-1" costs 106000 in total over 3 legs
     And carrier "VENDOR-1" is owed 12000 for shipment "SHP-1"
     And carrier "RAILCO" is owed 85000 for shipment "SHP-1"
@@ -122,6 +127,7 @@ Feature: Road to the railhead, rail for the trunk, road to the customer
     Then leg 2 of shipment "SHP-1" missed its connection and can start 27 hours ago at the earliest
     When the delivery of road trip "FM-1" is heard again
     Then the missed connection on leg 2 of shipment "SHP-1" is recorded once
+    And the missed connection on leg 2 of shipment "SHP-1" was announced once
 
   Scenario: A late train misses the last-mile lorry
     When road trip "FM-1" leaves its origin 48 hours ago
@@ -154,21 +160,151 @@ Feature: Road to the railhead, rail for the trunk, road to the customer
     And that ticket does not suspend settlement
     And the board counts 1 open ticket without a trip and 0 holding settlement
 
+  Scenario: A first mile that never reaches the railhead is caught by the sweep, once
+    # The lorry was due at the railhead 40 hours ago and has reported nothing
+    # since leaving. Nothing arrives, so nothing reacts -- until the sweep
+    # notices the rake booked behind it can no longer be made. The train is
+    # overdue too, so the last-mile lorry behind it is caught as well.
+    When road trip "FM-1" leaves its origin 48 hours ago
+    And the missed-connection sweep runs
+    Then leg 2 of shipment "SHP-1" missed its connection with leg 1 not yet arrived
+    And leg 3 of shipment "SHP-1" missed its connection with leg 2 not yet arrived
+    And the missed connection on leg 2 of shipment "SHP-1" was announced once
+    # One ticket per missed leg: the train's, and the last-mile lorry's.
+    And the control tower holds 2 "MISSED_CONNECTION" tickets about shipment "SHP-1"
+    When the missed-connection sweep runs
+    Then the missed connection on leg 2 of shipment "SHP-1" was announced once
+    And the control tower holds 2 "MISSED_CONNECTION" tickets about shipment "SHP-1"
+    # When the lorry does turn up, the earliest start becomes a fact rather
+    # than a bound; the miss is not announced again, so no second ticket.
+    When road trip "FM-1" delivers 31 hours ago
+    Then leg 2 of shipment "SHP-1" missed its connection and can start 27 hours ago at the earliest
+    And the missed connection on leg 2 of shipment "SHP-1" was announced once
+    And the control tower holds 2 "MISSED_CONNECTION" tickets about shipment "SHP-1"
+
+  Scenario: A train that never arrives raises a ticket on no trip, holding no money
+    # The late leg is rail, so the announcement carries no trip: the ticket is
+    # about the itinerary alone, and there is no trip's settlement to hold.
+    When shipment "SHP-6" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units    | booking | carrier | cost  |
+      | RAIL | RAIL-NGP | RAIL-DLI | 30            | 10            | 0         |      | 10 WAGON | RR-61   | RAILCO  | 20000 |
+      | RAIL | RAIL-DLI | RAIL-BPL | 8             | 2             | 60        |      | 10 WAGON | RR-62   | RAILCO  | 20000 |
+    And the missed-connection sweep runs
+    Then leg 2 of shipment "SHP-6" missed its connection with leg 1 not yet arrived
+    And the control tower holds 1 "MISSED_CONNECTION" ticket about shipment "SHP-6"
+    And that ticket is of severity "P2" on no trip
+    And that ticket does not suspend settlement
+    When the missed-connection sweep runs
+    Then the control tower holds 1 "MISSED_CONNECTION" ticket about shipment "SHP-6"
+
+  Scenario: The sweep leaves a connection alone while there is still time to make it
+    # The first train is three hours overdue, but the second is not booked to
+    # leave for another day: arriving now and transferring would still make it.
+    When shipment "SHP-5" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units    | booking | carrier | cost  |
+      | RAIL | RAIL-NGP | RAIL-DLI | 20            | 3             | 0         |      | 10 WAGON | RR-51   | RAILCO  | 20000 |
+      | RAIL | RAIL-DLI | RAIL-BPL | -24           | -40           | 60        |      | 10 WAGON | RR-52   | RAILCO  | 20000 |
+    And the missed-connection sweep runs
+    Then leg 2 of shipment "SHP-5" has not missed its connection
+
+  # ------------------------------------------------------------ railheads
+
+  Scenario: A rail leg runs only from a railhead to a railhead
+    When shipment "SHP-2" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units       | booking | carrier | cost |
+      | RAIL | ORIGIN   | RAIL-NGP | 30            | 20            | 0         |      | 2 CONTAINER | RR-1    | RAILCO  | 1000 |
+    Then the multimodal desk refuses with code "rail-leg-not-at-railhead"
+    When shipment "SHP-2" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units       | booking | carrier | cost |
+      | RAIL | RAIL-DLI | DEST-A   | 30            | 20            | 0         |      | 2 CONTAINER | RR-1    | RAILCO  | 1000 |
+    Then the multimodal desk refuses with code "rail-leg-not-at-railhead"
+
+  # ------------------------------------------------------ rail rate cards
+
+  # Days are counted from today, in UTC; a dash is a unit the card does not
+  # price.
+
+  Scenario: A rail leg planned without a cost is priced from the card in force on its departure day
+    When rail rate card "RC-1" is published for "RAILCO" from "RAIL-NGP" to "RAIL-DLI" from day -30 at "2000" per wagon, "1500" per container, minimum 10000
+    And rail rate card "RC-2" is published for "RAILCO" from "RAIL-NGP" to "RAIL-DLI" from day 3 at "2500" per wagon, "-" per container, minimum 10000
+    Then rail rate card "RC-1" is in force until day 2
+    And rail rate card "RC-2" is in force with no end
+    When shipment "SHP-3" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units    | booking | carrier | cost |
+      | RAIL | RAIL-NGP | RAIL-DLI | 10            | 2             | 0         |      | 40 WAGON | RR-31   | RAILCO  |      |
+    Then leg 1 of shipment "SHP-3" costs 80000, priced by rail rate card "RC-1"
+    When shipment "SHP-4" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units    | booking | carrier | cost |
+      | RAIL | RAIL-NGP | RAIL-DLI | -100          | -120          | 0         |      | 40 WAGON | RR-41   | RAILCO  |      |
+    Then leg 1 of shipment "SHP-4" costs 100000, priced by rail rate card "RC-2"
+
+  Scenario: A small booking pays the card's minimum, and an explicit cost overrides the card
+    When rail rate card "RC-1" is published for "RAILCO" from "RAIL-NGP" to "RAIL-DLI" from day -30 at "2000" per wagon, "1500" per container, minimum 10000
+    And shipment "SHP-3" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units       | booking | carrier | cost |
+      | RAIL | RAIL-NGP | RAIL-DLI | 10            | 2             | 0         |      | 2 CONTAINER | RR-31   | RAILCO  |      |
+    Then leg 1 of shipment "SHP-3" costs 10000, priced by rail rate card "RC-1"
+    When shipment "SHP-4" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units    | booking | carrier | cost  |
+      | RAIL | RAIL-NGP | RAIL-DLI | 10            | 2             | 0         |      | 40 WAGON | RR-41   | RAILCO  | 70000 |
+    Then leg 1 of shipment "SHP-4" costs 70000 as given, priced by no card
+
+  Scenario: A rail leg with no cost is refused when no card prices it
+    When rail rate card "RC-1" is published for "RAILCO" from "RAIL-NGP" to "RAIL-DLI" from day 5 at "2000" per wagon, "1500" per container, minimum 0
+    And shipment "SHP-3" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units    | booking | carrier | cost |
+      | RAIL | RAIL-NGP | RAIL-DLI | 10            | 2             | 0         |      | 40 WAGON | RR-31   | RAILCO  |      |
+    Then the multimodal desk refuses with code "rail-leg-no-tariff"
+    When rail rate card "RC-W" is published for "RAILCO" from "RAIL-DLI" to "RAIL-NGP" from day -10 at "2000" per wagon, "-" per container, minimum 0
+    And shipment "SHP-4" is planned as an itinerary:
+      | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units       | booking | carrier | cost |
+      | RAIL | RAIL-DLI | RAIL-NGP | 10            | 2             | 0         |      | 2 CONTAINER | RR-41   | RAILCO  |      |
+    Then the multimodal desk refuses with code "rail-tariff-unit-not-priced"
+
+  Scenario: A rail rate card runs between railheads and cannot be backdated under the one in force
+    When rail rate card "RC-1" is published for "RAILCO" from "RAIL-NGP" to "RAIL-DLI" from day -30 at "2000" per wagon, "1500" per container, minimum 0
+    And rail rate card "RC-2" is published for "RAILCO" from "RAIL-NGP" to "RAIL-DLI" from day -30 at "2100" per wagon, "1600" per container, minimum 0
+    Then the multimodal desk refuses with code "rail-tariff-backdated"
+    And rail rate card "RC-1" is in force with no end
+    When rail rate card "RC-X" is published for "RAILCO" from "ORIGIN" to "RAIL-NGP" from day 0 at "2000" per wagon, "-" per container, minimum 0
+    Then the multimodal desk refuses with code "rail-tariff-not-railhead"
+
+  Scenario: A rail rate card is published only from a railhead in the caller's subtree
+    Given tenant "acme" has an organisational unit "/acme/north/" named "North" of type "REGION"
+    And tenant "acme" has an organisational unit "/acme/south/" named "South" of type "REGION"
+    And a railhead "RAIL-AMB" at 30.380,76.780 under "/acme/north/"
+    And a railhead "RAIL-MAS" at 13.080,80.270 under "/acme/south/"
+    And the tenant scope is "acme" at "/acme/north/"
+    When rail rate card "RC-S" is published for "RAILCO" from "RAIL-MAS" to "RAIL-DLI" from day 0 at "2000" per wagon, "-" per container, minimum 0
+    Then the multimodal desk refuses access
+    When rail rate card "RC-N" is published for "RAILCO" from "RAIL-AMB" to "RAIL-DLI" from day 0 at "2000" per wagon, "-" per container, minimum 0
+    Then rail rate card "RC-N" is in force with no end
+
   # ------------------------------------------------------------ planning
 
   Scenario: An itinerary whose legs do not meet is refused
     When shipment "SHP-2" is planned as an itinerary:
       | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units       | booking | carrier | cost  |
-      | RAIL | ORIGIN   | RAIL-NGP | 30            | 20            | 0         |      | 2 CONTAINER | RR-1    | RAILCO  | 1000  |
-      | RAIL | RAIL-DLI | DEST-A   | 10            | 5             | 0         |      | 2 CONTAINER | RR-2    | RAILCO  | 1000  |
+      | RAIL | RAIL-BPL | RAIL-NGP | 30            | 20            | 0         |      | 2 CONTAINER | RR-1    | RAILCO  | 1000  |
+      | RAIL | RAIL-DLI | RAIL-BPL | 10            | 5             | 0         |      | 2 CONTAINER | RR-2    | RAILCO  | 1000  |
     Then the multimodal desk refuses with code "itinerary-not-contiguous"
 
   Scenario: An itinerary planned to miss its own connection is refused
     When shipment "SHP-2" is planned as an itinerary:
       | mode | from     | to       | departs h ago | arrives h ago | dwell min | trip | units       | booking | carrier | cost  |
-      | RAIL | ORIGIN   | RAIL-NGP | 30            | 20            | 0         |      | 2 CONTAINER | RR-1    | RAILCO  | 1000  |
-      | RAIL | RAIL-NGP | DEST-A   | 19            | 5             | 240       |      | 2 CONTAINER | RR-2    | RAILCO  | 1000  |
+      | RAIL | RAIL-BPL | RAIL-NGP | 30            | 20            | 0         |      | 2 CONTAINER | RR-1    | RAILCO  | 1000  |
+      | RAIL | RAIL-NGP | RAIL-DLI | 19            | 5             | 240       |      | 2 CONTAINER | RR-2    | RAILCO  | 1000  |
     Then the multimodal desk refuses with code "itinerary-plan-misses-connection"
+
+  Scenario: A road leg's trip must run between the leg's own terminals
+    Given a lorry "MH-01-TL-0003" with payload 20000 kg and volume 60 m3
+    And lorry "MH-01-TL-0003" has an "INSURANCE" certificate valid for 365 days
+    And a lorry driver "Amit" licensed for 365 days
+    And a road trip "XM-1" on lorry "MH-01-TL-0003" driven by "Amit" from "ORIGIN" to "DEST-A" for "VENDOR-1"
+    When shipment "SHP-2" is planned as an itinerary:
+      | mode | from   | to       | departs h ago | arrives h ago | dwell min | trip | units | booking | carrier  | cost |
+      | ROAD | ORIGIN | RAIL-NGP | 48            | 40            | 0         | XM-1 |       |         | VENDOR-1 | 500  |
+    Then the multimodal desk refuses with code "road-leg-trip-terminals-mismatch"
 
   Scenario: A trip already running one leg cannot run another
     When shipment "SHP-2" is planned as an itinerary:
