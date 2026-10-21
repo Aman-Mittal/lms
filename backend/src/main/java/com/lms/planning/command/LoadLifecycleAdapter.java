@@ -54,9 +54,10 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
             List<Consignment> aboard = consignments.findOnLoad(tenantId, loadId);
             // A consolidated LTL vehicle is hired for its line haul, so its lane
             // ends at the destination hub and its stops are hubs. Last-mile
-            // delivery of each docket from there is not this vehicle's journey.
-            boolean ltl = load.freightMode() == FreightMode.LTL;
-            Function<Consignment, UUID> stop = ltl
+            // delivery of each docket from there is not this vehicle's journey;
+            // it is a DELIVERY load's, whose stops are the consignees.
+            boolean lineHaul = load.freightMode() == FreightMode.LTL && !load.isDelivery();
+            Function<Consignment, UUID> stop = lineHaul
                     ? Consignment::destinationHubTerminalId
                     : Consignment::destinationTerminalId;
             return new LoadSummary(load.id(), load.loadNo(), load.status().name(),
@@ -74,10 +75,71 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
         loads.save(require(loadId).awardTo(vendorPartnerId));
     }
 
+    /**
+     * Moves the load to DISPATCHED and, for a part load, its dockets with it:
+     * a line haul's to IN_TRANSIT, a delivery load's to OUT_FOR_DELIVERY.
+     *
+     * <p>A full truckload's consignments are left as they were, as they always
+     * have been; this change is about the part-load journey only.
+     */
     @Override
     @Transactional
     public void recordDispatched(UUID loadId) {
-        loads.save(require(loadId).transitionTo(LoadUnit.LoadStatus.DISPATCHED));
+        LoadUnit load = loads.save(require(loadId).transitionTo(LoadUnit.LoadStatus.DISPATCHED));
+        if (load.freightMode() != FreightMode.LTL) {
+            return;
+        }
+        Consignment.ConsignmentStatus from = load.isDelivery()
+                ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
+                : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
+        Consignment.ConsignmentStatus to = load.isDelivery()
+                ? Consignment.ConsignmentStatus.OUT_FOR_DELIVERY
+                : Consignment.ConsignmentStatus.IN_TRANSIT;
+        advanceDockets(load, from, to);
+    }
+
+    @Override
+    @Transactional
+    public void recordTripCompleted(UUID loadId) {
+        LoadUnit load = require(loadId);
+        if (load.freightMode() != FreightMode.LTL) {
+            return;
+        }
+        Consignment.ConsignmentStatus boarded = load.isDelivery()
+                ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
+                : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
+        Consignment.ConsignmentStatus moving = load.isDelivery()
+                ? Consignment.ConsignmentStatus.OUT_FOR_DELIVERY
+                : Consignment.ConsignmentStatus.IN_TRANSIT;
+        Consignment.ConsignmentStatus arrived = load.isDelivery()
+                ? Consignment.ConsignmentStatus.DELIVERED
+                : Consignment.ConsignmentStatus.ARRIVED_AT_HUB;
+        // A line haul dispatched before dispatch moved its dockets still has
+        // them boarded rather than moving; they have travelled all the same.
+        advanceDockets(load, boarded, moving);
+        advanceDockets(load, moving, arrived);
+
+        // Only a dispatched load can finish. Anything else -- already
+        // COMPLETED on a repeat call -- is left as it is.
+        if (load.status() == LoadUnit.LoadStatus.DISPATCHED) {
+            loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+        }
+    }
+
+    /**
+     * Moves every docket on the load that is in {@code from} to {@code to}.
+     *
+     * <p>Dockets in any other state are skipped rather than refused: on a
+     * line haul's arrival, a docket already put on a delivery load must not
+     * be dragged back, and on a repeat call everything has already moved.
+     */
+    private void advanceDockets(LoadUnit load, Consignment.ConsignmentStatus from,
+                                Consignment.ConsignmentStatus to) {
+        for (Consignment docket : consignments.findOnLoad(load.tenantId(), load.id())) {
+            if (docket.isDocket() && docket.status() == from) {
+                consignments.save(docket.transitionTo(to));
+            }
+        }
     }
 
     @Override
