@@ -1,0 +1,122 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/itineraries:
+  get:
+    tags: [Multimodal]
+    operationId: listItineraries
+    summary: Itineraries, newest first
+    description: Requires `MULTIMODAL_READ`.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of itineraries.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItinerarySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Multimodal]
+    operationId: planItinerary
+    summary: Plan a shipment over ordered road and rail legs
+    description: |
+      Requires `MULTIMODAL_PLAN`. Legs must be contiguous -- each starts at the
+      terminal where the previous one ends -- and each must be planned to
+      start no earlier than the previous leg's planned arrival plus its own
+      transfer dwell. A ROAD leg names an existing trip that has not yet been
+      dispatched; a RAIL leg names a booking, a unit type and a unit count.
+      Every leg names its carrier and its cost.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PlanItineraryRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/itineraries/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Multimodal]
+    operationId: getItinerary
+    summary: One itinerary with its legs and the cost owed to each carrier
+    description: Requires `MULTIMODAL_READ`.
+    responses:
+      "200":
+        description: The itinerary.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Itinerary" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/itineraries/{id}/legs/{seq}/milestones:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the itinerary.
+    - name: seq
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+      description: The leg's position in the itinerary.
+  post:
+    tags: [Multimodal]
+    operationId: recordRailMilestone
+    summary: Report a rail terminal event on a leg
+    description: |
+      Requires `MULTIMODAL_TRACK`. RAIL legs only -- a road leg moves with its
+      trip. Milestones go one step at a time: PLACED, LOADED, DEPARTED,
+      ARRIVED, RELEASED. DEPARTED is refused (`handoff-too-early`,
+      `handoff-predecessor-not-arrived`) before the previous leg's arrival
+      plus this leg's transfer dwell. Reporting the current milestone again
+      with the same time is a no-op. An ARRIVED that comes too late for the
+      next leg's planned start marks that leg's connection missed.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RailMilestoneRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

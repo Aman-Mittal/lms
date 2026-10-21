@@ -1,0 +1,399 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/milk-run-routes:
+  get:
+    tags: [Milk runs]
+    operationId: listMilkRunRoutes
+    summary: Routes in force, by code
+    description: Requires `MILKRUN_READ`. Superseded versions remain reachable by id.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of routes.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilkRunRouteSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Milk runs]
+    operationId: publishMilkRunRoute
+    summary: Publish a version of a milk-run route
+    description: |
+      Requires `MILKRUN_PLAN`. Closes the version in force the day before
+      `effectiveFrom`; a successor that does not start after the incumbent is
+      refused. Every terminal must be on this tenant's network. Circuits
+      already generated keep the version they were generated from.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PublishMilkRunRouteRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/milk-run-routes/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Milk runs]
+    operationId: getMilkRunRoute
+    summary: One route version
+    responses:
+      "200":
+        description: The route version.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MilkRunRoute" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/milk-run-routes/{id}/stops:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Milk runs]
+    operationId: getMilkRunRouteStops
+    summary: A route version's supplier stops, in circuit order
+    responses:
+      "200":
+        description: The stops.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/MilkRunRouteStop" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/milk-runs:
+  get:
+    tags: [Milk runs]
+    operationId: listCircuitRuns
+    summary: Circuits by day, then route
+    description: Requires `MILKRUN_READ`.
+    parameters:
+      - name: fromDate
+        in: query
+        required: false
+        schema: { type: string, format: date }
+        description: First day to include.
+      - name: routeCode
+        in: query
+        required: false
+        schema: { type: string }
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of circuits.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CircuitRunSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/milk-runs/generate:
+  post:
+    tags: [Milk runs]
+    operationId: generateCircuitRuns
+    summary: Plan circuits ahead from the routes' schedules
+    description: |
+      Requires `MILKRUN_PLAN`. Idempotent per route and day: a day that
+      already has a circuit for a route is left alone, so calling this
+      twice plans nothing the second time. The same generation runs
+      in-process at startup and hourly.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GenerateCircuitRunsRequest" }
+    responses:
+      "200":
+        description: How many circuits were newly planned.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GenerateCircuitRunsResult" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/milk-runs/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Milk runs]
+    operationId: getCircuitRun
+    summary: One circuit
+    responses:
+      "200":
+        description: The circuit.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CircuitRun" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/milk-runs/{id}/stops:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Milk runs]
+    operationId: getCircuitRunStops
+    summary: What happened at each supplier, in circuit order
+    responses:
+      "200":
+        description: The stops.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/CircuitRunStop" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/milk-runs/{id}/trip:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Milk runs]
+    operationId: assignCircuitTrip
+    summary: Hand a planned circuit to an execution trip
+    description: |
+      Requires `MILKRUN_EXECUTE`. From then on, geofence crossings telematics
+      reports for the trip record the circuit's stops: entering a supplier is
+      an arrival, leaving it a departure, entering the plant completes the
+      circuit. A trip carries at most one circuit.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AssignCircuitTripRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/milk-runs/{id}/stops/{sequence}/arrival:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+    - name: sequence
+      in: path
+      required: true
+      schema: { type: integer }
+      description: The stop's position in the circuit, from 1.
+  post:
+    tags: [Milk runs]
+    operationId: recordCircuitStopArrival
+    summary: Record reaching a supplier by hand
+    description: |
+      Requires `MILKRUN_EXECUTE`. Judged exactly as a geofence arrival:
+      after the window closes it is late, and any earlier supplier still
+      waiting is skipped.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MilestoneRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/milk-runs/{id}/stops/{sequence}/departure:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+    - name: sequence
+      in: path
+      required: true
+      schema: { type: integer }
+      description: The stop's position in the circuit, from 1.
+  post:
+    tags: [Milk runs]
+    operationId: recordCircuitStopDeparture
+    summary: Record leaving a supplier by hand
+    description: Requires `MILKRUN_EXECUTE`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MilestoneRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/milk-runs/{id}/stops/{sequence}/pickup:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+    - name: sequence
+      in: path
+      required: true
+      schema: { type: integer }
+      description: The stop's position in the circuit, from 1.
+  post:
+    tags: [Milk runs]
+    operationId: recordCircuitStopPickup
+    summary: Record what was collected at a supplier
+    description: |
+      Requires `MILKRUN_EXECUTE`. Replaces any earlier figure. Allowed after
+      the circuit has reached the plant, because the quantity usually comes
+      off the goods-received note.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CircuitPickupRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/milk-runs/{id}/stops/{sequence}/skip:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+    - name: sequence
+      in: path
+      required: true
+      schema: { type: integer }
+      description: The stop's position in the circuit, from 1.
+  post:
+    tags: [Milk runs]
+    operationId: skipCircuitStop
+    summary: Record that a supplier will not be collected from
+    description: Requires `MILKRUN_EXECUTE`. Only a supplier not yet reached can be skipped.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CircuitSkipRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/milk-runs/{id}/completion:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Milk runs]
+    operationId: completeCircuitRun
+    summary: Record reaching the plant by hand
+    description: |
+      Requires `MILKRUN_EXECUTE`. Any supplier still waiting is skipped, and
+      the circuit is priced: the run rate plus the per-stop fee for each
+      supplier visited.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MilestoneRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
