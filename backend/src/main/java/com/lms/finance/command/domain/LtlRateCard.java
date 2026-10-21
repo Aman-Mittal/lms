@@ -65,10 +65,35 @@ public record LtlRateCard(
         BigDecimal kgPerCft,
         /** A flat charge per docket, for the paperwork and the hub handling. */
         BigDecimal docketCharge,
-        /** Added when the consignee's site is out of the destination hub's delivery area. */
+        /**
+         * Added when the consignee's site is out of the destination hub's
+         * delivery area, as a flat amount when {@link #odaBasis()} is FLAT.
+         */
         BigDecimal odaSurcharge,
+        /** How the ODA charge is reckoned; FLAT on every card published before it existed. */
+        OdaBasis odaBasis,
+        /** For a PER_KG ODA charge, the rate on the docket's chargeable weight. */
+        BigDecimal odaRatePerKg,
+        /** For a PER_KG ODA charge, the least it can come to. */
+        BigDecimal odaMinimum,
         @Version Long version,
         Instant createdAt) {
+
+    /**
+     * How the out-of-delivery-area charge is reckoned.
+     *
+     * <p>A remote drop costs more the more there is to carry the last stretch,
+     * so a flat amount over-charges a parcel and under-charges a pallet. Per
+     * kilogram with a floor is the usual answer; the floor is there because
+     * sending a vehicle out of area at all has a cost a light docket does not
+     * cover.
+     */
+    public enum OdaBasis {
+        /** {@code odaSurcharge}, whatever the docket weighs. */
+        FLAT,
+        /** {@code odaRatePerKg} on the chargeable weight, never less than {@code odaMinimum}. */
+        PER_KG
+    }
 
     public enum RateBasis {
         /** The rate multiplies the chargeable weight in kilograms. */
@@ -80,12 +105,32 @@ public record LtlRateCard(
         PER_CFT
     }
 
+    /** A card whose ODA charge, if any, is a flat amount. */
     public static LtlRateCard publish(UUID id, UUID tenantId, String code, String originZone,
                                       String destinationZone, String currency,
                                       LocalDate effectiveFrom, RateBasis rateBasis,
                                       BigDecimal rateAmount, BigDecimal minimumChargeableWeightKg,
                                       BigDecimal kgPerCft, BigDecimal docketCharge,
                                       BigDecimal odaSurcharge) {
+        return publish(id, tenantId, code, originZone, destinationZone, currency, effectiveFrom,
+                rateBasis, rateAmount, minimumChargeableWeightKg, kgPerCft, docketCharge,
+                odaSurcharge, OdaBasis.FLAT, null, null);
+    }
+
+    /**
+     * A card with a stated ODA basis.
+     *
+     * <p>The basis is fixed when the version is published, like every other
+     * term on it. A PER_KG card must state its rate, or every remote drop
+     * would be charged only the minimum without anybody having decided so.
+     */
+    public static LtlRateCard publish(UUID id, UUID tenantId, String code, String originZone,
+                                      String destinationZone, String currency,
+                                      LocalDate effectiveFrom, RateBasis rateBasis,
+                                      BigDecimal rateAmount, BigDecimal minimumChargeableWeightKg,
+                                      BigDecimal kgPerCft, BigDecimal docketCharge,
+                                      BigDecimal odaSurcharge, OdaBasis odaBasis,
+                                      BigDecimal odaRatePerKg, BigDecimal odaMinimum) {
         if (code == null || code.isBlank()) {
             throw new IllegalArgumentException("A rate card needs a name somebody can refer to");
         }
@@ -102,10 +147,15 @@ public record LtlRateCard(
             throw new IllegalArgumentException(
                     "The volumetric conversion must be positive, or volume would be free");
         }
+        OdaBasis oda = odaBasis == null ? OdaBasis.FLAT : odaBasis;
+        if (oda == OdaBasis.PER_KG && odaRatePerKg == null) {
+            throw new IllegalArgumentException("A per-kg ODA charge must state its rate per kg");
+        }
         return new LtlRateCard(id, tenantId, code, zone(originZone), zone(destinationZone),
                 currency == null || currency.isBlank() ? "INR" : currency,
                 effectiveFrom, rateBasis, rateAmount, nonNegative(minimumChargeableWeightKg),
                 kgPerCft, nonNegative(docketCharge), nonNegative(odaSurcharge),
+                oda, nonNegative(odaRatePerKg), nonNegative(odaMinimum),
                 null, Instant.now());
     }
 
