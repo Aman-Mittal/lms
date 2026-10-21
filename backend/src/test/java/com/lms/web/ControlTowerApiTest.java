@@ -46,6 +46,7 @@ import com.lms.masterdata.command.domain.BusinessPartner;
 import com.lms.masterdata.command.domain.Terminal;
 import com.lms.shared.geo.LatLon;
 import com.lms.shared.tenant.TenantContext;
+import com.lms.warehouse.events.PickShortfallRecorded;
 import feign.FeignException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,11 +55,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -120,8 +124,13 @@ class ControlTowerApiTest {
     private TripCommandService trips;
     @Autowired
     private TokenService tokens;
+    @Autowired
+    private ApplicationEventPublisher publisher;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private String orgPath;
+    private UUID tenantId;
     private AppUser desk;
     private AppUser manager;
     private UUID tripId;
@@ -132,7 +141,7 @@ class ControlTowerApiTest {
         // themselves by tenant rather than by wiping the database.
         String salt = UUID.randomUUID().toString().substring(0, 8);
         orgPath = "/acme-" + salt + "/";
-        UUID tenantId = fixtures.createTenant("acme-" + salt, "Acme Logistics");
+        tenantId = fixtures.createTenant("acme-" + salt, "Acme Logistics");
         UUID orgUnitId = fixtures.createOrgUnit(tenantId, orgPath, "Acme HQ", "HQ", null);
 
         desk = user(tenantId, orgUnitId, "desk@acme.test");
@@ -275,6 +284,46 @@ class ControlTowerApiTest {
 
         assertThat(retry).isEqualTo(first);
         assertThat(api.listExceptions(null, null, null, null).getItems()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a ticket raised from a warehouse event names its subject and holds no money")
+    void noTripTicketOverHttp() {
+        UUID orderId = UUID.randomUUID();
+        PickShortfallRecorded shortfall = new PickShortfallRecorded(tenantId, orderId,
+                "OUT-7", UUID.randomUUID(), 1, UUID.randomUUID(), 50, 30, 20, Instant.now());
+        // Published the way warehousing publishes it: inside a transaction
+        // that commits, which is what the control tower listens for. Twice,
+        // because the outbox delivers at least once.
+        for (int delivery = 0; delivery < 2; delivery++) {
+            TenantContext.runWith(tenantId, orgPath, () ->
+                    new TransactionTemplate(transactionManager)
+                            .executeWithoutResult(status -> publisher.publishEvent(shortfall)));
+        }
+
+        ControlTowerApi api = client(desk, CONTROL_TOWER);
+        List<com.lms.client.model.Exception> board =
+                api.listExceptions(null, null, null, null).getItems();
+        assertThat(board).hasSize(1);
+
+        com.lms.client.model.Exception ticket = api.getException(board.get(0).getId());
+        assertThat(ticket.getCategory()).isEqualTo(ExceptionCategory.PICK_SHORTFALL);
+        assertThat(ticket.getSeverity()).isEqualTo(com.lms.client.model.Exception.SeverityEnum.P3);
+        assertThat(ticket.getSource())
+                .isEqualTo(com.lms.client.model.Exception.SourceEnum.PICK_SHORTFALL);
+        assertThat(ticket.getTripId()).isNull();
+        assertThat(ticket.getTripNo()).isNull();
+        assertThat(ticket.getSubjectType())
+                .isEqualTo(com.lms.client.model.Exception.SubjectTypeEnum.OUTBOUND_ORDER);
+        assertThat(ticket.getSubjectId()).isEqualTo(orderId);
+        assertThat(ticket.getSubjectLabel()).isEqualTo("OUT-7");
+        assertThat(ticket.getSuspendsSettlement()).isFalse();
+        assertThat(ticket.getRaisedBy()).isEqualTo("system");
+
+        ExceptionSummary summary = api.summariseExceptions();
+        assertThat(summary.getOpenP3()).isEqualTo(1);
+        assertThat(summary.getOpenWithoutTrip()).isEqualTo(1);
+        assertThat(summary.getSettlementHolds()).isZero();
     }
 
     // --------------------------------------------------------------- helpers
