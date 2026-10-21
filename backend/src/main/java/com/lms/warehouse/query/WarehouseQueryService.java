@@ -53,6 +53,21 @@ public class WarehouseQueryService {
                AND (CAST(:partner AS uuid) IS NULL OR s.owner_partner_id = CAST(:partner AS uuid))
             """;
 
+    /**
+     * The same rule for documents rather than goods: a portal user sees an
+     * ASN or an outbound order only when one of its lines is a SKU their
+     * partner owns, and a handling unit only when the order or ASN that
+     * filled it is one they see.
+     */
+    private static String ownedLine(String lineTable, String joinsDocument) {
+        return """
+                EXISTS (SELECT 1 FROM %s l
+                          JOIN sku s ON s.id = l.sku_id
+                         WHERE %s
+                           AND s.owner_partner_id = CAST(:partner AS uuid))
+                """.formatted(lineTable, joinsDocument);
+    }
+
     private final JdbcClient jdbc;
 
     public WarehouseQueryService(JdbcClient jdbc) {
@@ -104,6 +119,43 @@ public class WarehouseQueryService {
     }
 
     // ---------------------------------------------------------------- inbound
+
+    /**
+     * A warehouse's ASNs, newest first, optionally narrowed to one status.
+     *
+     * @param status optional; null means every status
+     * @param cursor the {@code nextCursor} of the previous page
+     */
+    public Slice<AsnSummaryView> asns(UUID warehouseId, String status, String cursor,
+                                      Integer limit) {
+        int pageSize = Slice.clampLimit(limit);
+        Keyset after = Keyset.parse(cursor);
+        List<AsnSummaryView> rows = jdbc.sql("""
+                        SELECT a.id, a.asn_no, a.warehouse_id, a.supplier_partner_id, a.status,
+                               a.cross_dock, a.received_at, a.created_at
+                          FROM asn a
+                         WHERE a.warehouse_id = :warehouseId
+                           AND (CAST(:status AS text) IS NULL OR a.status = CAST(:status AS text))
+                           AND (CAST(:afterAt AS timestamptz) IS NULL
+                                OR (a.created_at, a.id) < (CAST(:afterAt AS timestamptz),
+                                                           CAST(:afterId AS uuid)))
+                           AND (CAST(:partner AS uuid) IS NULL OR
+                        """ + ownedLine("asn_line",
+                        "l.tenant_id = a.tenant_id AND l.asn_id = a.id") + """
+                               )
+                         ORDER BY a.created_at DESC, a.id DESC
+                         LIMIT :limit
+                        """)
+                .param("warehouseId", warehouseId)
+                .param("partner", AccessSubject.current().partnerScope())
+                .param("status", blankToNull(status))
+                .param("afterAt", after == null ? null : after.at())
+                .param("afterId", after == null ? null : after.id())
+                .param("limit", pageSize + 1)
+                .query(AsnSummaryView.class)
+                .list();
+        return Slice.of(rows, pageSize, view -> Keyset.of(view.createdAt(), view.id()).encode());
+    }
 
     public Optional<AsnView> asn(UUID id) {
         return jdbc.sql("""
@@ -157,6 +209,49 @@ public class WarehouseQueryService {
 
     // --------------------------------------------------------------- outbound
 
+    /**
+     * A warehouse's outbound orders, newest first, optionally narrowed to one
+     * status -- {@code BACK_ORDERED} is the list of orders waiting for stock.
+     */
+    public Slice<OutboundOrderSummaryView> outboundOrders(UUID warehouseId, String status,
+                                                          String cursor, Integer limit) {
+        int pageSize = Slice.clampLimit(limit);
+        Keyset after = Keyset.parse(cursor);
+        List<OutboundOrderSummaryView> rows = jdbc.sql("""
+                        SELECT o.id, o.order_no, o.warehouse_id, o.ship_to, o.status,
+                               t.ordered_units, t.picked_units,
+                               t.ordered_units - t.picked_units AS back_ordered_units,
+                               o.created_at
+                          FROM outbound_order o
+                         CROSS JOIN LATERAL (
+                               SELECT coalesce(sum(l.ordered_qty), 0)::int AS ordered_units,
+                                      coalesce(sum(l.picked_qty), 0)::int AS picked_units
+                                 FROM outbound_line l
+                                WHERE l.tenant_id = o.tenant_id
+                                  AND l.order_id = o.id) t
+                         WHERE o.warehouse_id = :warehouseId
+                           AND (CAST(:status AS text) IS NULL OR o.status = CAST(:status AS text))
+                           AND (CAST(:afterAt AS timestamptz) IS NULL
+                                OR (o.created_at, o.id) < (CAST(:afterAt AS timestamptz),
+                                                           CAST(:afterId AS uuid)))
+                           AND (CAST(:partner AS uuid) IS NULL OR
+                        """ + ownedLine("outbound_line",
+                        "l.tenant_id = o.tenant_id AND l.order_id = o.id") + """
+                               )
+                         ORDER BY o.created_at DESC, o.id DESC
+                         LIMIT :limit
+                        """)
+                .param("warehouseId", warehouseId)
+                .param("partner", AccessSubject.current().partnerScope())
+                .param("status", blankToNull(status))
+                .param("afterAt", after == null ? null : after.at())
+                .param("afterId", after == null ? null : after.id())
+                .param("limit", pageSize + 1)
+                .query(OutboundOrderSummaryView.class)
+                .list();
+        return Slice.of(rows, pageSize, view -> Keyset.of(view.createdAt(), view.id()).encode());
+    }
+
     public Optional<OutboundOrderView> outboundOrder(UUID id) {
         return jdbc.sql("""
                         SELECT id, order_no, warehouse_id, ship_to, status, created_at
@@ -189,6 +284,85 @@ public class WarehouseQueryService {
                         """)
                 .param("orderId", orderId)
                 .query(OutboundOrderView.Line.class)
+                .list();
+    }
+
+    /** A warehouse's handling units, newest first, optionally narrowed to one status. */
+    public Slice<HandlingUnitSummaryView> handlingUnits(UUID warehouseId, String status,
+                                                        String cursor, Integer limit) {
+        int pageSize = Slice.clampLimit(limit);
+        Keyset after = Keyset.parse(cursor);
+        List<HandlingUnitSummaryView> rows = jdbc.sql("""
+                        SELECT h.id, h.hu_no, h.warehouse_id, h.source, h.outbound_order_id,
+                               h.asn_id, h.status, h.dispatch_ref, h.dispatched_at, h.created_at
+                          FROM handling_unit h
+                         WHERE h.warehouse_id = :warehouseId
+                           AND (CAST(:status AS text) IS NULL OR h.status = CAST(:status AS text))
+                           AND (CAST(:afterAt AS timestamptz) IS NULL
+                                OR (h.created_at, h.id) < (CAST(:afterAt AS timestamptz),
+                                                           CAST(:afterId AS uuid)))
+                           AND (CAST(:partner AS uuid) IS NULL OR
+                        """ + ownedLine("outbound_line",
+                        "l.tenant_id = h.tenant_id AND l.order_id = h.outbound_order_id")
+                        + " OR " + ownedLine("asn_line",
+                        "l.tenant_id = h.tenant_id AND l.asn_id = h.asn_id") + """
+                               )
+                         ORDER BY h.created_at DESC, h.id DESC
+                         LIMIT :limit
+                        """)
+                .param("warehouseId", warehouseId)
+                .param("partner", AccessSubject.current().partnerScope())
+                .param("status", blankToNull(status))
+                .param("afterAt", after == null ? null : after.at())
+                .param("afterId", after == null ? null : after.id())
+                .param("limit", pageSize + 1)
+                .query(HandlingUnitSummaryView.class)
+                .list();
+        return Slice.of(rows, pageSize, view -> Keyset.of(view.createdAt(), view.id()).encode());
+    }
+
+    // ------------------------------------------------------------ pick waves
+
+    public Optional<PickWaveView> pickWave(UUID id) {
+        return jdbc.sql("""
+                        SELECT id, wave_no, warehouse_id, status, picked_by, picked_at, created_at
+                          FROM pick_wave
+                         WHERE id = :id
+                        """)
+                .param("id", id)
+                .query((rs, n) -> new PickWaveView(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("wave_no"),
+                        rs.getObject("warehouse_id", UUID.class),
+                        rs.getString("status"),
+                        rs.getString("picked_by"),
+                        instant(rs.getObject("picked_at", OffsetDateTime.class)),
+                        instant(rs.getObject("created_at", OffsetDateTime.class)),
+                        null))
+                .optional()
+                .map(header -> new PickWaveView(header.id(), header.waveNo(),
+                        header.warehouseId(), header.status(), header.pickedBy(),
+                        header.pickedAt(), header.createdAt(), waveOrders(id)));
+    }
+
+    private List<PickWaveView.Order> waveOrders(UUID waveId) {
+        return jdbc.sql("""
+                        SELECT m.seq, o.id AS order_id, o.order_no, o.status,
+                               t.ordered_units, t.picked_units,
+                               t.ordered_units - t.picked_units AS short_units
+                          FROM pick_wave_order m
+                          JOIN outbound_order o ON o.id = m.order_id
+                         CROSS JOIN LATERAL (
+                               SELECT coalesce(sum(l.ordered_qty), 0)::int AS ordered_units,
+                                      coalesce(sum(l.picked_qty), 0)::int AS picked_units
+                                 FROM outbound_line l
+                                WHERE l.tenant_id = o.tenant_id
+                                  AND l.order_id = o.id) t
+                         WHERE m.wave_id = :waveId
+                         ORDER BY m.seq
+                        """)
+                .param("waveId", waveId)
+                .query(PickWaveView.Order.class)
                 .list();
     }
 
@@ -285,7 +459,7 @@ public class WarehouseQueryService {
     /** A SKU's movements, newest first: the ledger behind its balances. */
     public Slice<StockMovementView> movements(UUID skuId, String cursor, Integer limit) {
         int pageSize = Slice.clampLimit(limit);
-        MovementCursor after = MovementCursor.parse(cursor);
+        Keyset after = Keyset.parse(cursor);
         List<StockMovementView> rows = jdbc.sql("""
                         SELECT id, warehouse_id, movement_type, location_type, location_id,
                                sku_id, lot_no, quantity, reference_id, reason, actor, occurred_at
@@ -303,13 +477,12 @@ public class WarehouseQueryService {
                         """)
                 .param("skuId", skuId)
                 .param("partner", AccessSubject.current().partnerScope())
-                .param("afterAt", after == null ? null : after.occurredAt())
+                .param("afterAt", after == null ? null : after.at())
                 .param("afterId", after == null ? null : after.id())
                 .param("limit", pageSize + 1)
                 .query(StockMovementView.class)
                 .list();
-        return Slice.of(rows, pageSize, view -> new MovementCursor(
-                view.occurredAt().atOffset(ZoneOffset.UTC), view.id()).encode());
+        return Slice.of(rows, pageSize, view -> Keyset.of(view.occurredAt(), view.id()).encode());
     }
 
     // ---------------------------------------------------------------- helpers
@@ -334,19 +507,24 @@ public class WarehouseQueryService {
         }
     }
 
-    record MovementCursor(OffsetDateTime occurredAt, UUID id) {
+    /** A cursor on a (timestamp, id) sort: the movement ledger, and the newest-first listings. */
+    record Keyset(OffsetDateTime at, UUID id) {
 
-        String encode() {
-            return occurredAt.toInstant() + "_" + id;
+        static Keyset of(Instant at, UUID id) {
+            return new Keyset(at.atOffset(ZoneOffset.UTC), id);
         }
 
-        static MovementCursor parse(String cursor) {
+        String encode() {
+            return at.toInstant() + "_" + id;
+        }
+
+        static Keyset parse(String cursor) {
             if (cursor == null || cursor.isBlank()) {
                 return null;
             }
             int split = cursor.lastIndexOf('_');
             try {
-                return new MovementCursor(
+                return new Keyset(
                         Instant.parse(cursor.substring(0, split)).atOffset(ZoneOffset.UTC),
                         UUID.fromString(cursor.substring(split + 1)));
             } catch (DateTimeParseException | IllegalArgumentException
