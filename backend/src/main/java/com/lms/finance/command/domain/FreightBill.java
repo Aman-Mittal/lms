@@ -49,6 +49,12 @@ public record FreightBill(
         UUID orgUnitId,
         UUID tripId,
         UUID loadId,
+        /**
+         * The milk-run circuit this bill pays for, or null for a bill raised
+         * from a completed trip. A circuit is priced by its route rather than
+         * by a lane tariff, so {@code tariffId} is null when this is set.
+         */
+        UUID circuitRunId,
         UUID vendorPartnerId,
         String billNo,
         BillStatus status,
@@ -113,7 +119,7 @@ public record FreightBill(
     public static FreightBill priced(UUID id, UUID tenantId, UUID orgUnitId, UUID tripId,
                                      UUID loadId, UUID vendorPartnerId, String billNo,
                                      UUID tariffId, LocalDate pricedOn, CostSheet sheet) {
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, vendorPartnerId,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, null, vendorPartnerId,
                 billNo, BillStatus.DRAFT, sheet.currency(), tariffId, pricedOn,
                 sheet.chargeableWeightKg(), sheet.detentionHours(), sheet.dropCount(),
                 sheet.baseFreight(), sheet.detentionAmount(), sheet.multiDropAmount(),
@@ -131,12 +137,49 @@ public record FreightBill(
     public static FreightBill unpriced(UUID id, UUID tenantId, UUID orgUnitId, UUID tripId,
                                        UUID loadId, UUID vendorPartnerId, String billNo,
                                        LocalDate pricedOn, String why) {
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, vendorPartnerId,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, null, vendorPartnerId,
                 billNo, BillStatus.UNPRICED, "INR", null, pricedOn,
                 null, null, null,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, null, null, null, why, null, null,
                 Instant.now(), Instant.now());
+    }
+
+    /**
+     * The carrier's payable for a completed milk-run circuit.
+     *
+     * <p>Priced by the milk-run module, from the route version in force on the
+     * run date, and taken as given: finance has no second opinion on a
+     * circuit's price because there is no lane tariff that could hold one.
+     * The sheet carries the run rate as base freight and the per-supplier
+     * fee in {@code multiDropAmount}, so the bill reads on the same screen,
+     * in the same columns, as a trip bill -- and is matched against the
+     * vendor's claim by exactly the same rule.
+     *
+     * @param pricedOn the run date, which chose the route version
+     */
+    public static FreightBill forCircuit(UUID id, UUID tenantId, UUID orgUnitId, UUID tripId,
+                                         UUID loadId, UUID circuitRunId, UUID vendorPartnerId,
+                                         String billNo, LocalDate pricedOn, CostSheet sheet) {
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId,
+                vendorPartnerId, billNo, BillStatus.DRAFT, sheet.currency(), null, pricedOn,
+                sheet.chargeableWeightKg(), sheet.detentionHours(), sheet.dropCount(),
+                sheet.baseFreight(), sheet.detentionAmount(), sheet.multiDropAmount(),
+                sheet.fuelSurchargeAmount(), sheet.total(),
+                null, null, null, null, null, null, Instant.now(), Instant.now());
+    }
+
+    /** Whether this bill pays for a milk-run circuit rather than a lane trip. */
+    public boolean isForCircuit() {
+        return circuitRunId != null;
+    }
+
+    /**
+     * Whether nobody has yet acted on this bill, so it can still be withdrawn
+     * without unpicking a decision.
+     */
+    public boolean isOpen() {
+        return status == BillStatus.DRAFT || status == BillStatus.UNPRICED;
     }
 
     // ------------------------------------------------------------- 3.9.2
@@ -222,8 +265,8 @@ public record FreightBill(
             throw new BusinessRuleViolationException("bill-illegal-transition",
                     "Bill " + billNo + " cannot move from " + status + " to " + target);
         }
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, vendorPartnerId,
-                billNo, target, currency, tariffId, pricedOn, chargeableWeightKg,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId,
+                vendorPartnerId, billNo, target, currency, tariffId, pricedOn, chargeableWeightKg,
                 detentionHours, dropCount, baseFreight, detentionAmount, multiDropAmount,
                 fuelSurchargeAmount, computedAmount, claimedAmount, varianceAmount,
                 variancePct, resolution, matchedAt, version, createdAt, Instant.now());
@@ -231,8 +274,8 @@ public record FreightBill(
 
     private FreightBill withMatch(BigDecimal claimed, BigDecimal variance, BigDecimal pct,
                                   String note, Instant at) {
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, vendorPartnerId,
-                billNo, status, currency, tariffId, pricedOn, chargeableWeightKg,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId,
+                vendorPartnerId, billNo, status, currency, tariffId, pricedOn, chargeableWeightKg,
                 detentionHours, dropCount, baseFreight, detentionAmount, multiDropAmount,
                 fuelSurchargeAmount, computedAmount, claimed, variance, pct, note, at,
                 version, createdAt, Instant.now());
