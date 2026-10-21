@@ -290,10 +290,11 @@
         check reads and the console's client is generated from. Copying it in at
         build time rather than keeping a second copy under src/main/resources:
         two files would drift, and the one that drifted would be whichever
-        nobody was looking at.
+        nobody was looking at. It is the assembled spec (see bundle-openapi
+        below), so a consumer still fetches one self-contained document.
       -->
       <resource>
-        <directory>${project.basedir}/../api</directory>
+        <directory>${project.build.directory}/openapi</directory>
         <targetPath>static</targetPath>
         <includes>
           <include>openapi.yaml</include>
@@ -397,6 +398,61 @@
       </plugin>
 
       <!--
+        Assembles the API contract. api/openapi.yaml is the root (info, tags,
+        security schemes) and api/spec/ holds the rest, one fragment per tag,
+        each written as a piece of the whole document (its $refs stay
+        #/components/...). This splices them back in, re-indented, into
+        target/openapi/openapi.yaml, which is what the client is generated
+        from, what the contract test reads and what /openapi.yaml serves.
+
+        Split because a change is committed by sending whole files: one 200 KB
+        spec made every edit to it a 200 KB commit. Not split with $refs across
+        files, because openapi-generator then invents model names for anything
+        reached through another file, and the generated client changes shape.
+        Fragment order within a section is by file name, then as written.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>bundle-openapi</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <property name="spec.in" location="${project.basedir}/../api"/>
+                <property name="spec.out" location="${project.build.directory}/openapi/openapi.yaml"/>
+                <copy file="${spec.in}/openapi.yaml" tofile="${spec.out}" overwrite="true"/>
+                <echo file="${spec.out}" append="true" message="&#10;  parameters:&#10;"/>
+                <concat destfile="${spec.out}" append="true" fixlastline="yes">
+                  <sort><fileset dir="${spec.in}/spec" includes="parameters.yaml"/></sort>
+                  <filterchain><tokenfilter><replaceregex pattern="^(.)" replace="    \1"/></tokenfilter></filterchain>
+                </concat>
+                <echo file="${spec.out}" append="true" message="&#10;  responses:&#10;"/>
+                <concat destfile="${spec.out}" append="true" fixlastline="yes">
+                  <sort><fileset dir="${spec.in}/spec" includes="responses.yaml"/></sort>
+                  <filterchain><tokenfilter><replaceregex pattern="^(.)" replace="    \1"/></tokenfilter></filterchain>
+                </concat>
+                <echo file="${spec.out}" append="true" message="&#10;  schemas:&#10;"/>
+                <concat destfile="${spec.out}" append="true" fixlastline="yes">
+                  <sort><fileset dir="${spec.in}/spec" includes="schemas-*.yaml"/></sort>
+                  <filterchain><tokenfilter><replaceregex pattern="^(.)" replace="    \1"/></tokenfilter></filterchain>
+                </concat>
+                <echo file="${spec.out}" append="true" message="&#10;paths:&#10;"/>
+                <concat destfile="${spec.out}" append="true" fixlastline="yes">
+                  <sort><fileset dir="${spec.in}/spec" includes="paths-*.yaml"/></sort>
+                  <filterchain><tokenfilter><replaceregex pattern="^(.)" replace="  \1"/></tokenfilter></filterchain>
+                </concat>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
         Generates a typed Feign client from the hand-authored contract into
         target/generated-test-sources. The contract stays the hand-written
         source of truth, never derived from the controllers: the server is
@@ -416,7 +472,7 @@
               <goal>generate</goal>
             </goals>
             <configuration>
-              <inputSpec>${project.basedir}/../api/openapi.yaml</inputSpec>
+              <inputSpec>${project.build.directory}/openapi/openapi.yaml</inputSpec>
               <generatorName>java</generatorName>
               <library>feign</library>
               <output>${project.build.directory}/generated-test-sources/openapi</output>
