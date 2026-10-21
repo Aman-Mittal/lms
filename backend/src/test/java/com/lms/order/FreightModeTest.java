@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import com.lms.order.api.FreightMode;
 import com.lms.order.command.domain.SalesOrder;
+import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.LoadUnit;
 import com.lms.shared.error.BusinessRuleViolationException;
 import org.junit.jupiter.api.Test;
@@ -101,5 +102,96 @@ class FreightModeTest {
                 new BigDecimal("1000"), new BigDecimal("10"), FreightMode.RAIL))
                 .isInstanceOfSatisfying(BusinessRuleViolationException.class,
                         e -> assertThat(e.code()).isEqualTo("freight-mode-not-supported"));
+    }
+
+    // ------------------------------------------------------- delivery leg
+
+    @Test
+    void only_a_part_load_has_a_delivery_leg() {
+        assertThatThrownBy(() -> LoadUnit.open(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), "LOAD-3", UUID.randomUUID(), null, "TRUCK", false,
+                new BigDecimal("1000"), new BigDecimal("10"), FreightMode.FTL,
+                LoadUnit.LtlLeg.DELIVERY))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.code()).isEqualTo("delivery-leg-only-for-ltl"));
+
+        LoadUnit delivery = LoadUnit.open(UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), "LOAD-4", UUID.randomUUID(), null, "TRUCK", false,
+                new BigDecimal("1000"), new BigDecimal("10"), FreightMode.LTL,
+                LoadUnit.LtlLeg.DELIVERY);
+        assertThat(delivery.isDelivery()).isTrue();
+        // The leg survives building and the lifecycle.
+        assertThat(delivery.addConsignment(new BigDecimal("100"), BigDecimal.ONE, false)
+                .transitionTo(LoadUnit.LoadStatus.PLANNED).isDelivery()).isTrue();
+    }
+
+    @Test
+    void a_load_opened_without_a_leg_is_a_line_haul() {
+        LoadUnit ltl = LoadUnit.open(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "LOAD-5", UUID.randomUUID(), null, "TRUCK", false,
+                new BigDecimal("1000"), new BigDecimal("10"), FreightMode.LTL);
+
+        assertThat(ltl.ltlLeg()).isEqualTo(LoadUnit.LtlLeg.LINE_HAUL);
+        assertThat(ltl.isDelivery()).isFalse();
+    }
+
+    @Test
+    void a_docket_walks_through_both_legs() {
+        Consignment docket = docket();
+        for (Consignment.ConsignmentStatus next : new Consignment.ConsignmentStatus[] {
+                Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD,
+                Consignment.ConsignmentStatus.IN_TRANSIT,
+                Consignment.ConsignmentStatus.ARRIVED_AT_HUB,
+                Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY,
+                // A delivery load broken up before it leaves hands the docket
+                // back to the hub, not to the line haul.
+                Consignment.ConsignmentStatus.ARRIVED_AT_HUB,
+                Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY,
+                Consignment.ConsignmentStatus.OUT_FOR_DELIVERY,
+                Consignment.ConsignmentStatus.DELIVERED}) {
+            docket = docket.transitionTo(next);
+        }
+        assertThat(docket.status()).isEqualTo(Consignment.ConsignmentStatus.DELIVERED);
+    }
+
+    @Test
+    void a_docket_at_a_hub_cannot_be_cancelled_or_skip_its_delivery_load() {
+        Consignment atHub = docket()
+                .transitionTo(Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD)
+                .transitionTo(Consignment.ConsignmentStatus.IN_TRANSIT)
+                .transitionTo(Consignment.ConsignmentStatus.ARRIVED_AT_HUB);
+
+        for (Consignment.ConsignmentStatus illegal : new Consignment.ConsignmentStatus[] {
+                Consignment.ConsignmentStatus.CANCELLED,
+                Consignment.ConsignmentStatus.DELIVERED,
+                Consignment.ConsignmentStatus.OUT_FOR_DELIVERY}) {
+            assertThatThrownBy(() -> atHub.transitionTo(illegal))
+                    .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                            e -> assertThat(e.code()).isEqualTo("consignment-illegal-transition"));
+        }
+    }
+
+    @Test
+    void a_full_truckload_never_reaches_a_hub() {
+        Consignment inTransit = Consignment.generate(UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), "LR-1", UUID.randomUUID(), UUID.randomUUID(),
+                        new BigDecimal("100"), BigDecimal.ONE, new BigDecimal("100"), false,
+                        java.util.List.of(), FreightMode.FTL, UUID.randomUUID(), null, null)
+                .transitionTo(Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD)
+                .transitionTo(Consignment.ConsignmentStatus.IN_TRANSIT);
+
+        assertThatThrownBy(() -> inTransit.transitionTo(
+                Consignment.ConsignmentStatus.ARRIVED_AT_HUB))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.code()).isEqualTo("consignment-illegal-transition"));
+        assertThat(inTransit.transitionTo(Consignment.ConsignmentStatus.DELIVERED).status())
+                .isEqualTo(Consignment.ConsignmentStatus.DELIVERED);
+    }
+
+    private static Consignment docket() {
+        return Consignment.generate(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "DKT-1", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("100"),
+                BigDecimal.ONE, new BigDecimal("100"), false, java.util.List.of(),
+                FreightMode.LTL, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
     }
 }
