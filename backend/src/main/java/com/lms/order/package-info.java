@@ -21,12 +21,13 @@
  * validated line items with a chargeable weight, ready for planning to group
  * into consignments.
  *
- * <p>{@code allowedDependencies} is empty. Orders reference partners and
+ * <p>The only declared dependency is {@code identity::access}, read to confine
+ * a customer-portal user to their own orders. Orders reference partners and
  * terminals by identifier and let the database enforce those references; they
  * do not read master data to do their own job. Planning depends on orders,
  * never the reverse.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Order Management",
-        allowedDependencies = {})
+        allowedDependencies = {"identity::access"})
 package com.lms.order;

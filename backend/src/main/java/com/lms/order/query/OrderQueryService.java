@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -59,11 +60,23 @@ public class OrderQueryService {
                     SELECT count(*)::int AS line_count,
                            count(*) FILTER (WHERE l.planned)::int AS planned_line_count,
                            coalesce(sum(l.dead_weight_kg), 0) AS total_dead_weight_kg,
-                           bool_or(l.hazmat_un_code IS NOT NULL
-                                   AND btrim(l.hazmat_un_code) <> '') AS contains_hazmat
+                           -- coalesce: bool_or over an order with no lines yet is
+                           -- NULL, which the view's boolean cannot hold.
+                           coalesce(bool_or(l.hazmat_un_code IS NOT NULL
+                                            AND btrim(l.hazmat_un_code) <> ''), false)
+                               AS contains_hazmat
                       FROM order_line l
                      WHERE l.order_id = o.id
                    ) agg ON true
+            """;
+
+    /**
+     * The portal-user predicate. Null for the tenant's own staff; a partner id
+     * confines every read to that customer's own orders, so a vendor-portal
+     * user -- never a customer on an order -- sees none.
+     */
+    private static final String PARTNER_SCOPE = """
+               AND (CAST(:partner AS uuid) IS NULL OR o.customer_partner_id = CAST(:partner AS uuid))
             """;
 
     private final JdbcClient jdbc;
@@ -73,8 +86,9 @@ public class OrderQueryService {
     }
 
     public Optional<OrderView> findById(UUID id) {
-        return jdbc.sql(SELECT + " WHERE o.id = :id")
+        return jdbc.sql(SELECT + " WHERE o.id = :id" + PARTNER_SCOPE)
                 .param("id", id)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(OrderView.class)
                 .optional();
     }
@@ -95,10 +109,12 @@ public class OrderQueryService {
         List<OrderView> rows = jdbc.sql(SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR o.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR o.order_no > CAST(:cursor AS text))
+                        """ + PARTNER_SCOPE + """
                          ORDER BY o.order_no
                          LIMIT :limit
                         """)
                 .param("status", status)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
                 // One more than asked for: that extra row is how "is there
                 // another page" is answered without a second count query.
@@ -122,9 +138,14 @@ public class OrderQueryService {
                           JOIN business_partner cn ON cn.id = l.consignee_partner_id
                           JOIN terminal dt ON dt.id = l.destination_terminal_id
                          WHERE l.order_id = :orderId
+                           AND EXISTS (SELECT 1 FROM sales_order o
+                                        WHERE o.id = l.order_id
+                        """ + PARTNER_SCOPE + """
+                                      )
                          ORDER BY l.line_no
                         """)
                 .param("orderId", orderId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(OrderLineView.class)
                 .list();
     }

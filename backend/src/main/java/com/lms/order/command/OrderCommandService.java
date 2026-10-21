@@ -60,7 +60,7 @@ public class OrderCommandService {
 
     /** Raises a full-truckload order, which is what an order without a mode has always been. */
     @Transactional
-    @PreAuthorize("hasAuthority('ORDER_CREATE')")
+    @PreAuthorize("hasAuthority('ORDER_CREATE') and @abac.permitsIn('ORDER_CREATE', #orgUnitId)")
     public UUID raiseOrder(UUID orgUnitId, UUID customerPartnerId, String orderNo,
                            UUID originTerminalId, Instant requestedPickupAt,
                            Instant requestedDeliveryAt, SalesOrder.OrderSource source) {
@@ -76,7 +76,7 @@ public class OrderCommandService {
      * docket between those two hubs.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('ORDER_CREATE')")
+    @PreAuthorize("hasAuthority('ORDER_CREATE') and @abac.permitsIn('ORDER_CREATE', #orgUnitId)")
     public UUID raiseOrder(UUID orgUnitId, UUID customerPartnerId, String orderNo,
                            UUID originTerminalId, Instant requestedPickupAt,
                            Instant requestedDeliveryAt, SalesOrder.OrderSource source,
