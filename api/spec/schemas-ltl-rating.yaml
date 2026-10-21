@@ -1,0 +1,106 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+AssignLtlZoneRequest:
+  type: object
+  properties:
+    zoneCode:
+      type: string
+      description: Normalised to upper case. A hub's zone decides the lane a
+        docket is rated on.
+    outOfDeliveryArea:
+      type: boolean
+      description: True when delivering to this terminal earns the ODA
+        surcharge.
+  required: [zoneCode]
+
+PublishLtlRateCardRequest:
+  type: object
+  description: |
+    One immutable version of the price between two zones. The version in
+    force on a date is the latest to have started by then; a successor must
+    start after it, or it is refused with `ltl-rate-card-backdated`.
+  properties:
+    code: { type: string }
+    originZone: { type: string }
+    destinationZone: { type: string }
+    currency: { type: string, default: INR }
+    effectiveFrom: { type: string, format: date }
+    rateBasis: { type: string, enum: [PER_KG, PER_CFT] }
+    rateAmount: { type: number, minimum: 0 }
+    minimumChargeableWeightKg: { type: number, minimum: 0 }
+    kgPerCft:
+      type: number
+      exclusiveMinimum: 0
+      description: Volumetric conversion -- each cubic foot is billed as
+        this many kilograms.
+    docketCharge: { type: number, minimum: 0 }
+    odaSurcharge: { type: number, minimum: 0 }
+  required: [code, originZone, destinationZone, effectiveFrom, rateBasis,
+             rateAmount, kgPerCft]
+
+DocketReceivable:
+  type: object
+  description: |
+    What one LTL docket is billed to its customer, raised by the platform
+    when the docket is booked. Separate from the freight bill, which is what
+    the consolidated vehicle is paid to its carrier.
+  properties:
+    id: { type: string, format: uuid }
+    docketId: { type: string, format: uuid }
+    docketNo: { type: string }
+    status: { type: string, enum: [PRICED, UNPRICED] }
+    customerPartnerId: { type: string, format: uuid }
+    customerName: { type: string }
+    currency: { type: string }
+    rateCardCode: { type: string }
+    pricedOn: { type: string, format: date }
+    originZone: { type: string }
+    destinationZone: { type: string }
+    deadWeightKg: { type: number }
+    volumeCft: { type: number }
+    volumetricWeightKg: { type: number }
+    chargeableWeightKg:
+      type: number
+      description: The greatest of dead weight, volumetric weight and the
+        card's minimum.
+    minimumApplied: { type: boolean }
+    outOfDeliveryArea: { type: boolean }
+    rateBasis: { type: string, enum: [PER_KG, PER_CFT] }
+    rateAmount: { type: number }
+    freightAmount: { type: number }
+    docketCharge: { type: number }
+    odaSurcharge: { type: number }
+    totalAmount: { type: number }
+    reason:
+      type: string
+      description: Why an UNPRICED docket could not be priced.
+    createdAt: { type: string, format: date-time }
+
+DocketReceivableSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/DocketReceivable" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
