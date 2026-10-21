@@ -21,13 +21,14 @@
  * validated line items with a chargeable weight, ready for planning to group
  * into consignments.
  *
- * <p>The only declared dependency is {@code identity::access}, read to confine
- * a customer-portal user to their own orders. Orders reference partners and
- * terminals by identifier and let the database enforce those references; they
- * do not read master data to do their own job. Planning depends on orders,
- * never the reverse.
+ * <p>Two declared dependencies. {@code identity::access} is read to confine a
+ * customer-portal user to their own orders. {@code masterdata::api} answers,
+ * read-only, whether each hub a part load names really is a hub: the database
+ * can say a terminal exists but not what kind of site it is. Otherwise orders
+ * reference partners and terminals by identifier and let the database enforce
+ * those references. Planning depends on orders, never the reverse.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Order Management",
-        allowedDependencies = {"identity::access"})
+        allowedDependencies = {"identity::access", "masterdata::api"})
 package com.lms.order;

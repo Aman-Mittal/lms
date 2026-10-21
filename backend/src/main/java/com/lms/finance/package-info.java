@@ -47,7 +47,9 @@
  * and the carrier payable are kept. A separate module would have to read the
  * other's tables to answer that. Freight modes themselves belong to order and
  * planning, which decide what a docket is and what may share a vehicle; this
- * module only prices what they booked, and depends on them one way.
+ * module only prices what they booked, and depends on them one way. A docket
+ * carries the fuel surcharge of its booking month, on its freight alone, from
+ * the same monthly index the carrier's bill is surcharged from.
  *
  * <p>Listens to {@code milkrun::events} for completed circuits. A circuit is
  * priced by its route -- a run rate plus a fee per supplier collected from --

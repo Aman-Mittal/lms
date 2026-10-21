@@ -23,7 +23,10 @@
  * is a business partner of type {@code CUSTOMER} that holds a client contract.
  *
  * <p>Listens to {@code execution::events} for completed trips, which become
- * transport charges for every contracted client with freight aboard.
+ * transport charges for every contracted client with full-truckload freight
+ * aboard. Part-load dockets are not charged here: finance bills each one to its
+ * customer as a docket receivable, and charging the trips it rode as well
+ * would bill the same shipment twice.
  * Warehousing arrives as recorded service usage -- storage pallet-days,
  * handling in and out, value-added services -- through an idempotent endpoint
  * any warehouse system, including the planned warehouse module, can feed.
