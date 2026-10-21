@@ -145,7 +145,9 @@ class AccessPolicyApiTest {
         AccessPolicySlice defaults = api.listAccessPolicies(null, null, null);
         assertThat(defaults.getItems()).extracting(AccessPolicy::getCode).containsExactly(
                 "asn-write-org-subtree",
+                "client-billing-write-org-subtree",
                 "client-contract-write-org-subtree",
+                "client-credit-note-write-org-subtree",
                 "driver-write-org-subtree",
                 "exception-close-holding-limit",
                 "inventory-adjust-org-subtree",
