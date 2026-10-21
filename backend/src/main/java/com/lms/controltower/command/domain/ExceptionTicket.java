@@ -29,8 +29,14 @@ import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * An operational anomaly on one trip, owned until somebody closes it (vision
- * document 3.8).
+ * An operational anomaly, owned until somebody closes it (vision document
+ * 3.8).
+ *
+ * <p>Usually about one trip. A ticket raised from another module's feed -- a
+ * missed rail connection, a receipt counted in short -- may instead be about
+ * an itinerary, a circuit run, an ASN or an outbound order, named by its
+ * {@link Subject}. A ticket with no trip never suspends settlement: there is
+ * no trip's money for it to hold.
  *
  * <p>Immutable, like the other aggregates here: every transition returns the
  * next state and the service saves it, so a rule broken half-way through a
@@ -44,6 +50,9 @@ public record ExceptionTicket(
         UUID tripId,
         String tripNo,
         UUID vehicleId,
+        SubjectType subjectType,
+        UUID subjectId,
+        String subjectLabel,
         ExceptionCategory category,
         Severity severity,
         Status status,
@@ -85,7 +94,44 @@ public record ExceptionTicket(
         /** A person reported it. */
         MANUAL,
         /** Telematics saw the vehicle leave its corridor. */
-        ROUTE_DEVIATION
+        ROUTE_DEVIATION,
+        /** Multimodal saw a leg arrive too late for the next one. */
+        MISSED_CONNECTION,
+        /** Milk-run saw a supplier passed by. */
+        MILK_RUN_STOP_SKIPPED,
+        /** Milk-run saw a supplier reached after its window. */
+        MILK_RUN_STOP_LATE,
+        /** Warehousing counted an ASN line in other than as notified. */
+        RECEIPT_VARIANCE,
+        /** Warehousing could not pick an outbound line in full. */
+        PICK_SHORTFALL
+    }
+
+    /** What a ticket is about, when it is not (only) a trip. */
+    public enum SubjectType {
+        /** A multimodal shipment. */
+        ITINERARY,
+        /** One day's run of a milk-run circuit. */
+        CIRCUIT_RUN,
+        /** An advance shipping notice being received into a warehouse. */
+        ASN,
+        /** An order being picked out of a warehouse. */
+        OUTBOUND_ORDER
+    }
+
+    /**
+     * The thing a ticket is about, with the label a person reads off the board.
+     *
+     * @param id the identifier in its owning module; not a foreign key, since
+     *           that module's tables are not the control tower's to join
+     */
+    public record Subject(SubjectType type, UUID id, String label) {
+
+        public Subject {
+            if (type == null || id == null || label == null || label.isBlank()) {
+                throw new IllegalArgumentException("A subject needs a type, an id and a label");
+            }
+        }
     }
 
     /** Where the captured coordinates came from. */
@@ -122,19 +168,36 @@ public record ExceptionTicket(
         TRANSITIONS.put(Status.CLOSED, EnumSet.noneOf(Status.class));
     }
 
+    /**
+     * Opens a ticket.
+     *
+     * @param tripId  null when the ticket is about something other than a trip,
+     *                in which case {@code subject} is required
+     * @param subject optional alongside a trip; what else the ticket is about
+     */
     public static ExceptionTicket raise(UUID id, UUID tenantId, String ticketNo, UUID tripId,
-                                        String tripNo, UUID vehicleId, ExceptionCategory category,
-                                        String description, Source source, String sourceKey,
-                                        Position position, String raisedBy, Instant at) {
+                                        String tripNo, UUID vehicleId, Subject subject,
+                                        ExceptionCategory category, String description,
+                                        Source source, String sourceKey, Position position,
+                                        String raisedBy, Instant at) {
         if (description == null || description.isBlank()) {
             throw new BusinessRuleViolationException("exception-not-described",
                     "An exception needs a description of what happened");
         }
+        if (tripId == null && subject == null) {
+            throw new BusinessRuleViolationException("exception-without-subject",
+                    "An exception has to be about a trip or some other named subject");
+        }
         Severity severity = category.severity();
-        return new ExceptionTicket(id, tenantId, ticketNo, tripId, tripNo, vehicleId, category,
+        // 3.8 freezes the money of the trip; with no trip there is none to freeze.
+        boolean suspends = severity.suspendsSettlement() && tripId != null;
+        return new ExceptionTicket(id, tenantId, ticketNo, tripId,
+                tripId == null ? null : tripNo, tripId == null ? null : vehicleId,
+                subject == null ? null : subject.type(), subject == null ? null : subject.id(),
+                subject == null ? null : subject.label().strip(), category,
                 severity, Status.RAISED, description.strip(), source, sourceKey,
                 position.lat(), position.lon(), position.source(), position.at(),
-                severity.suspendsSettlement(), raisedBy, at,
+                suspends, raisedBy, at,
                 null, null, null, null, null, null, null,
                 null, at, at);
     }
@@ -231,8 +294,8 @@ public record ExceptionTicket(
     private ExceptionTicket with(Status next, UUID assignee, Instant assigned, String resolutionText,
                                  String resolver, Instant resolved, String closer, Instant closed,
                                  Instant at) {
-        return new ExceptionTicket(id, tenantId, ticketNo, tripId, tripNo, vehicleId, category,
-                severity, next, description, source, sourceKey, lat, lon, positionSource,
+        return new ExceptionTicket(id, tenantId, ticketNo, tripId, tripNo, vehicleId, subjectType,
+                subjectId, subjectLabel, category, severity, next, description, source, sourceKey, lat, lon, positionSource,
                 positionAt, suspendsSettlement, raisedBy, raisedAt, assignee, assigned,
                 resolutionText, resolver, resolved, closer, closed, version, createdAt, at);
     }
