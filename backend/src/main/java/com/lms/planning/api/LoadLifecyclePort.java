@@ -54,6 +54,21 @@ public interface LoadLifecyclePort {
     void recordCompleted(UUID loadId);
 
     /**
+     * Records that the trip running the load has completed at its destination.
+     *
+     * <p>What that means for the freight aboard is planning's to decide. For a
+     * part-load LINE_HAUL load, the destination is a hub: its dockets have
+     * ARRIVED_AT_HUB and wait there for a delivery load. For a part-load
+     * DELIVERY load, its dockets are DELIVERED. Either way the load itself is
+     * COMPLETED. A full-truckload load is left as it was -- its consignments'
+     * delivery is not tracked through this call.
+     *
+     * <p>Idempotent: dockets already moved on, and a load already completed,
+     * are left alone, so a repeated call changes nothing.
+     */
+    void recordTripCompleted(UUID loadId);
+
+    /**
      * What other contexts are allowed to know about a load.
      *
      * @param plannedWeightKg the aggregate weight the load was built to, which
