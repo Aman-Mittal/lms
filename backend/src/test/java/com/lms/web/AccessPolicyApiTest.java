@@ -20,12 +20,15 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
+import com.lms.acceptance.SpineFixtures;
 import com.lms.acceptance.TestFixtures;
 import com.lms.client.ApiClient;
 import com.lms.client.api.AccessPoliciesApi;
 import com.lms.client.api.AuthenticationApi;
 import com.lms.client.api.PartnersApi;
+import com.lms.client.api.TripsApi;
 import com.lms.client.model.AccessPolicy;
 import com.lms.client.model.AccessPolicySlice;
 import com.lms.client.model.CreateAccessPolicyRequest;
@@ -33,10 +36,19 @@ import com.lms.client.model.LoginRequest;
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.ReviseAccessPolicyRequest;
 import com.lms.client.model.SetUserAccessAttributesRequest;
+import com.lms.client.model.Trip;
 import com.lms.client.model.UserAccessAttributes;
+import com.lms.execution.command.TripCommandService;
 import com.lms.identity.access.SubjectAttributes;
 import com.lms.identity.command.domain.AppUser;
 import com.lms.identity.security.TokenService;
+import com.lms.masterdata.command.FleetCommandService;
+import com.lms.masterdata.command.RegisterTerminalCommand;
+import com.lms.masterdata.command.TerminalCommandService;
+import com.lms.masterdata.command.domain.BusinessPartner;
+import com.lms.masterdata.command.domain.Terminal;
+import com.lms.shared.geo.LatLon;
+import com.lms.shared.tenant.TenantContext;
 import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +56,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -89,6 +104,16 @@ class AccessPolicyApiTest {
     private TokenService tokens;
     @Autowired
     private JwtDecoder jwtDecoder;
+    @Autowired
+    private SpineFixtures spine;
+    @Autowired
+    private FleetCommandService fleet;
+    @Autowired
+    private TerminalCommandService terminals;
+    @Autowired
+    private TripCommandService trips;
+
+    private UUID tenantId;
 
     private String tenantCode;
     private String rootPath;
@@ -103,7 +128,7 @@ class AccessPolicyApiTest {
         String salt = UUID.randomUUID().toString().substring(0, 8);
         tenantCode = "acme-" + salt;
         rootPath = "/acme-" + salt + "/";
-        UUID tenantId = fixtures.createTenant(tenantCode, "Acme Logistics");
+        tenantId = fixtures.createTenant(tenantCode, "Acme Logistics");
         rootUnit = fixtures.createOrgUnit(tenantId, rootPath, "Acme HQ", "HQ", null);
         northUnit = fixtures.createOrgUnit(tenantId, rootPath + "north/", "North", "REGION", rootUnit);
         southUnit = fixtures.createOrgUnit(tenantId, rootPath + "south/", "South", "REGION", rootUnit);
@@ -119,8 +144,21 @@ class AccessPolicyApiTest {
 
         AccessPolicySlice defaults = api.listAccessPolicies(null, null, null);
         assertThat(defaults.getItems()).extracting(AccessPolicy::getCode).containsExactly(
-                "exception-close-holding-limit", "invoice-approval-limit",
-                "partner-write-org-subtree");
+                "asn-write-org-subtree",
+                "client-contract-write-org-subtree",
+                "driver-write-org-subtree",
+                "exception-close-holding-limit",
+                "invoice-approval-limit",
+                "itinerary-write-org-subtree",
+                "load-write-org-subtree",
+                "milk-run-write-org-subtree",
+                "order-write-org-subtree",
+                "partner-write-org-subtree",
+                "routing-guide-write-org-subtree",
+                "terminal-write-org-subtree",
+                "trip-write-org-subtree",
+                "vehicle-write-org-subtree",
+                "warehouse-setup-org-subtree");
         AccessPolicySlice forInvoices = api.listAccessPolicies("INVOICE_APPROVE", null, null);
         assertThat(forInvoices.getItems()).singleElement().satisfies(policy -> {
             assertThat(policy.getEffect()).isEqualTo(AccessPolicy.EffectEnum.DENY);
@@ -237,7 +275,87 @@ class AccessPolicyApiTest {
                 .isNotNull();
     }
 
+    @Test
+    @DisplayName("a vendor-portal user reads their own trip, and another vendor's is a 404")
+    void portalUserCannotSeeAnotherVendorsTrip() {
+        UUID[] built = asTenantStaff(() -> {
+            UUID customer = fleet.registerPartner(rootUnit, unique("C"), "Customer",
+                    BusinessPartner.PartnerType.CUSTOMER, unique("TAX-C"));
+            UUID consignee = fleet.registerPartner(rootUnit, unique("K"), "Consignee",
+                    BusinessPartner.PartnerType.CUSTOMER, unique("TAX-K"));
+            UUID ours = activeVendor("V1");
+            UUID theirs = activeVendor("V2");
+            UUID origin = depot("O", 19.1, 72.9);
+            UUID destination = depot("D", 19.3, 73.1);
+            String registration = "MH-12-PS-" + (1000 + (int) (Math.random() * 9000));
+            UUID vehicle = fleet.registerVehicle(rootUnit, null, registration,
+                    "TRUCK", "RIGID", "2-AXLE", new BigDecimal("26000"), new BigDecimal("6000"),
+                    new BigDecimal("60"), false, false);
+            UUID ourLoad = spine.awardedLoad(rootUnit, unique("L1"), customer, origin, consignee,
+                    destination, vehicle, ours, new BigDecimal("5000"), false);
+            UUID theirLoad = spine.awardedLoad(rootUnit, unique("L2"), customer, origin, consignee,
+                    destination, vehicle, theirs, new BigDecimal("4000"), false);
+            return new UUID[] {ours, trips.raiseTrip(unique("T1"), ourLoad, Instant.now()),
+                    trips.raiseTrip(unique("T2"), theirLoad, Instant.now())};
+        });
+        UUID vendor = built[0];
+        UUID ourTrip = built[1];
+        UUID theirTrip = built[2];
+
+        AppUser portalUser = user(tenantId, rootUnit, rootPath, "dispatch@vendor.test");
+        String portal = tokens.issueAccessToken(portalUser, rootPath, List.of("INVOICE_READ"),
+                new SubjectAttributes(null, null, vendor, null)).value();
+        TripsApi api = client(portal).buildClient(TripsApi.class);
+
+        assertThat(api.getTrip(ourTrip).getId()).isEqualTo(ourTrip);
+        assertStatus(() -> api.getTrip(theirTrip), 404, null);
+        assertThat(api.listTrips(null, null, null).getItems()).extracting(Trip::getId)
+                .containsExactly(ourTrip);
+
+        // The tenant's own staff, carrying no partner, still see both.
+        TripsApi staff = client(token(admin, rootPath, "INVOICE_READ")).buildClient(TripsApi.class);
+        assertThat(staff.getTrip(theirTrip).getId()).isEqualTo(theirTrip);
+    }
+
     // --------------------------------------------------------------- helpers
+
+    private UUID activeVendor(String code) {
+        UUID id = fleet.registerPartner(rootUnit, unique(code), code + " Transport",
+                BusinessPartner.PartnerType.VENDOR, unique("TAX-" + code));
+        fleet.transitionPartner(id, BusinessPartner.PartnerStatus.PENDING_VERIFICATION);
+        fleet.transitionPartner(id, BusinessPartner.PartnerStatus.ACTIVE);
+        return id;
+    }
+
+    private UUID depot(String code, double lat, double lon) {
+        return terminals.register(new RegisterTerminalCommand.PointRadius(rootUnit, unique(code),
+                code, Terminal.FunctionalCategory.CUSTOMER_SITE, new LatLon(lat, lon), 500, 2, null,
+                null, 45, List.of()));
+    }
+
+    private static String unique(String code) {
+        return code + "-" + UUID.randomUUID().toString().substring(0, 6);
+    }
+
+    /** Builds through the real command services, as head-office staff with every permission it needs. */
+    private <T> T asTenantStaff(Supplier<T> action) {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(
+                "api-test-setup", null, List.of(
+                        new SimpleGrantedAuthority("PARTNER_CREATE"),
+                        new SimpleGrantedAuthority("PARTNER_UPDATE"),
+                        new SimpleGrantedAuthority("VEHICLE_CREATE"),
+                        new SimpleGrantedAuthority("TERMINAL_CREATE"),
+                        new SimpleGrantedAuthority("ORDER_CREATE"),
+                        new SimpleGrantedAuthority("ORDER_UPDATE"),
+                        new SimpleGrantedAuthority("LOAD_CREATE"),
+                        new SimpleGrantedAuthority("LOAD_ALLOCATE"),
+                        new SimpleGrantedAuthority("TRIP_EXECUTE"))));
+        try {
+            return TenantContext.callWith(tenantId, rootPath, action);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
 
     private static RegisterPartnerRequest partner(UUID orgUnitId, String code) {
         String unique = code + "-" + UUID.randomUUID().toString().substring(0, 6);
