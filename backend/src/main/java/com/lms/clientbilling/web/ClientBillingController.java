@@ -24,14 +24,19 @@ import java.util.UUID;
 import com.lms.clientbilling.command.ClientBillingRunService;
 import com.lms.clientbilling.command.ClientChargeService;
 import com.lms.clientbilling.command.ClientContractService;
+import com.lms.clientbilling.command.ClientCreditNoteService;
+import com.lms.clientbilling.command.ClientStorageService;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
 import com.lms.clientbilling.query.ClientBillingQueryService;
 import com.lms.clientbilling.query.ClientChargeView;
 import com.lms.clientbilling.query.ClientContractView;
+import com.lms.clientbilling.query.ClientCreditNoteView;
 import com.lms.clientbilling.query.ClientInvoiceLineView;
 import com.lms.clientbilling.query.ClientInvoiceView;
 import com.lms.clientbilling.query.ClientMarginView;
+import com.lms.clientbilling.query.ClientStatementEntryView;
+import com.lms.clientbilling.query.ClientStorageView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
@@ -63,14 +68,20 @@ public class ClientBillingController {
     private final ClientContractService contracts;
     private final ClientChargeService charges;
     private final ClientBillingRunService runs;
+    private final ClientCreditNoteService creditNotes;
+    private final ClientStorageService storage;
     private final ClientBillingQueryService queries;
 
     public ClientBillingController(ClientContractService contracts, ClientChargeService charges,
                                    ClientBillingRunService runs,
+                                   ClientCreditNoteService creditNotes,
+                                   ClientStorageService storage,
                                    ClientBillingQueryService queries) {
         this.contracts = contracts;
         this.charges = charges;
         this.runs = runs;
+        this.creditNotes = creditNotes;
+        this.storage = storage;
         this.queries = queries;
     }
 
@@ -81,7 +92,9 @@ public class ClientBillingController {
                 request.clientPartnerId(), request.currency(), request.effectiveFrom(),
                 new ClientContract.Rates(request.transportRatePerKg(),
                         request.transportMinimumCharge(), request.storageRatePerPalletDay(),
-                        request.handlingInRatePerPallet(), request.handlingOutRatePerPallet()),
+                        request.handlingInRatePerPallet(), request.handlingOutRatePerPallet(),
+                        request.transportTaxRatePct(), request.warehouseTaxRatePct(),
+                        request.storageUnitsPerPallet()),
                 request.valueAddedServices() == null ? List.of()
                         : request.valueAddedServices().stream()
                         .map(s -> new ClientContractService.ServiceRateTerm(s.serviceCode(),
@@ -153,6 +166,51 @@ public class ClientBillingController {
         return queries.linesOf(id);
     }
 
+    /**
+     * Computes a client's storage for an ended month from the warehouse ledger
+     * and charges it. Answers 200 with the computation whether this call made
+     * it or an earlier one did.
+     */
+    @PostMapping("/clients/{clientId}/storage-computations")
+    public ClientStorageView computeStorage(@PathVariable UUID clientId,
+                                            @Valid @RequestBody StorageComputationRequest request) {
+        storage.computeMonth(clientId, request.period());
+        return queries.storageOf(clientId, request.period());
+    }
+
+    @GetMapping("/clients/{clientId}/storage")
+    public ClientStorageView storage(
+            @PathVariable UUID clientId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate period) {
+        return queries.storageOf(clientId, period);
+    }
+
+    @GetMapping("/clients/{clientId}/statement")
+    public Slice<ClientStatementEntryView> statement(
+            @PathVariable UUID clientId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer limit) {
+        return queries.statementOf(clientId, cursor, limit);
+    }
+
+    @PostMapping("/invoices/{id}/credit-notes")
+    public ResponseEntity<IdResponse> issueCreditNote(
+            @PathVariable UUID id, @Valid @RequestBody CreditNoteRequest request) {
+        UUID creditNoteId = creditNotes.issue(id, request.reason(), request.amount(),
+                request.lines() == null ? List.of() : request.lines().stream()
+                        .map(l -> new ClientCreditNoteService.LineCredit(l.lineNo(), l.amount()))
+                        .toList());
+        return ResponseEntity.created(URI.create("/api/v1/client-billing/credit-notes/"
+                        + creditNoteId))
+                .body(new IdResponse(creditNoteId));
+    }
+
+    @GetMapping("/credit-notes/{id}")
+    public ClientCreditNoteView creditNote(@PathVariable UUID id) {
+        return queries.findCreditNote(id)
+                .orElseThrow(() -> new ResourceNotFoundException("ClientCreditNote", id));
+    }
+
     @GetMapping("/margins")
     public Slice<ClientMarginView> margins(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate period,
@@ -171,6 +229,9 @@ public class ClientBillingController {
                                          BigDecimal storageRatePerPalletDay,
                                          BigDecimal handlingInRatePerPallet,
                                          BigDecimal handlingOutRatePerPallet,
+                                         BigDecimal transportTaxRatePct,
+                                         BigDecimal warehouseTaxRatePct,
+                                         Integer storageUnitsPerPallet,
                                          List<@Valid ValueAddedServiceRate> valueAddedServices) {
     }
 
@@ -192,5 +253,23 @@ public class ClientBillingController {
 
     /** @param period any day of the month to bill */
     public record BillingRunRequest(@NotNull LocalDate period) {
+    }
+
+    /** @param period any day of the month to compute */
+    public record StorageComputationRequest(@NotNull LocalDate period) {
+    }
+
+    /**
+     * Exactly one of {@code amount} (before tax, spread over the invoice) and
+     * {@code lines}.
+     */
+    public record CreditNoteRequest(@NotBlank String reason,
+                                    @Positive BigDecimal amount,
+                                    List<@Valid CreditNoteLineRequest> lines) {
+    }
+
+    /** @param amount taxable amount to credit; omitted credits what remains on the line */
+    public record CreditNoteLineRequest(@NotNull @Positive Integer lineNo,
+                                        @Positive BigDecimal amount) {
     }
 }

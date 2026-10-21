@@ -42,6 +42,9 @@
  * becomes a consignment ready to be put on a load -- a back-order's further
  * unit becomes a further consignment. The control tower raises tickets from
  * receipt variances and pick shortfalls.
+ *
+ * <p>Exposes one read-only port in {@code api}: how many units of an owner's
+ * SKUs were held each day, which client billing charges storage from.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Warehousing",

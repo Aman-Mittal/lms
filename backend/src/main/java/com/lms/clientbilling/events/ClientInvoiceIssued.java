@@ -35,7 +35,9 @@ public record ClientInvoiceIssued(
         LocalDate periodStart,
         LocalDate periodEnd,
         String currency,
+        /** Taxable amount plus tax. */
         BigDecimal totalAmount,
+        BigDecimal taxAmount,
         int lineCount,
         Instant occurredAt) {
 }

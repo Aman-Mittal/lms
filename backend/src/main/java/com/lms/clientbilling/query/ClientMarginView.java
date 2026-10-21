@@ -22,8 +22,11 @@ import java.util.UUID;
 /**
  * What the 3PL made on one client in one billed month.
  *
- * @param receivable          the invoice total
+ * @param receivable          the invoice's taxable amount less what credit
+ *                            notes against it have credited; tax is owed to
+ *                            the tax authority and is never revenue
  * @param transportReceivable the part of it for movements
+ * @param credited            taxable amount credited against the invoice
  * @param carrierPayable      what the carriers' freight bills computed for the
  *                            same movements, apportioned by the client's share
  *                            of each load's chargeable weight
@@ -42,6 +45,7 @@ public record ClientMarginView(
         BigDecimal receivable,
         BigDecimal transportReceivable,
         BigDecimal warehouseReceivable,
+        BigDecimal credited,
         BigDecimal carrierPayable,
         BigDecimal margin,
         BigDecimal marginPct,

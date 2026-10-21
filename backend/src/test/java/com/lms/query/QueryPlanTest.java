@@ -826,6 +826,107 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a client's statement pages invoices and credit notes in issue order by index")
+    void clientStatement() {
+        // Both halves of the union seek on (tenant, client, issued_at, id), so
+        // every page costs the same however long the client's history is.
+        String sql = """
+                SELECT * FROM (
+                    SELECT i.id AS document_id, i.issued_at, i.total_amount AS debit
+                      FROM client_invoice i
+                     WHERE i.tenant_id = '00000000-0000-0000-0000-000000000001'
+                       AND i.client_partner_id = '00000000-0000-0000-0000-000000000002'
+                       AND (i.issued_at, i.id) > (TIMESTAMPTZ '2026-01-01 00:00:00+00',
+                                                  '00000000-0000-0000-0000-000000000009')
+                    UNION ALL
+                    SELECT cn.id, cn.issued_at, 0
+                      FROM client_credit_note cn
+                     WHERE cn.tenant_id = '00000000-0000-0000-0000-000000000001'
+                       AND cn.client_partner_id = '00000000-0000-0000-0000-000000000002'
+                       AND (cn.issued_at, cn.id) > (TIMESTAMPTZ '2026-01-01 00:00:00+00',
+                                                    '00000000-0000-0000-0000-000000000009')
+                ) entries
+                 ORDER BY issued_at, document_id
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "client_invoice");
+        assertIndexed(sql, "client_credit_note");
+    }
+
+    @Test
+    @DisplayName("what has been credited against an invoice and its lines is index-served")
+    void clientCreditedAmounts() {
+        // Read for every invoice shown, for every margin row, and under the
+        // lock before every credit note is issued.
+        assertIndexed("""
+                SELECT sum(total_amount) FROM client_credit_note
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND invoice_id = '00000000-0000-0000-0000-000000000002'
+                """, "client_credit_note");
+        assertIndexed("""
+                SELECT sum(taxable_amount), sum(tax_amount) FROM client_credit_note_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND invoice_line_id = '00000000-0000-0000-0000-000000000002'
+                """, "client_credit_note_line");
+        assertIndexed("""
+                SELECT * FROM client_credit_note_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND credit_note_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY line_no
+                """, "client_credit_note_line");
+    }
+
+    @Test
+    @DisplayName("a client's ledger-derived storage month is index-served")
+    void clientStorageDays() {
+        assertIndexed("""
+                SELECT held_on, units_held, pallets FROM client_storage_day
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND period_start = DATE '2026-01-01'
+                 ORDER BY held_on
+                """, "client_storage_day");
+    }
+
+    @Test
+    @DisplayName("the stock an owner holds, and how it moved since a day, is index-served")
+    void ownerStockFromTheLedger() {
+        // The warehouse::api read behind ledger storage: the owner's SKUs,
+        // their balances now, and their movements since the month began --
+        // never the whole ledger.
+        String sql = """
+                WITH owned AS (
+                    SELECT id FROM sku
+                     WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                       AND owner_partner_id = '00000000-0000-0000-0000-000000000002'
+                )
+                SELECT (SELECT sum(b.on_hand) FROM stock_balance b
+                         WHERE b.tenant_id = '00000000-0000-0000-0000-000000000001'
+                           AND b.sku_id IN (SELECT id FROM owned)),
+                       (SELECT sum(m.quantity) FROM stock_movement m
+                         WHERE m.tenant_id = '00000000-0000-0000-0000-000000000001'
+                           AND m.sku_id IN (SELECT id FROM owned)
+                           AND m.occurred_at >= TIMESTAMPTZ '2026-01-01 00:00:00+00')
+                """;
+        assertIndexed(sql, "sku");
+        assertIndexed(sql, "stock_balance");
+        assertIndexed(sql, "stock_movement");
+    }
+
+    @Test
+    @DisplayName("the client margin's credit-note reduction is index-served")
+    void clientMarginCredits() {
+        assertIndexed("""
+                SELECT sum(cl.taxable_amount)
+                  FROM client_credit_note cn
+                  JOIN client_credit_note_line cl
+                    ON cl.tenant_id = cn.tenant_id AND cl.credit_note_id = cn.id
+                 WHERE cn.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND cn.invoice_id = '00000000-0000-0000-0000-000000000002'
+                """, "client_credit_note_line");
+    }
+
+    @Test
     @DisplayName("the client portal binding lookup is index-served")
     void clientPortalBinding() {
         // Asked on every client-billing read and command.

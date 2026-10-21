@@ -19,7 +19,15 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
-/** One priced charge, with the contract version and the day that chose it. */
+/**
+ * One priced charge, with the contract version and the day that chose it.
+ *
+ * @param amount          the taxable amount
+ * @param taxRate         percent, from the contract version
+ * @param taxAmount       the amount at the rate, half-up to two decimals
+ * @param lineTotal       amount plus tax
+ * @param creditedAmount  taxable amount credited against this line so far
+ */
 public record ClientInvoiceLineView(
         int lineNo,
         String serviceType,
@@ -28,6 +36,10 @@ public record ClientInvoiceLineView(
         String unit,
         BigDecimal rate,
         BigDecimal amount,
+        BigDecimal taxRate,
+        BigDecimal taxAmount,
+        BigDecimal lineTotal,
+        BigDecimal creditedAmount,
         UUID chargeId,
         LocalDate occurredOn,
         String contractCode) {

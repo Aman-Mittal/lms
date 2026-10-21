@@ -36,6 +36,7 @@ import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ClientInvoice;
 import com.lms.clientbilling.command.domain.ClientInvoiceLine;
 import com.lms.clientbilling.command.domain.ContractServiceRate;
+import com.lms.clientbilling.command.domain.Tax;
 import com.lms.clientbilling.events.ClientInvoiceIssued;
 import com.lms.clientbilling.query.ClientAccess;
 import com.lms.shared.audit.AuditTrail;
@@ -103,7 +104,8 @@ public class ClientBillingRunService {
      * @return the invoice, whether issued now or by an earlier run
      */
     @Transactional
-    @PreAuthorize("hasAuthority('CLIENT_BILLING_RUN')")
+    @PreAuthorize("hasAuthority('CLIENT_BILLING_RUN')"
+            + " and @abac.permits('CLIENT_BILLING_RUN', 'BUSINESS_PARTNER', #clientPartnerId)")
     public UUID run(UUID clientPartnerId, LocalDate anyDayInPeriod) {
         UUID tenantId = TenantContext.requireTenantId();
         access.requireAccessTo(clientPartnerId);
@@ -136,20 +138,26 @@ public class ClientBillingRunService {
         }
 
         List<Priced> priced = priceAll(tenantId, clientPartnerId, unbilled);
-        BigDecimal total = priced.stream()
+        BigDecimal taxable = priced.stream()
                 .map(p -> p.line().amount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Tax per line, each rounded on its own (Tax.on), then summed: the
+        // invoice's tax is exactly the sum of what its lines show.
+        BigDecimal tax = priced.stream()
+                .map(p -> Tax.on(p.line().amount(), p.taxRate()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         String currency = priced.get(0).contract().currency();
 
         Instant now = Instant.now();
         ClientInvoice invoice = invoices.save(ClientInvoice.issue(UUID.randomUUID(), tenantId,
-                clientPartnerId, newInvoiceNo(periodStart), periodStart, currency, total,
+                clientPartnerId, newInvoiceNo(periodStart), periodStart, currency, taxable, tax,
                 priced.size(), now));
+        BigDecimal total = invoice.totalAmount();
 
         int lineNo = 1;
         for (Priced p : priced) {
             lines.save(ClientInvoiceLine.of(UUID.randomUUID(), tenantId, invoice.id(), lineNo++,
-                    p.charge().id(), p.contract().id(), p.line(), p.charge()));
+                    p.charge().id(), p.contract().id(), p.line(), p.charge(), p.taxRate()));
         }
 
         // Exactly the charges just priced: the lock keeps any new ones out of
@@ -172,15 +180,20 @@ public class ClientBillingRunService {
         audit.record("CLIENT_INVOICE_ISSUED", "CLIENT_INVOICE", invoice.id(), null,
                 Json.object("client", clientPartnerId.toString(),
                         "period", periodStart.toString(), "total", total.toPlainString(),
+                        "tax", tax.toPlainString(),
                         "lines", String.valueOf(priced.size())));
         events.publishEvent(new ClientInvoiceIssued(tenantId, invoice.id(), invoice.invoiceNo(),
-                clientPartnerId, periodStart, periodEnd, currency, total, priced.size(), now));
+                clientPartnerId, periodStart, periodEnd, currency, total, tax, priced.size(), now));
 
         return invoice.id();
     }
 
     private record Priced(ClientCharge charge, ClientContract contract,
                           ChargePricing.Priced line) {
+
+        BigDecimal taxRate() {
+            return contract.taxRateFor(charge.serviceType());
+        }
     }
 
     /**

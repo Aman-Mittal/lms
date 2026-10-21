@@ -33,6 +33,9 @@ public record ClientContractView(
         BigDecimal storageRatePerPalletDay,
         BigDecimal handlingInRatePerPallet,
         BigDecimal handlingOutRatePerPallet,
+        BigDecimal transportTaxRatePct,
+        BigDecimal warehouseTaxRatePct,
+        int storageUnitsPerPallet,
         List<ServiceRate> valueAddedServices) {
 
     public ClientContractView {
