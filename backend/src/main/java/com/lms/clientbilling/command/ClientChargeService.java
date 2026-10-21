@@ -32,6 +32,7 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -56,15 +57,17 @@ public class ClientChargeService {
     private final ClientDirectory directory;
     private final ClientAccess access;
     private final ClientPeriods periods;
+    private final JdbcClient jdbc;
 
     public ClientChargeService(ClientChargeRepository charges, ClientContractRepository contracts,
                                ClientDirectory directory, ClientAccess access,
-                               ClientPeriods periods) {
+                               ClientPeriods periods, JdbcClient jdbc) {
         this.charges = charges;
         this.contracts = contracts;
         this.directory = directory;
         this.access = access;
         this.periods = periods;
+        this.jdbc = jdbc;
     }
 
     /**
@@ -76,7 +79,8 @@ public class ClientChargeService {
      * second call with it returns the first charge rather than adding another.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('CLIENT_BILLING_RUN')")
+    @PreAuthorize("hasAuthority('CLIENT_BILLING_RUN')"
+            + " and @abac.permits('CLIENT_BILLING_RUN', 'BUSINESS_PARTNER', #clientPartnerId)")
     public UUID recordServiceUsage(UUID clientPartnerId, ServiceType serviceType,
                                    String serviceCode, BigDecimal quantity, LocalDate occurredOn,
                                    String reference, String sourceKey) {
@@ -104,6 +108,13 @@ public class ClientChargeService {
         already = charges.findBySourceKey(tenantId, key);
         if (already.isPresent()) {
             return sameClientOrRefuse(already.get(), clientPartnerId);
+        }
+
+        if (serviceType == ServiceType.STORAGE && storageFromLedger(clientPartnerId, occurredOn)) {
+            throw new BusinessRuleViolationException("client-storage-from-ledger",
+                    "Storage on " + occurredOn + " was already computed from the warehouse "
+                            + "ledger for this client; recording it by hand as well would bill "
+                            + "the same pallets twice");
         }
 
         LocalDate period = periods.openPeriodFor(tenantId, clientPartnerId, occurredOn);
@@ -184,6 +195,17 @@ public class ClientChargeService {
                     "Partner " + clientPartnerId + " holds no client contract, so there is "
                             + "nothing to charge it under");
         }
+    }
+
+    private boolean storageFromLedger(UUID clientPartnerId, LocalDate day) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM client_storage_day
+                                        WHERE client_partner_id = :client AND held_on = :day)
+                        """)
+                .param("client", clientPartnerId)
+                .param("day", day)
+                .query(Boolean.class)
+                .single();
     }
 
     private static UUID sameClientOrRefuse(ClientCharge existing, UUID clientPartnerId) {
