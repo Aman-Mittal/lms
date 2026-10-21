@@ -87,7 +87,10 @@ public class ItineraryCommandService {
 
     /** Plans an itinerary of ordered legs. */
     @Transactional
-    @PreAuthorize("hasAuthority('MULTIMODAL_PLAN')")
+    @PreAuthorize("hasAuthority('MULTIMODAL_PLAN')"
+            + " and @abac.permits('MULTIMODAL_PLAN', 'TERMINAL',"
+            + " (#command == null or #command.legs() == null or #command.legs().isEmpty())"
+            + " ? null : #command.legs()[0].fromTerminalId())")
     public UUID plan(PlanItineraryCommand command) {
         UUID tenantId = TenantContext.requireTenantId();
         Instant now = Instant.now();
