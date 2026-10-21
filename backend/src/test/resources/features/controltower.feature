@@ -15,11 +15,14 @@
 Feature: Something went wrong on the road, and somebody owns it until it is closed
   Vision document 3.8.
 
-  An exception is a ticket about one trip. It is raised by a person or by a
-  detector, walks RAISED, ASSIGNED, UNDER_INVESTIGATION, RESOLVED, CLOSED, and
-  carries two guarantees: where the vehicle was is captured at the moment of
-  raising, and a critical ticket -- P1 or P2 -- freezes settlement of the trip
-  until a manager closes it. Closing is what releases a vendor's money, so the
+  An exception is a ticket, usually about one trip. One raised from another
+  module's events -- a missed connection, a receipt variance, a pick shortfall
+  -- may instead be about an itinerary, a circuit run, an ASN or an outbound
+  order. It is raised by a person or by a detector, walks RAISED, ASSIGNED,
+  UNDER_INVESTIGATION, RESOLVED, CLOSED, and carries two guarantees: where the
+  vehicle was is captured at the moment of raising, and a critical ticket --
+  P1 or P2 -- on a trip freezes settlement of that trip until a manager closes
+  it. A ticket with no trip never holds settlement. Closing is what releases a vendor's money, so the
   manager who closes a critical ticket cannot be the person who resolved it.
 
   Background:
@@ -236,6 +239,13 @@ Feature: Something went wrong on the road, and somebody owns it until it is clos
     Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
     When finance hears that a hold on trip "TRIP-T1" was released before hearing it was placed
     Then trip "TRIP-T1" has no settlement hold
+
+  Scenario: A ticket about no trip can never hold settlement, whoever writes it
+    # Tickets raised from multimodal and warehouse events may be about an
+    # itinerary or an ASN rather than a trip. There is then no trip's money to
+    # freeze, and the database holds that rule as well as the service.
+    When a P2 ticket about no trip is written straight to the database holding settlement
+    Then the database refuses it as a hold without a trip
 
   # --------------------------------------------------------------- board
 
