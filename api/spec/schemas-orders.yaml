@@ -68,11 +68,14 @@ RaiseOrderRequest:
       type: string
       format: uuid
       description: Required for LTL, where each consignment becomes a docket
-        consolidated at this hub. Refused for FTL.
+        consolidated at this hub. Refused for FTL. Must be a terminal of
+        functional category HUB, or the order is refused with
+        `ltl-hub-not-a-hub`.
     destinationHubTerminalId:
       type: string
       format: uuid
-      description: Required for LTL, refused for FTL.
+      description: Required for LTL, refused for FTL. Must be a HUB terminal,
+        as the origin hub must.
   required: [orgUnitId, customerPartnerId, orderNo, originTerminalId]
 
 AddOrderLineRequest:

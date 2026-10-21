@@ -49,7 +49,26 @@ PublishLtlRateCardRequest:
       description: Volumetric conversion -- each cubic foot is billed as
         this many kilograms.
     docketCharge: { type: number, minimum: 0 }
-    odaSurcharge: { type: number, minimum: 0 }
+    odaSurcharge:
+      type: number
+      minimum: 0
+      description: The flat out-of-delivery-area charge, used when
+        `odaBasis` is FLAT.
+    odaBasis:
+      type: string
+      enum: [FLAT, PER_KG]
+      default: FLAT
+      description: How the out-of-delivery-area charge is reckoned. PER_KG
+        charges `odaRatePerKg` on the docket's chargeable weight, never less
+        than `odaMinimum`. Fixed for the life of the version.
+    odaRatePerKg:
+      type: number
+      minimum: 0
+      description: Required when `odaBasis` is PER_KG.
+    odaMinimum:
+      type: number
+      minimum: 0
+      description: The least a PER_KG ODA charge comes to.
   required: [code, originZone, destinationZone, effectiveFrom, rateBasis,
              rateAmount, kgPerCft]
 
@@ -85,7 +104,23 @@ DocketReceivable:
     freightAmount: { type: number }
     docketCharge: { type: number }
     odaSurcharge: { type: number }
-    totalAmount: { type: number }
+    odaBasis:
+      type: string
+      enum: [FLAT, PER_KG]
+      description: How the ODA charge was reckoned; absent when none was
+        charged.
+    fuelSurchargePct:
+      type: number
+      description: The fuel surcharge index for the month the docket was
+        booked in; absent when that month has none.
+    fuelSurcharge:
+      type: number
+      description: That percentage of `freightAmount` alone. The docket
+        and ODA charges are not surcharged.
+    totalAmount:
+      type: number
+      description: freightAmount + docketCharge + odaSurcharge +
+        fuelSurcharge.
     reason:
       type: string
       description: Why an UNPRICED docket could not be priced.
