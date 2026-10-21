@@ -62,7 +62,7 @@
       drifted from the server fails to compile or to deserialise rather than
       passing quietly.
     -->
-    <openapi-generator.version>7.14.0</openapi-generator.version>
+    <openapi-generator.version>7.26.0</openapi-generator.version>
     <!--
       JUnit tags the default build skips. The performance suite bulk-loads
       hundreds of thousands of rows and restarts the application; it runs with
