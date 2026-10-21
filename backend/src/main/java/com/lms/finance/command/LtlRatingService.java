@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.finance.command.domain.DocketReceivable;
+import com.lms.finance.command.domain.FuelSurchargeIndex;
 import com.lms.finance.command.domain.LtlQuote;
 import com.lms.finance.command.domain.LtlRateCard;
 import com.lms.planning.events.DocketBooked;
@@ -50,15 +51,17 @@ public class LtlRatingService {
     private final LtlRateCardRepository cards;
     private final DocketReceivableRepository receivables;
     private final LtlRatingEngine engine;
+    private final FuelSurchargeIndexRepository fuelIndex;
     private final AuditTrail audit;
 
     public LtlRatingService(LtlZones zones, LtlRateCardRepository cards,
                             DocketReceivableRepository receivables, LtlRatingEngine engine,
-                            AuditTrail audit) {
+                            FuelSurchargeIndexRepository fuelIndex, AuditTrail audit) {
         this.zones = zones;
         this.cards = cards;
         this.receivables = receivables;
         this.engine = engine;
+        this.fuelIndex = fuelIndex;
         this.audit = audit;
     }
 
@@ -97,11 +100,31 @@ public class LtlRatingService {
                                 LtlRateCard.RateBasis rateBasis, BigDecimal rateAmount,
                                 BigDecimal minimumChargeableWeightKg, BigDecimal kgPerCft,
                                 BigDecimal docketCharge, BigDecimal odaSurcharge) {
+        return publishRateCard(code, originZone, destinationZone, currency, effectiveFrom,
+                rateBasis, rateAmount, minimumChargeableWeightKg, kgPerCft, docketCharge,
+                odaSurcharge, LtlRateCard.OdaBasis.FLAT, null, null);
+    }
+
+    /**
+     * Publishes a version with a stated ODA basis: a flat amount, or a rate
+     * per kg with a minimum. Like every other term, fixed for the life of the
+     * version.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('TARIFF_MANAGE')")
+    public UUID publishRateCard(String code, String originZone, String destinationZone,
+                                String currency, LocalDate effectiveFrom,
+                                LtlRateCard.RateBasis rateBasis, BigDecimal rateAmount,
+                                BigDecimal minimumChargeableWeightKg, BigDecimal kgPerCft,
+                                BigDecimal docketCharge, BigDecimal odaSurcharge,
+                                LtlRateCard.OdaBasis odaBasis, BigDecimal odaRatePerKg,
+                                BigDecimal odaMinimum) {
         UUID tenantId = TenantContext.requireTenantId();
 
         LtlRateCard card = LtlRateCard.publish(UUID.randomUUID(), tenantId, code, originZone,
                 destinationZone, currency, effectiveFrom, rateBasis, rateAmount,
-                minimumChargeableWeightKg, kgPerCft, docketCharge, odaSurcharge);
+                minimumChargeableWeightKg, kgPerCft, docketCharge, odaSurcharge,
+                odaBasis, odaRatePerKg, odaMinimum);
 
         cards.findLatest(tenantId, card.originZone(), card.destinationZone()).ifPresent(latest -> {
             if (!card.effectiveFrom().isAfter(latest.effectiveFrom())) {
@@ -116,7 +139,8 @@ public class LtlRatingService {
         audit.record("LTL_RATE_CARD_PUBLISHED", "LTL_RATE_CARD", published.id(), null,
                 Json.object("code", published.code(),
                         "lane", published.originZone() + "-" + published.destinationZone(),
-                        "effectiveFrom", published.effectiveFrom().toString()));
+                        "effectiveFrom", published.effectiveFrom().toString(),
+                        "odaBasis", published.odaBasis().name()));
         return published.id();
     }
 
@@ -179,7 +203,15 @@ public class LtlRatingService {
                 .map(LtlZones.Placement::outOfDeliveryArea)
                 .orElse(false);
 
-        LtlQuote quote = engine.quote(card.get(), docket.deadWeightKg(), docket.volumeM3(), oda);
+        // The month of booking, as the rate card is the one in force on the
+        // booking date: a docket is quoted when it is cut, so it is priced
+        // entirely as of that day.
+        BigDecimal fuelPct = fuelIndex.findForMonth(tenantId, pricedOn.withDayOfMonth(1))
+                .map(FuelSurchargeIndex::surchargePct)
+                .orElse(null);
+
+        LtlQuote quote = engine.quote(card.get(), docket.deadWeightKg(), docket.volumeM3(), oda,
+                fuelPct);
         return receivables.save(DocketReceivable.priced(UUID.randomUUID(), tenantId,
                 docket.docketId(), docket.docketNo(), docket.orderId(), docket.customerPartnerId(),
                 card.get(), pricedOn, docket.deadWeightKg(), quote)).id();
