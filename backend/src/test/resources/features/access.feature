@@ -56,6 +56,7 @@ Feature: A permission says what kind of thing; a policy says how far
     And the tenant has access policy "warehouse-setup-org-subtree" on "WAREHOUSE_SETUP"
     And the tenant has access policy "client-contract-write-org-subtree" on "CLIENT_CONTRACT_MANAGE"
     And the tenant has access policy "rail-tariff-write-org-subtree" on "TARIFF_MANAGE"
+    And the tenant has access policy "inventory-adjust-org-subtree" on "INVENTORY_ADJUST"
 
   # ------------------------------------------------ monetary: invoices
 

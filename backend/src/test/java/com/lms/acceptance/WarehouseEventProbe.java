@@ -18,9 +18,11 @@ package com.lms.acceptance;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import com.lms.warehouse.events.BackOrderFilled;
 import com.lms.warehouse.events.GoodsReceived;
 import com.lms.warehouse.events.HandlingUnitDispatched;
 import com.lms.warehouse.events.PickShortfallRecorded;
+import com.lms.warehouse.events.QuarantineResolved;
 import com.lms.warehouse.events.ReceiptVarianceRecorded;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -57,6 +59,16 @@ public class WarehouseEventProbe {
 
     @EventListener
     void onDispatched(HandlingUnitDispatched event) {
+        heard.add(event);
+    }
+
+    @EventListener
+    void onBackOrderFilled(BackOrderFilled event) {
+        heard.add(event);
+    }
+
+    @EventListener
+    void onQuarantineResolved(QuarantineResolved event) {
         heard.add(event);
     }
 
