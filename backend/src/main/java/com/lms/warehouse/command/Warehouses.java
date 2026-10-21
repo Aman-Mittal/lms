@@ -51,6 +51,12 @@ class Warehouses {
         }
     }
 
+    /** Any terminal of this tenant's: where a dispatched unit is bound. */
+    void requireTerminal(UUID terminalId) {
+        terminals.functionalCategoryOf(terminalId)
+                .orElseThrow(() -> new ResourceNotFoundException("Terminal", terminalId));
+    }
+
     static String currentActor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication == null || authentication.getName() == null

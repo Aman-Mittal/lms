@@ -172,12 +172,31 @@ public class OutboundCommandService {
     @Transactional
     @PreAuthorize("hasAuthority('WAREHOUSE_OPERATE')")
     public void dispatch(UUID handlingUnitId, String reference) {
+        dispatch(handlingUnitId, reference, null);
+    }
+
+    /**
+     * Hands a packed unit over to transport, saying where it goes.
+     *
+     * <p>With a {@code handOff}, the published event carries the destination,
+     * consignee and weighed gross, and planning turns the unit into a
+     * consignment ready to be put on a load. Without one the unit simply
+     * leaves, as before. The destination is checked against master data here,
+     * synchronously, because a foreign key does not consult row-level security
+     * and a bad address found later by a listener has nobody to tell.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('WAREHOUSE_OPERATE')")
+    public void dispatch(UUID handlingUnitId, String reference, HandlingUnit.HandOff handOff) {
         UUID tenantId = TenantContext.requireTenantId();
         HandlingUnit unit = handlingUnits.findById(handlingUnitId)
                 .orElseThrow(() -> new ResourceNotFoundException("Handling unit",
                         handlingUnitId));
+        if (handOff != null) {
+            warehouses.requireTerminal(handOff.destinationTerminalId());
+        }
         Instant now = Instant.now();
-        HandlingUnit dispatched = handlingUnits.save(unit.dispatch(reference, now));
+        HandlingUnit dispatched = handlingUnits.save(unit.dispatch(reference, handOff, now));
         String actor = Warehouses.currentActor();
 
         List<HandlingUnitDispatched.Content> contents = new ArrayList<>();
@@ -198,7 +217,9 @@ public class OutboundCommandService {
         }
         events.publishEvent(new HandlingUnitDispatched(tenantId, dispatched.id(),
                 dispatched.huNo(), dispatched.warehouseId(), dispatched.outboundOrderId(),
-                dispatched.asnId(), shipTo, reference, contents, now));
+                dispatched.asnId(), shipTo, reference, contents, now,
+                dispatched.destinationTerminalId(), dispatched.consigneePartnerId(),
+                dispatched.grossWeightKg(), dispatched.volumeM3()));
     }
 
     private OutboundOrder requireOrder(UUID orderId) {

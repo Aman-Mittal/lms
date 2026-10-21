@@ -15,6 +15,7 @@
  */
 package com.lms.warehouse.events;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -26,6 +27,13 @@ import java.util.UUID;
  * longer warehouse stock and cannot be looked up as such. Exactly one of
  * {@code outboundOrderId} and {@code asnId} is set, depending on whether the
  * unit was packed from a pick or filled straight from the dock.
+ *
+ * <p>{@code destinationTerminalId}, {@code consigneePartnerId},
+ * {@code grossWeightKg} and {@code volumeM3} were added for planning, which
+ * turns a unit handed to transport into a consignment. They are set together
+ * when the dispatch said where the unit is going and what it weighed, and all
+ * null when it left some other way; {@code volumeM3} may be null on its own
+ * when nobody measured it.
  */
 public record HandlingUnitDispatched(
         UUID tenantId,
@@ -37,10 +45,20 @@ public record HandlingUnitDispatched(
         String shipTo,
         String dispatchRef,
         List<Content> contents,
-        Instant dispatchedAt) {
+        Instant dispatchedAt,
+        UUID destinationTerminalId,
+        UUID consigneePartnerId,
+        BigDecimal grossWeightKg,
+        BigDecimal volumeM3) {
 
     public HandlingUnitDispatched {
         contents = List.copyOf(contents);
+    }
+
+    /** Whether the unit was handed to the platform's own transport planning. */
+    public boolean isHandedToTransport() {
+        return destinationTerminalId != null && consigneePartnerId != null
+                && grossWeightKg != null;
     }
 
     /** One SKU and lot inside the unit. */
