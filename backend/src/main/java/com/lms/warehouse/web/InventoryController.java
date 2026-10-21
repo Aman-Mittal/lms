@@ -26,6 +26,7 @@ import com.lms.warehouse.query.WarehouseQueryService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -68,6 +69,34 @@ public class InventoryController {
         UUID id = inventory.adjust(request.binId(), request.skuId(), request.lotNo(),
                 request.quantity(), request.reason());
         return ResponseEntity.status(HttpStatus.CREATED).body(new IdResponse(id));
+    }
+
+    /** Answers with the id of the movement that took the units out of quarantine. */
+    @PostMapping("/api/v1/stock/quarantine/releases")
+    public ResponseEntity<IdResponse> releaseFromQuarantine(
+            @Valid @RequestBody ReleaseQuarantineRequest request) {
+        UUID id = inventory.releaseFromQuarantine(request.binId(), request.skuId(),
+                request.lotNo(), request.quantity(), request.reason());
+        return ResponseEntity.status(HttpStatus.CREATED).body(new IdResponse(id));
+    }
+
+    /** Answers with the write-off movement's id. */
+    @PostMapping("/api/v1/stock/quarantine/write-offs")
+    public ResponseEntity<IdResponse> writeOffQuarantine(
+            @Valid @RequestBody WriteOffQuarantineRequest request) {
+        UUID id = inventory.writeOffQuarantine(request.warehouseId(), request.skuId(),
+                request.lotNo(), request.quantity(), request.reason());
+        return ResponseEntity.status(HttpStatus.CREATED).body(new IdResponse(id));
+    }
+
+    public record ReleaseQuarantineRequest(@NotNull UUID binId, @NotNull UUID skuId,
+                                           String lotNo, @Positive int quantity,
+                                           @NotBlank String reason) {
+    }
+
+    public record WriteOffQuarantineRequest(@NotNull UUID warehouseId, @NotNull UUID skuId,
+                                            String lotNo, @Positive int quantity,
+                                            @NotBlank String reason) {
     }
 
     /** @param quantity signed; negative for a loss found on counting */

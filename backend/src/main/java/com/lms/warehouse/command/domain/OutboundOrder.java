@@ -26,9 +26,12 @@ import org.springframework.data.relational.core.mapping.Table;
 /**
  * Goods to send out of one warehouse: picked, packed, dispatched.
  *
- * <p>Picked once. A line the bins could not fill is left short and the order
- * becomes SHORT_PICKED; what was picked can still be packed and shipped.
- * Back-ordering the remainder is a new order, not a second pick of this one.
+ * <p>A line the bins could not fill is left short and the order becomes
+ * SHORT_PICKED; what was picked can still be packed and shipped. The unfilled
+ * remainder is the order's back-order: once the unit carrying what was found
+ * is dispatched the order waits as BACK_ORDERED, and a later pick -- alone or
+ * in a wave -- fills it into a further handling unit. An order whose every
+ * line is filled is picked no further.
  */
 @Table("outbound_order")
 public record OutboundOrder(
@@ -48,7 +51,10 @@ public record OutboundOrder(
         /** Picked as far as stock allowed; at least one line is short. */
         SHORT_PICKED,
         PACKED,
-        DISPATCHED
+        /** Everything ordered has left the warehouse. */
+        DISPATCHED,
+        /** What was found has left; the rest is owed and waits for stock. */
+        BACK_ORDERED
     }
 
     public static OutboundOrder open(UUID tenantId, UUID warehouseId, String orderNo,
@@ -61,11 +67,34 @@ public record OutboundOrder(
                 shipTo, Status.OPEN, null, at, at);
     }
 
-    public OutboundOrder picked(boolean shortfall, Instant at) {
-        if (status != Status.OPEN) {
+    /** Whether a pick may take stock for it: never picked, or owed a back-order. */
+    public boolean pickable() {
+        return status == Status.OPEN || status == Status.SHORT_PICKED
+                || status == Status.BACK_ORDERED;
+    }
+
+    public void requirePickable() {
+        if (!pickable()) {
             refuse("picked");
         }
-        return with(shortfall ? Status.SHORT_PICKED : Status.PICKED, at);
+    }
+
+    /**
+     * Records a pick.
+     *
+     * <p>A first pick always moves the order on, even when it found nothing:
+     * that is a shortfall worth seeing. A further pick that found nothing
+     * changes nothing -- the order is still owed exactly what it was.
+     *
+     * @param movedAnything whether this pick took any stock for the order
+     * @param remainder     whether any line is still short afterwards
+     */
+    public OutboundOrder picked(boolean movedAnything, boolean remainder, Instant at) {
+        requirePickable();
+        if (status != Status.OPEN && !movedAnything) {
+            return this;
+        }
+        return with(remainder ? Status.SHORT_PICKED : Status.PICKED, at);
     }
 
     public OutboundOrder packed(Instant at) {
@@ -75,11 +104,15 @@ public record OutboundOrder(
         return with(Status.PACKED, at);
     }
 
-    public OutboundOrder dispatched(Instant at) {
+    /**
+     * @param backOrderOutstanding whether any line is still short, in which
+     *                             case the order is owed a further unit
+     */
+    public OutboundOrder dispatched(boolean backOrderOutstanding, Instant at) {
         if (status != Status.PACKED) {
             refuse("dispatched");
         }
-        return with(Status.DISPATCHED, at);
+        return with(backOrderOutstanding ? Status.BACK_ORDERED : Status.DISPATCHED, at);
     }
 
     private void refuse(String what) {
