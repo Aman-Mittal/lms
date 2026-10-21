@@ -1,0 +1,101 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Ping:
+  type: object
+  properties:
+    vehicleId: { type: string, format: uuid }
+    recordedAt:
+      type: string
+      format: date-time
+      description: When the *device* recorded it. Arrival order is not
+        position order, and treating it as such produces a track that jumps
+        backwards through time.
+    lat: { type: number }
+    lon: { type: number }
+    speedKph: { type: number }
+    headingDeg: { type: number }
+    accuracyM: { type: number }
+    ignitionOn: { type: boolean }
+    source: { type: string }
+  required: [vehicleId, recordedAt, lat, lon]
+
+PingBatchRequest:
+  type: object
+  properties:
+    pings:
+      type: array
+      minItems: 1
+      maxItems: 500
+      items: { $ref: "#/components/schemas/Ping" }
+  required: [pings]
+
+IngestResult:
+  type: object
+  description: |
+    Never a 4xx for a bad point. A device reporting one implausible
+    coordinate must not lose the twenty-nine good ones in the same flush,
+    and it could not fix the bad one if it were told.
+  properties:
+    accepted: { type: integer }
+    rejected: { type: integer }
+    rejections:
+      type: array
+      items:
+        type: object
+        properties:
+          vehicleId: { type: string, format: uuid }
+          recordedAt: { type: string, format: date-time }
+          reason: { type: string }
+
+VehiclePosition:
+  type: object
+  properties:
+    vehicleId: { type: string, format: uuid }
+    registrationNo: { type: string }
+    lat: { type: number }
+    lon: { type: number }
+    speedKph: { type: number }
+    headingDeg: { type: number }
+    recordedAt: { type: string, format: date-time }
+    tripNo: { type: string }
+
+GeofenceCrossing:
+  type: object
+  properties:
+    terminalCode: { type: string }
+    terminalName: { type: string }
+    crossing: { type: string, enum: [ENTERED, EXITED] }
+    occurredAt: { type: string, format: date-time }
+
+TripProgress:
+  type: object
+  properties:
+    tripId: { type: string, format: uuid }
+    progressPct: { type: number }
+    remainingMetres: { type: number }
+    estimatedArrivalAt: { type: string, format: date-time }
+
+Deviation:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    tripNo: { type: string }
+    vehicleRegistrationNo: { type: string }
+    offRouteMetres: { type: number }
+    openedAt: { type: string, format: date-time }
+    closedAt: { type: string, format: date-time }

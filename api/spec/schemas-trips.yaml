@@ -1,0 +1,112 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Trip:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    tripNo: { type: string }
+    status:
+      type: string
+      enum: [PLANNED, ASSIGNED, AT_ORIGIN, LOADED, DISPATCHED, IN_TRANSIT,
+             AT_DESTINATION, COMPLETED, CANCELLED]
+    loadId: { type: string, format: uuid }
+    loadNo: { type: string }
+    vendorName: { type: string }
+    vehicleRegistrationNo: { type: string }
+    driverName: { type: string }
+    originTerminalCode: { type: string }
+    destinationTerminalCode: { type: string }
+    plannedStartAt: { type: string, format: date-time }
+    gateInAt: { type: string, format: date-time }
+    dispatchedAt: { type: string, format: date-time }
+    arrivedAt: { type: string, format: date-time }
+    completedAt: { type: string, format: date-time }
+    tareWeightKg: { type: number }
+    grossWeightKg: { type: number }
+    payloadWeightKg: { type: number }
+    plannedWeightKg: { type: number }
+    originDwellMinutes:
+      type: integer
+      description: Gate-in to gate-out. What detention is billed on.
+    documentCount: { type: integer }
+    createdAt: { type: string, format: date-time }
+
+GateEvent:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    terminalCode: { type: string }
+    eventType: { type: string, enum: [GATE_IN, GATE_OUT] }
+    occurredAt: { type: string, format: date-time }
+    remarks: { type: string }
+
+RaiseTripRequest:
+  type: object
+  properties:
+    tripNo: { type: string }
+    loadId: { type: string, format: uuid }
+    plannedStartAt: { type: string, format: date-time }
+  required: [tripNo, loadId]
+
+AssignTripRequest:
+  type: object
+  properties:
+    vehicleId: { type: string, format: uuid }
+    driverId: { type: string, format: uuid }
+  required: [vehicleId]
+
+AttachTripDocumentRequest:
+  type: object
+  properties:
+    documentType: { type: string, examples: [CONSIGNMENT_NOTE, EWAY_BILL] }
+    documentRef:
+      type: string
+      description: A reference, not the file. There is no object storage in
+        the MVP, and the rule being enforced is "is it accounted for".
+  required: [documentType, documentRef]
+
+GateInRequest:
+  type: object
+  properties:
+    terminalId: { type: string, format: uuid }
+    at: { type: string, format: date-time }
+    remarks: { type: string }
+  required: [terminalId]
+
+WeighingRequest:
+  type: object
+  properties:
+    terminalId: { type: string, format: uuid }
+    type: { type: string, enum: [TARE, GROSS] }
+    weightKg: { type: number, exclusiveMinimum: 0 }
+    at: { type: string, format: date-time }
+  required: [terminalId, type, weightKg]
+
+TripSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Trip" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]

@@ -1,0 +1,344 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Bin:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    warehouseId: { type: string, format: uuid }
+    code: { type: string }
+    capacityUnits: { type: integer }
+    occupiedUnits:
+      type: integer
+      description: Units in the bin now, across every SKU and lot.
+
+BinSlice:
+  type: object
+  description: One page, by bin code. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Bin" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+CreateBinRequest:
+  type: object
+  properties:
+    code: { type: string, minLength: 1 }
+    capacityUnits:
+      type: integer
+      minimum: 1
+      description: The most units the bin may hold, whatever the SKU.
+  required: [code, capacityUnits]
+
+Sku:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    description: { type: string }
+    ownerPartnerId: { type: string, format: uuid }
+    uom: { type: string }
+
+SkuSlice:
+  type: object
+  description: One page, by SKU code. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Sku" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+CreateSkuRequest:
+  type: object
+  properties:
+    code: { type: string, minLength: 1 }
+    description: { type: string, minLength: 1 }
+    ownerPartnerId:
+      type: string
+      format: uuid
+      description: Optional. Whose goods these are, for a warehouse run on
+        a customer's behalf.
+    uom:
+      type: string
+      description: Unit of measure. Defaults to EA.
+  required: [code, description]
+
+AsnExpectedLine:
+  type: object
+  properties:
+    skuId: { type: string, format: uuid }
+    lotNo: { type: string }
+    quantity: { type: integer, minimum: 1 }
+  required: [skuId, quantity]
+
+CreateAsnRequest:
+  type: object
+  properties:
+    warehouseId:
+      type: string
+      format: uuid
+      description: A terminal whose category is WAREHOUSE.
+    asnNo: { type: string, minLength: 1 }
+    supplierPartnerId: { type: string, format: uuid }
+    lines:
+      type: array
+      minItems: 1
+      items: { $ref: "#/components/schemas/AsnExpectedLine" }
+  required: [warehouseId, asnNo, lines]
+
+AsnLine:
+  type: object
+  description: |
+    `receivedQty` is everything counted at the dock, damaged units
+    included. Short and excess are derived from the count, never entered.
+    All counts are absent, and short and excess zero, until the ASN is
+    received.
+  properties:
+    lineNo: { type: integer }
+    skuId: { type: string, format: uuid }
+    skuCode: { type: string }
+    lotNo: { type: string }
+    expectedQty: { type: integer }
+    receivedQty: { type: integer }
+    damagedQty: { type: integer }
+    shortQty: { type: integer }
+    excessQty: { type: integer }
+
+Asn:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    asnNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    supplierPartnerId: { type: string, format: uuid }
+    status:
+      type: string
+      enum: [EXPECTED, RECEIVED]
+    crossDock: { type: boolean }
+    handlingUnitId:
+      type: string
+      format: uuid
+      description: The outbound unit a cross-docked receipt went into.
+    receivedBy: { type: string }
+    receivedAt: { type: string, format: date-time }
+    lines:
+      type: array
+      items: { $ref: "#/components/schemas/AsnLine" }
+
+ReceiptCount:
+  type: object
+  properties:
+    lineNo: { type: integer, minimum: 1 }
+    receivedQty: { type: integer, minimum: 0 }
+    damagedQty:
+      type: integer
+      minimum: 0
+      description: The part of `receivedQty` that cannot go into stock.
+  required: [lineNo, receivedQty, damagedQty]
+
+ReceiveAsnRequest:
+  type: object
+  properties:
+    lines:
+      type: array
+      description: A line not listed is recorded as received zero -- wholly short.
+      items: { $ref: "#/components/schemas/ReceiptCount" }
+    crossDock:
+      type: boolean
+      description: Route the undamaged units straight into a new outbound
+        handling unit instead of leaving them on the dock for putaway.
+
+PutawayRequest:
+  type: object
+  properties:
+    binId: { type: string, format: uuid }
+    skuId: { type: string, format: uuid }
+    lotNo: { type: string }
+    quantity: { type: integer, minimum: 1 }
+  required: [binId, skuId, quantity]
+
+StockBalance:
+  type: object
+  description: What one location holds of one SKU and lot.
+  properties:
+    id: { type: string, format: uuid }
+    warehouseId: { type: string, format: uuid }
+    locationType:
+      type: string
+      enum: [DOCK, BIN, OUTBOUND, HU]
+      description: |
+        DOCK -- received, not yet put away. BIN -- in storage. OUTBOUND --
+        picked for an order, not yet packed. HU -- packed, not yet dispatched.
+    locationId: { type: string, format: uuid }
+    locationCode:
+      type: string
+      description: The bin code, for a bin. Absent otherwise.
+    skuId: { type: string, format: uuid }
+    skuCode: { type: string }
+    lotNo: { type: string }
+    onHand: { type: integer }
+
+StockBalanceSlice:
+  type: object
+  description: One page. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/StockBalance" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+StockMovement:
+  type: object
+  description: One signed change of stock at one location. Never edited.
+  properties:
+    id: { type: string, format: uuid }
+    warehouseId: { type: string, format: uuid }
+    movementType:
+      type: string
+      enum: [RECEIPT, PUTAWAY, PICK, PACK, CROSS_DOCK, DISPATCH, ADJUST]
+    locationType:
+      type: string
+      enum: [DOCK, BIN, OUTBOUND, HU]
+    locationId: { type: string, format: uuid }
+    skuId: { type: string, format: uuid }
+    lotNo: { type: string }
+    quantity: { type: integer }
+    referenceId: { type: string, format: uuid }
+    reason: { type: string }
+    actor: { type: string }
+    occurredAt: { type: string, format: date-time }
+
+StockMovementSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/StockMovement" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+AdjustStockRequest:
+  type: object
+  properties:
+    binId: { type: string, format: uuid }
+    skuId: { type: string, format: uuid }
+    lotNo: { type: string }
+    quantity:
+      type: integer
+      description: Signed. Negative for a loss found on counting. Never zero.
+    reason: { type: string, minLength: 1 }
+  required: [binId, skuId, quantity, reason]
+
+OutboundOrderLineRequest:
+  type: object
+  properties:
+    skuId: { type: string, format: uuid }
+    quantity: { type: integer, minimum: 1 }
+  required: [skuId, quantity]
+
+CreateOutboundOrderRequest:
+  type: object
+  properties:
+    warehouseId: { type: string, format: uuid }
+    orderNo: { type: string, minLength: 1 }
+    shipTo:
+      type: string
+      description: Free text naming where it is going.
+    lines:
+      type: array
+      minItems: 1
+      items: { $ref: "#/components/schemas/OutboundOrderLineRequest" }
+  required: [warehouseId, orderNo, lines]
+
+OutboundOrderLine:
+  type: object
+  properties:
+    lineNo: { type: integer }
+    skuId: { type: string, format: uuid }
+    skuCode: { type: string }
+    orderedQty: { type: integer }
+    pickedQty: { type: integer }
+    shortQty: { type: integer }
+
+OutboundOrder:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    orderNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    shipTo: { type: string }
+    status:
+      type: string
+      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED]
+    createdAt: { type: string, format: date-time }
+    lines:
+      type: array
+      items: { $ref: "#/components/schemas/OutboundOrderLine" }
+
+HandlingUnitContent:
+  type: object
+  properties:
+    skuId: { type: string, format: uuid }
+    skuCode: { type: string }
+    lotNo: { type: string }
+    quantity: { type: integer }
+
+HandlingUnit:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    huNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    source:
+      type: string
+      enum: [PACK, CROSS_DOCK]
+    outboundOrderId: { type: string, format: uuid }
+    asnId: { type: string, format: uuid }
+    status:
+      type: string
+      enum: [PACKED, DISPATCHED]
+    dispatchRef: { type: string }
+    dispatchedAt: { type: string, format: date-time }
+    contents:
+      type: array
+      description: What is in it. Empty once dispatched -- the goods have
+        left the ledger, and its movements still record them.
+      items: { $ref: "#/components/schemas/HandlingUnitContent" }
+
+DispatchRequest:
+  type: object
+  properties:
+    reference:
+      type: string
+      description: What transport calls it -- a load, a trip, a docket.

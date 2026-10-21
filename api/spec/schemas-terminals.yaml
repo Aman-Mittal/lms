@@ -1,0 +1,101 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Point:
+  type: object
+  properties:
+    lat: { type: number, minimum: -90, maximum: 90 }
+    lon: { type: number, minimum: -180, maximum: 180 }
+  required: [lat, lon]
+
+Terminal:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    name: { type: string }
+    functionalCategory:
+      type: string
+      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+    geofenceType: { type: string, enum: [POLYGON, POINT_RADIUS] }
+    polygon:
+      type: string
+      description: GeoJSON text, or null for a point-radius geofence.
+    centreLat: { type: number }
+    centreLon: { type: number }
+    radiusM: { type: number }
+    dockCount: { type: integer }
+    opensAt: { type: string }
+    closesAt: { type: string }
+    avgDwellMinutes: { type: integer }
+    createdAt: { type: string, format: date-time }
+
+RegisterPolygonTerminalRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    code: { type: string }
+    name: { type: string }
+    category:
+      type: string
+      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+    ring:
+      type: array
+      minItems: 3
+      items: { $ref: "#/components/schemas/Point" }
+    dockCount: { type: integer }
+    opensAt: { type: string }
+    closesAt: { type: string }
+    avgDwellMinutes: { type: integer }
+    permittedVehicleTypes:
+      type: array
+      items: { type: string }
+  required: [orgUnitId, code, name, category, ring]
+
+RegisterPointRadiusTerminalRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    code: { type: string }
+    name: { type: string }
+    category:
+      type: string
+      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+    centre: { $ref: "#/components/schemas/Point" }
+    radiusMetres: { type: number, exclusiveMinimum: 0 }
+    dockCount: { type: integer }
+    opensAt: { type: string }
+    closesAt: { type: string }
+    avgDwellMinutes: { type: integer }
+    permittedVehicleTypes:
+      type: array
+      items: { type: string }
+  required: [orgUnitId, code, name, category, centre, radiusMetres]
+
+TerminalSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Terminal" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
