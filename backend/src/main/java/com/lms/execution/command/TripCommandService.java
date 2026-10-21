@@ -321,6 +321,10 @@ public class TripCommandService {
         Instant when = at == null ? Instant.now() : at;
 
         Trip completed = trips.save(trip.complete(when));
+        // Synchronous, in this transaction, like dispatch: planning moves the
+        // freight aboard -- a part-load line haul's dockets have now arrived
+        // at their destination hub -- and a refusal there must undo this.
+        loads.recordTripCompleted(completed.loadId());
 
         events.publishEvent(new TripCompleted(tenantId, completed.id(), completed.tripNo(),
                 completed.loadId(), completed.vendorPartnerId(), completed.dispatchedAt(),
