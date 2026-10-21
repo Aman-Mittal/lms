@@ -18,6 +18,7 @@ package com.lms.finance.query;
 import java.util.List;
 import java.util.UUID;
 
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,7 +39,8 @@ public class LtlQueryService {
                    r.dead_weight_kg, r.volume_cft, r.volumetric_weight_kg, r.chargeable_weight_kg,
                    r.minimum_applied, r.out_of_delivery_area,
                    r.rate_basis, r.rate_amount,
-                   r.freight_amount, r.docket_charge, r.oda_surcharge, r.total_amount,
+                   r.freight_amount, r.docket_charge, r.oda_surcharge, r.oda_basis,
+                   r.fuel_surcharge_pct, r.fuel_surcharge, r.total_amount,
                    r.reason, r.created_at
               FROM docket_receivable r
               JOIN business_partner cp ON cp.id = r.customer_partner_id
@@ -59,6 +61,11 @@ public class LtlQueryService {
      * tie-breaker. The unfiltered listing rides
      * {@code docket_receivable_no_unique}; the per-customer one rides
      * {@code docket_receivable_customer_idx}.
+     *
+     * <p>A portal user is confined to their own partner's dockets, whatever
+     * customer they ask for: a customer reads its own statement, and a vendor
+     * -- never the customer on a docket -- reads none. Staff have no partner
+     * and are not narrowed.
      */
     public Slice<DocketReceivableView> list(UUID customerPartnerId, String status, String cursor,
                                             Integer limit) {
@@ -69,10 +76,13 @@ public class LtlQueryService {
                                 OR r.customer_partner_id = CAST(:customer AS uuid))
                            AND (CAST(:status AS text) IS NULL OR r.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR r.docket_no > CAST(:cursor AS text))
+                           AND (CAST(:partner AS uuid) IS NULL
+                                OR r.customer_partner_id = CAST(:partner AS uuid))
                          ORDER BY r.docket_no
                          LIMIT :limit
                         """)
                 .param("customer", customerPartnerId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("status", status)
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)

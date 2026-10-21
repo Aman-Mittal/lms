@@ -51,6 +51,12 @@
  * behind it, and is put on a load like any other. An event rather than a port
  * because nobody is waiting on it: the warehouse has finished with the unit,
  * and the consignment appears among those not yet on a load.
+ *
+ * <p>A docket travels on two loads. Its LINE_HAUL load runs hub to hub; when
+ * execution reports that load's trip complete (through {@code LoadLifecyclePort},
+ * which execution already calls on dispatch) the docket has arrived at its
+ * destination hub, and a DELIVERY load opened at that hub takes it to its
+ * consignee. The docket's state machine is documented on {@code Consignment}.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",

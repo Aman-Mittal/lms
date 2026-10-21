@@ -17,6 +17,7 @@ package com.lms.planning.command;
 
 import java.util.UUID;
 
+import com.lms.planning.command.domain.LoadUnit;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -58,20 +59,26 @@ public class PlanningLinks {
      * Puts a consignment on a load at the next drop position.
      *
      * <p>No {@code ON CONFLICT DO NOTHING} here, deliberately. The unique
-     * constraint on {@code consignment_id} is what stops a consignment being
-     * booked onto two loads, and swallowing that violation would turn
-     * double-booked freight into a silent no-op that the operator reads as
-     * success.
+     * constraint on {@code (consignment_id, leg)} is what stops a consignment
+     * being booked onto two loads for the same leg, and swallowing that
+     * violation would turn double-booked freight into a silent no-op that the
+     * operator reads as success.
+     *
+     * @param leg the load's leg, copied onto the link so that a docket may be
+     *            on one line haul and one delivery load, never two of either
      */
-    public void linkToLoad(UUID tenantId, UUID loadId, UUID consignmentId, int dropSequence) {
+    public void linkToLoad(UUID tenantId, UUID loadId, UUID consignmentId, int dropSequence,
+                           LoadUnit.LtlLeg leg) {
         jdbc.sql("""
-                        INSERT INTO load_consignment (tenant_id, load_id, consignment_id, drop_sequence)
-                        VALUES (:tenantId, :loadId, :consignmentId, :dropSequence)
+                        INSERT INTO load_consignment
+                               (tenant_id, load_id, consignment_id, drop_sequence, leg)
+                        VALUES (:tenantId, :loadId, :consignmentId, :dropSequence, :leg)
                         """)
                 .param("tenantId", tenantId)
                 .param("loadId", loadId)
                 .param("consignmentId", consignmentId)
                 .param("dropSequence", dropSequence)
+                .param("leg", leg.name())
                 .update();
     }
 

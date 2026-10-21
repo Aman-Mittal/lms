@@ -107,6 +107,34 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
 
+/api/v1/hubs/{terminalId}/dockets-awaiting-delivery:
+  parameters:
+    - name: terminalId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The destination hub.
+  get:
+    tags: [Planning]
+    operationId: listDocketsAwaitingDelivery
+    summary: Dockets arrived at a hub and waiting for a delivery load
+    description: |
+      LTL dockets whose line haul has completed at this hub (status
+      ARRIVED_AT_HUB), keyed on the docket number. Put them on a DELIVERY
+      load opened at the hub to take them to their consignees.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of dockets.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
 /api/v1/loads:
   get:
     tags: [Planning]
@@ -192,7 +220,9 @@
     description: |
       Refused with 409 when it would exceed the vehicle's weight or volume, or
       when the material is incompatible with something already aboard. The
-      capacity rule is also a database CHECK constraint.
+      capacity rule is also a database CHECK constraint. A DELIVERY load
+      takes only dockets that have arrived at its hub
+      (`docket-not-arrived-at-hub`, `docket-at-another-hub`).
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:

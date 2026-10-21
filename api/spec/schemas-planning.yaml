@@ -20,7 +20,14 @@ Consignment:
   properties:
     id: { type: string, format: uuid }
     trackingRef: { type: string }
-    status: { type: string }
+    status:
+      type: string
+      description: |
+        PLANNED, ASSIGNED_TO_LOAD, IN_TRANSIT, DELIVERED or CANCELLED. An LTL
+        docket also passes through the hub states: its line haul's trip
+        completing leaves it ARRIVED_AT_HUB, a delivery load from that hub
+        makes it ASSIGNED_TO_DELIVERY, and that load's dispatch makes it
+        OUT_FOR_DELIVERY, before DELIVERED.
     consigneeName: { type: string }
     destinationTerminalCode: { type: string }
     totalDeadWeightKg: { type: number }
@@ -28,7 +35,10 @@ Consignment:
     chargeableWeightKg: { type: number }
     containsHazmat: { type: boolean }
     materialClasses: { type: string }
-    loadNo: { type: string }
+    loadNo:
+      type: string
+      description: The load it is on, or was last on -- for a docket, its
+        delivery load once it has one, otherwise its line haul.
     freightMode:
       type: string
       description: LTL consignments are dockets, numbered `DKT-` rather than
@@ -60,6 +70,9 @@ Load:
     requiresHazmat: { type: boolean }
     consignmentCount: { type: integer }
     awardedVendorName: { type: string }
+    freightMode: { type: string }
+    ltlLeg:
+      $ref: "#/components/schemas/LtlLeg"
 
 OpenLoadRequest:
   type: object
@@ -70,7 +83,20 @@ OpenLoadRequest:
     vehicleId: { type: string, format: uuid }
     freightMode:
       $ref: "#/components/schemas/FreightMode"
+    ltlLeg:
+      $ref: "#/components/schemas/LtlLeg"
   required: [orgUnitId, loadNo, originTerminalId, vehicleId]
+
+LtlLeg:
+  type: string
+  enum: [LINE_HAUL, DELIVERY]
+  default: LINE_HAUL
+  description: |
+    Which leg of a part-load journey a load runs. A LINE_HAUL load
+    consolidates dockets at their origin hub and carries them to their
+    destination hub. A DELIVERY load is opened at a destination hub and
+    takes dockets that have arrived there to their consignees. Only LTL
+    loads may be DELIVERY loads (`delivery-leg-only-for-ltl`).
 
 AssignConsignmentRequest:
   type: object

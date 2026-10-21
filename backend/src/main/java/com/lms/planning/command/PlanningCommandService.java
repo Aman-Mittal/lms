@@ -244,6 +244,20 @@ public class PlanningCommandService {
     @PreAuthorize("hasAuthority('LOAD_CREATE') and @abac.permitsIn('LOAD_CREATE', #orgUnitId)")
     public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId,
                          FreightMode freightMode) {
+        return openLoad(orgUnitId, loadNo, originTerminalId, vehicleId, freightMode,
+                LoadUnit.LtlLeg.LINE_HAUL);
+    }
+
+    /**
+     * Opens an empty load in a stated freight mode and part-load leg.
+     *
+     * <p>A DELIVERY load is opened at a destination hub, and takes only
+     * dockets that have arrived there; see {@link #assignConsignment}.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE') and @abac.permitsIn('LOAD_CREATE', #orgUnitId)")
+    public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId,
+                         FreightMode freightMode, LoadUnit.LtlLeg ltlLeg) {
         UUID tenantId = TenantContext.requireTenantId();
 
         loads.findByLoadNo(tenantId, loadNo).ifPresent(existing -> {
@@ -258,7 +272,7 @@ public class PlanningCommandService {
         return loads.save(LoadUnit.open(UUID.randomUUID(), tenantId, orgUnitId, loadNo,
                 originTerminalId, capacity.vehicleId(), capacity.vehicleType(),
                 capacity.hazmatCertified(), capacity.payloadCapacityKg(),
-                capacity.maxVolumeM3(), freightMode)).id();
+                capacity.maxVolumeM3(), freightMode, ltlLeg)).id();
     }
 
     /**
@@ -267,6 +281,10 @@ public class PlanningCommandService {
      * <p>Three refusals, all hard: capacity (3.4.2), dangerous goods
      * certification (3.2.2 read through to planning), and material
      * compatibility against everything already on the vehicle (3.3).
+     *
+     * <p>A part-load DELIVERY load takes a docket only once its line haul has
+     * arrived ({@code docket-not-arrived-at-hub}), and only at the hub the
+     * load runs from ({@code docket-at-another-hub}).
      */
     @Transactional
     @PreAuthorize("hasAuthority('LOAD_CREATE')")
@@ -278,14 +296,33 @@ public class PlanningCommandService {
         Consignment consignment = consignments.findById(consignmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Consignment", consignmentId));
 
-        if (consignment.status() != Consignment.ConsignmentStatus.PLANNED) {
-            throw new BusinessRuleViolationException("consignment-not-assignable",
-                    "Consignment " + consignment.trackingRef() + " is " + consignment.status()
-                            + " and cannot be added to a load");
+        load.requireSameMode(consignment.freightMode(), consignment.trackingRef());
+
+        // The status a consignment must be in to board, and the one it moves
+        // to, depend on which leg the load runs -- see Consignment's state
+        // machine.
+        Consignment.ConsignmentStatus boarding;
+        Consignment.ConsignmentStatus boarded;
+        if (load.isDelivery()) {
+            boarding = Consignment.ConsignmentStatus.ARRIVED_AT_HUB;
+            boarded = Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY;
+        } else {
+            boarding = Consignment.ConsignmentStatus.PLANNED;
+            boarded = Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
         }
 
-        load.requireSameMode(consignment.freightMode(), consignment.trackingRef());
-        if (consignment.isDocket()) {
+        if (consignment.status() != boarding) {
+            throw new BusinessRuleViolationException(
+                    load.isDelivery() ? "docket-not-arrived-at-hub" : "consignment-not-assignable",
+                    "Consignment " + consignment.trackingRef() + " is " + consignment.status()
+                            + " and cannot be added to " + (load.isDelivery()
+                            ? "a delivery load until its line haul has arrived at the hub"
+                            : "a load"));
+        }
+
+        if (load.isDelivery()) {
+            rejectAwayFromHub(load, consignment);
+        } else if (consignment.isDocket()) {
             rejectOffNetwork(tenantId, load, consignment);
         }
         rejectIncompatibleWithLoad(tenantId, load, consignment);
@@ -298,13 +335,14 @@ public class PlanningCommandService {
                 consignment.containsHazmat());
 
         // The link row goes in before the load is saved. Its unique constraint
-        // on consignment_id is what makes double-booking impossible under
+        // on (consignment_id, leg) is what makes double-booking impossible under
         // concurrency, and a violation must abort before the load's totals have
         // been written.
-        links.linkToLoad(tenantId, loadId, consignmentId, links.nextDropSequence(tenantId, loadId));
+        links.linkToLoad(tenantId, loadId, consignmentId, links.nextDropSequence(tenantId, loadId),
+                load.ltlLeg());
 
         loads.save(updated);
-        consignments.save(consignment.transitionTo(Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD));
+        consignments.save(consignment.transitionTo(boarded));
     }
 
     /** Closes a load to further building and offers it for sourcing. */
@@ -391,6 +429,19 @@ public class PlanningCommandService {
                             "Docket " + docket.trackingRef() + " is bound for another destination "
                                     + "hub than the dockets already on load " + load.loadNo());
                 });
+    }
+
+    /**
+     * The one rule of a delivery load beyond those every load has: it runs
+     * from one hub, so it can only take dockets that are in that hub's yard.
+     * A docket that arrived at another hub is a city away.
+     */
+    private static void rejectAwayFromHub(LoadUnit load, Consignment docket) {
+        if (!load.originTerminalId().equals(docket.destinationHubTerminalId())) {
+            throw new BusinessRuleViolationException("docket-at-another-hub",
+                    "Docket " + docket.trackingRef() + " has arrived at another hub than the one "
+                            + "delivery load " + load.loadNo() + " runs from");
+        }
     }
 
     private static void rejectIncompatible(List<OrderPlanningPort.PlannableLine> members) {

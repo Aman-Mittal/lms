@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import com.lms.order.api.FreightMode;
 import com.lms.planning.command.PlanningCommandService;
+import com.lms.planning.command.domain.LoadUnit;
 import com.lms.planning.query.ConsignmentView;
 import com.lms.planning.query.LoadView;
 import com.lms.planning.query.PlanningQueryService;
@@ -96,6 +97,19 @@ public class PlanningController {
         return planningQueries.listUnassigned(cursor, limit);
     }
 
+    /**
+     * Dockets that have arrived at a hub and are waiting for a delivery load.
+     *
+     * <p>Hangs off the hub because it is that hub's yard being asked about,
+     * and the delivery planner there works one hub at a time.
+     */
+    @GetMapping("/hubs/{terminalId}/dockets-awaiting-delivery")
+    public Slice<ConsignmentView> awaitingDelivery(@PathVariable UUID terminalId,
+                                                   @RequestParam(required = false) String cursor,
+                                                   @RequestParam(required = false) Integer limit) {
+        return planningQueries.listAwaitingDelivery(terminalId, cursor, limit);
+    }
+
     // ----------------------------------------------------------------- loads
 
     @GetMapping("/loads")
@@ -119,7 +133,8 @@ public class PlanningController {
     @PostMapping("/loads")
     public ResponseEntity<IdResponse> openLoad(@Valid @RequestBody OpenLoadRequest request) {
         UUID id = planning.openLoad(request.orgUnitId(), request.loadNo(),
-                request.originTerminalId(), request.vehicleId(), request.freightMode());
+                request.originTerminalId(), request.vehicleId(), request.freightMode(),
+                request.ltlLeg());
         return ResponseEntity.created(URI.create("/api/v1/loads/" + id))
                 .body(new IdResponse(id));
     }
@@ -147,7 +162,13 @@ public class PlanningController {
              * FTL when omitted. An LTL load's origin is the hub its dockets are
              * consolidated at.
              */
-            FreightMode freightMode) {
+            FreightMode freightMode,
+            /**
+             * LINE_HAUL when omitted. A DELIVERY load is part-load only: it is
+             * opened at a destination hub and takes the dockets that have
+             * arrived there out to their consignees.
+             */
+            LoadUnit.LtlLeg ltlLeg) {
     }
 
     public record AssignConsignmentRequest(@NotNull UUID consignmentId) {

@@ -62,9 +62,22 @@ public record LoadUnit(
          * for space the customer of the lorry had already paid for.
          */
         FreightMode freightMode,
+        /**
+         * Which leg of a part-load journey the load runs. A LINE_HAUL load
+         * consolidates dockets at their origin hub and carries them to their
+         * destination hub; a DELIVERY load starts at a destination hub and
+         * drops dockets that have arrived there at their consignees. Always
+         * LINE_HAUL for a full truckload, which is its own delivery.
+         */
+        LtlLeg ltlLeg,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
+
+    /** See {@link #ltlLeg()}. */
+    public enum LtlLeg {
+        LINE_HAUL, DELIVERY
+    }
 
     public enum LoadStatus {
         DRAFT, PLANNED, AWARDED, DISPATCHED, COMPLETED, CANCELLED
@@ -119,10 +132,34 @@ public record LoadUnit(
                                 boolean vehicleHazmatCertified,
                                 BigDecimal capacityWeightKg, BigDecimal capacityVolumeM3,
                                 FreightMode freightMode) {
+        return open(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId, vehicleType,
+                vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3, freightMode,
+                LtlLeg.LINE_HAUL);
+    }
+
+    /**
+     * Opens a load in a stated freight mode and, for a part load, a stated leg.
+     *
+     * <p>A DELIVERY load's origin is the destination hub its dockets have
+     * arrived at. Only a part load has a delivery leg: a full truckload
+     * already ends at its consignee, and a second load for it would be a
+     * second lorry nobody needs.
+     */
+    public static LoadUnit open(UUID id, UUID tenantId, UUID orgUnitId, String loadNo,
+                                UUID originTerminalId, UUID vehicleId, String vehicleType,
+                                boolean vehicleHazmatCertified,
+                                BigDecimal capacityWeightKg, BigDecimal capacityVolumeM3,
+                                FreightMode freightMode, LtlLeg ltlLeg) {
         FreightMode mode = FreightMode.orDefault(freightMode);
         if (!mode.isSupported()) {
             throw new BusinessRuleViolationException("freight-mode-not-supported",
                     "Freight mode " + mode + " is reserved and cannot be planned yet");
+        }
+        LtlLeg leg = ltlLeg == null ? LtlLeg.LINE_HAUL : ltlLeg;
+        if (leg == LtlLeg.DELIVERY && mode != FreightMode.LTL) {
+            throw new BusinessRuleViolationException("delivery-leg-only-for-ltl",
+                    "Load " + loadNo + " is " + mode + "; only a part load has a separate "
+                            + "delivery leg");
         }
         if (capacityWeightKg == null || capacityWeightKg.signum() <= 0) {
             throw new IllegalArgumentException("Load capacity weight must be positive");
@@ -132,7 +169,7 @@ public record LoadUnit(
         }
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
-                BigDecimal.ZERO, BigDecimal.ZERO, false, null, LoadStatus.DRAFT, mode, null,
+                BigDecimal.ZERO, BigDecimal.ZERO, false, null, LoadStatus.DRAFT, mode, leg, null,
                 Instant.now(), Instant.now());
     }
 
@@ -150,6 +187,11 @@ public record LoadUnit(
                             + FreightMode.orDefault(consignmentMode) + " consignment "
                             + trackingRef);
         }
+    }
+
+    /** Whether this load carries dockets from a destination hub to their consignees. */
+    public boolean isDelivery() {
+        return ltlLeg == LtlLeg.DELIVERY;
     }
 
     public BigDecimal remainingWeightKg() {
@@ -218,7 +260,7 @@ public record LoadUnit(
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
                 newWeight, newVolume, requiresHazmat || hazmat, awardedVendorPartnerId, status,
-                freightMode, version, createdAt, Instant.now());
+                freightMode, ltlLeg, version, createdAt, Instant.now());
     }
 
     public LoadUnit transitionTo(LoadStatus target) {
@@ -232,7 +274,7 @@ public record LoadUnit(
         return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
                 vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
                 plannedWeightKg, plannedVolumeM3, requiresHazmat, awardedVendorPartnerId, target,
-                freightMode, version, createdAt, Instant.now());
+                freightMode, ltlLeg, version, createdAt, Instant.now());
     }
 
     /**
@@ -252,7 +294,8 @@ public record LoadUnit(
                 awarded.originTerminalId, awarded.vehicleId, awarded.vehicleType,
                 awarded.vehicleHazmatCertified, awarded.capacityWeightKg, awarded.capacityVolumeM3,
                 awarded.plannedWeightKg, awarded.plannedVolumeM3, awarded.requiresHazmat,
-                vendorPartnerId, awarded.status, awarded.freightMode, awarded.version,
+                vendorPartnerId, awarded.status, awarded.freightMode, awarded.ltlLeg,
+                awarded.version,
                 awarded.createdAt, Instant.now());
     }
 

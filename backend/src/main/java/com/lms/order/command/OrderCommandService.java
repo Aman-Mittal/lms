@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
 import com.lms.order.command.domain.OrderLine;
@@ -47,15 +48,21 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderCommandService {
 
+    /** Master data's name for the functional category of a consolidation hub. */
+    private static final String HUB_CATEGORY = "HUB";
+
     private final SalesOrderRepository orders;
     private final OrderLineRepository lines;
     private final ApplicationEventPublisher events;
+    private final TerminalCategoryPort terminalCategories;
 
     public OrderCommandService(SalesOrderRepository orders, OrderLineRepository lines,
-                               ApplicationEventPublisher events) {
+                               ApplicationEventPublisher events,
+                               TerminalCategoryPort terminalCategories) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
+        this.terminalCategories = terminalCategories;
     }
 
     /** Raises a full-truckload order, which is what an order without a mode has always been. */
@@ -89,10 +96,40 @@ public class OrderCommandService {
                     "An order numbered " + orderNo + " already exists");
         });
 
-        return orders.save(SalesOrder.raise(UUID.randomUUID(), tenantId, orgUnitId,
+        SalesOrder order = SalesOrder.raise(UUID.randomUUID(), tenantId, orgUnitId,
                 customerPartnerId, orderNo, originTerminalId,
                 requestedPickupAt, requestedDeliveryAt, source, freightMode,
-                originHubTerminalId, destinationHubTerminalId)).id();
+                originHubTerminalId, destinationHubTerminalId);
+
+        if (order.freightMode() == FreightMode.LTL) {
+            requireHub(orderNo, "origin", originHubTerminalId);
+            requireHub(orderNo, "destination", destinationHubTerminalId);
+        }
+
+        return orders.save(order).id();
+    }
+
+    /**
+     * A part load's hubs must be terminals registered as hubs.
+     *
+     * <p>Checked after the aggregate has accepted the shape of the order, so
+     * that a booking with no hubs at all is refused for that, not for naming
+     * one that is not a hub. Asked of master data rather than enforced by a
+     * foreign key: the database can say a terminal exists, not what kind of
+     * site it is. A customer's yard named as a hub would consolidate dockets at
+     * a place no line haul calls, and rate them on a zone pair that means
+     * nothing. A terminal the tenant cannot see is refused the same way --
+     * from here it is indistinguishable from one that is not a hub.
+     */
+    private void requireHub(String orderNo, String which, UUID terminalId) {
+        String category = terminalCategories.functionalCategoryOf(terminalId).orElse(null);
+        if (!HUB_CATEGORY.equals(category)) {
+            throw new BusinessRuleViolationException("ltl-hub-not-a-hub",
+                    "Part-load order " + orderNo + " names terminal " + terminalId + " as its "
+                            + which + " hub, but it is "
+                            + (category == null ? "not a known terminal" : "a " + category)
+                            + " rather than a HUB");
+        }
     }
 
     /**

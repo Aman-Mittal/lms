@@ -439,6 +439,36 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a hub's dockets awaiting delivery page by docket number from the index")
+    void docketsAwaitingDeliveryAtAHub() {
+        // The delivery planner's work queue. Leading with the hub and the
+        // status keeps dockets still on the road -- most of them -- out of
+        // the seek altogether.
+        assertIndexed("""
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND destination_hub_terminal_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'ARRIVED_AT_HUB'
+                   AND tracking_ref > 'DKT-0000000000'
+                 ORDER BY tracking_ref
+                 LIMIT 50
+                """, "consignment");
+    }
+
+    @Test
+    @DisplayName("the load a consignment is on now is found from its links by index")
+    void currentLoadOfAConsignment() {
+        // A docket may be linked to a line haul and a delivery load; every
+        // consignment read picks one of at most two links this way.
+        assertIndexed("""
+                SELECT load_id FROM load_consignment
+                 WHERE consignment_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY (leg = 'DELIVERY') DESC
+                 LIMIT 1
+                """, "load_consignment");
+    }
+
+    @Test
     @DisplayName("the docket receivable listing pages by docket number without a sort")
     void docketReceivablesByDocketNo() {
         assertIndexed("""
