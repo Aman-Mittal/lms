@@ -30,7 +30,6 @@ import com.lms.warehouse.command.domain.OutboundLine;
 import com.lms.warehouse.command.domain.OutboundOrder;
 import com.lms.warehouse.command.domain.Sku;
 import com.lms.warehouse.events.HandlingUnitDispatched;
-import com.lms.warehouse.events.PickShortfallRecorded;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -42,7 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Picking takes what the bins hold and no more. A line that cannot be
  * filled is picked short, the shortfall is published, and the order carries
  * on with what was found -- holding a whole shipment for one missing SKU is a
- * decision for whoever reads the shortfall, not for the picker.
+ * decision for whoever reads the shortfall, not for the picker. The remainder
+ * stays owed as a back-order, which a later pick fills into a further
+ * handling unit.
  */
 @Service
 public class OutboundCommandService {
@@ -53,18 +54,22 @@ public class OutboundCommandService {
     private final SkuRepository skus;
     private final StockLedger ledger;
     private final Warehouses warehouses;
+    private final OrderPicker picker;
+    private final WaveMembers waveMembers;
     private final ApplicationEventPublisher events;
 
     public OutboundCommandService(OutboundOrderRepository orders, OutboundLineRepository lines,
                                   HandlingUnitRepository handlingUnits, SkuRepository skus,
-                                  StockLedger ledger, Warehouses warehouses,
-                                  ApplicationEventPublisher events) {
+                                  StockLedger ledger, Warehouses warehouses, OrderPicker picker,
+                                  WaveMembers waveMembers, ApplicationEventPublisher events) {
         this.orders = orders;
         this.lines = lines;
         this.handlingUnits = handlingUnits;
         this.skus = skus;
         this.ledger = ledger;
         this.warehouses = warehouses;
+        this.picker = picker;
+        this.waveMembers = waveMembers;
         this.events = events;
     }
 
@@ -100,42 +105,25 @@ public class OutboundCommandService {
     }
 
     /**
-     * Picks every line from the bins, by bin code then lot, into the order's
-     * outbound staging.
+     * Picks what the order is still owed from the bins, by bin code then lot,
+     * into its outbound staging: every line on a first pick, the back-order
+     * on a later one.
+     *
+     * <p>Refused while the order waits in a released wave -- the wave will
+     * pick it -- and, for an order already picked, when no bin holds anything
+     * it is owed.
      */
     @Transactional
     @PreAuthorize("hasAuthority('WAREHOUSE_OPERATE')")
     public void pick(UUID orderId) {
-        UUID tenantId = TenantContext.requireTenantId();
         OutboundOrder order = requireOrder(orderId);
-        Instant now = Instant.now();
-        String actor = Warehouses.currentActor();
-
-        boolean shortfall = false;
-        List<PickShortfallRecorded> shortfalls = new ArrayList<>();
-        for (OutboundLine line : lines.findByOrderIdOrderByLineNo(orderId)) {
-            int remaining = line.orderedQty();
-            for (StockLedger.Holding holding : ledger.pickableStock(order.warehouseId(),
-                    line.skuId())) {
-                if (remaining == 0) {
-                    break;
-                }
-                int take = Math.min(remaining, holding.onHand());
-                ledger.transfer(order.warehouseId(), MovementType.PICK, LocationType.BIN,
-                        holding.locationId(), LocationType.OUTBOUND, orderId, line.skuId(),
-                        holding.lotNo(), take, orderId, actor, now);
-                remaining -= take;
-            }
-            OutboundLine picked = lines.save(line.withPicked(line.orderedQty() - remaining));
-            if (picked.shortQty() > 0) {
-                shortfall = true;
-                shortfalls.add(new PickShortfallRecorded(tenantId, orderId, order.orderNo(),
-                        order.warehouseId(), picked.lineNo(), picked.skuId(),
-                        picked.orderedQty(), picked.pickedQty(), picked.shortQty(), now));
-            }
-        }
-        orders.save(order.picked(shortfall, now));
-        shortfalls.forEach(events::publishEvent);
+        order.requirePickable();
+        waveMembers.awaitingWave(orderId).ifPresent(waveNo -> {
+            throw new BusinessRuleViolationException("outbound-order-in-wave",
+                    "Outbound order " + order.orderNo() + " is waiting in wave " + waveNo
+                            + "; pick the wave instead");
+        });
+        picker.pick(order.warehouseId(), List.of(order), null, true);
     }
 
     /** Packs everything picked for the order into one new handling unit. */
@@ -212,7 +200,9 @@ public class OutboundCommandService {
         String shipTo = null;
         if (unit.outboundOrderId() != null) {
             OutboundOrder order = requireOrder(unit.outboundOrderId());
-            orders.save(order.dispatched(now));
+            boolean backOrdered = lines.findByOrderIdOrderByLineNo(order.id()).stream()
+                    .anyMatch(line -> line.shortQty() > 0);
+            orders.save(order.dispatched(backOrdered, now));
             shipTo = order.shipTo();
         }
         events.publishEvent(new HandlingUnitDispatched(tenantId, dispatched.id(),
