@@ -1,0 +1,100 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Consignment:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    trackingRef: { type: string }
+    status: { type: string }
+    consigneeName: { type: string }
+    destinationTerminalCode: { type: string }
+    totalDeadWeightKg: { type: number }
+    totalVolumeM3: { type: number }
+    chargeableWeightKg: { type: number }
+    containsHazmat: { type: boolean }
+    materialClasses: { type: string }
+    loadNo: { type: string }
+    freightMode:
+      type: string
+      description: LTL consignments are dockets, numbered `DKT-` rather than
+        `LR-`, and carry the hub pair below.
+    originHubCode: { type: string }
+    destinationHubCode: { type: string }
+
+Load:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    loadNo: { type: string }
+    status: { type: string }
+    originTerminalCode: { type: string }
+    vehicleRegistrationNo: { type: string }
+    vehicleType: { type: string }
+    capacityWeightKg: { type: number }
+    plannedWeightKg: { type: number }
+    weightUtilisationPct: { type: number }
+    capacityVolumeM3: { type: number }
+    plannedVolumeM3: { type: number }
+    requiresHazmat: { type: boolean }
+    consignmentCount: { type: integer }
+    awardedVendorName: { type: string }
+
+OpenLoadRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    loadNo: { type: string }
+    originTerminalId: { type: string, format: uuid }
+    vehicleId: { type: string, format: uuid }
+    freightMode:
+      $ref: "#/components/schemas/FreightMode"
+  required: [orgUnitId, loadNo, originTerminalId, vehicleId]
+
+AssignConsignmentRequest:
+  type: object
+  properties:
+    consignmentId: { type: string, format: uuid }
+  required: [consignmentId]
+
+LoadSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Load" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ConsignmentSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Consignment" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]

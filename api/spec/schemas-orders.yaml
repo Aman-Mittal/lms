@@ -1,0 +1,113 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Order:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    orderNo: { type: string }
+    status: { type: string }
+    customerPartnerId: { type: string, format: uuid }
+    customerName: { type: string }
+    originTerminalCode: { type: string }
+    totalDeadWeightKg: { type: number }
+    totalChargeableWeightKg:
+      type: number
+      description: The greater of dead and volumetric weight, which is what
+        freight is billed on.
+    lineCount: { type: integer }
+    containsHazmat: { type: boolean }
+    requestedPickupAt: { type: string, format: date-time }
+    requestedDeliveryAt: { type: string, format: date-time }
+    createdAt: { type: string, format: date-time }
+
+OrderLine:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    lineNo: { type: integer }
+    materialCode: { type: string }
+    materialDescription: { type: string }
+    materialClass: { type: string }
+    hazmatUnCode: { type: string }
+    quantity: { type: number }
+    uom: { type: string }
+    deadWeightKg: { type: number }
+    volumetricWeightKg: { type: number }
+    chargeableWeightKg: { type: number }
+    consigneePartnerId: { type: string, format: uuid }
+    destinationTerminalCode: { type: string }
+
+RaiseOrderRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    customerPartnerId: { type: string, format: uuid }
+    orderNo: { type: string }
+    originTerminalId: { type: string, format: uuid }
+    requestedPickupAt: { type: string, format: date-time }
+    requestedDeliveryAt: { type: string, format: date-time }
+    source: { type: string, enum: [MANUAL, API, EDI, PORTAL] }
+    freightMode:
+      $ref: "#/components/schemas/FreightMode"
+    originHubTerminalId:
+      type: string
+      format: uuid
+      description: Required for LTL, where each consignment becomes a docket
+        consolidated at this hub. Refused for FTL.
+    destinationHubTerminalId:
+      type: string
+      format: uuid
+      description: Required for LTL, refused for FTL.
+  required: [orgUnitId, customerPartnerId, orderNo, originTerminalId]
+
+AddOrderLineRequest:
+  type: object
+  description: |
+    The three dimensions are optional together. Volumetric weight is only
+    meaningful with all three, and a partly dimensioned line would be billed
+    on dead weight while looking as though it had been measured.
+  properties:
+    lineNo: { type: integer, minimum: 1 }
+    materialCode: { type: string }
+    materialDescription: { type: string }
+    materialClass: { type: string }
+    hazmatUnCode: { type: string }
+    quantity: { type: number, exclusiveMinimum: 0 }
+    uom: { type: string }
+    deadWeightKg: { type: number, exclusiveMinimum: 0 }
+    lengthM: { type: number }
+    widthM: { type: number }
+    heightM: { type: number }
+    volumetricDivisor: { type: number }
+    consigneePartnerId: { type: string, format: uuid }
+    destinationTerminalId: { type: string, format: uuid }
+  required: [lineNo, materialCode, materialClass, quantity, uom, deadWeightKg, destinationTerminalId]
+
+OrderSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Order" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]

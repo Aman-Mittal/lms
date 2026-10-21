@@ -1,0 +1,155 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+FreightBill:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    billNo: { type: string }
+    status:
+      type: string
+      enum: [DRAFT, UNPRICED, APPROVED_FOR_PAYMENT, DISPUTED, CANCELLED]
+    currency: { type: string }
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    loadId: { type: string, format: uuid }
+    loadNo: { type: string }
+    vendorName: { type: string }
+    tariffCode:
+      type: string
+      description: The exact rate version this bill was priced against, kept
+        so a dispute months later is argued from that card rather than from
+        today's numbers.
+    pricedOn:
+      type: string
+      format: date
+      description: The dispatch date, which chose the tariff version.
+    chargeableWeightKg: { type: number }
+    detentionHours: { type: number }
+    dropCount: { type: integer }
+    baseFreight: { type: number }
+    detentionAmount: { type: number }
+    multiDropAmount: { type: number }
+    fuelSurchargeAmount: { type: number }
+    computedAmount: { type: number }
+    claimedAmount: { type: number }
+    varianceAmount:
+      type: number
+      description: Claimed less computed. Signed, so an underclaim stays
+        visible as one.
+    variancePct: { type: number }
+    resolution: { type: string }
+    matchedAt: { type: string, format: date-time }
+    settlementHeldBy:
+      type: string
+      description: Open exception tickets freezing this bill's settlement,
+        comma separated. Null when nothing is holding it. While set,
+        matching and dispute settlement are refused with
+        `settlement-on-hold`.
+    createdAt: { type: string, format: date-time }
+
+FreightBillLine:
+  type: object
+  properties:
+    lineNo: { type: integer }
+    chargeType:
+      type: string
+      enum: [BASE_FREIGHT, MINIMUM_CHARGE_UPLIFT, DETENTION, ADDITIONAL_DROP,
+             FUEL_SURCHARGE]
+    narrative: { type: string }
+    quantity: { type: number }
+    unit: { type: string }
+    rate: { type: number }
+    amount: { type: number }
+
+MatchRequest:
+  type: object
+  properties:
+    claimedAmount: { type: number, minimum: 0 }
+  required: [claimedAmount]
+
+MatchResponse:
+  type: object
+  properties:
+    status: { type: string, enum: [APPROVED_FOR_PAYMENT, DISPUTED] }
+  required: [status]
+
+ResolveDisputeRequest:
+  type: object
+  properties:
+    reason:
+      type: string
+      description: Mandatory. An approval with no explanation is
+        indistinguishable from one nobody looked at.
+  required: [reason]
+
+PublishTariffRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    code: { type: string }
+    vendorPartnerId: { type: string, format: uuid }
+    originTerminalId: { type: string, format: uuid }
+    destinationTerminalId: { type: string, format: uuid }
+    vehicleType: { type: string }
+    currency: { type: string, default: INR }
+    effectiveFrom:
+      type: string
+      format: date
+      description: Publishing closes the incumbent version the day before.
+    detentionFreeHours: { type: number, minimum: 0 }
+    detentionHourlyRate: { type: number, minimum: 0 }
+    additionalDropFee: { type: number, minimum: 0 }
+    minimumCharge: { type: number, minimum: 0 }
+  required: [orgUnitId, code, vendorPartnerId, originTerminalId,
+             destinationTerminalId, vehicleType, effectiveFrom]
+
+AddSlabRequest:
+  type: object
+  description: |
+    Bands are half-open. `maxWeightKg` is the first weight the band does not
+    cover, and omitting it opens the top band to any weight above the floor.
+  properties:
+    minWeightKg: { type: number, minimum: 0 }
+    maxWeightKg: { type: number }
+    rateBasis: { type: string, enum: [PER_KG, FLAT] }
+    rateAmount: { type: number, minimum: 0 }
+  required: [minWeightKg, rateBasis, rateAmount]
+
+FuelSurchargeRequest:
+  type: object
+  properties:
+    month:
+      type: string
+      format: date
+      description: Any day in the month; normalised to the first.
+    surchargePct: { type: number }
+  required: [month, surchargePct]
+
+FreightBillSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/FreightBill" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]

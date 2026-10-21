@@ -1,0 +1,119 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Allocation:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    loadId: { type: string, format: uuid }
+    loadNo: { type: string }
+    strategy: { type: string, enum: [CONTRACTUAL, ROUND_ROBIN] }
+    status: { type: string }
+    awardedVendorName: { type: string }
+    currentRank: { type: integer }
+    offerCount: { type: integer }
+    createdAt: { type: string, format: date-time }
+
+Offer:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    vendorPartnerId: { type: string, format: uuid }
+    vendorName: { type: string }
+    rankNo: { type: integer }
+    status: { type: string }
+    offeredAt: { type: string, format: date-time }
+    respondByAt: { type: string, format: date-time }
+    respondedAt: { type: string, format: date-time }
+
+AllocateRequest:
+  type: object
+  properties:
+    loadId: { type: string, format: uuid }
+  required: [loadId]
+
+VendorResponseRequest:
+  type: object
+  description: |
+    The vendor is named even though the caller is authenticated. Most
+    rejections reach the system by telephone, entered by a dispatcher acting
+    on the vendor's behalf -- who is not the vendor. The service checks the
+    offer is actually held by the vendor named.
+  properties:
+    vendorPartnerId: { type: string, format: uuid }
+  required: [vendorPartnerId]
+
+AllocationSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Allocation" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+RoutingGuide:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    originTerminalCode: { type: string }
+    destinationTerminalCode: { type: string }
+    vehicleType: { type: string }
+    strategy: { type: string, enum: [CONTRACTUAL, ROUND_ROBIN] }
+    active: { type: boolean }
+    entries:
+      type: array
+      description: Vendors in rank order.
+      items:
+        type: object
+        properties:
+          rankNo: { type: integer }
+          vendorPartnerId: { type: string, format: uuid }
+          vendorName: { type: string }
+          responseSlaMinutes: { type: integer }
+          agreedRate: { type: number }
+
+DefineGuideRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    originTerminalId: { type: string, format: uuid }
+    destinationTerminalId: { type: string, format: uuid }
+    vehicleType: { type: string }
+    strategy:
+      type: string
+      enum: [CONTRACTUAL, ROUND_ROBIN]
+      description: Defaults to CONTRACTUAL.
+  required: [orgUnitId, originTerminalId, destinationTerminalId, vehicleType]
+
+AddVendorRequest:
+  type: object
+  properties:
+    vendorPartnerId: { type: string, format: uuid }
+    rankNo: { type: integer, minimum: 1 }
+    responseSlaMinutes:
+      type: integer
+      minimum: 1
+      description: How long the vendor has to answer an offer before it
+        cascades to the next rank.
+    agreedRate: { type: number, minimum: 0 }
+  required: [vendorPartnerId, rankNo, responseSlaMinutes]
