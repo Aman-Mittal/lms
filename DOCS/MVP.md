@@ -32,18 +32,25 @@ build time.
 ### One measured deployment check
 
 This is a **point-in-time local measurement**, not a production figure and not
-a benchmark. On 2026-10-21 the container image built from `main` at `c7fe1d9`
-was run with `--memory=512m --cpus=0.1` (Render's free web service limits)
-against a fresh PostgreSQL, using the blueprint's environment:
+a benchmark. On 2026-10-21 the container image built from `main` at `9649b05`
+(every feature on `main` at the time, all 28 migrations) was run with
+`--memory=512m --cpus=0.1` (Render's free web service limits) against a fresh
+PostgreSQL, using the blueprint's environment:
 
 | Measurement | Value |
 |---|---|
-| Ready, including all 21 migrations (the number then on main) | 15 s |
-| Resident memory, idle | ~82 MiB of 512 MiB |
+| Image size | 123.5 MB |
+| Ready from an empty database, including all 28 migrations and the demo seed | 22 s |
+| Resident memory, idle | ~87 MiB of 512 MiB |
 | `deploy/smoke.sh` | all checks green |
-| 200 signed-in requests, 10 concurrent | all 200 OK; p50 195 ms, p95 663 ms |
+| 240 signed-in list requests, 10 concurrent, across twelve endpoints including the part-load, rail and access-policy ones | all 200 OK; p50 194 ms, p95 492 ms |
+| Resident memory after that load | ~90 MiB |
 | Out-of-memory kills | none |
 | Database size afterwards | 12 MB |
+
+An earlier run of the same check on `c7fe1d9` (21 migrations) gave 15 s to
+ready, ~82 MiB idle and a p95 of 663 ms; the difference is the seven further
+migrations and the heavier endpoint mix, not a regression to chase.
 
 Nothing else in this document is a timing or memory figure. Earlier versions
 of this file quoted a 0.643 s native start, a 146 MB image and JVM comparisons;
