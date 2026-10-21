@@ -40,5 +40,5 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Warehousing",
-        allowedDependencies = {"masterdata::api"})
+        allowedDependencies = {"masterdata::api", "identity::access"})
 package com.lms.warehouse;

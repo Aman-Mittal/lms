@@ -83,7 +83,8 @@ public class InboundCommandService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('WAREHOUSE_OPERATE')")
+    @PreAuthorize("hasAuthority('WAREHOUSE_OPERATE')"
+            + " and @abac.permits('WAREHOUSE_OPERATE', 'TERMINAL', #warehouseId)")
     public UUID createAsn(UUID warehouseId, String asnNo, UUID supplierPartnerId,
                           List<ExpectedLine> lines) {
         warehouses.requireWarehouse(warehouseId);
