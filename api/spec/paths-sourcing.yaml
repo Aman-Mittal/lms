@@ -1,0 +1,268 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/allocations:
+  get:
+    tags: [Sourcing]
+    operationId: listAllocations
+    summary: A page of allocations
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of allocations.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AllocationSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Sourcing]
+    operationId: allocateLoad
+    summary: Offer a load to vendors
+    description: |
+      Walks the routing guide in rank order. An exhausted cascade is terminal
+      and needs a human: a load nobody will take is a commercial problem, and
+      re-offering automatically would spin against unwilling vendors while the
+      freight sits.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AllocateRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/allocations/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Sourcing]
+    operationId: getAllocation
+    summary: One allocation
+    responses:
+      "200":
+        description: The allocation.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Allocation" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/allocations/{id}/offers:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Sourcing]
+    operationId: listOffers
+    summary: Every offer made under an allocation
+    responses:
+      "200":
+        description: Offers in rank order.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/Offer" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/allocations/{id}/accept:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Sourcing]
+    operationId: acceptOffer
+    summary: A vendor takes the load
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/VendorResponseRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/allocations/{id}/reject:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Sourcing]
+    operationId: rejectOffer
+    summary: A vendor declines, cascading to the next rank
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/VendorResponseRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/allocations/{id}/cancel:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Sourcing]
+    operationId: cancelAllocation
+    summary: Abandon the allocation
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/routing-guides:
+  post:
+    tags: [Sourcing]
+    operationId: defineRoutingGuide
+    summary: Open a routing guide for a lane and vehicle type
+    description: |
+      Requires `ROUTING_GUIDE_MANAGE`. One guide per lane and vehicle type,
+      retired ones included (`routing-guide-exists`): old allocations point at
+      the guide they went out under, so a lane's vendors are changed by
+      editing its entries rather than by writing a second guide.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/DefineGuideRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/routing-guides/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Sourcing]
+    operationId: getRoutingGuide
+    summary: A guide and its vendors in rank order
+    responses:
+      "200":
+        description: The guide.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoutingGuide" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/routing-guides/{id}/vendors:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Sourcing]
+    operationId: addRoutingGuideVendor
+    summary: Put a vendor on the guide at a rank
+    description: |
+      Requires `ROUTING_GUIDE_MANAGE`. Refused for a vendor that is not ACTIVE
+      (`vendor-not-active`), a rank already held (`rank-taken`), a vendor
+      already on the guide (`vendor-already-ranked`) or a retired guide.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AddVendorRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/routing-guides/{id}/retire:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Sourcing]
+    operationId: retireRoutingGuide
+    summary: Stop the guide being used for new allocations
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }

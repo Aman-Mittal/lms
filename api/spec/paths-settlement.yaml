@@ -1,0 +1,222 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/freight-bills:
+  get:
+    tags: [Settlement]
+    operationId: listFreightBills
+    summary: A page of freight bills
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of bills.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FreightBillSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/freight-bills/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Settlement]
+    operationId: getFreightBill
+    summary: One bill
+    description: |
+      There is no endpoint to create one. A bill is raised when a trip
+      completes, because pricing depends on the dispatch date and the origin
+      dwell -- facts the movement produces, not facts a caller supplies.
+    responses:
+      "200":
+        description: The bill.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FreightBill" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/freight-bills/{id}/lines:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Settlement]
+    operationId: getFreightBillLines
+    summary: The arithmetic behind the total
+    description: |
+      A bill carrying only a total is unarguable. These lines are the entire
+      content of the conversation that follows a dispute.
+    responses:
+      "200":
+        description: Lines in order.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/FreightBillLine" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/freight-bills/{id}/match:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Settlement]
+    operationId: matchFreightBill
+    summary: Record the vendor's invoice and settle it
+    description: |
+      Approved when the difference is within the greater of a percentage and
+      an absolute floor; disputed otherwise. An underclaim beyond tolerance is
+      disputed too -- it means the two sides' understanding of the rate has
+      diverged, and next month it points the other way.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MatchRequest" }
+    responses:
+      "200":
+        description: What the comparison settled to.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MatchResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/freight-bills/{id}/resolve:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Settlement]
+    operationId: resolveDispute
+    summary: Settle a dispute in the vendor's favour, on the record
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ResolveDisputeRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/tariffs:
+  post:
+    tags: [Settlement]
+    operationId: publishTariff
+    summary: Publish a rate card version
+    description: |
+      POST only, and that is the contract rather than an omission. A rate card
+      is a version: correcting one means publishing a successor, which closes
+      the incumbent. The database refuses an edit by trigger, so the API does
+      not offer one.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PublishTariffRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/tariffs/{id}/slabs:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Settlement]
+    operationId: addTariffSlab
+    summary: Add a weight band to an open rate card
+    description: |
+      Refused once the card has been superseded: adding a band to a closed
+      version would change what already-priced movements cost without touching
+      a single bill.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AddSlabRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/tariffs/fuel-surcharges:
+  post:
+    tags: [Settlement]
+    operationId: recordFuelSurcharge
+    summary: Record the fuel surcharge for a month
+    description: |
+      A stored figure rather than a price feed. An external dependency on the
+      pricing path means invoices that cannot be raised because somebody
+      else's service is down.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/FuelSurchargeRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
