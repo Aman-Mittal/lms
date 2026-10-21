@@ -1,0 +1,49 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+cursor:
+  name: cursor
+  in: query
+  required: false
+  schema: { type: string }
+  description: The `nextCursor` of the previous page. Omit for the first.
+
+limit:
+  name: limit
+  in: query
+  required: false
+  schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+  description: Page size. Clamped to 200 whatever is asked for.
+
+status:
+  name: status
+  in: query
+  required: false
+  schema: { type: string }
+  description: Restricts the listing to one status.
+
+idempotencyKey:
+  name: Idempotency-Key
+  in: header
+  required: false
+  schema: { type: string, maxLength: 255 }
+  description: |
+    Opt-in deduplication. A retry with the same key returns the original
+    response and `Idempotent-Replay: true` rather than acting twice. Reusing
+    a key for a *different* request is refused with 409: that is a client
+    defect, and answering it with the earlier response would hide the defect
+    while returning an answer to a question nobody asked.
