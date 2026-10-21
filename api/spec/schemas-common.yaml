@@ -1,0 +1,93 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Problem:
+  type: object
+  description: RFC 7807. Branch on `code`, never on `detail`.
+  properties:
+    type: { type: string, format: uri }
+    title: { type: string }
+    status: { type: integer }
+    detail: { type: string }
+    code:
+      type: string
+      description: Stable machine-readable identifier, e.g. `dispatch-blocked`.
+      examples: [dispatch-blocked, not-found, access-denied]
+    errors:
+      type: object
+      additionalProperties: { type: string }
+      description: Present on validation failures; field name to message.
+  required: [status, code]
+
+IdResponse:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+  required: [id]
+
+ComplianceDocument:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    ownerType: { type: string, enum: [PARTNER, VEHICLE, DRIVER, TRIP] }
+    ownerId: { type: string, format: uuid }
+    ownerLabel:
+      type: string
+      description: Registration, driver name or legal name, so one expiry
+        screen can show all three together.
+    documentType: { type: string }
+    documentNo: { type: string }
+    issuingAuthority: { type: string }
+    issuedOn: { type: string, format: date }
+    expiresOn: { type: string, format: date }
+    daysToExpiry:
+      type: integer
+      description: Negative once lapsed. "Expired 40 days ago" and "expires
+        today" are different situations and are not flattened together.
+    expired: { type: boolean }
+
+AttachDocumentRequest:
+  type: object
+  properties:
+    documentType: { type: string }
+    documentNo: { type: string }
+    issuingAuthority: { type: string }
+    issuedOn: { type: string, format: date }
+    expiresOn:
+      type: string
+      format: date
+      description: Omit for a document that never expires. Not defaulted to a
+        far-future date -- the expiry index is partial on this being present.
+  required: [documentType, documentNo]
+
+FreightMode:
+  type: string
+  enum: [FTL, LTL, RAIL, MILK_RUN]
+  default: FTL
+  description: |
+    FTL when omitted, which is what every order and load was before freight
+    modes existed. RAIL and MILK_RUN are reserved names and are refused with
+    `freight-mode-not-supported`.
+
+MilestoneRequest:
+  type: object
+  description: |
+    When it happened. Optional everywhere -- a gate clerk recording an event
+    as it happens should not have to send a clock reading, and a back-office
+    correction entered an hour later must be able to.
+  properties:
+    at: { type: string, format: date-time }

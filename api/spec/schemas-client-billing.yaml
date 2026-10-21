@@ -1,0 +1,242 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+ClientContractServiceRate:
+  type: object
+  description: The price of one value-added service under a contract version.
+  properties:
+    serviceCode: { type: string }
+    unit: { type: string }
+    rate: { type: number, minimum: 0 }
+  required: [serviceCode, unit, rate]
+
+ClientContract:
+  type: object
+  description: |
+    One version of what a client pays. Immutable once published; a
+    correction is a successor version, which closes this one the day
+    before it starts.
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    clientPartnerId: { type: string, format: uuid }
+    currency: { type: string }
+    effectiveFrom: { type: string, format: date }
+    effectiveTo:
+      type: string
+      format: date
+      description: Inclusive. Null while this is the version in force.
+    transportRatePerKg: { type: number }
+    transportMinimumCharge: { type: number }
+    storageRatePerPalletDay: { type: number }
+    handlingInRatePerPallet: { type: number }
+    handlingOutRatePerPallet: { type: number }
+    valueAddedServices:
+      type: array
+      items: { $ref: "#/components/schemas/ClientContractServiceRate" }
+
+PublishClientContractRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    code: { type: string }
+    clientPartnerId:
+      type: string
+      format: uuid
+      description: A business partner of type CUSTOMER.
+    currency: { type: string, default: INR }
+    effectiveFrom:
+      type: string
+      format: date
+      description: Publishing closes the incumbent version the day before.
+    transportRatePerKg: { type: number, minimum: 0 }
+    transportMinimumCharge: { type: number, minimum: 0 }
+    storageRatePerPalletDay: { type: number, minimum: 0 }
+    handlingInRatePerPallet: { type: number, minimum: 0 }
+    handlingOutRatePerPallet: { type: number, minimum: 0 }
+    valueAddedServices:
+      type: array
+      description: Published with the version and immutable with it.
+      items: { $ref: "#/components/schemas/ClientContractServiceRate" }
+  required: [orgUnitId, code, clientPartnerId, effectiveFrom]
+
+ClientPortalUserRequest:
+  type: object
+  properties:
+    userId: { type: string, format: uuid }
+  required: [userId]
+
+ClientServiceType:
+  type: string
+  enum: [TRANSPORT, STORAGE, HANDLING_IN, HANDLING_OUT, VALUE_ADDED]
+  description: |
+    TRANSPORT is captured from completed trips and cannot be recorded by
+    hand. STORAGE is in pallet-days, HANDLING_IN and HANDLING_OUT in
+    pallets, VALUE_ADDED in the unit of the contract's rate for the
+    service code.
+
+ServiceUsageRequest:
+  type: object
+  properties:
+    serviceType: { $ref: "#/components/schemas/ClientServiceType" }
+    serviceCode:
+      type: string
+      description: Required for VALUE_ADDED, refused for anything else.
+    quantity: { type: number, exclusiveMinimum: 0 }
+    occurredOn: { type: string, format: date }
+    reference: { type: string }
+    sourceKey:
+      type: string
+      description: |
+        The caller's own identifier for this usage -- a warehouse ledger
+        entry, a storage snapshot. A second call with the same key returns
+        the charge the first one created.
+  required: [serviceType, quantity, occurredOn, sourceKey]
+
+ClientBillingRunRequest:
+  type: object
+  properties:
+    period:
+      type: string
+      format: date
+      description: Any day of the month to bill; normalised to the first.
+  required: [period]
+
+ClientCharge:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    clientPartnerId: { type: string, format: uuid }
+    serviceType: { $ref: "#/components/schemas/ClientServiceType" }
+    serviceCode: { type: string }
+    quantity: { type: number }
+    unit: { type: string }
+    occurredOn: { type: string, format: date }
+    billingPeriod:
+      type: string
+      format: date
+      description: The first day of the month this charge is invoiced in.
+    late:
+      type: boolean
+      description: True when the charge arrived after its own month was
+        billed and was moved to the next open month.
+    reference: { type: string }
+    sourceKey: { type: string }
+    tripId: { type: string, format: uuid }
+    invoiceId: { type: string, format: uuid }
+
+ClientChargeSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ClientCharge" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ClientInvoice:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    clientPartnerId: { type: string, format: uuid }
+    clientCode: { type: string }
+    clientName: { type: string }
+    periodStart: { type: string, format: date }
+    periodEnd: { type: string, format: date }
+    status: { type: string, enum: [ISSUED] }
+    currency: { type: string }
+    totalAmount: { type: number }
+    lineCount: { type: integer }
+    issuedAt: { type: string, format: date-time }
+
+ClientInvoiceSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ClientInvoice" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ClientInvoiceLine:
+  type: object
+  properties:
+    lineNo: { type: integer }
+    serviceType: { $ref: "#/components/schemas/ClientServiceType" }
+    narrative: { type: string }
+    quantity: { type: number }
+    unit: { type: string }
+    rate: { type: number }
+    amount: { type: number }
+    chargeId: { type: string, format: uuid }
+    occurredOn:
+      type: string
+      format: date
+      description: The day that chose the contract version.
+    contractCode:
+      type: string
+      description: The contract version this line was priced against.
+
+ClientMargin:
+  type: object
+  properties:
+    clientPartnerId: { type: string, format: uuid }
+    clientCode: { type: string }
+    clientName: { type: string }
+    invoiceId: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    periodStart: { type: string, format: date }
+    currency: { type: string }
+    receivable: { type: number }
+    transportReceivable: { type: number }
+    warehouseReceivable: { type: number }
+    carrierPayable:
+      type: number
+      description: The carriers' computed freight for the same movements,
+        apportioned by the client's share of each load's chargeable weight.
+    margin: { type: number }
+    marginPct: { type: number }
+    movements: { type: integer }
+    unpricedMovements:
+      type: integer
+      description: Movements whose carrier bill is missing or unpriced, so
+        whose cost is counted as zero and the margin overstated.
+
+ClientMarginSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ClientMargin" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
