@@ -108,8 +108,8 @@ public class ExceptionCommandService {
         ExceptionTicket.Position position =
                 capturePosition(trip.vehicleId(), reportedLat, reportedLon, now);
 
-        return open(tenantId, trip, category, description, ExceptionTicket.Source.MANUAL, null,
-                position, currentActor(), now);
+        return open(tenantId, trip, null, category, description, ExceptionTicket.Source.MANUAL,
+                null, position, currentActor(), now);
     }
 
     /**
@@ -149,9 +149,45 @@ public class ExceptionCommandService {
                 + " m from the planned route; the corridor is "
                 + corridorM.stripTrailingZeros().toPlainString() + " m";
 
-        return Optional.of(open(tenantId, trip, ExceptionCategory.ROUTE_DEVIATION, description,
-                ExceptionTicket.Source.ROUTE_DEVIATION, sourceKey, position, SYSTEM_ACTOR,
-                Instant.now()));
+        return Optional.of(open(tenantId, trip, null, ExceptionCategory.ROUTE_DEVIATION,
+                description, ExceptionTicket.Source.ROUTE_DEVIATION, sourceKey, position,
+                SYSTEM_ACTOR, Instant.now()));
+    }
+
+    /**
+     * Turns another module's exception-like fact into a ticket.
+     *
+     * <p>Unguarded and idempotent on the source key, for the same reasons as
+     * {@link #raiseForRouteDeviation}: the actor is the platform, and the
+     * outbox delivers at least once, so a redelivery returns the ticket the
+     * first delivery raised.
+     *
+     * <p>The trip is attached when the fact names one and execution still
+     * knows it. A fact about a trip execution has never heard of is still
+     * worth a ticket -- it is raised against its subject alone, rather than
+     * failing the delivery and being retried forever. No position is
+     * captured: these facts carry none, and by the time a republished event is
+     * heard the vehicle's latest fix may be somewhere else entirely.
+     *
+     * <p>Joins the caller's transaction. The listeners open a new one, scoped
+     * to the event's tenant, before calling.
+     */
+    @Transactional
+    public UUID raiseDetected(DetectedException detected) {
+        UUID tenantId = TenantContext.requireTenantId();
+
+        Optional<ExceptionTicket> already = tickets.findBySourceKey(tenantId, detected.sourceKey());
+        if (already.isPresent()) {
+            return already.get().id();
+        }
+
+        TripLookupPort.TripSnapshot trip = detected.tripId() == null
+                ? null
+                : trips.find(detected.tripId()).orElse(null);
+
+        return open(tenantId, trip, detected.subject(), detected.category(),
+                detected.description(), detected.source(), detected.sourceKey(),
+                ExceptionTicket.Position.none(), SYSTEM_ACTOR, Instant.now());
     }
 
     @Transactional
@@ -221,12 +257,18 @@ public class ExceptionCommandService {
 
     // ------------------------------------------------------------- internals
 
-    private UUID open(UUID tenantId, TripLookupPort.TripSnapshot trip, ExceptionCategory category,
+    /**
+     * @param trip    null for a ticket about something other than a trip
+     * @param subject null for a ticket about a trip alone
+     */
+    private UUID open(UUID tenantId, TripLookupPort.TripSnapshot trip,
+                      ExceptionTicket.Subject subject, ExceptionCategory category,
                       String description, ExceptionTicket.Source source, String sourceKey,
                       ExceptionTicket.Position position, String actor, Instant now) {
         ExceptionTicket ticket = tickets.save(ExceptionTicket.raise(UUID.randomUUID(), tenantId,
-                newTicketNo(), trip.tripId(), trip.tripNo(), trip.vehicleId(), category,
-                description, source, sourceKey, position, actor, now));
+                newTicketNo(), trip == null ? null : trip.tripId(),
+                trip == null ? null : trip.tripNo(), trip == null ? null : trip.vehicleId(),
+                subject, category, description, source, sourceKey, position, actor, now));
 
         activities.save(ExceptionActivity.of(tenantId, ticket.id(), "RAISED", null,
                 ticket.status(), ticket.description(), actor, now));
