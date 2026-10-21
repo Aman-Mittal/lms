@@ -72,7 +72,8 @@ public class ClientContractService {
      * name.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('CLIENT_CONTRACT_MANAGE')")
+    @PreAuthorize("hasAuthority('CLIENT_CONTRACT_MANAGE')"
+            + " and @abac.permitsIn('CLIENT_CONTRACT_MANAGE', #orgUnitId)")
     public UUID publishContract(UUID orgUnitId, String code, UUID clientPartnerId,
                                 String currency, LocalDate effectiveFrom,
                                 ClientContract.Rates rates, List<ServiceRateTerm> valueAdded) {
