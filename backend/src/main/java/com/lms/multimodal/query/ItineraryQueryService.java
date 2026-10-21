@@ -129,6 +129,7 @@ public class ItineraryQueryService {
                                l.trip_id, tr.trip_no,
                                l.unit_type, l.unit_count, l.booking_ref, l.train_no,
                                l.carrier_partner_id, p.code AS carrier_code, l.cost_amount,
+                               l.rail_tariff_id, rt.code AS rail_tariff_code,
                                l.placed_at, l.loaded_at, l.departed_at, l.arrived_at,
                                l.released_at, l.started_early, l.connection_missed_at,
                                l.earliest_start_at
@@ -137,6 +138,7 @@ public class ItineraryQueryService {
                           JOIN terminal t ON t.id = l.to_terminal_id
                           JOIN business_partner p ON p.id = l.carrier_partner_id
                           LEFT JOIN trip tr ON tr.id = l.trip_id
+                          LEFT JOIN rail_tariff rt ON rt.id = l.rail_tariff_id
                          WHERE l.itinerary_id = :itineraryId
                          ORDER BY l.seq
                         """)

@@ -49,6 +49,12 @@ ItineraryLeg:
     carrierPartnerId: { type: string, format: uuid }
     carrierCode: { type: string }
     costAmount: { type: number }
+    railTariffId:
+      type: string
+      format: uuid
+      description: The rail rate card that priced this leg. Null when the
+        planner gave the cost, and always for a road leg.
+    railTariffCode: { type: string }
     placedAt: { type: string, format: date-time }
     loadedAt: { type: string, format: date-time }
     departedAt: { type: string, format: date-time }
@@ -62,12 +68,15 @@ ItineraryLeg:
       type: string
       format: date-time
       description: When the previous leg's arrival made this leg's planned
-        start impossible.
+        start impossible -- or, if it never arrived, when the periodic sweep
+        found it overdue with no time left to transfer.
     earliestStartAt:
       type: string
       format: date-time
       description: The previous leg's arrival plus the transfer dwell, set
-        when the connection was missed.
+        when the connection was missed. When the sweep marked the miss with
+        nothing arrived, a lower bound (detection time plus the dwell),
+        revised once the previous leg arrives.
 
 CarrierCost:
   type: object
@@ -156,9 +165,16 @@ PlanItineraryLegRequest:
     bookingRef: { type: string, description: The railway's booking reference. Required for RAIL. }
     trainNo: { type: string }
     carrierPartnerId: { type: string, format: uuid }
-    costAmount: { type: number, minimum: 0 }
+    costAmount:
+      type: number
+      minimum: 0
+      description: Required for ROAD. Optional for RAIL -- when omitted, the
+        leg is priced from the carrier's rail rate card for the railhead
+        pair in force on the planned departure day (UTC), and refused
+        (`rail-leg-no-tariff`) when there is none. When given, it overrides
+        any card.
   required: [mode, fromTerminalId, toTerminalId, plannedDepartureAt, plannedArrivalAt,
-             carrierPartnerId, costAmount]
+             carrierPartnerId]
 
 PlanItineraryRequest:
   type: object
@@ -171,6 +187,63 @@ PlanItineraryRequest:
       maxItems: 10
       items: { $ref: "#/components/schemas/PlanItineraryLegRequest" }
   required: [shipmentRef, legs]
+
+RailTariff:
+  type: object
+  description: One version of a rail carrier's rate card between two railheads.
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    carrierPartnerId: { type: string, format: uuid }
+    carrierCode: { type: string }
+    originTerminalId: { type: string, format: uuid }
+    originTerminalCode: { type: string }
+    destinationTerminalId: { type: string, format: uuid }
+    destinationTerminalCode: { type: string }
+    currency: { type: string }
+    perWagonRate: { type: number, description: Null when the card does not price wagons. }
+    perContainerRate: { type: number, description: Null when the card does not price containers. }
+    minimumCharge: { type: number }
+    effectiveFrom: { type: string, format: date }
+    effectiveTo:
+      type: string
+      format: date
+      description: Inclusive last day. Null while this is the version in force.
+    createdBy: { type: string }
+    createdAt: { type: string, format: date-time }
+
+RailTariffSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/RailTariff" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+PublishRailTariffRequest:
+  type: object
+  properties:
+    code: { type: string, minLength: 1 }
+    carrierPartnerId: { type: string, format: uuid }
+    originTerminalId: { type: string, format: uuid, description: A RAILHEAD terminal. }
+    destinationTerminalId: { type: string, format: uuid, description: A RAILHEAD terminal. }
+    currency: { type: string, description: Optional. INR when not given. }
+    perWagonRate:
+      type: number
+      minimum: 0
+      description: Per wagon booked. At least one of the two rates is required.
+    perContainerRate:
+      type: number
+      minimum: 0
+      description: Per container booked. At least one of the two rates is required.
+    minimumCharge: { type: number, minimum: 0, description: Optional floor for a booking. Zero when not given. }
+    effectiveFrom: { type: string, format: date }
+  required: [code, carrierPartnerId, originTerminalId, destinationTerminalId, effectiveFrom]
 
 RailMilestoneRequest:
   type: object

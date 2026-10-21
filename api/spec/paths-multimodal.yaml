@@ -42,8 +42,16 @@
       terminal where the previous one ends -- and each must be planned to
       start no earlier than the previous leg's planned arrival plus its own
       transfer dwell. A ROAD leg names an existing trip that has not yet been
-      dispatched; a RAIL leg names a booking, a unit type and a unit count.
-      Every leg names its carrier and its cost.
+      dispatched and that runs between the leg's own terminals
+      (`road-leg-trip-terminals-mismatch` otherwise). A RAIL leg names a
+      booking, a unit type and a unit count, and runs from a RAILHEAD
+      terminal to a RAILHEAD terminal (`rail-leg-not-at-railhead`
+      otherwise). Every leg names its carrier. A road leg names its cost; a
+      rail leg may leave it out to be priced from the rail rate card in
+      force on its departure day (`rail-leg-no-tariff` when none is,
+      `rail-tariff-unit-not-priced` when the card does not price the unit
+      booked, `rail-tariff-currency-mismatch` when the card is in another
+      currency).
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -120,3 +128,70 @@
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/rail-tariffs:
+  get:
+    tags: [Multimodal]
+    operationId: listRailTariffs
+    summary: Rail rate card versions, newest first
+    description: Requires `MULTIMODAL_READ`.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of rail rate card versions.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RailTariffSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Multimodal]
+    operationId: publishRailTariff
+    summary: Publish a version of a rail carrier's rate card for a railhead pair
+    description: |
+      Requires `TARIFF_MANAGE`. Both terminals must be RAILHEADs
+      (`rail-tariff-not-railhead`) and the carrier must be able to transact.
+      A published card is immutable. Publishing a successor for the same
+      carrier and railhead pair closes the version in force on the day
+      before the successor starts; a successor that does not start after
+      the incumbent is refused (`rail-tariff-backdated`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PublishRailTariffRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/rail-tariffs/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Multimodal]
+    operationId: getRailTariff
+    summary: One rail rate card version
+    description: Requires `MULTIMODAL_READ`.
+    responses:
+      "200":
+        description: The rate card version.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RailTariff" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }

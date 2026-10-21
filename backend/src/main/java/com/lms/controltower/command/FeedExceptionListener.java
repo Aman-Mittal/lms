@@ -86,8 +86,9 @@ public class FeedExceptionListener {
                 new Subject(SubjectType.ITINERARY, event.itineraryId(), event.itineraryNo()),
                 "Leg " + event.legSeq() + " (" + event.legMode() + ") of " + event.itineraryNo()
                         + " was due to leave at " + AT.format(event.plannedDepartureAt())
-                        + "; the leg before it arrived too late, so the earliest it can start"
-                        + " is " + AT.format(event.earliestStartAt())));
+                        + "; the leg before it arrived too late, or has not arrived and no"
+                        + " longer can in time, so the earliest it can start is "
+                        + AT.format(event.earliestStartAt())));
     }
 
     @TransactionalEventListener

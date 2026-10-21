@@ -31,11 +31,19 @@
  * refused from here -- the gate is execution's -- so one that breaks it is
  * recorded as an early start. And when a predecessor arrives too late for the
  * next leg's planned start, the connection is missed and a
- * {@link com.lms.multimodal.events.ConnectionMissed} fact is published.
+ * {@link com.lms.multimodal.events.ConnectionMissed} fact is published. A
+ * predecessor that never arrives at all is caught by an in-process sweep,
+ * once its planned arrival plus the dwell has passed and arriving now would
+ * already be too late.
  *
- * <p>Depends on {@code execution::api} to check that a road leg's trip exists
- * and has not yet left, {@code execution::events} to follow it, and
- * {@code masterdata::api} to check terminals and carriers.
+ * <p>A rail leg runs between two RAILHEAD terminals. Rail carriers publish
+ * versioned rate cards per railhead pair, and a rail leg planned without a
+ * cost is priced from the card in force on its planned departure day.
+ *
+ * <p>Depends on {@code execution::api} to check that a road leg's trip exists,
+ * has not yet left and runs between the leg's terminals,
+ * {@code execution::events} to follow it, and {@code masterdata::api} to
+ * check terminals, their categories and carriers.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Multimodal Itineraries",
