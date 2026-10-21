@@ -1,0 +1,59 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+NoContent:
+  description: Done. Nothing to return.
+
+Created:
+  description: Created.
+  content:
+    application/json:
+      schema: { $ref: "#/components/schemas/IdResponse" }
+
+BadRequest:
+  description: The request was malformed. Fix it and try again.
+  content:
+    application/problem+json:
+      schema: { $ref: "#/components/schemas/Problem" }
+
+Unauthorized:
+  description: No token, or a token that does not verify.
+  content:
+    application/problem+json:
+      schema: { $ref: "#/components/schemas/Problem" }
+
+Forbidden:
+  description: Authenticated, but without the permission this needs.
+  content:
+    application/problem+json:
+      schema: { $ref: "#/components/schemas/Problem" }
+
+NotFound:
+  description: No such resource in this tenant.
+  content:
+    application/problem+json:
+      schema: { $ref: "#/components/schemas/Problem" }
+
+Conflict:
+  description: |
+    Well-formed, and the domain refused it -- an expired certificate
+    blocking a dispatch, a load over vehicle capacity, an overlapping
+    terminal. Deliberately not 400: this is not a mistake in the request,
+    and reporting it as one sends the caller looking in the wrong place.
+  content:
+    application/problem+json:
+      schema: { $ref: "#/components/schemas/Problem" }

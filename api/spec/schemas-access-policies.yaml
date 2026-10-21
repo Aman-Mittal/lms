@@ -1,0 +1,130 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+AccessCondition:
+  type: object
+  additionalProperties: true
+  description: |
+    A boolean expression over `subject.*`, `resource.*` and `env.*`
+    attributes. One of:
+
+    - `{"allOf": [condition, ...]}`, `{"anyOf": [condition, ...]}`,
+      `{"not": condition}`;
+    - `{"attr": name, "op": op, "value": literal}` or
+      `{"attr": name, "op": op, "ref": name}`, where `op` is one of `eq`,
+      `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `startsWith`;
+    - `{"attr": name, "op": "present"}` or `"absent"`.
+
+    Subject attributes are `userId`, `permissions`, `orgPath`, `region`,
+    `freightModes`, `partnerId` and `approvalLimit`; environment attributes
+    are `hour` and `dayOfWeek` (UTC); resource attributes depend on the
+    resource. A comparison with a missing operand is false, so a rule
+    never bites on an attribute a user does not carry.
+  examples:
+    - { attr: resource.amount, op: gt, ref: subject.approvalLimit }
+
+AccessPolicy:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    action:
+      type: string
+      description: The permission code this policy refines, e.g. `INVOICE_APPROVE`.
+    effect: { type: string, enum: [PERMIT, DENY] }
+    description: { type: string }
+    condition: { $ref: "#/components/schemas/AccessCondition" }
+    enabled: { type: boolean }
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+  required: [id, code, action, effect, description, condition, enabled]
+
+AccessPolicySlice:
+  type: object
+  description: One page, in code order.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/AccessPolicy" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+CreateAccessPolicyRequest:
+  type: object
+  properties:
+    code:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+    action:
+      type: string
+      description: Must be an existing permission code.
+    effect:
+      type: string
+      enum: [PERMIT, DENY]
+      description: |
+        DENY vetoes when the condition holds. If an action has any PERMIT
+        policies, at least one of them must hold as well.
+    description: { type: string }
+    condition: { $ref: "#/components/schemas/AccessCondition" }
+    enabled:
+      type: boolean
+      description: Defaults to true.
+  required: [code, action, effect, description, condition]
+
+ReviseAccessPolicyRequest:
+  type: object
+  description: Code and action are fixed once a policy exists.
+  properties:
+    effect: { type: string, enum: [PERMIT, DENY] }
+    description: { type: string }
+    condition: { $ref: "#/components/schemas/AccessCondition" }
+    enabled: { type: boolean }
+  required: [effect, description, condition, enabled]
+
+UserAccessAttributes:
+  type: object
+  description: Null means unrestricted along that dimension.
+  properties:
+    userId: { type: string, format: uuid }
+    region: { type: string }
+    freightModes:
+      type: array
+      items: { type: string, enum: [FTL, LTL, RAIL, WAREHOUSE] }
+    partnerId:
+      type: string
+      format: uuid
+      description: Set for an external portal user acting for this partner.
+    approvalLimit: { type: number }
+  required: [userId]
+
+SetUserAccessAttributesRequest:
+  type: object
+  description: |
+    The whole set. A field left out is cleared, so a forgotten field cannot
+    keep an old limit alive.
+  properties:
+    region:
+      type: string
+      pattern: "^[A-Z0-9_-]{1,32}$"
+    freightModes:
+      type: array
+      items: { type: string, enum: [FTL, LTL, RAIL, WAREHOUSE] }
+    partnerId: { type: string, format: uuid }
+    approvalLimit: { type: number, minimum: 0 }
