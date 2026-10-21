@@ -31,7 +31,7 @@ import org.springframework.data.relational.core.mapping.Table;
 
 /**
  * A physical location digitised into a spatial boundary (vision document
- * 3.2.3): plants, warehouses, ports, hubs, toll plazas, customer sites.
+ * 3.2.3): plants, warehouses, ports, hubs, toll plazas, customer sites, railheads.
  *
  * <p>The bounding box columns are stored rather than derived on read. They are
  * this platform's substitute for a spatial index (DOCS/adr/0004): the geofence
@@ -73,7 +73,9 @@ public record Terminal(
         Instant updatedAt) {
 
     public enum FunctionalCategory {
-        PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE
+        PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE,
+        /** Where rakes are placed, loaded and released; a rail leg runs between two. */
+        RAILHEAD
     }
 
     public enum GeofenceType {
