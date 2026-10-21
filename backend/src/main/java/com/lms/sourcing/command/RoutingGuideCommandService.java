@@ -65,7 +65,8 @@ public class RoutingGuideCommandService {
      * lane's vendors is done by editing its entries, not by starting over.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('ROUTING_GUIDE_MANAGE')")
+    @PreAuthorize("hasAuthority('ROUTING_GUIDE_MANAGE')"
+            + " and @abac.permitsIn('ROUTING_GUIDE_MANAGE', #orgUnitId)")
     public UUID define(UUID orgUnitId, UUID originTerminalId, UUID destinationTerminalId,
                        String vehicleType, RoutingGuide.Strategy strategy) {
         UUID tenantId = TenantContext.requireTenantId();
