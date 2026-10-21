@@ -15,6 +15,7 @@
  */
 package com.lms.warehouse.web;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
@@ -22,6 +23,7 @@ import java.util.UUID;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.web.IdResponse;
 import com.lms.warehouse.command.OutboundCommandService;
+import com.lms.warehouse.command.domain.HandlingUnit;
 import com.lms.warehouse.query.HandlingUnitView;
 import com.lms.warehouse.query.OutboundOrderView;
 import com.lms.warehouse.query.WarehouseQueryService;
@@ -89,7 +91,10 @@ public class OutboundController {
     @PostMapping("/api/v1/handling-units/{id}/dispatch")
     public ResponseEntity<Void> dispatch(@PathVariable UUID id,
                                          @RequestBody(required = false) DispatchRequest request) {
-        outbound.dispatch(id, request == null ? null : request.reference());
+        outbound.dispatch(id, request == null ? null : request.reference(),
+                request == null ? null : HandlingUnit.HandOff.ofNullable(
+                        request.destinationTerminalId(), request.consigneePartnerId(),
+                        request.grossWeightKg(), request.volumeM3()));
         return ResponseEntity.noContent().build();
     }
 
@@ -102,7 +107,14 @@ public class OutboundController {
     public record RequestedLine(@NotNull UUID skuId, @Positive int quantity) {
     }
 
-    /** @param reference what transport calls it: a load, a trip, a docket */
-    public record DispatchRequest(String reference) {
+    /**
+     * @param reference             what transport calls it: a load, a trip, a docket
+     * @param destinationTerminalId with the consignee and the gross weight, hands
+     *                              the unit to transport planning; all three or none
+     * @param volumeM3              optional even then
+     */
+    public record DispatchRequest(String reference, UUID destinationTerminalId,
+                                  UUID consigneePartnerId, BigDecimal grossWeightKg,
+                                  BigDecimal volumeM3) {
     }
 }
