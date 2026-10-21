@@ -15,10 +15,13 @@
  */package com.lms.finance.command;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +38,8 @@ import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -47,6 +52,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class BillingService {
+
+    private static final Logger log = LoggerFactory.getLogger(BillingService.class);
 
     private final FreightBillRepository bills;
     private final FreightBillLineRepository lines;
@@ -163,6 +170,110 @@ public class BillingService {
     }
 
     /**
+     * Raises the carrier payable for a completed milk-run circuit.
+     *
+     * <p>Unguarded by {@code @PreAuthorize} for the reason {@link #raiseBillFor}
+     * is: the actor is the platform, reacting to a circuit that reached its
+     * plant. Joins the caller's transaction; the listener opens a fresh one
+     * after binding the tenant scope.
+     *
+     * <p>Idempotent on the circuit run. {@code freight_bill_circuit_run_idx}
+     * is the real guarantee; this lookup turns a redelivery into a no-op.
+     *
+     * <p>One payable per movement. A circuit rides an ordinary execution trip,
+     * and when that trip completes it is billed too -- on a lane tariff that
+     * knows nothing of the circuit. The circuit's price is the contracted one,
+     * so it wins: a trip bill nobody has acted on yet is cancelled with the
+     * reason recorded, and a trip completed after its circuit finds the
+     * circuit's bill and raises nothing. A trip bill already approved or
+     * disputed is left alone and no circuit payable is raised, because
+     * raising one would pay the same lorry twice; that case is logged for a
+     * human to settle.
+     *
+     * @return the payable, or empty when there is nobody to pay or the trip
+     *         was already settled on its own bill
+     */
+    @Transactional
+    public Optional<UUID> raiseCircuitBill(CircuitCharge circuit) {
+        UUID tenantId = TenantContext.requireTenantId();
+
+        Optional<FreightBill> already = bills.findByCircuitRun(tenantId, circuit.runId());
+        if (already.isPresent()) {
+            return already.map(FreightBill::id);
+        }
+        if (circuit.vendorPartnerId() == null || circuit.loadId() == null) {
+            // The tenant's own fleet ran it. There is no carrier to pay.
+            log.info("Circuit {} on {} ran without a vendor; no payable raised",
+                    circuit.routeCode(), circuit.runDate());
+            return Optional.empty();
+        }
+
+        String billNo = "CR-" + circuit.routeCode() + "-"
+                + circuit.runDate().format(DateTimeFormatter.BASIC_ISO_DATE);
+
+        Optional<FreightBill> tripBill = bills.findByTrip(tenantId, circuit.tripId())
+                .filter(bill -> bill.status() != FreightBill.BillStatus.CANCELLED);
+        if (tripBill.isPresent()) {
+            FreightBill existing = tripBill.get();
+            if (!existing.isOpen()) {
+                log.warn("Trip {} was already settled on bill {} ({}); circuit {} on {} "
+                                + "raises no second payable", circuit.tripNo(),
+                        existing.billNo(), existing.status(), circuit.routeCode(),
+                        circuit.runDate());
+                return Optional.empty();
+            }
+            bills.save(existing.cancel("Superseded by milk-run circuit payable " + billNo
+                    + ": the circuit is paid at its route rate, not the lane tariff"));
+        }
+
+        LoadLifecyclePort.LoadSummary load = loads.summarise(circuit.loadId())
+                .orElseThrow(() -> new ResourceNotFoundException("Load", circuit.loadId()));
+
+        CostSheet sheet = circuitSheet(circuit);
+        if (circuit.chargeAmount() != null
+                && sheet.total().compareTo(circuit.chargeAmount()) != 0) {
+            log.warn("Circuit {} on {} announced a charge of {} but its components sum to {}; "
+                            + "the bill carries the components", circuit.routeCode(),
+                    circuit.runDate(), circuit.chargeAmount(), sheet.total());
+        }
+
+        FreightBill bill = bills.save(FreightBill.forCircuit(UUID.randomUUID(), tenantId,
+                load.orgUnitId(), circuit.tripId(), circuit.loadId(), circuit.runId(),
+                circuit.vendorPartnerId(), billNo, circuit.runDate(), sheet));
+
+        int lineNo = 1;
+        for (CostSheet.Charge charge : sheet.charges()) {
+            lines.save(FreightBillLine.of(UUID.randomUUID(), tenantId, bill.id(), lineNo++,
+                    charge.type(), charge.narrative(), charge.quantity(), charge.unit(),
+                    charge.rate(), charge.amount()));
+        }
+
+        publishRaised(tenantId, bill, true);
+        return Optional.of(bill.id());
+    }
+
+    /**
+     * What a completed circuit is worth, as finance records it.
+     *
+     * @param vendorPartnerId null when the tenant's own fleet ran the circuit
+     */
+    public record CircuitCharge(
+            UUID runId,
+            String routeCode,
+            LocalDate runDate,
+            UUID tripId,
+            String tripNo,
+            UUID loadId,
+            UUID vendorPartnerId,
+            int stopsVisited,
+            BigDecimal totalPickedUpKg,
+            BigDecimal runRate,
+            BigDecimal perStopFee,
+            BigDecimal chargeAmount,
+            String currency) {
+    }
+
+    /**
      * Records the vendor's invoice and decides whether it is payable (3.9.2).
      *
      * <p>Held to the approver's limit on the amount being claimed: a claim
@@ -257,6 +368,32 @@ public class BillingService {
         return fuelIndex.findForMonth(tenantId, pricedOn.withDayOfMonth(1))
                 .map(FuelSurchargeIndex::surchargePct)
                 .orElse(null);
+    }
+
+    /**
+     * The run rate as base freight and one line for the suppliers actually
+     * collected from. A circuit that skipped every supplier still earns its
+     * run rate, so the second line is left out rather than shown at zero.
+     */
+    private static CostSheet circuitSheet(CircuitCharge circuit) {
+        BigDecimal runRate = circuit.runRate().setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stopsAmount = circuit.perStopFee()
+                .multiply(BigDecimal.valueOf(circuit.stopsVisited()))
+                .setScale(2, RoundingMode.HALF_UP);
+
+        List<CostSheet.Charge> charges = new ArrayList<>();
+        charges.add(new CostSheet.Charge(FreightBillLine.ChargeType.BASE_FREIGHT,
+                "Circuit " + circuit.routeCode() + " run on " + circuit.runDate(),
+                BigDecimal.ONE, "run", circuit.runRate(), runRate));
+        if (circuit.stopsVisited() > 0) {
+            charges.add(new CostSheet.Charge(FreightBillLine.ChargeType.COLLECTION_STOP,
+                    circuit.stopsVisited() + " supplier(s) collected from",
+                    BigDecimal.valueOf(circuit.stopsVisited()), "stop", circuit.perStopFee(),
+                    stopsAmount));
+        }
+        return new CostSheet(circuit.currency() == null ? "INR" : circuit.currency(),
+                circuit.totalPickedUpKg(), null, circuit.stopsVisited(), runRate,
+                BigDecimal.ZERO, stopsAmount, BigDecimal.ZERO, List.copyOf(charges));
     }
 
     private void publishRaised(UUID tenantId, FreightBill bill, boolean priced) {

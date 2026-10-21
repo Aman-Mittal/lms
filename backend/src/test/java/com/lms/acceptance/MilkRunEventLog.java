@@ -28,9 +28,9 @@ import org.springframework.stereotype.Component;
 /**
  * What the milk-run module announced, so a scenario can assert on it.
  *
- * <p>Nothing in the platform consumes these events yet, so the only way to
- * prove a skipped supplier or a late window is <em>announced</em> -- rather
- * than merely stored -- is to listen. A singleton shared by every scenario;
+ * <p>Listening is the direct way to prove a skip or a late window is
+ * <em>announced</em> rather than merely stored. Completions are also kept, so a
+ * scenario can redeliver the exact event finance heard. A singleton shared by every scenario;
  * each asks only about its own circuit, whose identifier is unique.
  */
 @Component

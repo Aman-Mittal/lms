@@ -222,3 +222,53 @@ Feature: Stock is counted in, stored, picked and handed off, and never edited
     When the cross-dock unit of ASN "ASN-X" is dispatched as "TRIP-7"
     Then the hand-off of the cross-dock unit of ASN "ASN-X" carried 38 of "SKU-A" as "TRIP-7"
     And no stock of "SKU-A" remains in "WH-1"
+
+  # ------------------------------------------- receipt to loaded truck
+
+  Scenario: A unit handed to transport becomes a consignment that is put on a lorry
+    # One unit, one full-truckload consignment, for the consignee and to the
+    # destination the dispatch named, weighing what the dock scale said.
+    Given a trading partner "CONS-A"
+    And a depot "DEST-A" at 19.30,73.10
+    And a lorry "MH-01-TL-0001" with payload 20000 kg and volume 60 m3
+    And 30 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And an outbound order "OUT-1" from "WH-1" for 30 of "SKU-A"
+    And outbound order "OUT-1" is picked
+    And outbound order "OUT-1" is packed into handling unit "HU-1"
+    When handling unit "HU-1" is dispatched as "LOAD-9" to "DEST-A" for "CONS-A" weighing 420 kg
+    Then handling unit "HU-1" became one consignment for "CONS-A" at "DEST-A" carrying 420 kg
+    And the consignment of handling unit "HU-1" is waiting to be loaded
+    # The outbox delivers at least once.
+    When the hand-off of handling unit "HU-1" is delivered again
+    Then handling unit "HU-1" became one consignment for "CONS-A" at "DEST-A" carrying 420 kg
+    When a load "LOAD-9" is opened at warehouse "WH-1" on lorry "MH-01-TL-0001"
+    And the consignment of handling unit "HU-1" is put on load "LOAD-9"
+    Then load "LOAD-9" holds 1 consignments
+    And load "LOAD-9" carries 420 kg
+
+  Scenario: Each unit shipped against one order is its own consignment
+    # A short shipment now and the back-order later are two units, two lorry
+    # receipts. Deduplication is per unit, never per order.
+    Given a trading partner "CONS-A"
+    And a depot "DEST-A" at 19.30,73.10
+    And 30 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And an outbound order "OUT-1" from "WH-1" for 50 of "SKU-A"
+    And outbound order "OUT-1" is picked
+    And outbound order "OUT-1" is packed into handling unit "HU-1"
+    When handling unit "HU-1" is dispatched as "LOAD-9" to "DEST-A" for "CONS-A" weighing 420 kg
+    And a back-order unit "HU-2" of outbound order "OUT-1" is handed off to "DEST-A" for "CONS-A" weighing 280 kg
+    Then outbound order "OUT-1" became 2 consignments
+    And handling unit "HU-1" became one consignment for "CONS-A" at "DEST-A" carrying 420 kg
+    And handling unit "HU-2" became one consignment for "CONS-A" at "DEST-A" carrying 280 kg
+    When the hand-off of handling unit "HU-1" is delivered again
+    And the hand-off of handling unit "HU-2" is delivered again
+    Then outbound order "OUT-1" became 2 consignments
+
+  Scenario: A unit that leaves without a destination is not planning's to move
+    # Collected by the customer, or on somebody else's lorry.
+    Given 10 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And an outbound order "OUT-1" from "WH-1" for 10 of "SKU-A"
+    And outbound order "OUT-1" is picked
+    And outbound order "OUT-1" is packed into handling unit "HU-1"
+    When handling unit "HU-1" is dispatched as "COLLECTED"
+    Then handling unit "HU-1" became no consignment

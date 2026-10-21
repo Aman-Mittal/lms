@@ -525,6 +525,43 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a circuit's payable is found by index")
+    void freightBillByCircuitRun() {
+        // Runs on every delivery of a circuit completion, redeliveries included.
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND circuit_run_id = '00000000-0000-0000-0000-000000000002'
+                """, "freight_bill");
+    }
+
+    @Test
+    @DisplayName("the bill a trip is paid on is found by index, cancelled ones included")
+    void freightBillByTrip() {
+        // The redelivery check for trip bills. It must see a superseded,
+        // cancelled trip bill too, so it cannot lean on the partial unique
+        // index of live bills alone.
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY (status = 'CANCELLED'), created_at DESC
+                 LIMIT 1
+                """, "freight_bill");
+    }
+
+    @Test
+    @DisplayName("the consignment made from a handling unit is found by index")
+    void consignmentByHandlingUnit() {
+        // Runs on every delivery of a warehouse hand-off.
+        assertIndexed("""
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND handling_unit_id = '00000000-0000-0000-0000-000000000002'
+                """, "consignment");
+    }
+
+    @Test
     @DisplayName("the exception board pages newest first without a sort")
     void exceptionBoard() {
         // Keyset on (raised_at, id), descending. The row comparison and the

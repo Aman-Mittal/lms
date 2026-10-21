@@ -53,7 +53,9 @@ public record FreightBillLine(
         MINIMUM_CHARGE_UPLIFT,
         DETENTION,
         ADDITIONAL_DROP,
-        FUEL_SURCHARGE
+        FUEL_SURCHARGE,
+        /** A milk-run supplier actually collected from, at the route's per-stop fee. */
+        COLLECTION_STOP
     }
 
     public static FreightBillLine of(UUID id, UUID tenantId, UUID billId, int lineNo,

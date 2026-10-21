@@ -33,11 +33,28 @@ FreightBill:
       type: string
       description: The exact rate version this bill was priced against, kept
         so a dispute months later is argued from that card rather than from
-        today's numbers.
+        today's numbers. Null for a milk-run bill, which is priced by its
+        route.
+    source:
+      type: string
+      enum: [TRIP, MILK_RUN]
+      description: What the bill pays for. `TRIP` is priced on a lane
+        tariff when the trip completes; `MILK_RUN` is a completed circuit,
+        priced at its route's run rate plus a fee per supplier collected
+        from. Both are matched against the vendor's claim by the same
+        tolerance rule.
+    circuitRunId:
+      type: string
+      format: uuid
+      description: The circuit run a `MILK_RUN` bill pays for.
+    routeCode:
+      type: string
+      description: The milk-run route of that circuit.
     pricedOn:
       type: string
       format: date
-      description: The dispatch date, which chose the tariff version.
+      description: The dispatch date, which chose the tariff version; for
+        a milk-run bill, the run date, which chose the route version.
     chargeableWeightKg: { type: number }
     detentionHours: { type: number }
     dropCount: { type: integer }
@@ -69,7 +86,7 @@ FreightBillLine:
     chargeType:
       type: string
       enum: [BASE_FREIGHT, MINIMUM_CHARGE_UPLIFT, DETENTION, ADDITIONAL_DROP,
-             FUEL_SURCHARGE]
+             FUEL_SURCHARGE, COLLECTION_STOP]
     narrative: { type: string }
     quantity: { type: number }
     unit: { type: string }

@@ -38,6 +38,16 @@ public record FreightBillView(
         String loadNo,
         String vendorName,
         String tariffCode,
+        /**
+         * What the bill pays for: {@code TRIP}, priced on a lane tariff when
+         * the trip completed, or {@code MILK_RUN}, a completed circuit priced
+         * at its route's rate. Both are matched by the same rule.
+         */
+        String source,
+        /** The circuit run a {@code MILK_RUN} bill pays for; null otherwise. */
+        UUID circuitRunId,
+        /** The milk-run route of that circuit; null for a trip bill. */
+        String routeCode,
         LocalDate pricedOn,
         BigDecimal chargeableWeightKg,
         BigDecimal detentionHours,

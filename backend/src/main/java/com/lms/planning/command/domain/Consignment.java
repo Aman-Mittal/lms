@@ -48,6 +48,7 @@ import org.springframework.data.relational.core.mapping.Table;
 public record Consignment(
         @Id UUID id,
         UUID tenantId,
+        /** The order it was cut from; null for one received from the warehouse. */
         UUID orderId,
         String trackingRef,
         UUID consigneePartnerId,
@@ -79,6 +80,13 @@ public record Consignment(
         UUID originHubTerminalId,
         /** The hub a docket's line haul runs to; null for FTL. */
         UUID destinationHubTerminalId,
+        /**
+         * The warehouse handling unit this consignment carries, when it came
+         * from a warehouse hand-off rather than an order. Exactly one of this
+         * and {@code orderId} is set, and a unit becomes at most one
+         * consignment however often its dispatch is announced.
+         */
+        UUID handlingUnitId,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -130,7 +138,34 @@ public record Consignment(
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
                 containsHazmat, ConsignmentStatus.PLANNED, encodeClasses(materialClasses),
                 mode, customerPartnerId, originHubTerminalId, destinationHubTerminalId,
-                null, Instant.now(), Instant.now());
+                null, null, Instant.now(), Instant.now());
+    }
+
+    /**
+     * A consignment for one warehouse handling unit handed to transport.
+     *
+     * <p>One unit, one consignment: the unit was packed for one destination
+     * and one consignee, and it travels under one lorry receipt. Always a
+     * full-truckload consignment -- a part-load docket needs a customer to
+     * bill and a hub pair, which a warehouse hand-off does not carry. The
+     * unit's contents carry no dangerous-goods classification, so it is
+     * treated as general cargo.
+     */
+    public static Consignment fromHandlingUnit(UUID id, UUID tenantId, UUID handlingUnitId,
+                                               String trackingRef, UUID consigneePartnerId,
+                                               UUID destinationTerminalId,
+                                               BigDecimal grossWeightKg, BigDecimal volumeM3,
+                                               BigDecimal chargeableWeightKg) {
+        if (handlingUnitId == null) {
+            throw new IllegalArgumentException("A warehouse consignment names its handling unit");
+        }
+        if (grossWeightKg == null || grossWeightKg.signum() <= 0) {
+            throw new IllegalArgumentException("A consignment must carry some weight");
+        }
+        return new Consignment(id, tenantId, null, trackingRef, consigneePartnerId,
+                destinationTerminalId, grossWeightKg, volumeM3, chargeableWeightKg, false,
+                ConsignmentStatus.PLANNED, "", FreightMode.FTL, null, null, null,
+                handlingUnitId, null, Instant.now(), Instant.now());
     }
 
     /** Whether this is an LTL docket rather than a full-truckload consignment. */
@@ -171,6 +206,7 @@ public record Consignment(
         return new Consignment(id, tenantId, orderId, trackingRef, consigneePartnerId,
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
                 containsHazmat, target, materialClasses, freightMode, customerPartnerId,
-                originHubTerminalId, destinationHubTerminalId, version, createdAt, Instant.now());
+                originHubTerminalId, destinationHubTerminalId, handlingUnitId, version, createdAt,
+                Instant.now());
     }
 }

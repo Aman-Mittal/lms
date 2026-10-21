@@ -65,9 +65,11 @@ public class PlanningQueryService {
                    c.contains_hazmat, c.material_classes,
                    l.load_no, c.freight_mode,
                    oh.code AS origin_hub_code, dh.code AS destination_hub_code,
+                   c.handling_unit_id, hu.hu_no AS handling_unit_no,
                    c.created_at
               FROM consignment c
-              JOIN sales_order o ON o.id = c.order_id
+              LEFT JOIN sales_order o ON o.id = c.order_id
+              LEFT JOIN handling_unit hu ON hu.id = c.handling_unit_id
               JOIN business_partner p ON p.id = c.consignee_partner_id
               JOIN terminal t ON t.id = c.destination_terminal_id
               LEFT JOIN terminal oh ON oh.id = c.origin_hub_terminal_id

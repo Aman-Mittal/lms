@@ -48,9 +48,17 @@
  * other's tables to answer that. Freight modes themselves belong to order and
  * planning, which decide what a docket is and what may share a vehicle; this
  * module only prices what they booked, and depends on them one way.
+ *
+ * <p>Listens to {@code milkrun::events} for completed circuits. A circuit is
+ * priced by its route -- a run rate plus a fee per supplier collected from --
+ * so the milk-run module computes the charge and finance records it as the
+ * carrier's payable: a freight bill like any other, listed and matched against
+ * the vendor's claim by the same tolerance rule, but keyed on the circuit run
+ * and carrying no lane tariff. The circuit's bill supersedes an unsettled trip
+ * bill for the same lorry, so one movement is never payable twice.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
         allowedDependencies = {"planning::api", "planning::events", "execution::events",
-                "controltower::events", "identity::access"})
+                "controltower::events", "identity::access", "milkrun::events"})
 package com.lms.finance;

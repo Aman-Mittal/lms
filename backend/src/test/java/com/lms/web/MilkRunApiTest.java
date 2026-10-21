@@ -30,13 +30,18 @@ import com.lms.acceptance.SpineFixtures;
 import com.lms.acceptance.TestFixtures;
 import com.lms.client.ApiClient;
 import com.lms.client.api.MilkRunsApi;
+import com.lms.client.api.SettlementApi;
 import com.lms.client.model.AssignCircuitTripRequest;
 import com.lms.client.model.CircuitPickupRequest;
 import com.lms.client.model.CircuitRun;
 import com.lms.client.model.CircuitRunSlice;
 import com.lms.client.model.CircuitRunStop;
 import com.lms.client.model.CircuitSkipRequest;
+import com.lms.client.model.FreightBill;
+import com.lms.client.model.FreightBillLine;
 import com.lms.client.model.GenerateCircuitRunsRequest;
+import com.lms.client.model.MatchRequest;
+import com.lms.client.model.MatchResponse;
 import com.lms.client.model.MilestoneRequest;
 import com.lms.client.model.MilkRunRoute;
 import com.lms.client.model.MilkRunRouteSlice;
@@ -229,6 +234,32 @@ class MilkRunApiTest {
         // The third window closed 150 minutes in; reaching it at 165 is late.
         assertThat(stops.get(2).getMinutesLate()).isEqualTo(15);
         assertThat(stops.get(1).getSkipReason()).isEqualTo("Supplier closed");
+
+        // Finance heard the completion and raised the carrier's payable: on the
+        // same listing as trip bills, and matched by the same rule.
+        SettlementApi settlement = settlementClient();
+        FreightBill bill = settlement.listFreightBills(null, null, null).getItems().stream()
+                .filter(candidate -> runId.equals(candidate.getCircuitRunId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The circuit raised no payable"));
+        assertThat(bill.getSource()).isEqualTo(FreightBill.SourceEnum.MILK_RUN);
+        assertThat(bill.getRouteCode()).isEqualTo("MR-1");
+        assertThat(bill.getTripId()).isEqualTo(tripId);
+        assertThat(bill.getStatus()).isEqualTo(FreightBill.StatusEnum.DRAFT);
+        assertThat(bill.getComputedAmount()).isEqualByComparingTo("6500.00");
+        assertThat(bill.getTariffCode()).isNull();
+        List<FreightBillLine> lines = settlement.getFreightBillLines(bill.getId());
+        assertThat(lines).extracting(FreightBillLine::getChargeType).containsExactly(
+                FreightBillLine.ChargeTypeEnum.BASE_FREIGHT,
+                FreightBillLine.ChargeTypeEnum.COLLECTION_STOP);
+        assertThat(lines.get(0).getAmount()).isEqualByComparingTo("5000.00");
+        assertThat(lines.get(1).getAmount()).isEqualByComparingTo("1500.00");
+
+        MatchResponse matched = settlement.matchFreightBill(bill.getId(),
+                new MatchRequest().claimedAmount(new BigDecimal("6560")), null);
+        assertThat(matched.getStatus()).isEqualTo(MatchResponse.StatusEnum.APPROVED_FOR_PAYMENT);
+        assertThat(settlement.getFreightBill(bill.getId()).getVarianceAmount())
+                .isEqualByComparingTo("60.00");
     }
 
     @Test
@@ -314,6 +345,15 @@ class MilkRunApiTest {
         apiClient.getFeignBuilder().requestInterceptor(template ->
                 template.header("Authorization", "Bearer " + token));
         return apiClient.buildClient(MilkRunsApi.class);
+    }
+
+    private SettlementApi settlementClient() {
+        String token = tokens.issueAccessToken(planner, orgPath,
+                List.of("INVOICE_READ", "INVOICE_APPROVE")).value();
+        ApiClient apiClient = new ApiClient().setBasePath("http://localhost:" + port);
+        apiClient.getFeignBuilder().requestInterceptor(template ->
+                template.header("Authorization", "Bearer " + token));
+        return apiClient.buildClient(SettlementApi.class);
     }
 
     private AppUser user(UUID tenantId, UUID orgUnitId, String email) {

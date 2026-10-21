@@ -24,6 +24,7 @@ public record ConsignmentView(
         UUID id,
         String trackingRef,
         String status,
+        /** Null for a consignment received from a warehouse hand-off. */
         UUID orderId,
         String orderNo,
         String consigneeName,
@@ -38,5 +39,11 @@ public record ConsignmentView(
         String freightMode,
         String originHubCode,
         String destinationHubCode,
+        /**
+         * The warehouse handling unit carried, for a consignment received from
+         * a warehouse hand-off; {@code orderId} is then null.
+         */
+        UUID handlingUnitId,
+        String handlingUnitNo,
         Instant createdAt) {
 }

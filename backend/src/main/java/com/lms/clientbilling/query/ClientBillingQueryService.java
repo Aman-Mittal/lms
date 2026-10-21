@@ -232,6 +232,10 @@ public class ClientBillingQueryService {
                                   FROM client_charge ch
                                   LEFT JOIN freight_bill fb
                                          ON fb.tenant_id = ch.tenant_id AND fb.trip_id = ch.trip_id
+                                        -- A trip has one live bill; a cancelled one
+                                        -- (superseded by a milk-run circuit's) is not
+                                        -- a cost and must not double the row.
+                                        AND fb.status <> 'CANCELLED'
                                  WHERE ch.tenant_id = i.tenant_id AND ch.invoice_id = i.id
                                    AND ch.service_type = 'TRANSPORT') c ON true
                          WHERE i.period_start = :period

@@ -31,8 +31,12 @@
  * stock, an overfull bin, and any edit to a movement.
  *
  * <p>Depends on {@code masterdata::api} only, to confirm that a terminal is a
- * warehouse. Receipt variances, pick shortfalls and the hand-off of a handling
- * unit are published from {@code events}; nothing consumes them yet.
+ * warehouse, or that a dispatched unit's destination exists. Receipt variances,
+ * pick shortfalls and the hand-off of a handling unit are published from
+ * {@code events}. Planning consumes the hand-off: a unit dispatched with a
+ * destination, consignee and weighed gross becomes a consignment ready to be
+ * put on a load. The control tower raises tickets from receipt variances and
+ * pick shortfalls.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Warehousing",

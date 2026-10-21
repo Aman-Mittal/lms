@@ -24,9 +24,28 @@ import org.springframework.data.repository.query.Param;
 
 public interface FreightBillRepository extends CrudRepository<FreightBill, UUID> {
 
-    @Query("SELECT * FROM freight_bill WHERE tenant_id = :tenantId AND trip_id = :tripId")
+    /**
+     * The bill that pays for a trip: the live one when there is one, otherwise
+     * the most recent.
+     *
+     * <p>A trip has at most one live bill ({@code freight_bill_trip_live_idx}),
+     * but may also have a cancelled one -- a trip bill withdrawn because the
+     * trip turned out to carry a milk-run circuit, which is paid for by its
+     * own bill. Served by {@code freight_bill_trip_idx}.
+     */
+    @Query("""
+            SELECT * FROM freight_bill
+             WHERE tenant_id = :tenantId AND trip_id = :tripId
+             ORDER BY (status = 'CANCELLED'), created_at DESC
+             LIMIT 1
+            """)
     Optional<FreightBill> findByTrip(@Param("tenantId") UUID tenantId,
                                      @Param("tripId") UUID tripId);
+
+    /** Served by {@code freight_bill_circuit_run_idx}. */
+    @Query("SELECT * FROM freight_bill WHERE tenant_id = :tenantId AND circuit_run_id = :runId")
+    Optional<FreightBill> findByCircuitRun(@Param("tenantId") UUID tenantId,
+                                           @Param("runId") UUID runId);
 
     @Query("SELECT * FROM freight_bill WHERE tenant_id = :tenantId AND bill_no = :billNo")
     Optional<FreightBill> findByBillNo(@Param("tenantId") UUID tenantId,

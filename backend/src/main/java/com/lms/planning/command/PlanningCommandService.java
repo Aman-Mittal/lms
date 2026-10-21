@@ -16,6 +16,7 @@
 package com.lms.planning.command;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -172,6 +173,56 @@ public class PlanningCommandService {
         // per shipment rather than per order.
         dockets.forEach(events::publishEvent);
         return created;
+    }
+
+    // -------------------------------------------------- warehouse hand-off
+
+    /**
+     * The volumetric conversion for a handling unit: 5 000 cm3 per kilogram,
+     * the divisor order applies to a line when its contract names none.
+     */
+    private static final BigDecimal CM3_PER_KG = new BigDecimal("5000");
+
+    /**
+     * Turns a handling unit the warehouse handed to transport into a
+     * consignment, ready to be put on a load.
+     *
+     * <p>The mapping: one unit is one full-truckload consignment, under a
+     * fresh {@code LR-} lorry receipt, for the consignee and to the
+     * destination terminal the dispatch named. Its dead weight is the gross
+     * weighed at the dock door -- packaging and pallet included, because that
+     * is what the lorry carries. Its volume is the measured volume, or zero
+     * when none was taken, and it is charged on the greater of the weight and
+     * the volumetric weight, as an order line is.
+     *
+     * <p>Unguarded by {@code @PreAuthorize}, like finance's bill raising: the
+     * actor is the platform, reacting to a dispatch somebody with warehouse
+     * authority already made. Joins the caller's transaction; the listener
+     * opens it after binding the tenant scope.
+     *
+     * <p>Idempotent on the handling unit. {@code consignment_handling_unit_idx}
+     * is the guarantee; this lookup makes a redelivered event a no-op.
+     *
+     * @return the consignment, new or already made from this unit
+     */
+    @Transactional
+    public UUID receiveHandOff(UUID handlingUnitId, UUID consigneePartnerId,
+                               UUID destinationTerminalId, BigDecimal grossWeightKg,
+                               BigDecimal volumeM3) {
+        UUID tenantId = TenantContext.requireTenantId();
+        return consignments.findByHandlingUnit(tenantId, handlingUnitId)
+                .map(Consignment::id)
+                .orElseGet(() -> {
+                    BigDecimal volume = volumeM3 == null ? BigDecimal.ZERO : volumeM3;
+                    BigDecimal volumetric = volume.multiply(new BigDecimal("1000000"))
+                            .divide(CM3_PER_KG, 3, RoundingMode.HALF_UP);
+                    BigDecimal chargeable = grossWeightKg.max(volumetric)
+                            .setScale(3, RoundingMode.HALF_UP);
+                    return consignments.save(Consignment.fromHandlingUnit(UUID.randomUUID(),
+                            tenantId, handlingUnitId, nextTrackingRef(tenantId, "LR-"),
+                            consigneePartnerId, destinationTerminalId, grossWeightKg, volume,
+                            chargeable)).id();
+                });
     }
 
     // ------------------------------------------------------------ 3.4.2

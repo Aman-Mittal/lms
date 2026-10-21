@@ -402,9 +402,11 @@
     summary: Hand a packed unit over to transport
     description: |
       Requires `WAREHOUSE_OPERATE`. Once per unit. Its contents leave the
-      ledger, and the hand-off is published with them. Nothing consumes
-      that event yet: turning a dispatched unit into a planning consignment
-      is not built.
+      ledger, and the hand-off is published with them. When the request
+      names a destination, consignee and gross weight, planning turns the
+      unit into one full-truckload consignment, listed among the
+      consignments not yet on a load; a redelivered hand-off does not
+      duplicate it.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:

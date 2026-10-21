@@ -330,6 +330,15 @@ HandlingUnit:
       enum: [PACKED, DISPATCHED]
     dispatchRef: { type: string }
     dispatchedAt: { type: string, format: date-time }
+    destinationTerminalId:
+      type: string
+      format: uuid
+      description: Where transport is to take it. Set, with the consignee
+        and the gross weight, when the unit was handed to transport
+        planning at dispatch; null otherwise.
+    consigneePartnerId: { type: string, format: uuid }
+    grossWeightKg: { type: number }
+    volumeM3: { type: number }
     contents:
       type: array
       description: What is in it. Empty once dispatched -- the goods have
@@ -338,7 +347,24 @@ HandlingUnit:
 
 DispatchRequest:
   type: object
+  description: |
+    `destinationTerminalId`, `consigneePartnerId` and `grossWeightKg` hand
+    the unit to transport planning, and go together: all three or none
+    (`hand-off-incomplete` otherwise). `volumeM3` is optional even then.
   properties:
     reference:
       type: string
       description: What transport calls it -- a load, a trip, a docket.
+    destinationTerminalId:
+      type: string
+      format: uuid
+      description: The terminal transport is to deliver to. Must be a
+        terminal of this tenant.
+    consigneePartnerId: { type: string, format: uuid }
+    grossWeightKg:
+      type: number
+      exclusiveMinimum: 0
+      description: Weighed at the dock door, packaging included.
+    volumeM3:
+      type: number
+      minimum: 0

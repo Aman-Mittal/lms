@@ -15,6 +15,7 @@
  */
 package com.lms.web;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -22,18 +23,24 @@ import java.util.function.Supplier;
 
 import com.lms.acceptance.TestFixtures;
 import com.lms.client.ApiClient;
+import com.lms.client.api.PlanningApi;
 import com.lms.client.api.WarehouseApi;
 import com.lms.client.model.AdjustStockRequest;
 import com.lms.client.model.Asn;
 import com.lms.client.model.AsnExpectedLine;
 import com.lms.client.model.AsnLine;
+import com.lms.client.model.AssignConsignmentRequest;
 import com.lms.client.model.BinSlice;
+import com.lms.client.model.Consignment;
+import com.lms.client.model.ConsignmentSlice;
 import com.lms.client.model.CreateAsnRequest;
 import com.lms.client.model.CreateBinRequest;
 import com.lms.client.model.CreateOutboundOrderRequest;
 import com.lms.client.model.CreateSkuRequest;
 import com.lms.client.model.DispatchRequest;
 import com.lms.client.model.HandlingUnit;
+import com.lms.client.model.Load;
+import com.lms.client.model.OpenLoadRequest;
 import com.lms.client.model.OutboundOrder;
 import com.lms.client.model.OutboundOrderLineRequest;
 import com.lms.client.model.PutawayRequest;
@@ -45,8 +52,10 @@ import com.lms.client.model.StockMovement;
 import com.lms.client.model.StockMovementSlice;
 import com.lms.identity.command.domain.AppUser;
 import com.lms.identity.security.TokenService;
+import com.lms.masterdata.command.FleetCommandService;
 import com.lms.masterdata.command.RegisterTerminalCommand;
 import com.lms.masterdata.command.TerminalCommandService;
+import com.lms.masterdata.command.domain.BusinessPartner;
 import com.lms.masterdata.command.domain.Terminal;
 import com.lms.shared.geo.LatLon;
 import com.lms.shared.tenant.TenantContext;
@@ -108,9 +117,13 @@ class WarehouseApiTest {
     private TerminalCommandService terminals;
     @Autowired
     private TokenService tokens;
+    @Autowired
+    private FleetCommandService fleet;
 
     private String salt;
     private String orgPath;
+    private UUID tenantId;
+    private UUID orgUnitId;
     private AppUser operator;
     private UUID warehouseId;
 
@@ -118,8 +131,8 @@ class WarehouseApiTest {
     void aWarehouse() {
         salt = UUID.randomUUID().toString().substring(0, 8);
         orgPath = "/acme-" + salt + "/";
-        UUID tenantId = fixtures.createTenant("acme-" + salt, "Acme Logistics");
-        UUID orgUnitId = fixtures.createOrgUnit(tenantId, orgPath, "Acme HQ", "HQ", null);
+        tenantId = fixtures.createTenant("acme-" + salt, "Acme Logistics");
+        orgUnitId = fixtures.createOrgUnit(tenantId, orgPath, "Acme HQ", "HQ", null);
         operator = user(tenantId, orgUnitId, "operator@acme.test");
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -255,6 +268,82 @@ class WarehouseApiTest {
     }
 
     @Test
+    @DisplayName("a unit handed to transport becomes a consignment and is put on a lorry")
+    void receiptToLoadedTruck() {
+        UUID consignee;
+        UUID destination;
+        UUID lorry;
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(SETUP_PRINCIPAL, null, List.of(
+                        new SimpleGrantedAuthority("PARTNER_CREATE"),
+                        new SimpleGrantedAuthority("TERMINAL_CREATE"),
+                        new SimpleGrantedAuthority("VEHICLE_CREATE"))));
+        try {
+            consignee = TenantContext.callWith(tenantId, orgPath, (Supplier<UUID>) () ->
+                    fleet.registerPartner(orgUnitId, "CONS-" + salt, "Pune Retail",
+                            BusinessPartner.PartnerType.CUSTOMER, "TAX-K-" + salt));
+            destination = TenantContext.callWith(tenantId, orgPath, (Supplier<UUID>) () ->
+                    terminals.register(new RegisterTerminalCommand.PointRadius(orgUnitId,
+                            "PUNE-" + salt, "Pune store", Terminal.FunctionalCategory.CUSTOMER_SITE,
+                            new LatLon(18.52, 73.85), 400, 2, null, null, 45, List.of())));
+            lorry = TenantContext.callWith(tenantId, orgPath, (Supplier<UUID>) () ->
+                    fleet.registerVehicle(orgUnitId, null, "MH-12-" + salt, "TRUCK", "RIGID",
+                            "2-AXLE", new BigDecimal("16000"), new BigDecimal("6000"),
+                            new BigDecimal("40"), false, false));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+
+        WarehouseApi warehouse = client(WAREHOUSE);
+        UUID sku = warehouse.createSku(new CreateSkuRequest().code("SKU-" + salt)
+                .description("Widgets"), null).getId();
+        UUID asnId = warehouse.createAsn(new CreateAsnRequest().warehouseId(warehouseId)
+                .asnNo("XD-" + salt)
+                .lines(List.of(new AsnExpectedLine().skuId(sku).quantity(12))), null).getId();
+        warehouse.receiveAsn(asnId, new ReceiveAsnRequest().crossDock(true).lines(List.of(
+                new ReceiptCount().lineNo(1).receivedQty(12).damagedQty(0))), null);
+        UUID unitId = warehouse.getAsn(asnId).getHandlingUnitId();
+
+        // Half an address is refused rather than half planned.
+        assertStatus(() -> warehouse.dispatchHandlingUnit(unitId, null, new DispatchRequest()
+                .reference("LOAD-1").destinationTerminalId(destination)), 409,
+                "hand-off-incomplete");
+
+        warehouse.dispatchHandlingUnit(unitId, null, new DispatchRequest().reference("LOAD-1")
+                .destinationTerminalId(destination).consigneePartnerId(consignee)
+                .grossWeightKg(new BigDecimal("310.5")).volumeM3(new BigDecimal("2")));
+        HandlingUnit dispatched = warehouse.getHandlingUnit(unitId);
+        assertThat(dispatched.getDestinationTerminalId()).isEqualTo(destination);
+        assertThat(dispatched.getConsigneePartnerId()).isEqualTo(consignee);
+        assertThat(dispatched.getGrossWeightKg()).isEqualByComparingTo("310.5");
+        assertThat(dispatched.getVolumeM3()).isEqualByComparingTo("2");
+
+        PlanningApi planning = planningClient();
+        ConsignmentSlice waiting = planning.listUnassignedConsignments(null, null);
+        Consignment consignment = waiting.getItems().stream()
+                .filter(c -> unitId.equals(c.getHandlingUnitId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The hand-off made no consignment"));
+        assertThat(consignment.getHandlingUnitNo()).isEqualTo(dispatched.getHuNo());
+        assertThat(consignment.getTrackingRef()).startsWith("LR-");
+        assertThat(consignment.getFreightMode()).isEqualTo("FTL");
+        assertThat(consignment.getTotalDeadWeightKg()).isEqualByComparingTo("310.5");
+        // Two cubic metres at 5 000 cm3 per kg is 400 kg: bulkier than it is heavy.
+        assertThat(consignment.getChargeableWeightKg()).isEqualByComparingTo("400");
+
+        UUID loadId = planning.openLoad(new OpenLoadRequest().orgUnitId(orgUnitId)
+                .loadNo("LOAD-" + salt).originTerminalId(warehouseId).vehicleId(lorry), null)
+                .getId();
+        planning.assignConsignment(loadId,
+                new AssignConsignmentRequest().consignmentId(consignment.getId()), null);
+        Load load = planning.getLoad(loadId);
+        assertThat(load.getConsignmentCount()).isEqualTo(1);
+        assertThat(load.getPlannedWeightKg()).isEqualByComparingTo("310.5");
+        assertThat(planning.getConsignment(consignment.getId()).getLoadNo())
+                .isEqualTo("LOAD-" + salt);
+    }
+
+    @Test
     @DisplayName("refusals arrive as the documented statuses")
     void refusals() {
         WarehouseApi api = client(WAREHOUSE);
@@ -312,6 +401,15 @@ class WarehouseApiTest {
         apiClient.getFeignBuilder().requestInterceptor(template ->
                 template.header("Authorization", "Bearer " + token));
         return apiClient.buildClient(WarehouseApi.class);
+    }
+
+    private PlanningApi planningClient() {
+        String token = tokens.issueAccessToken(operator, orgPath,
+                List.of("LOAD_READ", "LOAD_CREATE")).value();
+        ApiClient apiClient = new ApiClient().setBasePath("http://localhost:" + port);
+        apiClient.getFeignBuilder().requestInterceptor(template ->
+                template.header("Authorization", "Bearer " + token));
+        return apiClient.buildClient(PlanningApi.class);
     }
 
     private AppUser user(UUID tenantId, UUID orgUnitId, String email) {

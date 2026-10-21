@@ -35,6 +35,13 @@ Consignment:
         `LR-`, and carry the hub pair below.
     originHubCode: { type: string }
     destinationHubCode: { type: string }
+    handlingUnitId:
+      type: string
+      format: uuid
+      description: The warehouse handling unit this consignment carries,
+        when it was received from a warehouse hand-off rather than cut from
+        an order. One unit becomes at most one consignment.
+    handlingUnitNo: { type: string }
 
 Load:
   type: object

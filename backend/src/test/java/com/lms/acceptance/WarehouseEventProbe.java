@@ -28,8 +28,9 @@ import org.springframework.stereotype.Component;
 /**
  * Hears what warehousing publishes, so scenarios can assert on it.
  *
- * <p>Nothing in the application consumes these events yet, so without this
- * a published variance and an unpublished one would look the same. A plain
+ * <p>Lets a scenario prove an event was published rather than inferring it
+ * from a consumer's side effect, and keeps the hand-off so a scenario can
+ * redeliver the exact event planning heard. A plain
  * listener rather than an after-commit one: the assertion is that the event
  * was published, and every scenario's command commits anyway. Scenarios
  * filter by their own identifiers, so the shared list needs no clearing.
