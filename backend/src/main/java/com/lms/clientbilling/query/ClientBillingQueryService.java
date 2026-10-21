@@ -16,8 +16,11 @@
 package com.lms.clientbilling.query;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,7 +51,12 @@ public class ClientBillingQueryService {
     private static final String INVOICE = """
             SELECT i.id, i.invoice_no, i.client_partner_id, p.code AS client_code,
                    p.legal_name AS client_name, i.period_start, i.period_end, i.status,
-                   i.currency, i.total_amount, i.line_count, i.issued_at
+                   i.currency, i.total_amount - i.tax_amount AS taxable_amount, i.tax_amount,
+                   i.total_amount,
+                   coalesce((SELECT sum(cn.total_amount) FROM client_credit_note cn
+                              WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id), 0)
+                       AS credited_amount,
+                   i.line_count, i.issued_at
               FROM client_invoice i
               JOIN business_partner p ON p.id = i.client_partner_id
             """;
@@ -69,7 +77,8 @@ public class ClientBillingQueryService {
                         SELECT id, code, client_partner_id, currency, effective_from, effective_to,
                                transport_rate_per_kg, transport_minimum_charge,
                                storage_rate_per_pallet_day, handling_in_rate_per_pallet,
-                               handling_out_rate_per_pallet
+                               handling_out_rate_per_pallet, transport_tax_rate_pct,
+                               warehouse_tax_rate_pct, storage_units_per_pallet
                           FROM client_contract
                          WHERE client_partner_id = :clientPartnerId
                          ORDER BY effective_from DESC
@@ -101,6 +110,7 @@ public class ClientBillingQueryService {
                 r.clientPartnerId(), r.currency(), r.effectiveFrom(), r.effectiveTo(),
                 r.transportRatePerKg(), r.transportMinimumCharge(), r.storageRatePerPalletDay(),
                 r.handlingInRatePerPallet(), r.handlingOutRatePerPallet(),
+                r.transportTaxRatePct(), r.warehouseTaxRatePct(), r.storageUnitsPerPallet(),
                 rates.getOrDefault(r.id(), List.of()))).toList();
     }
 
@@ -170,7 +180,13 @@ public class ClientBillingQueryService {
     public List<ClientInvoiceLineView> linesOf(UUID invoiceId) {
         return jdbc.sql("""
                         SELECT l.line_no, l.service_type, l.narrative, l.quantity, l.unit, l.rate,
-                               l.amount, l.charge_id, ch.occurred_on, k.code AS contract_code
+                               l.amount, l.tax_rate, l.tax_amount,
+                               l.amount + l.tax_amount AS line_total,
+                               coalesce((SELECT sum(c.taxable_amount)
+                                           FROM client_credit_note_line c
+                                          WHERE c.tenant_id = l.tenant_id
+                                            AND c.invoice_line_id = l.id), 0) AS credited_amount,
+                               l.charge_id, ch.occurred_on, k.code AS contract_code
                           FROM client_invoice_line l
                           JOIN client_invoice i ON i.id = l.invoice_id
                           JOIN client_charge ch ON ch.id = l.charge_id
@@ -189,6 +205,10 @@ public class ClientBillingQueryService {
     /**
      * Receivable against carrier payable, per client, for one billed month.
      *
+     * <p>The receivable is the 3PL's revenue: the invoice's taxable amount
+     * less what credit notes against it have credited. Tax collected is owed
+     * onwards and is not counted.
+     *
      * <p>The carrier side is finance's freight bill for each movement on the
      * invoice, apportioned by the client's share of the load's chargeable
      * weight -- two clients on one lorry each carry their part of its cost.
@@ -203,17 +223,26 @@ public class ClientBillingQueryService {
         int pageSize = Slice.clampLimit(limit);
 
         List<ClientMarginView> rows = jdbc.sql("""
+                        SELECT x.client_partner_id, x.client_code, x.client_name, x.invoice_id,
+                               x.invoice_no, x.period_start, x.currency, x.receivable,
+                               x.transport_receivable,
+                               x.receivable - x.transport_receivable AS warehouse_receivable,
+                               x.credited, x.carrier_payable,
+                               x.receivable - x.carrier_payable AS margin,
+                               CASE WHEN x.receivable = 0 THEN NULL
+                                    ELSE round((x.receivable - x.carrier_payable) * 100
+                                               / x.receivable, 2) END AS margin_pct,
+                               x.movements, x.unpriced_movements
+                          FROM (
                         SELECT i.client_partner_id, p.code AS client_code,
                                p.legal_name AS client_name, i.id AS invoice_id, i.invoice_no,
                                i.period_start, i.currency,
-                               i.total_amount AS receivable,
-                               coalesce(r.transport, 0) AS transport_receivable,
-                               i.total_amount - coalesce(r.transport, 0) AS warehouse_receivable,
+                               i.total_amount - i.tax_amount - coalesce(cr.taxable, 0)
+                                   AS receivable,
+                               coalesce(r.transport, 0) - coalesce(cr.transport, 0)
+                                   AS transport_receivable,
+                               coalesce(cr.taxable, 0) AS credited,
                                coalesce(c.payable, 0) AS carrier_payable,
-                               i.total_amount - coalesce(c.payable, 0) AS margin,
-                               CASE WHEN i.total_amount = 0 THEN NULL
-                                    ELSE round((i.total_amount - coalesce(c.payable, 0)) * 100
-                                               / i.total_amount, 2) END AS margin_pct,
                                coalesce(c.movements, 0) AS movements,
                                coalesce(c.unpriced, 0) AS unpriced_movements
                           FROM client_invoice i
@@ -223,6 +252,15 @@ public class ClientBillingQueryService {
                                   FROM client_invoice_line l
                                  WHERE l.tenant_id = i.tenant_id AND l.invoice_id = i.id
                                    AND l.service_type = 'TRANSPORT') r ON true
+                          -- Credit notes reduce the period they correct.
+                          LEFT JOIN LATERAL (
+                                SELECT sum(cl.taxable_amount) AS taxable,
+                                       sum(cl.taxable_amount) FILTER (
+                                           WHERE cl.service_type = 'TRANSPORT') AS transport
+                                  FROM client_credit_note cn
+                                  JOIN client_credit_note_line cl
+                                    ON cl.tenant_id = cn.tenant_id AND cl.credit_note_id = cn.id
+                                 WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id) cr ON true
                           LEFT JOIN LATERAL (
                                 SELECT round(sum(coalesce(fb.computed_amount, 0) * ch.cost_share), 2)
                                            AS payable,
@@ -243,6 +281,8 @@ public class ClientBillingQueryService {
                                 OR i.client_partner_id > CAST(:after AS uuid))
                          ORDER BY i.client_partner_id
                          LIMIT :limit
+                               ) x
+                         ORDER BY x.client_partner_id
                         """)
                 .param("period", period.withDayOfMonth(1))
                 .param("after", parseUuidCursor(cursor))
@@ -253,11 +293,176 @@ public class ClientBillingQueryService {
         return Slice.of(rows, pageSize, view -> view.clientPartnerId().toString());
     }
 
+    /**
+     * One credit note with its lines; empty for one the caller may not see,
+     * the same answer as for one that does not exist.
+     */
+    public Optional<ClientCreditNoteView> findCreditNote(UUID creditNoteId) {
+        Optional<CreditNoteRow> note = jdbc.sql("""
+                        SELECT cn.id, cn.credit_note_no, cn.invoice_id, i.invoice_no,
+                               cn.client_partner_id, cn.period_start, cn.reason, cn.currency,
+                               cn.taxable_amount, cn.tax_amount, cn.total_amount, cn.line_count,
+                               cn.issued_at
+                          FROM client_credit_note cn
+                          JOIN client_invoice i ON i.id = cn.invoice_id
+                         WHERE cn.id = :id
+                           AND (CAST(:bound AS uuid) IS NULL
+                                OR cn.client_partner_id = CAST(:bound AS uuid))
+                        """)
+                .param("id", creditNoteId)
+                .param("bound", access.boundClient().orElse(null))
+                .query(CreditNoteRow.class)
+                .optional();
+        return note.map(n -> new ClientCreditNoteView(n.id(), n.creditNoteNo(), n.invoiceId(),
+                n.invoiceNo(), n.clientPartnerId(), n.periodStart(), n.reason(), n.currency(),
+                n.taxableAmount(), n.taxAmount(), n.totalAmount(), n.lineCount(), n.issuedAt(),
+                jdbc.sql("""
+                                SELECT c.line_no, l.line_no AS invoice_line_no, c.service_type,
+                                       c.narrative, c.taxable_amount, c.tax_rate, c.tax_amount,
+                                       c.taxable_amount + c.tax_amount AS line_total
+                                  FROM client_credit_note_line c
+                                  JOIN client_invoice_line l ON l.id = c.invoice_line_id
+                                 WHERE c.credit_note_id = :id
+                                 ORDER BY c.line_no
+                                """)
+                        .param("id", creditNoteId)
+                        .query(ClientCreditNoteView.Line.class)
+                        .list()));
+    }
+
+    /**
+     * A client's statement: invoices and credit notes in the order they were
+     * issued, each with the running balance after it.
+     *
+     * <p>Keyset-paged on (issued at, document id). The balance is over the
+     * client's whole history, so a page after the first opens with the sum of
+     * every entry before its cursor -- one indexed aggregate per page, over
+     * a client's documents, which number a handful a month.
+     */
+    public Slice<ClientStatementEntryView> statementOf(UUID clientPartnerId, String cursor,
+                                                      Integer limit) {
+        access.requireAccessTo(clientPartnerId);
+        int pageSize = Slice.clampLimit(limit);
+        StatementCursor after = parseStatementCursor(cursor);
+
+        BigDecimal opening = after == null ? BigDecimal.ZERO : jdbc.sql("""
+                        SELECT coalesce(sum(signed), 0) FROM (
+                            SELECT i.total_amount AS signed
+                              FROM client_invoice i
+                             WHERE i.client_partner_id = :client
+                               AND (i.issued_at, i.id) <= (CAST(:afterAt AS timestamptz),
+                                                           CAST(:afterId AS uuid))
+                            UNION ALL
+                            SELECT -cn.total_amount
+                              FROM client_credit_note cn
+                             WHERE cn.client_partner_id = :client
+                               AND (cn.issued_at, cn.id) <= (CAST(:afterAt AS timestamptz),
+                                                             CAST(:afterId AS uuid))
+                        ) before_cursor
+                        """)
+                .param("client", clientPartnerId)
+                .param("afterAt", after.issuedAt().atOffset(ZoneOffset.UTC))
+                .param("afterId", after.documentId())
+                .query(BigDecimal.class)
+                .single();
+
+        List<ClientStatementEntryView> rows = jdbc.sql("""
+                        SELECT * FROM (
+                            SELECT 'INVOICE' AS entry_type, i.id AS document_id,
+                                   i.invoice_no AS document_no, i.issued_at, i.period_start,
+                                   i.invoice_no, NULL AS reason, i.currency,
+                                   i.total_amount AS debit, 0 AS credit, 0 AS balance
+                              FROM client_invoice i
+                             WHERE i.client_partner_id = :client
+                               AND (CAST(:afterAt AS timestamptz) IS NULL
+                                    OR (i.issued_at, i.id) > (CAST(:afterAt AS timestamptz),
+                                                              CAST(:afterId AS uuid)))
+                            UNION ALL
+                            SELECT 'CREDIT_NOTE', cn.id, cn.credit_note_no, cn.issued_at,
+                                   cn.period_start, ci.invoice_no, cn.reason, cn.currency,
+                                   0, cn.total_amount, 0
+                              FROM client_credit_note cn
+                              JOIN client_invoice ci ON ci.id = cn.invoice_id
+                             WHERE cn.client_partner_id = :client
+                               AND (CAST(:afterAt AS timestamptz) IS NULL
+                                    OR (cn.issued_at, cn.id) > (CAST(:afterAt AS timestamptz),
+                                                                CAST(:afterId AS uuid)))
+                        ) entries
+                         ORDER BY issued_at, document_id
+                         LIMIT :limit
+                        """)
+                .param("client", clientPartnerId)
+                .param("afterAt", after == null ? null : after.issuedAt().atOffset(ZoneOffset.UTC))
+                .param("afterId", after == null ? null : after.documentId())
+                .param("limit", pageSize + 1)
+                .query(ClientStatementEntryView.class)
+                .list();
+
+        List<ClientStatementEntryView> withBalance = new ArrayList<>(rows.size());
+        BigDecimal balance = opening;
+        for (ClientStatementEntryView row : rows) {
+            balance = balance.add(row.debit()).subtract(row.credit());
+            withBalance.add(row.withBalance(balance));
+        }
+        return Slice.of(withBalance, pageSize,
+                view -> view.issuedAt() + "_" + view.documentId());
+    }
+
+    /**
+     * A client's ledger-derived storage for one month, day by day. Not
+     * computed yet is an answer, not an error: {@code computed} is false and
+     * there are no days.
+     */
+    public ClientStorageView storageOf(UUID clientPartnerId, LocalDate period) {
+        access.requireAccessTo(clientPartnerId);
+        LocalDate periodStart = period.withDayOfMonth(1);
+        List<ClientStorageView.Day> days = jdbc.sql("""
+                        SELECT held_on, units_held, units_per_pallet, pallets, charge_id
+                          FROM client_storage_day
+                         WHERE client_partner_id = :client
+                           AND period_start = :period
+                         ORDER BY held_on
+                        """)
+                .param("client", clientPartnerId)
+                .param("period", periodStart)
+                .query(ClientStorageView.Day.class)
+                .list();
+        return new ClientStorageView(clientPartnerId, periodStart, !days.isEmpty(),
+                days.stream().mapToLong(ClientStorageView.Day::unitsHeld).sum(),
+                days.stream().mapToLong(ClientStorageView.Day::pallets).sum(), days);
+    }
+
+    record CreditNoteRow(UUID id, String creditNoteNo, UUID invoiceId, String invoiceNo,
+                         UUID clientPartnerId, LocalDate periodStart, String reason,
+                         String currency, BigDecimal taxableAmount, BigDecimal taxAmount,
+                         BigDecimal totalAmount, int lineCount, Instant issuedAt) {
+    }
+
+    record StatementCursor(Instant issuedAt, UUID documentId) {
+    }
+
+    private static StatementCursor parseStatementCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        int split = cursor.lastIndexOf('_');
+        if (split <= 0) {
+            throw invalidCursor();
+        }
+        try {
+            return new StatementCursor(Instant.parse(cursor.substring(0, split)),
+                    UUID.fromString(cursor.substring(split + 1)));
+        } catch (DateTimeParseException | IllegalArgumentException e) {
+            throw invalidCursor();
+        }
+    }
+
     record ContractRow(UUID id, String code, UUID clientPartnerId, String currency,
                        LocalDate effectiveFrom, LocalDate effectiveTo,
                        BigDecimal transportRatePerKg, BigDecimal transportMinimumCharge,
                        BigDecimal storageRatePerPalletDay, BigDecimal handlingInRatePerPallet,
-                       BigDecimal handlingOutRatePerPallet) {
+                       BigDecimal handlingOutRatePerPallet, BigDecimal transportTaxRatePct,
+                       BigDecimal warehouseTaxRatePct, int storageUnitsPerPallet) {
     }
 
     record RateRow(UUID contractId, String serviceCode, String unit, BigDecimal rate) {
