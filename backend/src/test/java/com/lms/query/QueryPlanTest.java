@@ -25,6 +25,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +66,8 @@ class QueryPlanTest {
 
     @Autowired
     private JdbcClient jdbc;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeAll
     static void note() {
@@ -441,6 +445,188 @@ class QueryPlanTest {
                  ORDER BY occurred_at DESC, id DESC
                  LIMIT 51
                 """, "stock_movement");
+    }
+
+    @Test
+    @DisplayName("a warehouse's ASNs page newest first without a sort")
+    void asnListingPage() {
+        assertIndexed("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "asn");
+        assertNoSort("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's ASNs narrowed to one status page without a sort")
+    void asnListingByStatus() {
+        assertIndexed("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "asn");
+        assertNoSort("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's outbound orders page newest first without a sort")
+    void outboundOrderListingPage() {
+        assertIndexed("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "outbound_order");
+        assertNoSort("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's outbound orders narrowed to one status page without a sort")
+    void outboundOrderListingByStatus() {
+        assertIndexed("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "outbound_order");
+        assertNoSort("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's handling units page newest first without a sort")
+    void handlingUnitListingPage() {
+        assertIndexed("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "handling_unit");
+        assertNoSort("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's handling units narrowed to one status page without a sort")
+    void handlingUnitListingByStatus() {
+        assertIndexed("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "handling_unit");
+        assertNoSort("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a portal user's ASN page probes each ASN's lines by index")
+    void partnerScopedAsnListing() {
+        // The partner filter is an EXISTS per candidate row; it must be a seek
+        // into the ASN's lines, never a walk of every line the tenant has.
+        assertIndexed("""
+                SELECT a.id FROM asn a
+                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND a.warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND EXISTS (SELECT 1 FROM asn_line l
+                                 JOIN sku s ON s.id = l.sku_id
+                                WHERE l.tenant_id = a.tenant_id AND l.asn_id = a.id
+                                  AND s.owner_partner_id = '00000000-0000-0000-0000-000000000003')
+                 ORDER BY a.created_at DESC, a.id DESC
+                 LIMIT 51
+                """, "asn_line");
+    }
+
+    @Test
+    @DisplayName("whether an order waits in a wave is index-served")
+    void orderAwaitingWave() {
+        // Asked before every single-order pick.
+        assertIndexed("""
+                SELECT wave_id FROM pick_wave_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND order_id = '00000000-0000-0000-0000-000000000002'
+                """, "pick_wave_order");
+    }
+
+    @Test
+    @DisplayName("a wave's orders come back in sequence from its key")
+    void waveOrdersInSequence() {
+        assertIndexed("""
+                SELECT order_id FROM pick_wave_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND wave_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY seq
+                """, "pick_wave_order");
+    }
+
+    @Test
+    @DisplayName("an order's lines are summed for the listing from an index")
+    void outboundLineTotals() {
+        assertIndexed("""
+                SELECT sum(ordered_qty), sum(picked_qty) FROM outbound_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND order_id = '00000000-0000-0000-0000-000000000002'
+                """, "outbound_line");
     }
 
     @Test
@@ -834,6 +1020,19 @@ class QueryPlanTest {
         assertThat(offenders)
                 .as("non-unique indexes on tenant-scoped tables must lead with tenant_id")
                 .isEmpty();
+    }
+
+    /**
+     * A keyset page must ride its index in order: a Sort node would mean
+     * every page sorts every matching row before taking the first 51.
+     */
+    private void assertNoSort(String sql) {
+        // One transaction, so the SET LOCAL holds for the EXPLAIN after it.
+        String plan = new TransactionTemplate(transactionManager).execute(status -> {
+            jdbc.sql("SET LOCAL enable_seqscan = off").update();
+            return String.join("\n", jdbc.sql("EXPLAIN " + sql).query(String.class).list());
+        });
+        assertThat(plan).as("keyset page should not sort:%n%s", plan).doesNotContain("Sort");
     }
 
     private void assertIndexed(String sql, String table) {

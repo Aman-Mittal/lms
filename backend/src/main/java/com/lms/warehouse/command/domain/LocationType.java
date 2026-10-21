@@ -27,5 +27,11 @@ public enum LocationType {
     /** Picked, not yet packed. Identified by the outbound order. */
     OUTBOUND,
     /** Packed, not yet dispatched. Identified by the handling unit. */
-    HU
+    HU,
+    /**
+     * Counted damaged at receipt; not stock anybody may pick. Identified by
+     * the warehouse. Left only by an adjustment: released to a bin, or
+     * written off.
+     */
+    QUARANTINE
 }

@@ -30,6 +30,8 @@ import com.lms.client.model.Asn;
 import com.lms.client.model.AsnExpectedLine;
 import com.lms.client.model.AsnLine;
 import com.lms.client.model.AssignConsignmentRequest;
+import com.lms.client.model.AsnSlice;
+import com.lms.client.model.AsnSummary;
 import com.lms.client.model.BinSlice;
 import com.lms.client.model.Consignment;
 import com.lms.client.model.ConsignmentSlice;
@@ -41,15 +43,23 @@ import com.lms.client.model.DispatchRequest;
 import com.lms.client.model.HandlingUnit;
 import com.lms.client.model.Load;
 import com.lms.client.model.OpenLoadRequest;
+import com.lms.client.model.HandlingUnitSlice;
 import com.lms.client.model.OutboundOrder;
 import com.lms.client.model.OutboundOrderLineRequest;
+import com.lms.client.model.OutboundOrderSlice;
+import com.lms.client.model.OutboundOrderSummary;
+import com.lms.client.model.PickWave;
+import com.lms.client.model.PickWaveOrder;
 import com.lms.client.model.PutawayRequest;
 import com.lms.client.model.ReceiptCount;
 import com.lms.client.model.ReceiveAsnRequest;
+import com.lms.client.model.ReleasePickWaveRequest;
+import com.lms.client.model.ReleaseQuarantineRequest;
 import com.lms.client.model.StockBalance;
 import com.lms.client.model.StockBalanceSlice;
 import com.lms.client.model.StockMovement;
 import com.lms.client.model.StockMovementSlice;
+import com.lms.client.model.WriteOffQuarantineRequest;
 import com.lms.identity.command.domain.AppUser;
 import com.lms.identity.security.TokenService;
 import com.lms.masterdata.command.FleetCommandService;
@@ -188,7 +198,9 @@ class WarehouseApiTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 StockBalance.LocationTypeEnum.DOCK, null, 35),
                         org.assertj.core.groups.Tuple.tuple(
-                                StockBalance.LocationTypeEnum.BIN, "A-01", 50));
+                                StockBalance.LocationTypeEnum.BIN, "A-01", 50),
+                        org.assertj.core.groups.Tuple.tuple(
+                                StockBalance.LocationTypeEnum.QUARANTINE, null, 5));
         BinSlice bins = api.listBins(warehouseId, null, null);
         assertThat(bins.getItems().get(0).getOccupiedUnits()).isEqualTo(50);
 
@@ -214,11 +226,12 @@ class WarehouseApiTest {
         assertThat(dispatched.getStatus()).isEqualTo(HandlingUnit.StatusEnum.DISPATCHED);
         assertThat(dispatched.getDispatchRef()).isEqualTo("LOAD-1");
         assertThat(dispatched.getContents()).isEmpty();
+        // Ten were never found: the order waits for them.
         assertThat(api.getOutboundOrder(orderId).getStatus())
-                .isEqualTo(OutboundOrder.StatusEnum.DISPATCHED);
+                .isEqualTo(OutboundOrder.StatusEnum.BACK_ORDERED);
 
         // The ledger pages newest first and accounts for every unit: what is
-        // left is exactly the 35 still on the dock.
+        // left is exactly the 35 still on the dock and the 5 in quarantine.
         List<StockMovement> ledger = new java.util.ArrayList<>();
         String cursor = null;
         do {
@@ -226,7 +239,7 @@ class WarehouseApiTest {
             ledger.addAll(page.getItems());
             cursor = page.getNextCursor();
         } while (cursor != null);
-        assertThat(ledger.stream().mapToInt(StockMovement::getQuantity).sum()).isEqualTo(35);
+        assertThat(ledger.stream().mapToInt(StockMovement::getQuantity).sum()).isEqualTo(40);
         assertThat(ledger).extracting(StockMovement::getMovementType)
                 .contains(StockMovement.MovementTypeEnum.RECEIPT,
                         StockMovement.MovementTypeEnum.PUTAWAY,
@@ -384,7 +397,158 @@ class WarehouseApiTest {
         assertStatus(() -> api.receiveAsn(asnId, count, null), 409, "asn-already-received");
     }
 
+    @Test
+    @DisplayName("a back-order is re-picked into a further unit, and orders pick together as a wave")
+    void backOrderAndWave() {
+        WarehouseApi api = client(WAREHOUSE);
+        UUID sku = api.createSku(new CreateSkuRequest().code("SKU-" + salt)
+                .description("Widgets"), null).getId();
+        UUID bin = api.createBin(warehouseId, new CreateBinRequest().code("A-01")
+                .capacityUnits(100), null).getId();
+        stockBin(api, sku, bin, "ASN1-" + salt, 6);
+
+        UUID first = order(api, "OUT1-" + salt, sku, 10);
+        api.pickOutboundOrder(first, null);
+        UUID firstUnit = api.packOutboundOrder(first, null).getId();
+        api.dispatchHandlingUnit(firstUnit, null, new DispatchRequest().reference("LOAD-1"));
+        assertThat(api.getOutboundOrder(first).getStatus())
+                .isEqualTo(OutboundOrder.StatusEnum.BACK_ORDERED);
+        // Nothing in the bins: the back-order cannot be picked yet.
+        assertStatus(() -> api.pickOutboundOrder(first, null), 409, "back-order-unfilled");
+
+        // Ten more arrive. A wave serves the back-order first, then a new
+        // order wanting eight, and the bins run out on the new one.
+        stockBin(api, sku, bin, "ASN2-" + salt, 10);
+        UUID second = order(api, "OUT2-" + salt, sku, 8);
+        UUID waveId = api.releasePickWave(new ReleasePickWaveRequest().warehouseId(warehouseId)
+                .orderIds(List.of(first, second)), null).getId();
+        assertStatus(() -> api.pickOutboundOrder(second, null), 409, "outbound-order-in-wave");
+        api.pickPickWave(waveId, null);
+        assertStatus(() -> api.pickPickWave(waveId, null), 409, "pick-wave-already-picked");
+
+        PickWave wave = api.getPickWave(waveId);
+        assertThat(wave.getStatus()).isEqualTo(PickWave.StatusEnum.PICKED);
+        assertThat(wave.getOrders())
+                .extracting(PickWaveOrder::getOrderId, PickWaveOrder::getPickedUnits,
+                        PickWaveOrder::getShortUnits, PickWaveOrder::getStatus)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(first, 10, 0,
+                                PickWaveOrder.StatusEnum.PICKED),
+                        org.assertj.core.groups.Tuple.tuple(second, 6, 2,
+                                PickWaveOrder.StatusEnum.SHORT_PICKED));
+
+        UUID secondUnit = api.packOutboundOrder(first, null).getId();
+        assertThat(api.getHandlingUnit(secondUnit).getContents()).singleElement()
+                .satisfies(content -> assertThat(content.getQuantity()).isEqualTo(4));
+        api.dispatchHandlingUnit(secondUnit, null, new DispatchRequest().reference("LOAD-2"));
+        assertThat(api.getOutboundOrder(first).getStatus())
+                .isEqualTo(OutboundOrder.StatusEnum.DISPATCHED);
+
+        // The listings, a page of one at a time and by status.
+        assertThat(pagedOrders(api, OutboundOrder.StatusEnum.SHORT_PICKED.getValue()))
+                .extracting(OutboundOrderSummary::getId, OutboundOrderSummary::getBackOrderedUnits)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(second, 2));
+        assertThat(pagedOrders(api, null)).extracting(OutboundOrderSummary::getId)
+                .containsExactly(second, first);
+        List<UUID> units = new java.util.ArrayList<>();
+        String cursor = null;
+        do {
+            HandlingUnitSlice page = api.listHandlingUnits(warehouseId, "DISPATCHED", cursor, 1);
+            page.getItems().forEach(unit -> units.add(unit.getId()));
+            cursor = page.getNextCursor();
+        } while (cursor != null);
+        assertThat(units).containsExactly(secondUnit, firstUnit);
+        AsnSlice asns = api.listAsns(warehouseId, "RECEIVED", null, null);
+        assertThat(asns.getItems()).extracting(AsnSummary::getAsnNo)
+                .containsExactly("ASN2-" + salt, "ASN1-" + salt);
+        assertThat(api.listAsns(warehouseId, "EXPECTED", null, null).getItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("damaged units are quarantined, and leave only by a reasoned adjustment")
+    void quarantine() {
+        WarehouseApi api = client(WAREHOUSE);
+        UUID sku = api.createSku(new CreateSkuRequest().code("SKU-" + salt)
+                .description("Gadgets"), null).getId();
+        UUID bin = api.createBin(warehouseId, new CreateBinRequest().code("Q-01")
+                .capacityUnits(3), null).getId();
+        UUID asnId = api.createAsn(new CreateAsnRequest().warehouseId(warehouseId)
+                .asnNo("ASN-" + salt)
+                .lines(List.of(new AsnExpectedLine().skuId(sku).quantity(10))), null).getId();
+        api.receiveAsn(asnId, new ReceiveAsnRequest().lines(List.of(
+                new ReceiptCount().lineNo(1).receivedQty(10).damagedQty(6))), null);
+        assertThat(quarantined(api, sku)).isEqualTo(6);
+
+        assertStatus(() -> api.releaseQuarantinedStock(new ReleaseQuarantineRequest().binId(bin)
+                .skuId(sku).quantity(4).reason("Sound"), null), 409, "bin-over-capacity");
+        assertStatus(() -> api.writeOffQuarantinedStock(new WriteOffQuarantineRequest()
+                .warehouseId(warehouseId).skuId(sku).quantity(7).reason("Scrap"), null),
+                409, "quarantine-stock-insufficient");
+        assertStatus(() -> api.writeOffQuarantinedStock(new WriteOffQuarantineRequest()
+                .warehouseId(warehouseId).skuId(sku).quantity(1).reason(""), null), 400, null);
+        WarehouseApi noAdjust = client(List.of("WAREHOUSE_READ", "WAREHOUSE_OPERATE"));
+        assertStatus(() -> noAdjust.releaseQuarantinedStock(new ReleaseQuarantineRequest()
+                .binId(bin).skuId(sku).quantity(1).reason("Sound"), null), 403, null);
+
+        UUID released = api.releaseQuarantinedStock(new ReleaseQuarantineRequest().binId(bin)
+                .skuId(sku).quantity(3).reason("Outer carton only"), null).getId();
+        UUID writtenOff = api.writeOffQuarantinedStock(new WriteOffQuarantineRequest()
+                .warehouseId(warehouseId).skuId(sku).quantity(3).reason("Crushed"), null).getId();
+        assertThat(released).isNotEqualTo(writtenOff);
+        assertThat(quarantined(api, sku)).isZero();
+        assertThat(api.listStock(warehouseId, sku, bin, null, null).getItems())
+                .extracting(StockBalance::getOnHand).containsExactly(3);
+
+        List<StockMovement> ledger = api.listStockMovements(sku, null, 200).getItems();
+        assertThat(ledger)
+                .filteredOn(movement -> movement.getLocationType()
+                        == StockMovement.LocationTypeEnum.QUARANTINE)
+                .extracting(StockMovement::getMovementType, StockMovement::getQuantity,
+                        StockMovement::getReason)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(
+                                StockMovement.MovementTypeEnum.RECEIPT, 6, "Damaged at receipt"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                StockMovement.MovementTypeEnum.ADJUST, -3, "Outer carton only"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                StockMovement.MovementTypeEnum.ADJUST, -3, "Crushed"));
+    }
+
     // --------------------------------------------------------------- helpers
+
+    private void stockBin(WarehouseApi api, UUID sku, UUID bin, String asnNo, int quantity) {
+        UUID asnId = api.createAsn(new CreateAsnRequest().warehouseId(warehouseId).asnNo(asnNo)
+                .lines(List.of(new AsnExpectedLine().skuId(sku).quantity(quantity))), null).getId();
+        api.receiveAsn(asnId, new ReceiveAsnRequest().lines(List.of(
+                new ReceiptCount().lineNo(1).receivedQty(quantity).damagedQty(0))), null);
+        api.putaway(new PutawayRequest().binId(bin).skuId(sku).quantity(quantity), null);
+    }
+
+    private UUID order(WarehouseApi api, String orderNo, UUID sku, int quantity) {
+        return api.createOutboundOrder(new CreateOutboundOrderRequest().warehouseId(warehouseId)
+                .orderNo(orderNo).shipTo("Pune DC")
+                .lines(List.of(new OutboundOrderLineRequest().skuId(sku).quantity(quantity))),
+                null).getId();
+    }
+
+    private List<OutboundOrderSummary> pagedOrders(WarehouseApi api, String status) {
+        List<OutboundOrderSummary> rows = new java.util.ArrayList<>();
+        String cursor = null;
+        do {
+            OutboundOrderSlice page = api.listOutboundOrders(warehouseId, status, cursor, 1);
+            rows.addAll(page.getItems());
+            cursor = page.getNextCursor();
+        } while (cursor != null);
+        return rows;
+    }
+
+    private int quarantined(WarehouseApi api, UUID sku) {
+        return api.listStock(warehouseId, sku, null, null, null).getItems().stream()
+                .filter(balance -> balance.getLocationType()
+                        == StockBalance.LocationTypeEnum.QUARANTINE)
+                .mapToInt(StockBalance::getOnHand)
+                .sum();
+    }
 
     private static void assertStatus(Runnable call, int status, String code) {
         assertThatThrownBy(call::run).isInstanceOfSatisfying(FeignException.class, e -> {

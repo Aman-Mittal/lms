@@ -148,6 +148,7 @@ class AccessPolicyApiTest {
                 "client-contract-write-org-subtree",
                 "driver-write-org-subtree",
                 "exception-close-holding-limit",
+                "inventory-adjust-org-subtree",
                 "invoice-approval-limit",
                 "itinerary-write-org-subtree",
                 "load-write-org-subtree",

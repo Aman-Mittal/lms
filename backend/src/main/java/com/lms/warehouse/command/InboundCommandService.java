@@ -44,12 +44,17 @@ import org.springframework.transaction.annotation.Transactional;
  * Goods in: the notice, the count at the dock, and putaway to a bin.
  *
  * <p>The count is the moment stock comes into existence. Undamaged units go
- * onto the dock; damaged ones are recorded on the line and published as a
- * variance, and never become stock. A cross-docked receipt moves the good
- * units off the dock again at once, into a handling unit, without a bin.
+ * onto the dock; damaged ones are recorded on the line, published as a
+ * variance, and enter the ledger in the warehouse's quarantine, where nothing
+ * can pick them until an adjustment releases or writes them off. A
+ * cross-docked receipt moves the good units off the dock again at once, into
+ * a handling unit, without a bin; its damaged units are quarantined all the
+ * same.
  */
 @Service
 public class InboundCommandService {
+
+    static final String DAMAGED_AT_RECEIPT = "Damaged at receipt";
 
     private final AsnRepository asns;
     private final AsnLineRepository asnLines;
@@ -173,6 +178,11 @@ public class InboundCommandService {
                             counted.skuId(), counted.lotNo(), counted.goodQty(), unit.id(),
                             actor, now);
                 }
+            }
+            if (counted.damagedQty() > 0) {
+                ledger.post(asn.warehouseId(), MovementType.RECEIPT, LocationType.QUARANTINE,
+                        asn.warehouseId(), counted.skuId(), counted.lotNo(),
+                        counted.damagedQty(), asnId, DAMAGED_AT_RECEIPT, actor, now);
             }
             if (counted.hasVariance()) {
                 variances.add(new ReceiptVarianceRecorded(tenantId, asnId, asn.asnNo(),

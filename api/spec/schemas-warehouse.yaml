@@ -188,10 +188,12 @@ StockBalance:
     warehouseId: { type: string, format: uuid }
     locationType:
       type: string
-      enum: [DOCK, BIN, OUTBOUND, HU]
+      enum: [DOCK, BIN, OUTBOUND, HU, QUARANTINE]
       description: |
         DOCK -- received, not yet put away. BIN -- in storage. OUTBOUND --
-        picked for an order, not yet packed. HU -- packed, not yet dispatched.
+        picked for an order, not yet packed. HU -- packed, not yet
+        dispatched. QUARANTINE -- counted damaged at receipt, not pickable
+        until released.
     locationId: { type: string, format: uuid }
     locationCode:
       type: string
@@ -225,7 +227,7 @@ StockMovement:
       enum: [RECEIPT, PUTAWAY, PICK, PACK, CROSS_DOCK, DISPATCH, ADJUST]
     locationType:
       type: string
-      enum: [DOCK, BIN, OUTBOUND, HU]
+      enum: [DOCK, BIN, OUTBOUND, HU, QUARANTINE]
     locationId: { type: string, format: uuid }
     skuId: { type: string, format: uuid }
     lotNo: { type: string }
@@ -288,8 +290,12 @@ OutboundOrderLine:
     skuId: { type: string, format: uuid }
     skuCode: { type: string }
     orderedQty: { type: integer }
-    pickedQty: { type: integer }
-    shortQty: { type: integer }
+    pickedQty:
+      type: integer
+      description: Picked so far, over every pick of the order.
+    shortQty:
+      type: integer
+      description: Still owed -- the line's back-order.
 
 OutboundOrder:
   type: object
@@ -300,7 +306,10 @@ OutboundOrder:
     shipTo: { type: string }
     status:
       type: string
-      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED]
+      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED]
+      description: |
+        BACK_ORDERED -- what was found has been dispatched and at least one
+        line is still short; a further pick fills it into a further unit.
     createdAt: { type: string, format: date-time }
     lines:
       type: array
@@ -368,3 +377,156 @@ DispatchRequest:
     volumeM3:
       type: number
       minimum: 0
+
+AsnSummary:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    asnNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    supplierPartnerId: { type: string, format: uuid }
+    status:
+      type: string
+      enum: [EXPECTED, RECEIVED]
+    crossDock: { type: boolean }
+    receivedAt: { type: string, format: date-time }
+    createdAt: { type: string, format: date-time }
+
+AsnSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/AsnSummary" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+OutboundOrderSummary:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    orderNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    shipTo: { type: string }
+    status:
+      type: string
+      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED]
+    orderedUnits: { type: integer }
+    pickedUnits: { type: integer }
+    backOrderedUnits:
+      type: integer
+      description: Ordered and not yet picked, over every line.
+    createdAt: { type: string, format: date-time }
+
+OutboundOrderSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/OutboundOrderSummary" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+HandlingUnitSummary:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    huNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    source:
+      type: string
+      enum: [PACK, CROSS_DOCK]
+    outboundOrderId: { type: string, format: uuid }
+    asnId: { type: string, format: uuid }
+    status:
+      type: string
+      enum: [PACKED, DISPATCHED]
+    dispatchRef: { type: string }
+    dispatchedAt: { type: string, format: date-time }
+    createdAt: { type: string, format: date-time }
+
+HandlingUnitSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/HandlingUnitSummary" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ReleasePickWaveRequest:
+  type: object
+  properties:
+    warehouseId: { type: string, format: uuid }
+    orderIds:
+      type: array
+      minItems: 1
+      description: Served in this sequence when the bins cannot fill the wave.
+      items: { type: string, format: uuid }
+  required: [warehouseId, orderIds]
+
+PickWaveOrder:
+  type: object
+  properties:
+    seq: { type: integer }
+    orderId: { type: string, format: uuid }
+    orderNo: { type: string }
+    status:
+      type: string
+      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED]
+    orderedUnits: { type: integer }
+    pickedUnits: { type: integer }
+    shortUnits:
+      type: integer
+      description: Still owed by this order -- the wave's shortfall, attributed.
+
+PickWave:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    waveNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    status:
+      type: string
+      enum: [RELEASED, PICKED]
+    pickedBy: { type: string }
+    pickedAt: { type: string, format: date-time }
+    createdAt: { type: string, format: date-time }
+    orders:
+      type: array
+      items: { $ref: "#/components/schemas/PickWaveOrder" }
+
+ReleaseQuarantineRequest:
+  type: object
+  properties:
+    binId:
+      type: string
+      format: uuid
+      description: Where the units go. The quarantine is that bin's warehouse's.
+    skuId: { type: string, format: uuid }
+    lotNo: { type: string }
+    quantity: { type: integer, minimum: 1 }
+    reason: { type: string, minLength: 1 }
+  required: [binId, skuId, quantity, reason]
+
+WriteOffQuarantineRequest:
+  type: object
+  properties:
+    warehouseId: { type: string, format: uuid }
+    skuId: { type: string, format: uuid }
+    lotNo: { type: string }
+    quantity: { type: integer, minimum: 1 }
+    reason: { type: string, minLength: 1 }
+  required: [warehouseId, skuId, quantity, reason]

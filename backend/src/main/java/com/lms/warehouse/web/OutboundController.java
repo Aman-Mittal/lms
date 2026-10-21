@@ -21,10 +21,13 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import com.lms.warehouse.command.OutboundCommandService;
 import com.lms.warehouse.command.domain.HandlingUnit;
+import com.lms.warehouse.query.HandlingUnitSummaryView;
 import com.lms.warehouse.query.HandlingUnitView;
+import com.lms.warehouse.query.OutboundOrderSummaryView;
 import com.lms.warehouse.query.OutboundOrderView;
 import com.lms.warehouse.query.WarehouseQueryService;
 import jakarta.validation.Valid;
@@ -37,6 +40,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Goods out: outbound orders, picking, packing and the hand-off. */
@@ -63,6 +67,14 @@ public class OutboundController {
                 .body(new IdResponse(id));
     }
 
+    @GetMapping("/api/v1/outbound-orders")
+    public Slice<OutboundOrderSummaryView> orders(@RequestParam UUID warehouseId,
+                                                  @RequestParam(required = false) String status,
+                                                  @RequestParam(required = false) String cursor,
+                                                  @RequestParam(required = false) Integer limit) {
+        return queries.outboundOrders(warehouseId, status, cursor, limit);
+    }
+
     @GetMapping("/api/v1/outbound-orders/{id}")
     public OutboundOrderView order(@PathVariable UUID id) {
         return queries.outboundOrder(id)
@@ -80,6 +92,15 @@ public class OutboundController {
         UUID unitId = outbound.pack(id);
         return ResponseEntity.created(URI.create("/api/v1/handling-units/" + unitId))
                 .body(new IdResponse(unitId));
+    }
+
+    @GetMapping("/api/v1/handling-units")
+    public Slice<HandlingUnitSummaryView> handlingUnits(
+            @RequestParam UUID warehouseId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer limit) {
+        return queries.handlingUnits(warehouseId, status, cursor, limit);
     }
 
     @GetMapping("/api/v1/handling-units/{id}")

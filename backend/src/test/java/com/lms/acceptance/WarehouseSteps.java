@@ -17,26 +17,38 @@ package com.lms.acceptance;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
+import com.lms.identity.access.SubjectAttributes;
 import com.lms.masterdata.command.RegisterTerminalCommand;
 import com.lms.masterdata.command.TerminalCommandService;
 import com.lms.masterdata.command.domain.Terminal;
 import com.lms.shared.geo.LatLon;
+import com.lms.shared.query.Slice;
 import com.lms.shared.tenant.TenantContext;
 import com.lms.warehouse.command.InboundCommandService;
 import com.lms.warehouse.command.InventoryCommandService;
 import com.lms.warehouse.command.OutboundCommandService;
 import com.lms.warehouse.command.WarehouseSetupCommandService;
+import com.lms.warehouse.command.WaveCommandService;
+import com.lms.warehouse.events.BackOrderFilled;
 import com.lms.warehouse.events.HandlingUnitDispatched;
 import com.lms.warehouse.events.PickShortfallRecorded;
+import com.lms.warehouse.events.QuarantineResolved;
 import com.lms.warehouse.events.ReceiptVarianceRecorded;
+import com.lms.warehouse.query.AsnSummaryView;
 import com.lms.warehouse.query.AsnView;
+import com.lms.warehouse.query.HandlingUnitSummaryView;
 import com.lms.warehouse.query.HandlingUnitView;
+import com.lms.warehouse.query.OutboundOrderSummaryView;
 import com.lms.warehouse.query.OutboundOrderView;
+import com.lms.warehouse.query.PickWaveView;
 import com.lms.warehouse.query.StockBalanceView;
 import com.lms.warehouse.query.WarehouseQueryService;
 import io.cucumber.java.en.Given;
@@ -45,6 +57,7 @@ import io.cucumber.java.en.When;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -72,6 +85,8 @@ public class WarehouseSteps {
     @Autowired
     private InventoryCommandService inventory;
     @Autowired
+    private WaveCommandService waves;
+    @Autowired
     private WarehouseQueryService queries;
     @Autowired
     private WarehouseEventProbe probe;
@@ -82,6 +97,7 @@ public class WarehouseSteps {
 
     private RuntimeException failure;
     private RuntimeException databaseFailure;
+    private UUID lastQuarantineMovement;
 
     // ------------------------------------------------------------ master data
 
@@ -106,6 +122,19 @@ public class WarehouseSteps {
     @Given("a stock item {string} described as {string}")
     public void aStockItem(String sku, String description) {
         world.putRef("sku:" + sku, setup.createSku(world.uniqueCode(sku), description, null, "EA"));
+    }
+
+    @Given("a stock item {string} owned by {string}")
+    public void aStockItemOwnedBy(String sku, String partner) {
+        world.putRef("sku:" + sku, setup.createSku(world.uniqueCode(sku), sku + " goods",
+                world.ref(partner), "EA"));
+    }
+
+    /** A customer's own staff on the portal: may read the warehouse, nothing else. */
+    @When("the signed-in user is a warehouse portal user for {string}")
+    public void warehousePortalUser(String partner) {
+        AccessSteps.signInWith("warehouse-portal", List.of("WAREHOUSE_READ"),
+                new SubjectAttributes(null, null, world.ref(partner), null));
     }
 
     // ---------------------------------------------------------------- inbound
@@ -159,6 +188,15 @@ public class WarehouseSteps {
                 List.of(new OutboundCommandService.RequestedLine(skuId(sku), quantity))));
     }
 
+    @Given("an outbound order {string} from {string} for {int} of {string} and {int} of {string}")
+    public void aTwoLineOutboundOrder(String orderNo, String warehouse, int first,
+                                      String firstSku, int second, String secondSku) {
+        world.putRef("outbound:" + orderNo, outbound.createOrder(warehouseId(warehouse),
+                world.uniqueCode(orderNo), "Customer DC",
+                List.of(new OutboundCommandService.RequestedLine(skuId(firstSku), first),
+                        new OutboundCommandService.RequestedLine(skuId(secondSku), second))));
+    }
+
     @When("outbound order {string} is picked")
     public void picked(String orderNo) {
         attempt(() -> outbound.pick(orderId(orderNo)));
@@ -177,6 +215,53 @@ public class WarehouseSteps {
     @When("the cross-dock unit of ASN {string} is dispatched as {string}")
     public void crossDockDispatched(String asnNo, String reference) {
         attempt(() -> outbound.dispatch(crossDockUnit(asnNo), reference));
+    }
+
+    // ------------------------------------------------------------- pick waves
+
+    @When("outbound orders {string} are released in {string} as wave {string}")
+    public void waveReleased(String orderNos, String warehouse, String wave) {
+        attempt(() -> world.putRef("wave:" + wave, waves.release(warehouseId(warehouse),
+                names(orderNos).stream().map(this::orderId).toList())));
+    }
+
+    @When("wave {string} is picked")
+    public void wavePicked(String wave) {
+        attempt(() -> waves.pick(world.ref("wave:" + wave)));
+    }
+
+    // -------------------------------------------------------------- quarantine
+
+    @When("{int} quarantined {string} in {string} are released to bin {string} because {string}")
+    public void releasedFromQuarantine(int quantity, String sku, String warehouse, String bin,
+                                       String reason) {
+        attempt(() -> lastQuarantineMovement = inventory.releaseFromQuarantine(binId(bin),
+                skuId(sku), null, quantity, reason));
+    }
+
+    @When("{int} quarantined {string} in {string} are written off because {string}")
+    public void writtenOffFromQuarantine(int quantity, String sku, String warehouse,
+                                         String reason) {
+        attempt(() -> lastQuarantineMovement = inventory.writeOffQuarantine(
+                warehouseId(warehouse), skuId(sku), null, quantity, reason));
+    }
+
+    @When("a movement taking {int} of {string} out of the quarantine of {string} is written straight to the ledger")
+    public void rawQuarantineWithdrawal(int quantity, String sku, String warehouse) {
+        UUID warehouseId = warehouseId(warehouse);
+        rawSql(() -> jdbc.sql("""
+                        INSERT INTO stock_movement (id, tenant_id, warehouse_id, movement_type,
+                                                    location_type, location_id, sku_id, lot_no,
+                                                    quantity, actor, occurred_at, version)
+                        VALUES (gen_random_uuid(), :tenantId, :warehouseId, 'ADJUST', 'QUARANTINE',
+                                :warehouseId, :skuId, '', :quantity, 'a script', :at, 0)
+                        """)
+                .param("tenantId", TenantContext.requireTenantId())
+                .param("warehouseId", warehouseId)
+                .param("skuId", skuId(sku))
+                .param("quantity", -quantity)
+                .param("at", Instant.now().atOffset(ZoneOffset.UTC))
+                .update());
     }
 
     // ------------------------------------------------------------- inventory
@@ -243,6 +328,12 @@ public class WarehouseSteps {
     public void refusedMentioning(String fragment) {
         assertThat(failure).as("the warehouse should have refused").isNotNull();
         assertThat(failure.getMessage()).contains(fragment);
+    }
+
+    @Then("the warehouse refuses it as outside the caller's subtree")
+    public void refusedByPolicy() {
+        assertThat(failure).as("the access policy should have refused").isInstanceOf(
+                AccessDeniedException.class);
     }
 
     @Then("the warehouse accepts it")
@@ -368,7 +459,185 @@ public class WarehouseSteps {
         assertThat(sum).isEqualTo(total);
     }
 
+    @Then("the quarantine of {string} holds {int} of {string}")
+    public void quarantineHolds(String warehouse, int quantity, String sku) {
+        UUID warehouseId = warehouseId(warehouse);
+        assertThat(onHand(warehouseId, sku, "QUARANTINE", warehouseId)).isEqualTo(quantity);
+    }
+
+    @Then("only the quarantine of {string} still holds {string}")
+    public void onlyQuarantineHolds(String warehouse, String sku) {
+        List<StockBalanceView> balances = inTransaction(() -> queries.stock(
+                warehouseId(warehouse), skuId(sku), null, null, 200).items());
+        assertThat(balances).isNotEmpty()
+                .extracting(StockBalanceView::locationType)
+                .containsOnly("QUARANTINE");
+    }
+
+    @Then("a filled back-order of {int} was published for outbound order {string} line {int}")
+    public void backOrderFilled(int filled, String orderNo, int lineNo) {
+        assertBackOrderFilled(filled, null, orderNo, lineNo);
+    }
+
+    @Then("a filled back-order of {int} in wave {string} was published for outbound order {string} line {int}")
+    public void backOrderFilledInWave(int filled, String wave, String orderNo, int lineNo) {
+        assertBackOrderFilled(filled, world.ref("wave:" + wave), orderNo, lineNo);
+    }
+
+    @Then("no filled back-order was published for outbound order {string}")
+    public void noBackOrderFilled(String orderNo) {
+        UUID orderId = orderId(orderNo);
+        assertThat(probe.heard(BackOrderFilled.class).stream()
+                .filter(event -> event.orderId().equals(orderId))
+                .toList()).isEmpty();
+    }
+
+    @Then("a pick shortfall of {int} in wave {string} was published for outbound order {string}")
+    public void shortfallInWave(int shortQty, String wave, String orderNo) {
+        UUID orderId = orderId(orderNo);
+        UUID waveId = world.ref("wave:" + wave);
+        assertThat(probe.heard(PickShortfallRecorded.class).stream()
+                .filter(event -> event.orderId().equals(orderId))
+                .toList())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.shortQty()).isEqualTo(shortQty);
+                    assertThat(event.waveId()).isEqualTo(waveId);
+                });
+    }
+
+    @Then("wave {string} is {string} with orders {string}")
+    public void waveStatus(String wave, String status, String orderNos) {
+        PickWaveView view = inTransaction(() -> queries.pickWave(world.ref("wave:" + wave))
+                .orElseThrow(() -> new AssertionError("No wave " + wave)));
+        assertThat(view.status()).isEqualTo(status);
+        assertThat(view.orders()).extracting(PickWaveView.Order::orderId)
+                .containsExactlyElementsOf(names(orderNos).stream().map(this::orderId).toList());
+    }
+
+    /** Read from the ledger: the PICK movements out of the bin that name the order. */
+    @Then("outbound order {string} took {int} of {string} from bin {string} and {int} from bin {string}")
+    public void tookFromBins(String orderNo, int first, String sku, String firstBin, int second,
+                             String secondBin) {
+        assertThat(pickedFrom(orderNo, sku, firstBin)).as(firstBin).isEqualTo(first);
+        assertThat(pickedFrom(orderNo, sku, secondBin)).as(secondBin).isEqualTo(second);
+    }
+
+    @Then("the quarantine change was audited as {string} because {string}")
+    public void quarantineAudited(String action, String reason) {
+        assertThat(lastQuarantineMovement).as("no quarantine change was made").isNotNull();
+        Map<String, Object> entry = inTransaction(() -> jdbc.sql("""
+                        SELECT action, after_state ->> 'reason' AS reason
+                          FROM audit_log
+                         WHERE resource_type = 'STOCK_MOVEMENT' AND resource_id = :id
+                        """)
+                .param("id", lastQuarantineMovement)
+                .query()
+                .singleRow());
+        assertThat(entry).containsEntry("action", action).containsEntry("reason", reason);
+    }
+
+    @Then("a quarantine {string} of {int} of {string} was published")
+    public void quarantineResolvedPublished(String outcome, int quantity, String sku) {
+        assertThat(probe.heard(QuarantineResolved.class).stream()
+                .filter(event -> event.movementId().equals(lastQuarantineMovement))
+                .toList())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.outcome().name()).isEqualTo(outcome);
+                    assertThat(event.quantity()).isEqualTo(quantity);
+                    assertThat(event.skuId()).isEqualTo(skuId(sku));
+                });
+    }
+
+    // --------------------------------------------------------------- listings
+
+    @Then("listing {word} ASNs of {string} {int} at a time gives {string}")
+    public void asnListing(String status, String warehouse, int pageSize, String asnNos) {
+        List<UUID> listed = allPages(cursor -> queries.asns(warehouseId(warehouse),
+                statusOrNull(status), cursor, pageSize), AsnSummaryView::id);
+        assertThat(listed).containsExactlyElementsOf(
+                names(asnNos).stream().map(this::asnId).toList());
+    }
+
+    @Then("listing {word} outbound orders of {string} {int} at a time gives {string}")
+    public void orderListing(String status, String warehouse, int pageSize, String orderNos) {
+        List<UUID> listed = allPages(cursor -> queries.outboundOrders(warehouseId(warehouse),
+                statusOrNull(status), cursor, pageSize), OutboundOrderSummaryView::id);
+        assertThat(listed).containsExactlyElementsOf(
+                names(orderNos).stream().map(this::orderId).toList());
+    }
+
+    @Then("listing {word} handling units of {string} {int} at a time gives {string}")
+    public void unitListing(String status, String warehouse, int pageSize, String units) {
+        List<UUID> listed = allPages(cursor -> queries.handlingUnits(warehouseId(warehouse),
+                statusOrNull(status), cursor, pageSize), HandlingUnitSummaryView::id);
+        assertThat(listed).containsExactlyElementsOf(
+                names(units).stream().map(unit -> world.ref("hu:" + unit)).toList());
+    }
+
+    @Then("outbound order {string} is listed with {int} ordered, {int} picked and {int} back-ordered")
+    public void orderListedWithTotals(String orderNo, int ordered, int picked, int backOrdered) {
+        UUID orderId = orderId(orderNo);
+        OutboundOrderView order = order(orderNo);
+        OutboundOrderSummaryView row = inTransaction(() -> queries.outboundOrders(
+                        order.warehouseId(), null, null, 200).items().stream()
+                .filter(candidate -> candidate.id().equals(orderId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Order " + orderNo + " is not listed")));
+        assertThat(row.orderedUnits()).as("ordered").isEqualTo(ordered);
+        assertThat(row.pickedUnits()).as("picked").isEqualTo(picked);
+        assertThat(row.backOrderedUnits()).as("back-ordered").isEqualTo(backOrdered);
+    }
+
     // --------------------------------------------------------------- helpers
+
+    private void assertBackOrderFilled(int filled, UUID waveId, String orderNo, int lineNo) {
+        UUID orderId = orderId(orderNo);
+        assertThat(probe.heard(BackOrderFilled.class).stream()
+                .filter(event -> event.orderId().equals(orderId) && event.lineNo() == lineNo)
+                .toList())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.filledQty()).isEqualTo(filled);
+                    assertThat(event.waveId()).isEqualTo(waveId);
+                });
+    }
+
+    private int pickedFrom(String orderNo, String sku, String bin) {
+        return inTransaction(() -> jdbc.sql("""
+                        SELECT coalesce(-sum(quantity), 0)::int FROM stock_movement
+                         WHERE movement_type = 'PICK' AND location_type = 'BIN'
+                           AND location_id = :binId AND sku_id = :skuId
+                           AND reference_id = :orderId
+                        """)
+                .param("binId", binId(bin))
+                .param("skuId", skuId(sku))
+                .param("orderId", orderId(orderNo))
+                .query(Integer.class)
+                .single());
+    }
+
+    /** Walks every page with the cursor each one hands back. */
+    private <T> List<UUID> allPages(Function<String, Slice<T>> page, Function<T, UUID> id) {
+        List<UUID> ids = new ArrayList<>();
+        String cursor = null;
+        do {
+            String current = cursor;
+            Slice<T> slice = inTransaction(() -> page.apply(current));
+            slice.items().forEach(item -> ids.add(id.apply(item)));
+            cursor = slice.nextCursor();
+        } while (cursor != null);
+        return ids;
+    }
+
+    private static String statusOrNull(String status) {
+        return "all".equals(status) ? null : status;
+    }
+
+    private static List<String> names(String commaSeparated) {
+        return Arrays.stream(commaSeparated.split(",")).map(String::strip).toList();
+    }
 
     private static List<InboundCommandService.CountedLine> counted(List<Map<String, String>> rows) {
         return rows.stream()

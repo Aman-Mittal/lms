@@ -99,6 +99,34 @@
       "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/asns:
+  get:
+    tags: [Warehouse]
+    operationId: listAsns
+    summary: A warehouse's ASNs, newest first
+    description: |
+      Requires `WAREHOUSE_READ`. Lines are left out; read one ASN for them. A portal user sees only
+      ASNs carrying goods their partner owns.
+    parameters:
+      - name: warehouseId
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        required: false
+        schema: { type: string, enum: [EXPECTED, RECEIVED] }
+        description: Restricts the listing to one status.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of ASNs, newest first.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AsnSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
   post:
     tags: [Warehouse]
     operationId: createAsn
@@ -156,8 +184,10 @@
     description: |
       Requires `WAREHOUSE_OPERATE`. Once per ASN. Undamaged units become
       stock on the dock -- or, with `crossDock`, go straight into a new
-      outbound handling unit. Short, excess and damaged quantities are
-      recorded per line and published as variances.
+      outbound handling unit. Damaged units go into the warehouse's
+      quarantine, where nothing picks them until they are released or
+      written off. Short, excess and damaged quantities are recorded per
+      line and published as variances.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -276,6 +306,34 @@
       "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/outbound-orders:
+  get:
+    tags: [Warehouse]
+    operationId: listOutboundOrders
+    summary: A warehouse's outbound orders, newest first
+    description: |
+      Requires `WAREHOUSE_READ`. Each row carries unit totals over its lines; `BACK_ORDERED` lists the orders waiting for stock. A portal user sees only
+      orders carrying goods their partner owns.
+    parameters:
+      - name: warehouseId
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        required: false
+        schema: { type: string, enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED] }
+        description: Restricts the listing to one status.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of orders, newest first.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OutboundOrderSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
   post:
     tags: [Warehouse]
     operationId: createOutboundOrder
@@ -329,11 +387,17 @@
   post:
     tags: [Warehouse]
     operationId: pickOutboundOrder
-    summary: Pick every line from the bins
+    summary: Pick what the order is still owed from the bins
     description: |
-      Requires `WAREHOUSE_OPERATE`. Once per order. Takes what the bins hold
-      and no more: a line that cannot be filled is picked short, the order
-      becomes SHORT_PICKED and the shortfall is published.
+      Requires `WAREHOUSE_OPERATE`. Takes what the bins hold, by bin code
+      then lot, and no more: a line that cannot be filled is picked short,
+      the order becomes SHORT_PICKED and the shortfall is published. The
+      remainder is a back-order. A later pick of a SHORT_PICKED or
+      BACK_ORDERED order fills what it can of it and publishes each line it
+      completes; it is refused with `back-order-unfilled` when no bin holds
+      anything the order is owed. Refused with `outbound-order-in-wave`
+      while the order waits in a released wave, and with
+      `outbound-order-illegal-transition` once nothing is owed.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     responses:
@@ -365,6 +429,36 @@
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/handling-units:
+  get:
+    tags: [Warehouse]
+    operationId: listHandlingUnits
+    summary: A warehouse's handling units, newest first
+    description: |
+      Requires `WAREHOUSE_READ`. Contents are left out; read one unit for them. A portal user sees only
+      handling units carrying goods their partner owns.
+    parameters:
+      - name: warehouseId
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        required: false
+        schema: { type: string, enum: [PACKED, DISPATCHED] }
+        description: Restricts the listing to one status.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of handling units, newest first.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HandlingUnitSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
 
 /api/v1/handling-units/{id}:
   parameters:
@@ -402,7 +496,9 @@
     summary: Hand a packed unit over to transport
     description: |
       Requires `WAREHOUSE_OPERATE`. Once per unit. Its contents leave the
-      ledger, and the hand-off is published with them. When the request
+      ledger, and the hand-off is published with them. A packed order
+      becomes DISPATCHED, or BACK_ORDERED when any line is still short; the
+      back-order's later unit is a hand-off of its own. When the request
       names a destination, consignee and gross weight, planning turns the
       unit into one full-truckload consignment, listed among the
       consignments not yet on a load; a redelivered hand-off does not
@@ -416,6 +512,137 @@
           schema: { $ref: "#/components/schemas/DispatchRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/pick-waves:
+  post:
+    tags: [Warehouse]
+    operationId: releasePickWave
+    summary: Group outbound orders into a wave to be picked together
+    description: |
+      Requires `WAREHOUSE_OPERATE`, at a warehouse in the caller's own
+      organisational unit or one beneath it. Every order must ship from the
+      warehouse, be OPEN, SHORT_PICKED or BACK_ORDERED, and not already
+      wait in another released wave. Orders are served in the sequence
+      given, so when the bins cannot fill the wave the shortfall falls on
+      the later orders. Answers with the wave's id.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReleasePickWaveRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/pick-waves/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Warehouse]
+    operationId: getPickWave
+    summary: One wave, with what each of its orders has been given
+    description: Requires `WAREHOUSE_READ`.
+    responses:
+      "200":
+        description: The wave.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PickWave" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/pick-waves/{id}/pick:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Warehouse]
+    operationId: pickPickWave
+    summary: Pick every order in the wave together
+    description: |
+      Requires `WAREHOUSE_OPERATE`. Once per wave. Each SKU is taken by bin
+      code then lot across the whole wave, from one running balance, so no
+      unit is allocated twice. A line the wave cannot fill is short on its
+      own order: a first pick publishes the shortfall against that order and
+      line, naming the wave.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/stock/quarantine/releases:
+  post:
+    tags: [Warehouse]
+    operationId: releaseQuarantinedStock
+    summary: Release quarantined units into a bin
+    description: |
+      Requires `INVENTORY_ADJUST`, at a warehouse in the caller's own
+      organisational unit or one beneath it. An adjustment: two ADJUST
+      movements carrying the reason, out of the bin's warehouse quarantine
+      and into the bin, and an audit entry. Refused with
+      `quarantine-stock-insufficient` when quarantine holds less, and
+      `bin-over-capacity` when the bin has no room. Answers with the id of
+      the movement out of quarantine.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReleaseQuarantineRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/stock/quarantine/write-offs:
+  post:
+    tags: [Warehouse]
+    operationId: writeOffQuarantinedStock
+    summary: Write quarantined units off
+    description: |
+      Requires `INVENTORY_ADJUST`, at a warehouse in the caller's own
+      organisational unit or one beneath it. An adjustment: one ADJUST
+      movement out of the warehouse's quarantine, carrying the reason, and
+      an audit entry. Refused with `quarantine-stock-insufficient` when
+      quarantine holds less. Answers with the movement's id.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/WriteOffQuarantineRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
