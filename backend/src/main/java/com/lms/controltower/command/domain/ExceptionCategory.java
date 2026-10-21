@@ -33,6 +33,11 @@ public enum ExceptionCategory {
 
     /** The vehicle has left its permitted corridor. */
     ROUTE_DEVIATION(Severity.P2),
+    /**
+     * A multimodal leg arrived too late for the next one to leave as planned.
+     * Critical: the rest of the itinerary now has to be re-booked.
+     */
+    MISSED_CONNECTION(Severity.P2),
     /** An unplanned stop of more than twelve hours. */
     EXTENDED_STOPPAGE(Severity.P2),
     /** A refrigerated load outside its temperature band. */
@@ -41,7 +46,16 @@ public enum ExceptionCategory {
     /** The expected arrival has slipped by more than four hours. */
     ETA_DELAY(Severity.P3),
     /** A minor mismatch in the trip's paperwork. */
-    DOCUMENT_MISMATCH(Severity.P3);
+    DOCUMENT_MISMATCH(Severity.P3),
+
+    /** A supplier on a milk-run circuit was not collected from. */
+    MILK_RUN_STOP_SKIPPED(Severity.P3),
+    /** A milk-run vehicle reached a supplier after its pickup window closed. */
+    MILK_RUN_STOP_LATE(Severity.P3),
+    /** An ASN line was counted in short, over or damaged. */
+    RECEIPT_VARIANCE(Severity.P3),
+    /** An outbound line could not be picked in full. */
+    PICK_SHORTFALL(Severity.P3);
 
     private final Severity severity;
 

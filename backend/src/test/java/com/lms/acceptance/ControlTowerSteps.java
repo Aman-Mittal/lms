@@ -361,7 +361,7 @@ public class ControlTowerSteps {
     private List<ExceptionView> ticketsOn(String tripNo) {
         UUID tripId = tripId(tripNo);
         return inTransaction(() -> controlTower.list(null, null, null, 200).items().stream()
-                .filter(ticket -> ticket.tripId().equals(tripId))
+                .filter(ticket -> tripId.equals(ticket.tripId()))
                 .toList());
     }
 

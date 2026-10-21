@@ -131,6 +131,29 @@ Feature: Road to the railhead, rail for the trunk, road to the customer
     Then leg 3 of shipment "SHP-1" missed its connection and can start 7 hours ago at the earliest
     And leg 2 of shipment "SHP-1" is "ARRIVED"
 
+  # ------------------------------------------------ the control tower hears
+
+  Scenario: A missed connection raises one critical ticket, however often it is heard
+    # The first mile was late, so the ticket is on its trip -- and a critical
+    # ticket on a trip holds that trip's settlement.
+    When road trip "FM-1" leaves its origin 48 hours ago
+    And road trip "FM-1" delivers 31 hours ago
+    Then the control tower holds 1 "MISSED_CONNECTION" ticket about shipment "SHP-1"
+    And that ticket is of severity "P2" on trip "FM-1"
+    And that ticket suspends settlement
+    When the missed connection on leg 2 of shipment "SHP-1" is delivered to the control tower again
+    Then the control tower holds 1 "MISSED_CONNECTION" ticket about shipment "SHP-1"
+
+  Scenario: A connection the train missed is critical, but has no trip's money to hold
+    When road trip "FM-1" leaves its origin 48 hours ago
+    And road trip "FM-1" delivers 40 hours ago
+    And rail leg 2 of shipment "SHP-1" is reported "PLACED", "LOADED" and "DEPARTED" at 38, 36 and 34 hours ago
+    And rail leg 2 of shipment "SHP-1" is reported "ARRIVED" 9 hours ago
+    Then the control tower holds 1 "MISSED_CONNECTION" ticket about shipment "SHP-1"
+    And that ticket is of severity "P2" on no trip
+    And that ticket does not suspend settlement
+    And the board counts 1 open ticket without a trip and 0 holding settlement
+
   # ------------------------------------------------------------ planning
 
   Scenario: An itinerary whose legs do not meet is refused

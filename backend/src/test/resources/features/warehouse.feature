@@ -55,6 +55,21 @@ Feature: Stock is counted in, stored, picked and handed off, and never edited
     And the dock of "WH-1" holds 50 of "SKU-B"
     And 2 receipt variances were published for ASN "ASN-1"
 
+  Scenario: Each line counted in other than as notified raises a minor ticket on the ASN
+    Given an ASN "ASN-1" into "WH-1" expecting:
+      | sku   | quantity |
+      | SKU-A | 100      |
+      | SKU-B | 40       |
+    When ASN "ASN-1" is counted in:
+      | line | received | damaged |
+      | 1    | 90       | 5       |
+      | 2    | 50       | 0       |
+    Then the control tower holds 2 "RECEIPT_VARIANCE" tickets about ASN "ASN-1"
+    And those tickets are of severity "P3" on no trip
+    And those tickets do not suspend settlement
+    When the receipt variances of ASN "ASN-1" are delivered to the control tower again
+    Then the control tower holds 2 "RECEIPT_VARIANCE" tickets about ASN "ASN-1"
+
   Scenario: A line the count does not mention arrived not at all
     Given an ASN "ASN-1" into "WH-1" expecting:
       | sku   | quantity |
@@ -139,6 +154,14 @@ Feature: Stock is counted in, stored, picked and handed off, and never edited
     And outbound order "OUT-1" is "DISPATCHED"
     And no stock of "SKU-A" remains in "WH-1"
     And the ledger for "SKU-A" sums to 0
+
+  Scenario: A short pick raises a minor ticket on the order
+    Given 30 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And an outbound order "OUT-1" from "WH-1" for 50 of "SKU-A"
+    When outbound order "OUT-1" is picked
+    Then the control tower holds 1 "PICK_SHORTFALL" ticket about order "OUT-1"
+    And that ticket is of severity "P3" on no trip
+    And that ticket does not suspend settlement
 
   Scenario: A pick the bins can fill is not short
     Given 30 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"

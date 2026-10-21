@@ -19,7 +19,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** One ticket, flattened for the control tower board. */
+/**
+ * One ticket, flattened for the control tower board.
+ *
+ * <p>{@code tripId}, {@code tripNo} and the vehicle are null on a ticket that
+ * is about something other than a trip; {@code subjectType},
+ * {@code subjectId} and {@code subjectLabel} then say what it is about.
+ */
 public record ExceptionView(
         UUID id,
         String ticketNo,
@@ -27,6 +33,9 @@ public record ExceptionView(
         String tripNo,
         UUID vehicleId,
         String registrationNo,
+        String subjectType,
+        UUID subjectId,
+        String subjectLabel,
         String category,
         String severity,
         String status,

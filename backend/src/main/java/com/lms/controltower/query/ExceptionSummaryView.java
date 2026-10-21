@@ -20,11 +20,14 @@ package com.lms.controltower.query;
  *
  * @param settlementHolds open tickets that are holding up a vendor's money --
  *                        the number a finance controller asks about first
+ * @param openWithoutTrip open tickets about an itinerary, circuit, ASN or
+ *                        order rather than a trip; never holding money
  */
 public record ExceptionSummaryView(
         int openP1,
         int openP2,
         int openP3,
         int unassigned,
-        int settlementHolds) {
+        int settlementHolds,
+        int openWithoutTrip) {
 }
