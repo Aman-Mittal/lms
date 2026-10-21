@@ -39,8 +39,15 @@
  * goods certification and material compatibility apply to a consolidated load
  * exactly as to any other. Each docket is announced as {@code DocketBooked} so
  * that finance can bill it to its customer without reading planning's tables.
+ *
+ * <p>Listens to {@code warehouse::events} for the hand-off of a handling unit
+ * -- receipt to loaded truck. A unit dispatched with a destination, consignee
+ * and weighed gross becomes one full-truckload consignment, with no order
+ * behind it, and is put on a load like any other. An event rather than a port
+ * because nobody is waiting on it: the warehouse has finished with the unit,
+ * and the consignment appears among those not yet on a load.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",
-        allowedDependencies = {"order::api", "masterdata::api"})
+        allowedDependencies = {"order::api", "masterdata::api", "warehouse::events"})
 package com.lms.planning;
