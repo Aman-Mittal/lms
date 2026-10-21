@@ -29,7 +29,13 @@
  * would bill the same shipment twice.
  * Warehousing arrives as recorded service usage -- storage pallet-days,
  * handling in and out, value-added services -- through an idempotent endpoint
- * any warehouse system, including the planned warehouse module, can feed.
+ * any warehouse system can feed. Storage can instead be computed from the
+ * warehouse ledger, read through {@code warehouse::api}: the units of the
+ * client's own SKUs held at the end of each day, in pallets of the contract's
+ * units-per-pallet, rounded up per day.
+ *
+ * <p>Invoices carry tax per line at the contract's rate for the service
+ * family, and are corrected only by credit notes, never edited.
  *
  * <p>Which client a trip carried for, and what the carrier billed for it, are
  * read with plain SQL on the query side rather than through another module's
@@ -43,5 +49,5 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "3PL Client Billing",
-        allowedDependencies = {"execution::events", "identity::access"})
+        allowedDependencies = {"execution::events", "identity::access", "warehouse::api"})
 package com.lms.clientbilling;
