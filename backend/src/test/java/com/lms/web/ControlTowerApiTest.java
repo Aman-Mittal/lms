@@ -291,7 +291,8 @@ class ControlTowerApiTest {
     void noTripTicketOverHttp() {
         UUID orderId = UUID.randomUUID();
         PickShortfallRecorded shortfall = new PickShortfallRecorded(tenantId, orderId,
-                "OUT-7", UUID.randomUUID(), 1, UUID.randomUUID(), 50, 30, 20, Instant.now());
+                "OUT-7", UUID.randomUUID(), 1, UUID.randomUUID(), 50, 30, 20, null,
+                Instant.now());
         // Published the way warehousing publishes it: inside a transaction
         // that commits, which is what the control tower listens for. Twice,
         // because the outbox delivers at least once.
