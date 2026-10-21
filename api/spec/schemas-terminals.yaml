@@ -30,7 +30,7 @@ Terminal:
     name: { type: string }
     functionalCategory:
       type: string
-      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE, RAILHEAD]
     geofenceType: { type: string, enum: [POLYGON, POINT_RADIUS] }
     polygon:
       type: string
@@ -52,7 +52,7 @@ RegisterPolygonTerminalRequest:
     name: { type: string }
     category:
       type: string
-      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE, RAILHEAD]
     ring:
       type: array
       minItems: 3
@@ -74,7 +74,7 @@ RegisterPointRadiusTerminalRequest:
     name: { type: string }
     category:
       type: string
-      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE]
+      enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE, RAILHEAD]
     centre: { $ref: "#/components/schemas/Point" }
     radiusMetres: { type: number, exclusiveMinimum: 0 }
     dockCount: { type: integer }

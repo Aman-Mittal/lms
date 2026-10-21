@@ -23,7 +23,7 @@
     parameters:
       - name: category
         in: query
-        schema: { type: string, enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE] }
+        schema: { type: string, enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE, RAILHEAD] }
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
     responses:
