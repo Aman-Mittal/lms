@@ -30,6 +30,14 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
     Optional<Consignment> findByTrackingRef(@Param("tenantId") UUID tenantId,
                                             @Param("trackingRef") String trackingRef);
 
+    /** Served by {@code consignment_handling_unit_idx}. */
+    @Query("""
+            SELECT * FROM consignment
+             WHERE tenant_id = :tenantId AND handling_unit_id = :handlingUnitId
+            """)
+    Optional<Consignment> findByHandlingUnit(@Param("tenantId") UUID tenantId,
+                                             @Param("handlingUnitId") UUID handlingUnitId);
+
     /** Served by {@code consignment_order_idx}. */
     @Query("""
             SELECT * FROM consignment

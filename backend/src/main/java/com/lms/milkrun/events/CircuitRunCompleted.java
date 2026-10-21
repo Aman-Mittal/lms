@@ -27,6 +27,12 @@ import java.util.UUID;
  * supplier actually collected from, both taken from the route version in force
  * on the run date. Skipped suppliers are not charged for: the carrier did not
  * do that part of the work.
+ *
+ * <p>{@code tripNo}, {@code loadId} and {@code vendorPartnerId} were added so
+ * that finance can raise the carrier payable without asking execution for
+ * them: they are the carrying trip's, read when the circuit finished. The
+ * vendor is null when the trip runs on the tenant's own fleet, and then there
+ * is nobody to pay.
  */
 public record CircuitRunCompleted(
         UUID tenantId,
@@ -41,5 +47,8 @@ public record CircuitRunCompleted(
         BigDecimal perStopFee,
         BigDecimal chargeAmount,
         String currency,
-        Instant completedAt) {
+        Instant completedAt,
+        String tripNo,
+        UUID loadId,
+        UUID vendorPartnerId) {
 }
