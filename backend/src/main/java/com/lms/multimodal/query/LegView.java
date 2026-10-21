@@ -19,7 +19,12 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** One leg, flattened, with the terminal, trip and carrier it names. */
+/**
+ * One leg, flattened, with the terminal, trip and carrier it names.
+ *
+ * @param railTariffId the rail rate card that priced the leg; null when its
+ *                     cost was given by the planner, and always for road
+ */
 public record LegView(
         UUID id,
         int seq,
@@ -41,6 +46,8 @@ public record LegView(
         UUID carrierPartnerId,
         String carrierCode,
         BigDecimal costAmount,
+        UUID railTariffId,
+        String railTariffCode,
         Instant placedAt,
         Instant loadedAt,
         Instant departedAt,
