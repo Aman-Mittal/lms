@@ -42,7 +42,8 @@ public class WarehouseSetupCommandService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('WAREHOUSE_SETUP')")
+    @PreAuthorize("hasAuthority('WAREHOUSE_SETUP')"
+            + " and @abac.permits('WAREHOUSE_SETUP', 'TERMINAL', #warehouseId)")
     public UUID createBin(UUID warehouseId, String code, int capacityUnits) {
         warehouses.requireWarehouse(warehouseId);
         Bin bin = Bin.create(TenantContext.requireTenantId(), warehouseId, code, capacityUnits,
@@ -55,7 +56,8 @@ public class WarehouseSetupCommandService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('WAREHOUSE_SETUP')")
+    @PreAuthorize("hasAuthority('WAREHOUSE_SETUP')"
+            + " and @abac.permits('WAREHOUSE_SETUP', 'BUSINESS_PARTNER', #ownerPartnerId)")
     public UUID createSku(String code, String description, UUID ownerPartnerId, String uom) {
         Sku sku = Sku.create(TenantContext.requireTenantId(), code, description, ownerPartnerId,
                 uom, Instant.now());

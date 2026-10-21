@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -62,6 +63,16 @@ public class TripQueryService {
                    ) docs ON true
             """;
 
+    /**
+     * The portal-user predicate, as finance has it for bills. Null for the
+     * tenant's own staff, which makes it vanish; a partner id confines every
+     * read to the trips that vendor was awarded. Another vendor's trip then
+     * reads as absent -- a 404, not a 403 that would confirm it exists.
+     */
+    private static final String PARTNER_SCOPE = """
+               AND (CAST(:partner AS uuid) IS NULL OR t.vendor_partner_id = CAST(:partner AS uuid))
+            """;
+
     private final JdbcClient jdbc;
 
     public TripQueryService(JdbcClient jdbc) {
@@ -69,15 +80,17 @@ public class TripQueryService {
     }
 
     public Optional<TripView> findById(UUID id) {
-        return jdbc.sql(SELECT + " WHERE t.id = :id")
+        return jdbc.sql(SELECT + " WHERE t.id = :id" + PARTNER_SCOPE)
                 .param("id", id)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(TripView.class)
                 .optional();
     }
 
     public Optional<TripView> findByTripNo(String tripNo) {
-        return jdbc.sql(SELECT + " WHERE t.trip_no = :tripNo")
+        return jdbc.sql(SELECT + " WHERE t.trip_no = :tripNo" + PARTNER_SCOPE)
                 .param("tripNo", tripNo)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(TripView.class)
                 .optional();
     }
@@ -89,10 +102,12 @@ public class TripQueryService {
         List<TripView> rows = jdbc.sql(SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR t.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR t.trip_no > CAST(:cursor AS text))
+                        """ + PARTNER_SCOPE + """
                          ORDER BY t.trip_no
                          LIMIT :limit
                         """)
                 .param("status", status)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(TripView.class)
@@ -109,9 +124,14 @@ public class TripQueryService {
                           FROM gate_event g
                           JOIN terminal tm ON tm.id = g.terminal_id
                          WHERE g.trip_id = :tripId
+                           AND EXISTS (SELECT 1 FROM trip t
+                                        WHERE t.id = g.trip_id
+                        """ + PARTNER_SCOPE + """
+                                      )
                          ORDER BY g.occurred_at
                         """)
                 .param("tripId", tripId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(GateEventView.class)
                 .list();
     }

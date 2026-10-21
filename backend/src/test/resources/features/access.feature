@@ -48,6 +48,13 @@ Feature: A permission says what kind of thing; a policy says how far
     Then the tenant has access policy "invoice-approval-limit" on "INVOICE_APPROVE"
     And the tenant has access policy "exception-close-holding-limit" on "EXCEPTION_CLOSE"
     And the tenant has access policy "partner-write-org-subtree" on "PARTNER_CREATE"
+    And the tenant has access policy "vehicle-write-org-subtree" on "VEHICLE_CREATE"
+    And the tenant has access policy "order-write-org-subtree" on "ORDER_CREATE"
+    And the tenant has access policy "load-write-org-subtree" on "LOAD_CREATE"
+    And the tenant has access policy "trip-write-org-subtree" on "TRIP_EXECUTE"
+    And the tenant has access policy "routing-guide-write-org-subtree" on "ROUTING_GUIDE_MANAGE"
+    And the tenant has access policy "warehouse-setup-org-subtree" on "WAREHOUSE_SETUP"
+    And the tenant has access policy "client-contract-write-org-subtree" on "CLIENT_CONTRACT_MANAGE"
 
   # ------------------------------------------------ monetary: invoices
 
@@ -140,6 +147,40 @@ Feature: A permission says what kind of thing; a policy says how far
     When a partner "P-SOUTH" is registered under "/acme/south/"
     Then the access policy allows it
 
+  Scenario: Every create command is held to the caller's subtree
+    # One record from each module group. A record with no unit of its own is
+    # held to the unit of what it hangs from: a trip to its load's, a bin to
+    # its warehouse's.
+    Given tenant "acme" has an organisational unit "/acme/north/" named "North" of type "REGION"
+    And tenant "acme" has an organisational unit "/acme/south/" named "South" of type "REGION"
+    And a warehouse "WH-SOUTH" under "/acme/south/"
+    And a load "L-SOUTH" awarded to "VENDOR-1" under "/acme/south/"
+    And the tenant scope is "acme" at "/acme/north/"
+    When a vehicle is registered under "/acme/north/"
+    Then the access policy allows it
+    When a vehicle is registered under "/acme/south/"
+    Then the access policy refuses it
+    When an order is raised under "/acme/south/"
+    Then the access policy refuses it
+    When a load is opened under "/acme/south/"
+    Then the access policy refuses it
+    When a routing guide is defined under "/acme/south/"
+    Then the access policy refuses it
+    When a trip is raised against load "L-SOUTH"
+    Then the access policy refuses it
+    When a bin is laid out in warehouse "WH-SOUTH"
+    Then the access policy refuses it
+
+  Scenario: Head office files records anywhere beneath it
+    Given tenant "acme" has an organisational unit "/acme/south/" named "South" of type "REGION"
+    And a warehouse "WH-SOUTH" under "/acme/south/"
+    When a vehicle is registered under "/acme/south/"
+    Then the access policy allows it
+    When an order is raised under "/acme/south/"
+    Then the access policy allows it
+    When a bin is laid out in warehouse "WH-SOUTH"
+    Then the access policy allows it
+
   # ------------------------------------------------------ partner scope
 
   Scenario: A vendor-portal user sees only their own company's bills
@@ -213,3 +254,28 @@ Feature: A permission says what kind of thing; a policy says how far
     Given "meera@acme.test" has an approval limit of 5000
     When the access token is refreshed
     Then the access token carries an approval limit of 5000
+
+  # ------------------------------------------- partner scope beyond finance
+
+  Scenario: A vendor-portal user sees only the trips and loads awarded to them
+    Given a carrier "VENDOR-2"
+    And trip "P1" is raised for "VENDOR-1"
+    And trip "P2" is raised for "VENDOR-2"
+    When the signed-in user is a portal user for "VENDOR-1"
+    Then the trip listing shows "P1" only
+    And trip "P1" can be read
+    And trip "P2" reads as not found
+    And the load listing shows the load of "P1" only
+    And the load of "P2" reads as not found
+    When the signed-in user is tenant staff
+    Then the trip listing shows "P1" and "P2"
+
+  Scenario: A customer-portal user sees only their own orders
+    Given a trading partner "CUST-2"
+    And order "O1" is raised for "CUST"
+    And order "O2" is raised for "CUST-2"
+    When the signed-in user is a portal user for "CUST"
+    Then the order listing shows "O1" only
+    And order "O2" reads as not found
+    When the signed-in user is a portal user for "VENDOR-1"
+    Then the order listing shows nothing

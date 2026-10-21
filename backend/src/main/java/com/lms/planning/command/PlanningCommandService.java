@@ -229,7 +229,7 @@ public class PlanningCommandService {
 
     /** Opens an empty full-truckload load sized against a specific, available vehicle. */
     @Transactional
-    @PreAuthorize("hasAuthority('LOAD_CREATE')")
+    @PreAuthorize("hasAuthority('LOAD_CREATE') and @abac.permitsIn('LOAD_CREATE', #orgUnitId)")
     public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId) {
         return openLoad(orgUnitId, loadNo, originTerminalId, vehicleId, FreightMode.FTL);
     }
@@ -241,7 +241,7 @@ public class PlanningCommandService {
      * dockets booked through that hub can be put on the vehicle.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('LOAD_CREATE')")
+    @PreAuthorize("hasAuthority('LOAD_CREATE') and @abac.permitsIn('LOAD_CREATE', #orgUnitId)")
     public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId,
                          FreightMode freightMode) {
         UUID tenantId = TenantContext.requireTenantId();

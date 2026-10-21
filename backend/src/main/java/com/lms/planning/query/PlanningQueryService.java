@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -78,6 +79,16 @@ public class PlanningQueryService {
               LEFT JOIN load_unit l ON l.id = lc.load_id
             """;
 
+    /**
+     * The portal-user predicate on loads. Null for the tenant's own staff; a
+     * partner id confines the read to loads awarded to that vendor, so a load
+     * still out to tender -- or awarded to a competitor -- reads as absent.
+     */
+    private static final String LOAD_PARTNER_SCOPE = """
+               AND (CAST(:partner AS uuid) IS NULL
+                    OR l.awarded_vendor_partner_id = CAST(:partner AS uuid))
+            """;
+
     private final JdbcClient jdbc;
 
     public PlanningQueryService(JdbcClient jdbc) {
@@ -85,8 +96,9 @@ public class PlanningQueryService {
     }
 
     public Optional<LoadView> findLoad(UUID id) {
-        return jdbc.sql(LOAD_SELECT + " WHERE l.id = :id")
+        return jdbc.sql(LOAD_SELECT + " WHERE l.id = :id" + LOAD_PARTNER_SCOPE)
                 .param("id", id)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(LoadView.class)
                 .optional();
     }
@@ -104,10 +116,12 @@ public class PlanningQueryService {
         List<LoadView> rows = jdbc.sql(LOAD_SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR l.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR l.load_no > CAST(:cursor AS text))
+                        """ + LOAD_PARTNER_SCOPE + """
                          ORDER BY l.load_no
                          LIMIT :limit
                         """)
                 .param("status", status)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(LoadView.class)

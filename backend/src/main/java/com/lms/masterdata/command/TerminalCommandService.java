@@ -45,7 +45,8 @@ public class TerminalCommandService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('TERMINAL_CREATE')")
+    @PreAuthorize("hasAuthority('TERMINAL_CREATE')"
+            + " and @abac.permitsIn('TERMINAL_CREATE', #command?.orgUnitId())")
     public UUID register(RegisterTerminalCommand command) {
         UUID tenantId = TenantContext.requireTenantId();
 

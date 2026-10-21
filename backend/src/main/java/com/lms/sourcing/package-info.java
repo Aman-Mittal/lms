@@ -30,5 +30,5 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Sourcing & Allocation",
-        allowedDependencies = {"planning::api", "masterdata::api"})
+        allowedDependencies = {"planning::api", "masterdata::api", "identity::access"})
 package com.lms.sourcing;

@@ -21,7 +21,12 @@
  * consignments grouped by destination, and consignments are aggregated into
  * loads that respect a vehicle's hard capacities.
  *
- * <p>Both declared dependencies are synchronous ports rather than events, and
+ * <p>{@code identity::access} is the access decision point's SPI: planning
+ * describes a load to it (so a trip is raised only in the caller's subtree)
+ * and reads the caller's partner to confine a vendor-portal user to their own
+ * awarded loads.
+ *
+ * <p>Both module dependencies are synchronous ports rather than events, and
  * both for the same reason: they gate the operator's next click. Load building
  * must know what a vehicle can carry <em>before</em> the load is built, and
  * consignment generation must return the references it just created. Learning
@@ -49,5 +54,6 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",
-        allowedDependencies = {"order::api", "masterdata::api", "warehouse::events"})
+        allowedDependencies = {"order::api", "masterdata::api", "warehouse::events",
+                "identity::access"})
 package com.lms.planning;

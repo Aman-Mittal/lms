@@ -99,7 +99,7 @@ public class TripCommandService {
 
     /** Raises a trip against an awarded load. */
     @Transactional
-    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE') and @abac.permits('TRIP_EXECUTE', 'LOAD', #loadId)")
     public UUID raiseTrip(String tripNo, UUID loadId, Instant plannedStartAt) {
         UUID tenantId = TenantContext.requireTenantId();
 

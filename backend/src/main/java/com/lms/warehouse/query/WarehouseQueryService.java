@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -41,6 +42,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 @PreAuthorize("hasAuthority('WAREHOUSE_READ')")
 public class WarehouseQueryService {
+
+    /**
+     * The portal-user predicate on goods, by who owns them. Null for the
+     * tenant's own staff; a partner id confines stock, SKUs and their ledger
+     * to that customer's own goods. Unowned SKUs -- the tenant's own stock --
+     * are never theirs.
+     */
+    private static final String OWNER_SCOPE = """
+               AND (CAST(:partner AS uuid) IS NULL OR s.owner_partner_id = CAST(:partner AS uuid))
+            """;
 
     private final JdbcClient jdbc;
 
@@ -77,13 +88,15 @@ public class WarehouseQueryService {
     public Slice<SkuView> skus(String cursor, Integer limit) {
         int pageSize = Slice.clampLimit(limit);
         List<SkuView> rows = jdbc.sql("""
-                        SELECT id, code, description, owner_partner_id, uom
-                          FROM sku
-                         WHERE (CAST(:after AS text) IS NULL OR code > CAST(:after AS text))
-                         ORDER BY code
+                        SELECT s.id, s.code, s.description, s.owner_partner_id, s.uom
+                          FROM sku s
+                         WHERE (CAST(:after AS text) IS NULL OR s.code > CAST(:after AS text))
+                        """ + OWNER_SCOPE + """
+                         ORDER BY s.code
                          LIMIT :limit
                         """)
                 .param("after", blankToNull(cursor))
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("limit", pageSize + 1)
                 .query(SkuView.class)
                 .list();
@@ -254,10 +267,12 @@ public class WarehouseQueryService {
                            AND (CAST(:binId AS uuid) IS NULL
                                 OR (b.location_type = 'BIN' AND b.location_id = CAST(:binId AS uuid)))
                            AND (CAST(:after AS uuid) IS NULL OR b.id > CAST(:after AS uuid))
+                        """ + OWNER_SCOPE + """
                          ORDER BY b.id
                          LIMIT :limit
                         """)
                 .param("warehouseId", warehouseId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("skuId", skuId)
                 .param("binId", binId)
                 .param("after", after)
@@ -276,6 +291,10 @@ public class WarehouseQueryService {
                                sku_id, lot_no, quantity, reference_id, reason, actor, occurred_at
                           FROM stock_movement
                          WHERE sku_id = :skuId
+                           AND EXISTS (SELECT 1 FROM sku s
+                                        WHERE s.id = stock_movement.sku_id
+                        """ + OWNER_SCOPE + """
+                                      )
                            AND (CAST(:afterAt AS timestamptz) IS NULL
                                 OR (occurred_at, id) < (CAST(:afterAt AS timestamptz),
                                                         CAST(:afterId AS uuid)))
@@ -283,6 +302,7 @@ public class WarehouseQueryService {
                          LIMIT :limit
                         """)
                 .param("skuId", skuId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("afterAt", after == null ? null : after.occurredAt())
                 .param("afterId", after == null ? null : after.id())
                 .param("limit", pageSize + 1)

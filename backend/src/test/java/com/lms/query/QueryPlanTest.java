@@ -111,6 +111,77 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a vendor-portal user's trip listing is index-served")
+    void partnerScopedTripListing() {
+        assertIndexed("""
+                SELECT * FROM trip
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND trip_no > 'TR-0000'
+                 ORDER BY trip_no
+                 LIMIT 51
+                """, "trip");
+    }
+
+    @Test
+    @DisplayName("a vendor-portal user's load listing is index-served")
+    void partnerScopedLoadListing() {
+        assertIndexed("""
+                SELECT * FROM load_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND awarded_vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND load_no > 'LD-0000'
+                 ORDER BY load_no
+                 LIMIT 51
+                """, "load_unit");
+    }
+
+    @Test
+    @DisplayName("the offers addressed to a vendor-portal user are index-served")
+    void partnerScopedAllocationListing() {
+        // The EXISTS probe the allocation listing adds for a portal vendor.
+        String sql = """
+                SELECT a.id FROM allocation a
+                  JOIN load_unit l ON l.id = a.load_id
+                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND l.load_no > 'LD-0000'
+                   AND EXISTS (SELECT 1 FROM allocation_offer po
+                                WHERE po.tenant_id = a.tenant_id
+                                  AND po.allocation_id = a.id
+                                  AND po.vendor_partner_id = '00000000-0000-0000-0000-000000000002')
+                 ORDER BY l.load_no
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "allocation_offer");
+    }
+
+    @Test
+    @DisplayName("a customer-portal user's order listing is index-served")
+    void partnerScopedOrderListing() {
+        assertIndexed("""
+                SELECT * FROM sales_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND customer_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND order_no > 'SO-0000'
+                 ORDER BY order_no
+                 LIMIT 51
+                """, "sales_order");
+    }
+
+    @Test
+    @DisplayName("a customer-portal user's SKU listing is index-served")
+    void partnerScopedSkuListing() {
+        assertIndexed("""
+                SELECT * FROM sku
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND owner_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND code > 'SKU-0000'
+                 ORDER BY code
+                 LIMIT 51
+                """, "sku");
+    }
+
+    @Test
     @DisplayName("organisational subtree prefix match is index-served")
     void orgSubtreePrefix() {
         // The reason org_unit_path_prefix_idx uses text_pattern_ops: without it

@@ -16,6 +16,8 @@
 package com.lms.acceptance;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +26,9 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import com.lms.controltower.command.ExceptionCommandService;
+import com.lms.execution.command.TripCommandService;
+import com.lms.execution.query.TripQueryService;
+import com.lms.execution.query.TripView;
 import com.lms.finance.command.BillingService;
 import com.lms.finance.query.FinanceQueryService;
 import com.lms.finance.query.FreightBillView;
@@ -33,8 +38,22 @@ import com.lms.identity.command.AccessPolicyRepository;
 import com.lms.identity.command.AuthService;
 import com.lms.identity.command.domain.AccessPolicy;
 import com.lms.masterdata.command.FleetCommandService;
+import com.lms.masterdata.command.RegisterTerminalCommand;
+import com.lms.masterdata.command.TerminalCommandService;
 import com.lms.masterdata.command.domain.BusinessPartner;
+import com.lms.masterdata.command.domain.Terminal;
+import com.lms.order.command.OrderCommandService;
+import com.lms.order.command.domain.SalesOrder;
+import com.lms.order.query.OrderQueryService;
+import com.lms.order.query.OrderView;
+import com.lms.planning.command.PlanningCommandService;
+import com.lms.planning.query.LoadView;
+import com.lms.planning.query.PlanningQueryService;
+import com.lms.shared.geo.LatLon;
 import com.lms.shared.tenant.TenantContext;
+import com.lms.sourcing.command.RoutingGuideCommandService;
+import com.lms.sourcing.command.domain.RoutingGuide;
+import com.lms.warehouse.command.WarehouseSetupCommandService;
 import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
@@ -88,6 +107,26 @@ public class AccessSteps {
     private JsonMapper json;
     @Autowired
     private PlatformTransactionManager transactionManager;
+    @Autowired
+    private SpineFixtures spine;
+    @Autowired
+    private TerminalCommandService terminals;
+    @Autowired
+    private OrderCommandService orders;
+    @Autowired
+    private OrderQueryService orderQueries;
+    @Autowired
+    private PlanningCommandService planning;
+    @Autowired
+    private PlanningQueryService planningQueries;
+    @Autowired
+    private RoutingGuideCommandService guides;
+    @Autowired
+    private TripCommandService tripCommands;
+    @Autowired
+    private TripQueryService tripQueries;
+    @Autowired
+    private WarehouseSetupCommandService warehouseSetup;
 
     private RuntimeException failure;
     private AuthService.AuthResult session;
@@ -150,6 +189,138 @@ public class AccessSteps {
         assertThat(orgUnitId).as("scenario has no unit %s", orgPath).isNotNull();
         attempt(() -> fleet.registerPartner(orgUnitId, world.uniqueCode(code), code + " Ltd",
                 BusinessPartner.PartnerType.CUSTOMER, "TAX-" + code));
+    }
+
+    // ------------------------------------------- writes held to the subtree
+
+    @Given("a warehouse {string} under {string}")
+    public void aWarehouseUnder(String code, String orgPath) {
+        world.putRef("warehouse:" + code, terminals.register(new RegisterTerminalCommand.PointRadius(
+                unit(orgPath), world.uniqueCode(code), code, Terminal.FunctionalCategory.WAREHOUSE,
+                new LatLon(18.5, 73.8), 300, 2, null, null, 45, List.of())));
+    }
+
+    @Given("a load {string} awarded to {string} under {string}")
+    public void anAwardedLoadUnder(String loadNo, String vendorCode, String orgPath) {
+        world.putRef("load:" + loadNo, spine.awardedLoad(unit(orgPath), world.uniqueCode(loadNo),
+                world.ref("CUST"), world.ref("ORIGIN"), world.ref("CONS-A"), world.ref("DEST-A"),
+                world.ref("vehicle:MH-01-TL-0001"), world.ref(vendorCode),
+                BigDecimal.valueOf(5000), false));
+    }
+
+    @When("a vehicle is registered under {string}")
+    public void registerVehicleUnder(String orgPath) {
+        UUID unit = unit(orgPath);
+        String registration = "MH-09-AC-" + (1000 + (int) (Math.random() * 9000));
+        attempt(() -> fleet.registerVehicle(unit, null, registration, "TRUCK", "RIGID", "2-AXLE",
+                BigDecimal.valueOf(26000), BigDecimal.valueOf(6000), BigDecimal.valueOf(60),
+                false, false));
+    }
+
+    @When("an order is raised under {string}")
+    public void raiseOrderUnder(String orgPath) {
+        UUID unit = unit(orgPath);
+        attempt(() -> orders.raiseOrder(unit, world.ref("CUST"), world.uniqueCode("ORD-SUB"),
+                world.ref("ORIGIN"), null, null, SalesOrder.OrderSource.MANUAL));
+    }
+
+    @When("a load is opened under {string}")
+    public void openLoadUnder(String orgPath) {
+        UUID unit = unit(orgPath);
+        attempt(() -> planning.openLoad(unit, world.uniqueCode("LD-SUB"), world.ref("ORIGIN"),
+                world.ref("vehicle:MH-01-TL-0001")));
+    }
+
+    @When("a routing guide is defined under {string}")
+    public void defineGuideUnder(String orgPath) {
+        UUID unit = unit(orgPath);
+        attempt(() -> guides.define(unit, world.ref("ORIGIN"), world.ref("DEST-A"), "RIGID",
+                RoutingGuide.Strategy.CONTRACTUAL));
+    }
+
+    @When("a trip is raised against load {string}")
+    public void raiseTripAgainst(String loadNo) {
+        UUID load = world.ref("load:" + loadNo);
+        attempt(() -> tripCommands.raiseTrip(world.uniqueCode("TR-" + loadNo), load, Instant.now()));
+    }
+
+    @When("a bin is laid out in warehouse {string}")
+    public void layOutBin(String warehouseCode) {
+        UUID warehouse = world.ref("warehouse:" + warehouseCode);
+        attempt(() -> warehouseSetup.createBin(warehouse, "B-01", 100));
+    }
+
+    // ------------------------------------------------- reads for portal users
+
+    @Given("trip {string} is raised for {string}")
+    public void portalTrip(String tripNo, String vendorCode) {
+        UUID load = spine.awardedLoad(world.orgUnitId(), world.uniqueCode("LOAD-" + tripNo),
+                world.ref("CUST"), world.ref("ORIGIN"), world.ref("CONS-A"), world.ref("DEST-A"),
+                world.ref("vehicle:MH-01-TL-0001"), world.ref(vendorCode),
+                BigDecimal.valueOf(4000), false);
+        world.putRef("portal-load:" + tripNo, load);
+        world.putRef("portal-trip:" + tripNo, tripCommands.raiseTrip(world.uniqueCode(tripNo), load,
+                Instant.now().plus(1, ChronoUnit.HOURS)));
+    }
+
+    @Given("order {string} is raised for {string}")
+    public void portalOrder(String orderNo, String customerCode) {
+        world.putRef("portal-order:" + orderNo, orders.raiseOrder(world.orgUnitId(),
+                world.ref(customerCode), world.uniqueCode(orderNo), world.ref("ORIGIN"), null, null,
+                SalesOrder.OrderSource.MANUAL));
+    }
+
+    @Then("the trip listing shows {string} only")
+    public void tripListingShowsOnly(String tripNo) {
+        assertThat(listedTripIds()).containsExactly(world.ref("portal-trip:" + tripNo));
+    }
+
+    @Then("the trip listing shows {string} and {string}")
+    public void tripListingShowsBoth(String first, String second) {
+        assertThat(listedTripIds()).containsExactlyInAnyOrder(
+                world.ref("portal-trip:" + first), world.ref("portal-trip:" + second));
+    }
+
+    @Then("trip {string} reads as not found")
+    public void tripHidden(String tripNo) {
+        assertThat(inTransaction(() -> tripQueries.findById(world.ref("portal-trip:" + tripNo))))
+                .isEmpty();
+    }
+
+    @Then("trip {string} can be read")
+    public void tripVisible(String tripNo) {
+        assertThat(inTransaction(() -> tripQueries.findById(world.ref("portal-trip:" + tripNo))))
+                .isPresent();
+    }
+
+    @Then("the load listing shows the load of {string} only")
+    public void loadListingShowsOnly(String tripNo) {
+        assertThat(inTransaction(() -> planningQueries.listLoads(null, null, 200).items().stream()
+                .map(LoadView::id)
+                .toList()))
+                .containsExactly(world.ref("portal-load:" + tripNo));
+    }
+
+    @Then("the load of {string} reads as not found")
+    public void loadHidden(String tripNo) {
+        assertThat(inTransaction(() -> planningQueries.findLoad(world.ref("portal-load:" + tripNo))))
+                .isEmpty();
+    }
+
+    @Then("the order listing shows {string} only")
+    public void orderListingShowsOnly(String orderNo) {
+        assertThat(listedOrderIds()).containsExactly(world.ref("portal-order:" + orderNo));
+    }
+
+    @Then("the order listing shows nothing")
+    public void orderListingEmpty() {
+        assertThat(listedOrderIds()).isEmpty();
+    }
+
+    @Then("order {string} reads as not found")
+    public void orderHidden(String orderNo) {
+        assertThat(inTransaction(() -> orderQueries.findById(world.ref("portal-order:" + orderNo))))
+                .isEmpty();
     }
 
     // ------------------------------------------------------------- policies
@@ -264,6 +435,24 @@ public class AccessSteps {
         return inTransaction(() -> finance.list(null, null, 200).items().stream()
                 .map(FreightBillView::id)
                 .toList());
+    }
+
+    private List<UUID> listedTripIds() {
+        return inTransaction(() -> tripQueries.list(null, null, 200).items().stream()
+                .map(TripView::id)
+                .toList());
+    }
+
+    private List<UUID> listedOrderIds() {
+        return inTransaction(() -> orderQueries.list(null, null, 200).items().stream()
+                .map(OrderView::id)
+                .toList());
+    }
+
+    private UUID unit(String orgPath) {
+        UUID orgUnitId = world.orgUnitId(orgPath);
+        assertThat(orgUnitId).as("scenario has no unit %s", orgPath).isNotNull();
+        return orgUnitId;
     }
 
     private AccessPolicy policy(String code) {
