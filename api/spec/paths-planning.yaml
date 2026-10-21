@@ -1,0 +1,228 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/orders/{id}/consignments:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Planning]
+    operationId: generateConsignments
+    summary: Generate consignments from an order
+    description: |
+      One consignment per consignee and destination. The grouping rule belongs
+      to planning; letting a client post consignments would move it to the
+      client.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "201":
+        description: The consignments generated.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/IdResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Planning]
+    operationId: getConsignment
+    summary: One consignment
+    responses:
+      "200":
+        description: The consignment.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Consignment" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/consignments/by-tracking-ref/{trackingRef}:
+  parameters:
+    - name: trackingRef
+      in: path
+      required: true
+      schema: { type: string }
+      description: The consignment's public tracking reference.
+  get:
+    tags: [Planning]
+    operationId: trackConsignment
+    summary: Look a consignment up by its public tracking reference
+    responses:
+      "200":
+        description: The consignment.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Consignment" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/consignments/unassigned:
+  get:
+    tags: [Planning]
+    operationId: listUnassignedConsignments
+    summary: Consignments not yet on a load
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of unassigned consignments.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/loads:
+  get:
+    tags: [Planning]
+    operationId: listLoads
+    summary: A page of loads
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of loads.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoadSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Planning]
+    operationId: openLoad
+    summary: Open a load against a vehicle
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/OpenLoadRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/loads/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Planning]
+    operationId: getLoad
+    summary: One load
+    responses:
+      "200":
+        description: The load.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Load" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/loads/{id}/consignments:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Planning]
+    operationId: listLoadConsignments
+    summary: What is aboard a load
+    responses:
+      "200":
+        description: Consignments in drop sequence.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Consignment" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Planning]
+    operationId: assignConsignment
+    summary: Put a consignment on a load
+    description: |
+      Refused with 409 when it would exceed the vehicle's weight or volume, or
+      when the material is incompatible with something already aboard. The
+      capacity rule is also a database CHECK constraint.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AssignConsignmentRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/loads/{id}/plan:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Planning]
+    operationId: planLoad
+    summary: Close a load to further building, making it sourceable
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
