@@ -33,7 +33,6 @@ import com.lms.planning.query.ConsignmentView;
 import com.lms.planning.query.PlanningQueryService;
 import com.lms.shared.query.Slice;
 import com.lms.shared.tenant.TenantContext;
-import com.lms.warehouse.command.HandlingUnitRepository;
 import com.lms.warehouse.command.OutboundCommandService;
 import com.lms.warehouse.command.domain.HandlingUnit;
 import com.lms.warehouse.events.HandlingUnitDispatched;
@@ -78,8 +77,6 @@ public class HandOffSteps {
     private PlanningQueryService planningQueries;
     @Autowired
     private ConsignmentRepository consignments;
-    @Autowired
-    private HandlingUnitRepository handlingUnits;
     @Autowired
     private JdbcClient jdbc;
     @Autowired
@@ -223,30 +220,6 @@ public class HandOffSteps {
      * would store it and its hand-off is published exactly as the warehouse
      * publishes one.
      */
-    @When("a back-order unit {string} of outbound order {string} is handed off to {string} "
-            + "for {string} weighing {int} kg")
-    public void backOrderUnitHandedOff(String unit, String orderNo, String destination,
-                                       String consignee, int grossKg) {
-        UUID orderId = world.ref("outbound:" + orderNo);
-        UUID tenantId = TenantContext.requireTenantId();
-        UUID warehouseId = inTransaction(() -> jdbc.sql(
-                        "SELECT warehouse_id FROM outbound_order WHERE id = :id")
-                .param("id", orderId)
-                .query(UUID.class)
-                .single());
-        Instant now = Instant.now();
-        HandlingUnit.HandOff handOff = new HandlingUnit.HandOff(world.ref(destination),
-                world.ref(consignee), BigDecimal.valueOf(grossKg), null);
-        HandlingUnit shipped = inTransaction(() -> handlingUnits.save(
-                HandlingUnit.packedFor(tenantId, warehouseId, orderId, now)
-                        .dispatch("BACK-ORDER", handOff, now)));
-        world.putRef("hu:" + unit, shipped.id());
-        redeliver(new HandlingUnitDispatched(shipped.tenantId(), shipped.id(), shipped.huNo(),
-                shipped.warehouseId(), orderId, null, null, "BACK-ORDER", List.of(), now,
-                shipped.destinationTerminalId(), shipped.consigneePartnerId(),
-                shipped.grossWeightKg(), shipped.volumeM3()));
-    }
-
     @Then("outbound order {string} became {int} consignments")
     public void orderBecameConsignments(String orderNo, int expected) {
         long count = inTransaction(() -> jdbc.sql("""
