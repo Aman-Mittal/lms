@@ -182,7 +182,8 @@ public class WarehouseQueryService {
     public Optional<HandlingUnitView> handlingUnit(UUID id) {
         return jdbc.sql("""
                         SELECT id, hu_no, warehouse_id, source, outbound_order_id, asn_id, status,
-                               dispatch_ref, dispatched_at
+                               dispatch_ref, dispatched_at, destination_terminal_id,
+                               consignee_partner_id, gross_weight_kg, volume_m3
                           FROM handling_unit
                          WHERE id = :id
                         """)
@@ -197,12 +198,18 @@ public class WarehouseQueryService {
                         rs.getString("status"),
                         rs.getString("dispatch_ref"),
                         instant(rs.getObject("dispatched_at", OffsetDateTime.class)),
+                        rs.getObject("destination_terminal_id", UUID.class),
+                        rs.getObject("consignee_partner_id", UUID.class),
+                        rs.getBigDecimal("gross_weight_kg"),
+                        rs.getBigDecimal("volume_m3"),
                         null))
                 .optional()
                 .map(header -> new HandlingUnitView(header.id(), header.huNo(),
                         header.warehouseId(), header.source(), header.outboundOrderId(),
                         header.asnId(), header.status(), header.dispatchRef(),
-                        header.dispatchedAt(), unitContents(id)));
+                        header.dispatchedAt(), header.destinationTerminalId(),
+                        header.consigneePartnerId(), header.grossWeightKg(), header.volumeM3(),
+                        unitContents(id)));
     }
 
     private List<HandlingUnitView.Content> unitContents(UUID handlingUnitId) {
