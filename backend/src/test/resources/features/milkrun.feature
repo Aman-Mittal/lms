@@ -156,6 +156,27 @@ Feature: A milk run collects from several suppliers in turn and delivers to the 
     And the circuit on route "MR-NORTH" was charged 6500.00 for 2 suppliers visited
     And the circuit on route "MR-NORTH" collected 800 kg in total
 
+  # ------------------------------------------------ the control tower hears
+
+  Scenario: A skipped supplier and a late window each raise a minor ticket on the circuit's trip
+    Given a milk run route "MR-NORTH" to "PLANT" that left 6 hours ago, daily, at 5000.00 per run and 750.00 per stop, calling at:
+      | supplier | opens after | closes after | dwell |
+      | SUP-1    | 0           | 30           | 15    |
+      | SUP-2    | 45          | 90           | 15    |
+      | SUP-3    | 105         | 150          | 15    |
+    And today's circuit on route "MR-NORTH" has been planned
+    And a dispatched trip "TRIP-M1" on lorry "MH-01-TL-0001" from "SUP-1" to "PLANT"
+    And the circuit on route "MR-NORTH" is carried by trip "TRIP-M1"
+    When stop 1 of the circuit on route "MR-NORTH" is recorded as reached 5 minutes into the circuit
+    And stop 1 of the circuit on route "MR-NORTH" is recorded as left 25 minutes into the circuit
+    And stop 2 of the circuit on route "MR-NORTH" is skipped because "Supplier closed for stock-take"
+    And stop 3 of the circuit on route "MR-NORTH" is recorded as reached 160 minutes into the circuit
+    Then the control tower holds 1 "MILK_RUN_STOP_SKIPPED" ticket about circuit "MR-NORTH"
+    And that ticket is of severity "P3" on trip "TRIP-M1"
+    And that ticket does not suspend settlement
+    And the control tower holds 1 "MILK_RUN_STOP_LATE" ticket about circuit "MR-NORTH"
+    And that ticket is of severity "P3" on trip "TRIP-M1"
+
   Scenario: Stops are not recorded on a circuit nobody has started
     Given a milk run route "MR-NORTH" to "PLANT" that left 6 hours ago, daily, at 5000.00 per run and 750.00 per stop, calling at:
       | supplier | opens after | closes after | dwell |
