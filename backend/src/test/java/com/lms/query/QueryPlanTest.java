@@ -553,6 +553,35 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a redelivered detection finds its ticket by index")
+    void exceptionBySourceKey() {
+        // Asked on every delivery of every event the control tower turns into
+        // a ticket -- route deviations, missed connections, milk-run stops,
+        // receipt variances and pick shortfalls. The partial unique index
+        // serves it, because an equality on source_key implies it is not null.
+        assertIndexed("""
+                SELECT * FROM exception_ticket
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND source_key = 'pick-shortfall:00000000-0000-0000-0000-000000000002:1'
+                """, "exception_ticket");
+    }
+
+    @Test
+    @DisplayName("the exception summary counts open tickets by index")
+    void exceptionSummary() {
+        // Now also counts the open tickets that have no trip; still one pass
+        // over the open statuses, never the whole history.
+        assertIndexed("""
+                SELECT count(*) FILTER (WHERE severity = 'P1')::int AS open_p1,
+                       count(*) FILTER (WHERE suspends_settlement)::int AS settlement_holds,
+                       count(*) FILTER (WHERE trip_id IS NULL)::int AS open_without_trip
+                  FROM exception_ticket
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status IN ('RAISED', 'ASSIGNED', 'UNDER_INVESTIGATION', 'RESOLVED')
+                """, "exception_ticket");
+    }
+
+    @Test
     @DisplayName("the settlement hold check is index-served")
     void openSettlementHolds() {
         // Asked on every vendor-invoice match. Served by the partial index, so
