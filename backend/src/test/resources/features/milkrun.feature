@@ -226,3 +226,86 @@ Feature: A milk run collects from several suppliers in turn and delivers to the 
       | supplier | opens after | closes after | dwell |
       | SUP-1    | 0           | 30           | 15    |
     Then milk run planning refuses mentioning "a successor cannot start on 2030-01-07"
+
+  # --------------------------------------------------------- the payable
+
+  Scenario: A completed circuit raises one carrier payable, which is matched like a trip bill
+    # The charge the circuit announced is what finance records: the run rate
+    # as base freight, and a line for the suppliers actually collected from.
+    Given a milk run route "MR-NORTH" to "PLANT" that left 6 hours ago, daily, at 5000.00 per run and 750.00 per stop, calling at:
+      | supplier | opens after | closes after | dwell |
+      | SUP-1    | 0           | 30           | 15    |
+      | SUP-2    | 45          | 90           | 15    |
+      | SUP-3    | 105         | 150          | 15    |
+    And today's circuit on route "MR-NORTH" has been planned
+    And a dispatched trip "TRIP-M1" on lorry "MH-01-TL-0001" from "SUP-1" to "PLANT"
+    And the circuit on route "MR-NORTH" is carried by trip "TRIP-M1"
+    When stop 1 of the circuit on route "MR-NORTH" is recorded as reached 5 minutes into the circuit
+    And stop 2 of the circuit on route "MR-NORTH" is skipped because "Supplier closed for stock-take"
+    And stop 3 of the circuit on route "MR-NORTH" is recorded as reached 120 minutes into the circuit
+    And the circuit on route "MR-NORTH" is recorded as reaching the plant 200 minutes into the circuit
+    Then the circuit on route "MR-NORTH" has exactly one carrier payable, known as "CIRCUIT-BILL"
+    And bill "CIRCUIT-BILL" is "DRAFT"
+    And bill "CIRCUIT-BILL" totals 6500
+    And bill "CIRCUIT-BILL" has a "BASE_FREIGHT" line of 5000
+    And bill "CIRCUIT-BILL" has a "COLLECTION_STOP" line of 1500
+    And bill "CIRCUIT-BILL" adds up
+    And bill "CIRCUIT-BILL" is listed as a milk-run bill for route "MR-NORTH"
+    # The outbox delivers at least once.
+    When the completion of the circuit on route "MR-NORTH" is delivered again
+    Then the circuit on route "MR-NORTH" has exactly one carrier payable, known as "CIRCUIT-BILL"
+    # Within the greater of 2 percent and 100: the same rule as a trip bill.
+    When "VENDOR-1" invoices 6600 against "CIRCUIT-BILL"
+    Then bill "CIRCUIT-BILL" is "APPROVED_FOR_PAYMENT"
+    And bill "CIRCUIT-BILL" records a variance of 100
+
+  Scenario: A vendor claim on a circuit outside tolerance is disputed
+    Given a milk run route "MR-NORTH" to "PLANT" that left 6 hours ago, daily, at 5000.00 per run and 750.00 per stop, calling at:
+      | supplier | opens after | closes after | dwell |
+      | SUP-1    | 0           | 30           | 15    |
+      | SUP-2    | 45          | 90           | 15    |
+    And today's circuit on route "MR-NORTH" has been planned
+    And a dispatched trip "TRIP-M1" on lorry "MH-01-TL-0001" from "SUP-1" to "PLANT"
+    And the circuit on route "MR-NORTH" is carried by trip "TRIP-M1"
+    When stop 1 of the circuit on route "MR-NORTH" is recorded as reached 5 minutes into the circuit
+    And stop 2 of the circuit on route "MR-NORTH" is recorded as reached 60 minutes into the circuit
+    And the circuit on route "MR-NORTH" is recorded as reaching the plant 120 minutes into the circuit
+    Then the circuit on route "MR-NORTH" has exactly one carrier payable, known as "CIRCUIT-BILL"
+    And bill "CIRCUIT-BILL" totals 6500
+    # A claim for all three suppliers when only two were visited: 750 over.
+    When "VENDOR-1" invoices 7250 against "CIRCUIT-BILL"
+    Then bill "CIRCUIT-BILL" is "DISPUTED"
+    And bill "CIRCUIT-BILL" records a variance of 750
+
+  Scenario: The trip carrying a circuit is not billed a second time when it completes
+    Given a milk run route "MR-NORTH" to "PLANT" that left 6 hours ago, daily, at 5000.00 per run and 750.00 per stop, calling at:
+      | supplier | opens after | closes after | dwell |
+      | SUP-1    | 0           | 30           | 15    |
+    And today's circuit on route "MR-NORTH" has been planned
+    And a dispatched trip "TRIP-M1" on lorry "MH-01-TL-0001" from "SUP-1" to "PLANT"
+    And the circuit on route "MR-NORTH" is carried by trip "TRIP-M1"
+    When stop 1 of the circuit on route "MR-NORTH" is recorded as reached 5 minutes into the circuit
+    And the circuit on route "MR-NORTH" is recorded as reaching the plant 120 minutes into the circuit
+    And trip "TRIP-M1" reaches its destination and is completed
+    Then the circuit on route "MR-NORTH" has exactly one carrier payable, known as "CIRCUIT-BILL"
+    And trip "TRIP-M1" was not billed on its own account
+    And trip "TRIP-M1" has exactly one live bill, "CIRCUIT-BILL"
+
+  Scenario: A trip billed before its circuit finished has that bill superseded
+    # Execution may close the trip before the circuit reaches its plant. The
+    # trip's own bill, priced on a lane tariff, is withdrawn on the record and
+    # the circuit is paid at its route rate instead -- never both.
+    Given a milk run route "MR-NORTH" to "PLANT" that left 6 hours ago, daily, at 5000.00 per run and 750.00 per stop, calling at:
+      | supplier | opens after | closes after | dwell |
+      | SUP-1    | 0           | 30           | 15    |
+    And today's circuit on route "MR-NORTH" has been planned
+    And a dispatched trip "TRIP-M1" on lorry "MH-01-TL-0001" from "SUP-1" to "PLANT"
+    And the circuit on route "MR-NORTH" is carried by trip "TRIP-M1"
+    When stop 1 of the circuit on route "MR-NORTH" is recorded as reached 5 minutes into the circuit
+    And trip "TRIP-M1" reaches its destination and is completed
+    Then trip "TRIP-M1" was billed on its own account, as "TRIP-BILL"
+    When the circuit on route "MR-NORTH" is recorded as reaching the plant 120 minutes into the circuit
+    Then the circuit on route "MR-NORTH" has exactly one carrier payable, known as "CIRCUIT-BILL"
+    And bill "TRIP-BILL" is "CANCELLED"
+    And bill "TRIP-BILL" records the resolution "Superseded by milk-run circuit payable"
+    And trip "TRIP-M1" has exactly one live bill, "CIRCUIT-BILL"
