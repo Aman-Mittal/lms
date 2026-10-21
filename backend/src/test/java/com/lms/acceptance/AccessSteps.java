@@ -483,7 +483,7 @@ public class AccessSteps {
      * Signs in with a verified-token-shaped principal carrying the attribute
      * claims exactly as {@code TokenService} would mint them.
      */
-    private static void signInWith(String who, List<String> permissions,
+    static void signInWith(String who, List<String> permissions,
                                    SubjectAttributes attributes) {
         Jwt.Builder token = Jwt.withTokenValue("acceptance-" + who)
                 .header("alg", "RS256")
