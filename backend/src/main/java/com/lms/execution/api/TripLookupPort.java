@@ -33,13 +33,16 @@ public interface TripLookupPort {
     /**
      * @param vehicleId null until a vehicle is nominated, which is a normal
      *                  state for a trip that has not reached the gate
+     * @param loadId    the load the trip carries; added for the milk-run
+     *                  payable, which finance prices against the trip's load
      */
     record TripSnapshot(
             UUID tripId,
             String tripNo,
             String status,
             UUID vehicleId,
-            UUID vendorPartnerId) {
+            UUID vendorPartnerId,
+            UUID loadId) {
 
         public boolean isCancelled() {
             return "CANCELLED".equals(status);

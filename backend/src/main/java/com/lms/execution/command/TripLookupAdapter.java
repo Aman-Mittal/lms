@@ -37,6 +37,6 @@ public class TripLookupAdapter implements TripLookupPort {
     public Optional<TripSnapshot> find(UUID tripId) {
         return trips.findById(tripId)
                 .map(trip -> new TripSnapshot(trip.id(), trip.tripNo(), trip.status().name(),
-                        trip.vehicleId(), trip.vendorPartnerId()));
+                        trip.vehicleId(), trip.vendorPartnerId(), trip.loadId()));
     }
 }
