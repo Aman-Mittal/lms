@@ -20,20 +20,42 @@ ExceptionCategory:
   description: |
     Decides the severity; it is never chosen per ticket.
     P1 -- ACCIDENT, THEFT, BREAKDOWN.
-    P2 -- ROUTE_DEVIATION, EXTENDED_STOPPAGE, TEMPERATURE_EXCURSION.
-    P3 -- ETA_DELAY, DOCUMENT_MISMATCH.
+    P2 -- ROUTE_DEVIATION, EXTENDED_STOPPAGE, TEMPERATURE_EXCURSION,
+          MISSED_CONNECTION.
+    P3 -- ETA_DELAY, DOCUMENT_MISMATCH, MILK_RUN_STOP_SKIPPED,
+          MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL.
+    MISSED_CONNECTION, the milk-run and the warehouse categories are raised
+    automatically from those modules' events.
   enum: [ACCIDENT, THEFT, BREAKDOWN, ROUTE_DEVIATION, EXTENDED_STOPPAGE,
-         TEMPERATURE_EXCURSION, ETA_DELAY, DOCUMENT_MISMATCH]
+         TEMPERATURE_EXCURSION, ETA_DELAY, DOCUMENT_MISMATCH,
+         MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED, MILK_RUN_STOP_LATE,
+         RECEIPT_VARIANCE, PICK_SHORTFALL]
 
 Exception:
   type: object
   properties:
     id: { type: string, format: uuid }
     ticketNo: { type: string }
-    tripId: { type: string, format: uuid }
+    tripId:
+      type: string
+      format: uuid
+      description: Null when the ticket is about something other than a
+        trip; the subject fields then say what.
     tripNo: { type: string }
     vehicleId: { type: string, format: uuid }
     registrationNo: { type: string }
+    subjectType:
+      type: string
+      enum: [ITINERARY, CIRCUIT_RUN, ASN, OUTBOUND_ORDER]
+      description: What the ticket is about besides, or instead of, a trip.
+        Always present when `tripId` is null.
+    subjectId:
+      type: string
+      format: uuid
+      description: The subject's identifier in its owning module.
+    subjectLabel:
+      type: string
+      description: The subject's number or name, as read off the board.
     category: { $ref: "#/components/schemas/ExceptionCategory" }
     severity:
       type: string
@@ -44,7 +66,8 @@ Exception:
     description: { type: string }
     source:
       type: string
-      enum: [MANUAL, ROUTE_DEVIATION]
+      enum: [MANUAL, ROUTE_DEVIATION, MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED,
+             MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL]
     lat: { type: number }
     lon: { type: number }
     positionSource:
@@ -58,8 +81,9 @@ Exception:
         so rather than passing for current.
     suspendsSettlement:
       type: boolean
-      description: True for P1 and P2. The trip's freight bill cannot be
-        matched or settled until this ticket is closed.
+      description: True for P1 and P2 tickets on a trip. The trip's freight
+        bill cannot be matched or settled until this ticket is closed. A
+        ticket with no trip never suspends settlement.
     raisedBy: { type: string }
     raisedAt: { type: string, format: date-time }
     assigneeUserId: { type: string, format: uuid }
@@ -107,6 +131,10 @@ ExceptionSummary:
     settlementHolds:
       type: integer
       description: Open tickets currently freezing a vendor's settlement.
+    openWithoutTrip:
+      type: integer
+      description: Open tickets about an itinerary, circuit run, ASN or
+        outbound order rather than a trip.
 
 RaiseExceptionRequest:
   type: object
