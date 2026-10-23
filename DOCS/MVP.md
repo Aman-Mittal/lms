@@ -300,6 +300,10 @@ request after a quiet spell pays the start-up cost above.
   client's invoices (debit), credit notes and payments (credit) oldest first
   with a running balance over the whole history; a negative balance is a client
   in credit.
+- Ageing: `GET /api/v1/client-billing/clients/{clientId}/ageing?asOf=` lists
+  the invoices with something still owing and totals them by days since issue
+  (0-30, 31-60, 61-90, 90+). A credit note reduces its own invoice, payments
+  settle the oldest first, and what they exceed is unapplied credit.
 - Payments: `POST /api/v1/client-billing/clients/{clientId}/payments` records
   money received (amount, the day it arrived, the client's remittance
   reference). It is held against the client, not an invoice, so no receipt is
@@ -396,8 +400,10 @@ Left open by the freight-mode, warehouse and billing work, on purpose:
 
 - Rail carriers are not settled through finance freight bills.
 - A warehouse hand-off consignment has no sales order, so client billing skips it.
-- A payment is recorded against the client, not matched to invoices, so there
-  is no per-invoice "paid" or "overdue" state and no ageing report.
+- A payment is recorded against the client, not matched to invoices: the ageing
+  report applies payments to the oldest invoice first, which is a convention,
+  not what the client's remittance said. Contracts carry no payment terms, so
+  ageing counts days since issue and nothing is "past due".
 - Of the control-tower detectors, stoppage, ETA and temperature are not built.
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a

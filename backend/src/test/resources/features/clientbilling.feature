@@ -303,6 +303,33 @@ Feature: A third-party logistics provider bills each client for what it did
     When a payment of 100 from "CLIENT-R" arrives referenced "NEFT-1"
     Then the client billing request is refused as unauthorised
 
+  # ------------------------------------------------------------------ ageing
+
+  Scenario: Payments settle the invoice and the rest ages, until the client is ahead
+    # One invoice of 1416. 400 paid leaves 1016, which ages into the next
+    # bucket after 45 days; 1100 more clears it and leaves 84 unapplied.
+    Given a trading partner "CLIENT-G"
+    And client "CLIENT-G" holds contract "G-2026" effective 100 days ago:
+      | storage per pallet-day | 12 |
+      | warehouse tax percent  | 18 |
+    And "CLIENT-G" stored 100 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-G"
+    When a payment of 400 from "CLIENT-G" arrives referenced "NEFT-1"
+    Then the ageing of "CLIENT-G" after 0 days shows 1016 outstanding, 1016 in the "0-30" bucket and 0 unapplied credit
+    And the ageing of "CLIENT-G" after 45 days shows 1016 outstanding, 1016 in the "31-60" bucket and 0 unapplied credit
+    When a payment of 1100 from "CLIENT-G" arrives referenced "NEFT-2"
+    Then the ageing of "CLIENT-G" after 0 days shows 0 outstanding, 0 in the "0-30" bucket and 84 unapplied credit
+
+  Scenario: A credit note reduces what is owed on its own invoice
+    Given a trading partner "CLIENT-H"
+    And client "CLIENT-H" holds contract "H-2026" effective 100 days ago:
+      | storage per pallet-day | 12 |
+      | warehouse tax percent  | 18 |
+    And "CLIENT-H" stored 100 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-H"
+    And a credit note for 100 is issued against the last-month invoice of "CLIENT-H" because "Goodwill"
+    Then the ageing of "CLIENT-H" after 0 days shows 1298 outstanding, 1298 in the "0-30" bucket and 0 unapplied credit
+
   # -------------------------------------------------- storage from the ledger
 
   Scenario: Storage is computed from the stock the client owns in the warehouse, once

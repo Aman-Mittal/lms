@@ -56,3 +56,11 @@ Feature: A 3PL bills its client for a month of warehousing, over the wire
     Then the client statement lists the invoice then two payments and ends at a balance of 0
     And the remittance "NEFT-A" is refused when it is entered again
     And a payment from a client that was never invoiced is refused
+
+  Scenario: What the client still owes is aged by invoice
+    Given the warehouse reports 40 pallets in, 300 pallet-days stored, 35 pallets out and 200 labels for last month
+    And last month is billed for the client
+    When the client pays 2000 referenced "NEFT-C"
+    Then the client's ageing shows 5139 outstanding on 1 open invoice, all in the "0-30" bucket
+    When the client pays 5139 referenced "NEFT-D"
+    Then the client's ageing shows 0 outstanding on 0 open invoice, all in the "0-30" bucket

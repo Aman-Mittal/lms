@@ -500,6 +500,12 @@ includes production, after the image has been built and pushed.
   over absolute timings, which vary by machine. Restart tests start a pod with
   `SpringApplicationBuilder.run("--key=value")`: builder `.properties()` are
   defaults that `application.yaml` silently overrides.
+- **JMeter** (`performance/jmeter/`): `lms-api.jmx` signs in once and drives a
+  mixed workload (ten reads at random, one write in ten iterations, a readiness
+  probe). `run.sh` runs it and `summarise.py` fails the run on error rate or
+  95th percentile; limits are env vars. It targets a deployment, so it lives
+  in the on-demand *JMeter (deployed)* workflow, not in the default build.
+  Sized for the free tier (5 users); raise load against bigger machines only.
 - Assert on behaviour, not on log output.
 
 ---
@@ -526,8 +532,9 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
 - A warehouse hand-off consignment has no sales order, so client billing
   skips it (client charges are drawn from order-backed consignments).
 - A client payment is recorded against the client, not matched to an invoice
-  (V30). The statement balance is invoiced less credited and paid; there is no
-  per-invoice paid or overdue state and no ageing.
+  (V30). The ageing endpoint applies payments to the oldest invoice first, a
+  convention rather than the client's remittance; with no payment terms on a
+  contract it counts days since issue, so nothing is "past due".
 
 The vision document's §5.1 target of 20 000 GPS pings/second is a **production**
 NFR. The free-tier deployment sustains roughly 50–100/second. Say so plainly
