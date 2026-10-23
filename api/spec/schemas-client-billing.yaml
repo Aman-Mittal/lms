@@ -488,3 +488,46 @@ ClientStorage:
     days:
       type: array
       items: { $ref: "#/components/schemas/ClientStorageDay" }
+
+ClientAgeing:
+  type: object
+  description: |
+    A client's receivable as of a day. Age is counted from the day an
+    invoice was issued: a contract carries no payment terms yet, so nothing
+    here is "past due", only old. A credit note reduces the invoice it
+    corrects; payments are applied to the oldest invoices first, and what
+    they exceed is `unappliedCredit`.
+  properties:
+    clientPartnerId: { type: string, format: uuid }
+    asOf: { type: string, format: date }
+    currency: { type: string }
+    outstanding: { type: number }
+    unappliedCredit: { type: number }
+    buckets: { $ref: "#/components/schemas/ClientAgeingBuckets" }
+    invoices:
+      type: array
+      description: Invoices with something still owing, oldest first.
+      items: { $ref: "#/components/schemas/ClientAgeingInvoice" }
+
+ClientAgeingBuckets:
+  type: object
+  description: Outstanding by days since issue.
+  properties:
+    days0to30: { type: number }
+    days31to60: { type: number }
+    days61to90: { type: number }
+    over90: { type: number }
+
+ClientAgeingInvoice:
+  type: object
+  properties:
+    invoiceId: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    periodStart: { type: string, format: date }
+    issuedOn: { type: string, format: date }
+    total: { type: number }
+    credited: { type: number }
+    paid: { type: number }
+    outstanding: { type: number }
+    ageDays: { type: integer }
+    bucket: { type: string, enum: ["0-30", "31-60", "61-90", "90+"] }
