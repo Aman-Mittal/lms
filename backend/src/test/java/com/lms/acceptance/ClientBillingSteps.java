@@ -35,6 +35,8 @@ import com.lms.clientbilling.command.ClientPaymentService;
 import com.lms.clientbilling.command.ClientStorageService;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
+import com.lms.clientbilling.query.ClientAgeingQueryService;
+import com.lms.clientbilling.query.ClientAgeingView;
 import com.lms.clientbilling.query.ClientBillingQueryService;
 import com.lms.clientbilling.query.ClientChargeView;
 import com.lms.clientbilling.query.ClientCreditNoteView;
@@ -82,6 +84,8 @@ public class ClientBillingSteps {
     private ClientCreditNoteService creditNotes;
     @Autowired
     private ClientPaymentService payments;
+    @Autowired
+    private ClientAgeingQueryService ageing;
     @Autowired
     private ClientStorageService storage;
     @Autowired
@@ -497,6 +501,24 @@ public class ClientBillingSteps {
         assertThat(inTransaction(() -> jdbc.sql(
                 "SELECT count(*) FROM audit_log WHERE action = 'CLIENT_PAYMENT_RECORDED'")
                 .query(Long.class).single())).isEqualTo(1L);
+    }
+
+    @Then("the ageing of {string} after {int} days shows {bigdecimal} outstanding, {bigdecimal} in the {string} bucket and {bigdecimal} unapplied credit")
+    public void ageingShows(String clientCode, int days, BigDecimal outstanding,
+                            BigDecimal inBucket, String bucket, BigDecimal unapplied) {
+        ClientAgeingView view = inTransaction(() ->
+                ageing.ageing(world.ref(clientCode), LocalDate.now(ZoneOffset.UTC).plusDays(days)));
+        assertThat(view.outstanding()).as("outstanding").isEqualByComparingTo(outstanding);
+        assertThat(view.unappliedCredit()).as("unapplied credit").isEqualByComparingTo(unapplied);
+        BigDecimal actual = switch (bucket) {
+            case "0-30" -> view.buckets().days0to30();
+            case "31-60" -> view.buckets().days31to60();
+            case "61-90" -> view.buckets().days61to90();
+            case "90+" -> view.buckets().over90();
+            default -> throw new AssertionError("No bucket " + bucket);
+        };
+        assertThat(actual).as("bucket %s", bucket).isEqualByComparingTo(inBucket);
+        assertThat(view.invoices()).hasSize(outstanding.signum() > 0 ? 1 : 0);
     }
 
     // ------------------------------------------------------------ statement
