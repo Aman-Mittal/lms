@@ -23,6 +23,12 @@ import com.lms.client.api.ControlTowerApi;
 import com.lms.client.api.PlanningApi;
 import com.lms.client.api.WarehouseApi;
 import com.lms.client.model.AsnExpectedLine;
+import com.lms.client.model.AssignExceptionRequest;
+import com.lms.client.model.ExceptionActivity;
+import com.lms.client.model.ExceptionNoteRequest;
+import com.lms.client.model.PickWaveSummary;
+import com.lms.client.model.ReleasePickWaveRequest;
+import com.lms.client.model.ResolveExceptionRequest;
 import com.lms.client.model.Consignment;
 import com.lms.client.model.CreateAsnRequest;
 import com.lms.client.model.CreateBinRequest;
@@ -39,12 +45,14 @@ import com.lms.client.model.ReceiptCount;
 import com.lms.client.model.ReceiveAsnRequest;
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.RegisterPointRadiusTerminalRequest;
+import feign.FeignException;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import org.springframework.beans.factory.annotation.Value;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Warehousing over HTTP: an ASN counted in with a variance, putaway, a pick
@@ -70,6 +78,8 @@ public class WarehouseFlowSteps {
     private UUID asnId;
     private UUID orderId;
     private UUID handlingUnitId;
+    private UUID waveId;
+    private UUID ticketId;
 
     @Given("the demo administrator is signed in at the warehouse desk")
     public void signIn() {
@@ -177,6 +187,107 @@ public class WarehouseFlowSteps {
         assertThat(consignment.getTotalDeadWeightKg()).isEqualByComparingTo(BigDecimal.valueOf(kilos));
         assertThat(consignment.getDestinationTerminalCode()).isEqualTo(world.code("WH-SITE"));
         assertThat(consignment.getFreightMode()).isEqualTo("FTL");
+    }
+
+    // ------------------------------------------------------- back-order cancel
+
+    @Then("the order is listed among the warehouse's back-orders")
+    public void listedAsBackOrdered() {
+        assertThat(backOrderIds()).contains(orderId);
+    }
+
+    @When("the back-order of the order is cancelled")
+    public void cancelBackOrder() {
+        world.api(WarehouseApi.class).cancelOutboundOrderBackOrder(orderId, null);
+    }
+
+    @Then("the order is closed as back-order cancelled and is no longer listed among the back-orders")
+    public void backOrderCancelled() {
+        assertThat(world.api(WarehouseApi.class).getOutboundOrder(orderId).getStatus())
+                .isEqualTo(OutboundOrder.StatusEnum.BACK_ORDER_CANCELLED);
+        assertThat(backOrderIds()).doesNotContain(orderId);
+    }
+
+    @Then("cancelling the back-order again is refused")
+    public void cancelAgainRefused() {
+        assertThatThrownBy(this::cancelBackOrder)
+                .isInstanceOfSatisfying(FeignException.class,
+                        e -> assertThat(e.status()).isEqualTo(409));
+    }
+
+    // ------------------------------------------------------------------ waves
+
+    @When("an outbound order for {int} units is placed")
+    public void placeOrder(int units) {
+        orderId = world.api(WarehouseApi.class).createOutboundOrder(new CreateOutboundOrderRequest()
+                .warehouseId(warehouse)
+                .orderNo(world.code("OUT"))
+                .shipTo("Delivery site " + world.salt)
+                .lines(List.of(new OutboundOrderLineRequest().skuId(sku).quantity(units))),
+                null).getId();
+    }
+
+    @When("a pick wave is released holding the order")
+    public void releaseWave() {
+        waveId = world.api(WarehouseApi.class).releasePickWave(new ReleasePickWaveRequest()
+                .warehouseId(warehouse).orderIds(List.of(orderId)), null).getId();
+    }
+
+    @Then("the warehouse lists {int} released wave holding {int} order")
+    public void releasedWaves(int waves, int orders) {
+        List<PickWaveSummary> listed = world.api(WarehouseApi.class)
+                .listPickWaves(warehouse, "RELEASED", null, 50).getItems();
+        assertThat(listed).hasSize(waves);
+        if (waves > 0) {
+            assertThat(listed.get(0).getId()).isEqualTo(waveId);
+            assertThat(listed.get(0).getOrderCount()).isEqualTo(orders);
+        }
+    }
+
+    @When("the pick wave is picked")
+    public void pickWave() {
+        world.api(WarehouseApi.class).pickPickWave(waveId, null);
+    }
+
+    @Then("the warehouse lists no released waves and the wave is picked with {int} units given to the order")
+    public void waveDone(int units) {
+        assertThat(world.api(WarehouseApi.class).listPickWaves(warehouse, "RELEASED", null, 50)
+                .getItems()).isEmpty();
+        var wave = world.api(WarehouseApi.class).getPickWave(waveId);
+        assertThat(wave.getStatus().getValue()).isEqualTo("PICKED");
+        assertThat(wave.getOrders()).singleElement()
+                .satisfies(o -> assertThat(o.getPickedUnits()).isEqualTo(units));
+        assertThat(world.api(WarehouseApi.class).listPickWaves(warehouse, "PICKED", null, 50)
+                .getItems()).extracting(PickWaveSummary::getId).containsExactly(waveId);
+    }
+
+    // ------------------------------------------------------ ticket lifecycle
+
+    @When("the receipt variance ticket is assigned, investigated, resolved as {string} and closed")
+    public void workTicket(String resolution) {
+        ticketId = ticketAbout(ExceptionCategory.RECEIPT_VARIANCE, asnId).getId();
+        ControlTowerApi tower = world.api(ControlTowerApi.class);
+        tower.assignException(ticketId, new AssignExceptionRequest()
+                .assigneeUserId(world.userId()).note("Dock supervisor"), null);
+        tower.investigateException(ticketId, null, new ExceptionNoteRequest().note("Recount"));
+        tower.resolveException(ticketId, new ResolveExceptionRequest().resolution(resolution), null);
+        tower.closeException(ticketId, null, new ExceptionNoteRequest().note("Supplier agreed"));
+    }
+
+    @Then("the ticket is closed and its history reads raised, assigned, investigation started, resolved, closed")
+    public void ticketClosed() {
+        ControlTowerApi tower = world.api(ControlTowerApi.class);
+        assertThat(tower.getException(ticketId).getStatus().getValue()).isEqualTo("CLOSED");
+        assertThat(tower.getExceptionHistory(ticketId)).extracting(ExceptionActivity::getAction)
+                .extracting(a -> a.getValue())
+                .containsExactly("RAISED", "ASSIGNED", "INVESTIGATION_STARTED", "RESOLVED",
+                        "CLOSED");
+    }
+
+    private List<UUID> backOrderIds() {
+        return world.api(WarehouseApi.class)
+                .listOutboundOrders(warehouse, "BACK_ORDERED", null, 50).getItems().stream()
+                .map(o -> o.getId()).toList();
     }
 
     private Exception ticketAbout(ExceptionCategory category, UUID subject) {

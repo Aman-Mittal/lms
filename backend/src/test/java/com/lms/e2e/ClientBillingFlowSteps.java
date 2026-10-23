@@ -28,6 +28,7 @@ import com.lms.client.model.ClientCreditNoteLineRequest;
 import com.lms.client.model.ClientCreditNoteRequest;
 import com.lms.client.model.ClientInvoice;
 import com.lms.client.model.ClientInvoiceLine;
+import com.lms.client.model.ClientPaymentRequest;
 import com.lms.client.model.ClientBillingRunRequest;
 import com.lms.client.model.ClientServiceType;
 import com.lms.client.model.ClientStatementEntry;
@@ -203,7 +204,51 @@ public class ClientBillingFlowSteps {
         assertThat(credit.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(balance));
     }
 
+    @When("the client pays {int} referenced {string} and {int} referenced {string}")
+    public void payments(int first, String firstRef, int second, String secondRef) {
+        pay(first, firstRef);
+        pay(second, secondRef);
+    }
+
+    @Then("the client statement lists the invoice then two payments and ends at a balance of {int}")
+    public void statementWithPayments(int balance) {
+        List<ClientStatementEntry> entries = world.api(ClientBillingApi.class)
+                .getClientStatement(client, null, 50).getItems();
+        assertThat(entries).extracting(ClientStatementEntry::getEntryType)
+                .containsExactly(ClientStatementEntry.EntryTypeEnum.INVOICE,
+                        ClientStatementEntry.EntryTypeEnum.PAYMENT,
+                        ClientStatementEntry.EntryTypeEnum.PAYMENT);
+        assertThat(entries.get(1).getBalance())
+                .isEqualByComparingTo(BigDecimal.valueOf(invoiceTotal - 5000));
+        assertThat(entries.get(2).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(balance));
+    }
+
+    @Then("the remittance {string} is refused when it is entered again")
+    public void duplicateRemittance(String reference) {
+        assertThatThrownBy(() -> pay(1, reference))
+                .isInstanceOfSatisfying(FeignException.class,
+                        e -> assertThat(e.status()).isEqualTo(409));
+    }
+
+    @Then("a payment from a client that was never invoiced is refused")
+    public void paymentWithoutInvoice() {
+        UUID stranger = world.partner("STRANGER", RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER);
+        assertThatThrownBy(() -> world.api(ClientBillingApi.class).recordClientPayment(stranger,
+                new ClientPaymentRequest().amount(BigDecimal.TEN)
+                        .receivedOn(LocalDate.now(ZoneOffset.UTC))
+                        .reference(world.code("NEFT")), null))
+                .isInstanceOfSatisfying(FeignException.class,
+                        e -> assertThat(e.status()).isEqualTo(409));
+    }
+
     // ----------------------------------------------------------- helpers
+
+    private void pay(int amount, String reference) {
+        world.api(ClientBillingApi.class).recordClientPayment(client, new ClientPaymentRequest()
+                .amount(BigDecimal.valueOf(amount))
+                .receivedOn(LocalDate.now(ZoneOffset.UTC))
+                .reference(world.code(reference)), null);
+    }
 
     private ClientInvoiceLine invoiceLine(String type) {
         return world.api(ClientBillingApi.class).getClientInvoiceLines(invoiceId).stream()
