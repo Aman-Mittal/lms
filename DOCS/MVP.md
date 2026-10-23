@@ -432,8 +432,8 @@ confirm image-backed deploys on the *free* instance type. The image and
 blueprint are ready, and the container was exercised under the free tier's
 memory and CPU limits locally (see the measurement above), but creating the
 service requires a Render account. If free instances turn out to be
-build-from-repo only, the fallback is the `jvm` Dockerfile target, which
-has not been measured here.
+build-from-repo only, the fallback is the `jvm` Dockerfile target, which has
+not been measured here.
 
 Also note: Render's free Postgres **expires 30 days after creation**.
 Migrations and seed data are idempotent and run unattended on startup so that
