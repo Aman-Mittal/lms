@@ -137,6 +137,28 @@ public class ControlTowerSteps {
                 new BigDecimal("25000"), ticket.lat(), ticket.lon(), ticket.positionAt());
     }
 
+    /**
+     * Replays the stoppage detection the way the outbox would: same trip, same
+     * stop, same instant.
+     */
+    @When("the stoppage on trip {string} is delivered again")
+    public void stoppageRedelivered(String tripNo) {
+        ExceptionView ticket = onlyTicketOn(tripNo);
+        Instant since = inTransaction(() -> jdbc.sql(
+                        "SELECT stationary_since FROM stoppage_watch WHERE trip_id = :tripId")
+                .param("tripId", tripId(tripNo))
+                .query((rs, n) -> rs.getTimestamp(1).toInstant())
+                .single());
+        exceptions.raiseForStoppage(tripId(tripNo), since, 60, 45, ticket.lat(), ticket.lon(),
+                ticket.positionAt());
+    }
+
+    /** Gives a detector-raised ticket a name, so the lifecycle steps can act on it. */
+    @When("the ticket on trip {string} is known as ticket {string}")
+    public void knownAs(String tripNo, String ticket) {
+        world.putRef("ticket:" + ticket, onlyTicketOn(tripNo).id());
+    }
+
     // ------------------------------------------------------------- settlement
 
     @When("finance hears that a hold on trip {string} was released before hearing it was placed")
@@ -199,6 +221,16 @@ public class ControlTowerSteps {
     @Then("trip {string} has {int} exception ticket")
     public void ticketsOnTrip(String tripNo, int count) {
         assertThat(ticketsOn(tripNo)).hasSize(count);
+    }
+
+    @Then("trip {string} has {int} exception tickets")
+    public void ticketsOnTripPlural(String tripNo, int count) {
+        assertThat(ticketsOn(tripNo)).hasSize(count);
+    }
+
+    @Then("the ticket on trip {string} came from the {string} detector")
+    public void ticketSource(String tripNo, String source) {
+        assertThat(onlyTicketOn(tripNo).source()).isEqualTo(source);
     }
 
     @Then("the ticket on trip {string} is a {string} of severity {string}")

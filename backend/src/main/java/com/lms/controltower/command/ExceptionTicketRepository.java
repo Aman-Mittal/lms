@@ -29,4 +29,17 @@ public interface ExceptionTicketRepository extends CrudRepository<ExceptionTicke
     @Query("SELECT * FROM exception_ticket WHERE tenant_id = :tenantId AND source_key = :sourceKey")
     Optional<ExceptionTicket> findBySourceKey(@Param("tenantId") UUID tenantId,
                                               @Param("sourceKey") String sourceKey);
+
+    /**
+     * The stoppage ticket still being worked on for a trip, if any. Served by
+     * {@code exception_ticket_trip_idx}; a trip has a handful of tickets.
+     */
+    @Query("""
+            SELECT * FROM exception_ticket
+             WHERE tenant_id = :tenantId AND trip_id = :tripId
+               AND source = 'STOPPAGE_DETECTED' AND status NOT IN ('RESOLVED', 'CLOSED')
+             LIMIT 1
+            """)
+    Optional<ExceptionTicket> findOpenStoppage(@Param("tenantId") UUID tenantId,
+                                               @Param("tripId") UUID tripId);
 }

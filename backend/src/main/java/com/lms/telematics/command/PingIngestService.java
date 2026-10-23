@@ -38,6 +38,7 @@ import com.lms.telematics.command.domain.GeofenceEvent;
 import com.lms.telematics.command.domain.GpsPing;
 import com.lms.telematics.events.GeofenceCrossed;
 import com.lms.telematics.events.RouteDeviationDetected;
+import com.lms.telematics.events.StoppageDetected;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -77,6 +78,7 @@ public class PingIngestService implements PingIngestPort {
     private final GeofencePresenceStore presence;
     private final GeofenceEventRepository geofenceEvents;
     private final RouteDeviationService deviations;
+    private final StoppageService stoppages;
     private final TerminalGeofencePort terminals;
     private final FleetCapacityPort fleet;
     private final TripTrackingPort tripTracking;
@@ -84,7 +86,7 @@ public class PingIngestService implements PingIngestPort {
 
     public PingIngestService(PingWriter pings, GeofencePresenceStore presence,
                              GeofenceEventRepository geofenceEvents,
-                             RouteDeviationService deviations,
+                             RouteDeviationService deviations, StoppageService stoppages,
                              TerminalGeofencePort terminals, FleetCapacityPort fleet,
                              TripTrackingPort tripTracking,
                              ApplicationEventPublisher events) {
@@ -92,6 +94,7 @@ public class PingIngestService implements PingIngestPort {
         this.presence = presence;
         this.geofenceEvents = geofenceEvents;
         this.deviations = deviations;
+        this.stoppages = stoppages;
         this.terminals = terminals;
         this.fleet = fleet;
         this.tripTracking = tripTracking;
@@ -232,6 +235,36 @@ public class PingIngestService implements PingIngestPort {
                 .ifPresent(deviation -> events.publishEvent(new RouteDeviationDetected(
                         tenantId, trip.tripId(), trip.tripNo(), deviation.distanceM(),
                         deviation.corridorM(), ping.lat(), ping.lon(),
+                        ping.recordedAt(), Instant.now())));
+
+        evaluateStoppage(tenantId, trip, ping, inside, wasInside);
+    }
+
+    /**
+     * Stoppage: a trip in transit that has not moved, outside every terminal.
+     *
+     * <p>Inside a terminal the vehicle is loading, unloading or queueing, which
+     * is not an exception, so the clock is dropped. A trip that is not in
+     * transit cannot have an unplanned stop. The trip read from the database
+     * before this fix may still say DISPATCHED when this very fix is the one
+     * that cleared the origin, so that exit counts as being in transit.
+     */
+    private void evaluateStoppage(UUID tenantId, TripTrackingPort.ActiveTrip trip, GpsPing ping,
+                                  Set<UUID> inside, Set<UUID> wasInside) {
+        if (!inside.isEmpty()) {
+            stoppages.forget(tenantId, trip.tripId());
+            return;
+        }
+        boolean clearedOrigin = trip.originTerminalId() != null
+                && wasInside.contains(trip.originTerminalId());
+        if (!"IN_TRANSIT".equals(trip.status())
+                && !("DISPATCHED".equals(trip.status()) && clearedOrigin)) {
+            return;
+        }
+        stoppages.observe(tenantId, trip.tripId(), ping)
+                .ifPresent(stop -> events.publishEvent(new StoppageDetected(
+                        tenantId, trip.tripId(), trip.tripNo(), stop.since(),
+                        stop.stoppedMinutes(), stop.thresholdMinutes(), ping.lat(), ping.lon(),
                         ping.recordedAt(), Instant.now())));
     }
 

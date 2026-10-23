@@ -404,7 +404,8 @@ Left open by the freight-mode, warehouse and billing work, on purpose:
   report applies payments to the oldest invoice first, which is a convention,
   not what the client's remittance said. Contracts carry no payment terms, so
   ageing counts days since issue and nothing is "past due".
-- Of the control-tower detectors, stoppage, ETA and temperature are not built.
+- Of the control-tower detectors, ETA and temperature are not built. Stoppage
+  is ping-driven, so a device that goes silent is not caught.
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a
 production NFR. This deployment is a single 0.1-CPU instance and will sustain

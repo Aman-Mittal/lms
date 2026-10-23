@@ -104,7 +104,9 @@ public record ExceptionTicket(
         /** Warehousing counted an ASN line in other than as notified. */
         RECEIPT_VARIANCE,
         /** Warehousing could not pick an outbound line in full. */
-        PICK_SHORTFALL
+        PICK_SHORTFALL,
+        /** Telematics saw a trip in transit sit still outside every terminal. */
+        STOPPAGE_DETECTED
     }
 
     /** What a ticket is about, when it is not (only) a trip. */

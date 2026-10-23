@@ -186,6 +186,11 @@ final class HttpWorld {
                         .avgDwellMinutes(45), null).getId();
     }
 
+    /** A longitude with this scenario's east shift applied, for positions near its terminals. */
+    BigDecimal shiftedLon(double lon) {
+        return BigDecimal.valueOf(lon).add(lonShift);
+    }
+
     UUID lorry(String suffix, int payloadKg) {
         VehiclesApi vehicles = api(VehiclesApi.class);
         UUID vehicleId = vehicles.registerVehicle(new RegisterVehicleRequest()

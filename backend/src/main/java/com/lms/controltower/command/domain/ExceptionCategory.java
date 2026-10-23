@@ -38,7 +38,11 @@ public enum ExceptionCategory {
      * Critical: the rest of the itinerary now has to be re-booked.
      */
     MISSED_CONNECTION(Severity.P2),
-    /** An unplanned stop of more than twelve hours. */
+    /**
+     * An unplanned stop: a trip in transit that has not moved for longer than
+     * the detector's threshold (45 minutes by default), outside every terminal.
+     * A person may also raise it for a longer stop.
+     */
     EXTENDED_STOPPAGE(Severity.P2),
     /** A refrigerated load outside its temperature band. */
     TEMPERATURE_EXCURSION(Severity.P2),
