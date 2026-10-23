@@ -142,6 +142,10 @@ lms:
     # Pings implying a speed above this are treated as GPS noise and discarded.
     max-plausible-speed-kmh: ${PING_MAX_SPEED_KMH:160}
     route-deviation-threshold-metres: ${ROUTE_DEVIATION_METRES:2000}
+    # Stoppage detector: a trip in transit that stays within this radius of one
+    # spot, outside every terminal, for this long raises a ticket.
+    stoppage-radius-m: ${STOPPAGE_RADIUS_M:100}
+    stoppage-threshold-minutes: ${STOPPAGE_THRESHOLD_MINUTES:45}
   execution:
     # How far a weighed payload may differ from the planned weight before
     # dispatch is refused. Not zero: weighbridges have a tolerance, pallets
