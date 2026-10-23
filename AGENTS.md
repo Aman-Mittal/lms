@@ -178,10 +178,10 @@ controltower  milkrun  multimodal  warehouse  clientbilling  shared
 | `sourcing` | Routing guides, cascading and round-robin allocation, offer timeouts. |
 | `execution` | Trip state machine, gate log, weighbridge, dispatch gate, LTL delivery leg. |
 | `telematics` | GPS ingest, geofence crossings, route deviation, stoppage detection, retention. |
-| `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables. |
+| `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables, rail-leg carrier payables. |
 | `controltower` | Exception tickets from people and detectors (route deviation, stoppage, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
 | `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
-| `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep. |
+| `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
 | `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
@@ -531,8 +531,10 @@ not built, and those categories are raised by hand.
 
 Gaps the freight-mode, warehouse and billing work left open on purpose:
 
-- Rail carriers are not settled through finance freight bills; a rail leg's
-  cost is recorded and reported by carrier, not paid through settlement.
+- A rail leg's freight bill is raised when the leg is RELEASED (V32, keyed on
+  `itinerary_leg_id`, expected amount the leg's recorded cost) and then follows
+  the ordinary match, dispute and approval path. Settlement holds are per trip,
+  so a control-tower hold does not freeze a rail leg's bill.
 - A warehouse hand-off consignment has no sales order, so client billing
   skips it (client charges are drawn from order-backed consignments).
 - A client payment is recorded against the client, not matched to an invoice
