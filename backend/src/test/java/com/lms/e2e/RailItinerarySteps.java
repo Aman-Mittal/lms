@@ -23,7 +23,11 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.client.api.MultimodalApi;
+import com.lms.client.api.SettlementApi;
 import com.lms.client.model.CarrierCost;
+import com.lms.client.model.FreightBill;
+import com.lms.client.model.MatchRequest;
+import com.lms.client.model.MatchResponse;
 import com.lms.client.model.Itinerary;
 import com.lms.client.model.ItineraryLeg;
 import com.lms.client.model.PlanItineraryLegRequest;
@@ -69,6 +73,8 @@ public class RailItinerarySteps {
     private UUID lastMileTrip;
     private UUID itineraryId;
     private OffsetDateTime now;
+    private FreightBill railBill;
+    private MatchResponse.StatusEnum matched;
 
     @Given("the demo administrator is signed in at the rail desk")
     public void signIn() {
@@ -207,6 +213,49 @@ public class RailItinerarySteps {
         assertThat(costOf(itinerary, roadCarrierTwo)).isEqualByComparingTo(BigDecimal.valueOf(second));
         assertThat(itinerary.getTotalCost())
                 .isEqualByComparingTo(BigDecimal.valueOf(first + rail + second));
+    }
+
+    @Then("a rail freight bill of {int} is published for the rail carrier and the rail leg")
+    public void railBillPublished(int amount) {
+        railBill = HttpWorld.eventually("the rail leg's freight bill", () -> {
+            SettlementApi settlement = world.api(SettlementApi.class);
+            UUID railLegId = leg(2).getId();
+            String cursor = null;
+            while (true) {
+                var page = settlement.listFreightBills(null, cursor, 200);
+                var found = page.getItems().stream()
+                        .filter(b -> railLegId.equals(b.getItineraryLegId()))
+                        .findFirst();
+                if (found.isPresent()) {
+                    return settlement.getFreightBill(found.get().getId());
+                }
+                if (!Boolean.TRUE.equals(page.getHasMore())) {
+                    throw new AssertionError("no bill for the rail leg");
+                }
+                cursor = page.getNextCursor();
+            }
+        });
+        assertThat(railBill.getSource()).isEqualTo(FreightBill.SourceEnum.RAIL);
+        assertThat(railBill.getStatus()).isEqualTo(FreightBill.StatusEnum.DRAFT);
+        assertThat(railBill.getComputedAmount()).isEqualByComparingTo(BigDecimal.valueOf(amount));
+        assertThat(railBill.getItineraryNo()).isEqualTo(itinerary().getItineraryNo());
+        assertThat(railBill.getLegSeq()).isEqualTo(2);
+        assertThat(railBill.getTripId()).isNull();
+        assertThat(railBill.getLoadId()).isNull();
+        assertThat(railBill.getTariffCode()).isNull();
+    }
+
+    @When("the rail carrier invoices {int} against it")
+    public void railCarrierInvoices(int amount) {
+        matched = world.api(SettlementApi.class).matchFreightBill(railBill.getId(),
+                new MatchRequest().claimedAmount(BigDecimal.valueOf(amount)), null).getStatus();
+    }
+
+    @Then("the rail freight bill is approved for payment")
+    public void railBillApproved() {
+        assertThat(matched).isEqualTo(MatchResponse.StatusEnum.APPROVED_FOR_PAYMENT);
+        assertThat(world.api(SettlementApi.class).getFreightBill(railBill.getId()).getStatus())
+                .isEqualTo(FreightBill.StatusEnum.APPROVED_FOR_PAYMENT);
     }
 
     // ----------------------------------------------------------- helpers
