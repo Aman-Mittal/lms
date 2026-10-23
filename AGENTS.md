@@ -177,9 +177,9 @@ controltower  milkrun  multimodal  warehouse  clientbilling  shared
 | `planning` | Consignment generation (lorry receipts and LTL dockets), load building, consolidation; turns a warehouse hand-off into a consignment. |
 | `sourcing` | Routing guides, cascading and round-robin allocation, offer timeouts. |
 | `execution` | Trip state machine, gate log, weighbridge, dispatch gate, LTL delivery leg. |
-| `telematics` | GPS ingest, geofence crossings, route deviation, retention. |
+| `telematics` | GPS ingest, geofence crossings, route deviation, stoppage detection, retention. |
 | `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables. |
-| `controltower` | Exception tickets from people and detectors (route deviation, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
+| `controltower` | Exception tickets from people and detectors (route deviation, stoppage, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
 | `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
@@ -520,10 +520,14 @@ Multimodal itineraries exist, but the planner does not search for them: a
 person assembles the legs.
 
 Within the control tower (§3.8), tickets are raised automatically from route
-deviation (telematics), missed connections (multimodal), skipped and late
-milk-run stops, receipt variances and pick shortfalls (warehouse). Stoppage,
-ETA and temperature detectors are not built, and those categories are raised
-by hand.
+deviation and stoppage (telematics), missed connections (multimodal), skipped
+and late milk-run stops, receipt variances and pick shortfalls (warehouse).
+The stoppage detector is ping-driven: a trip in transit that reports no
+movement (within `lms.telematics.stoppage-radius-m`, default 100) for
+`lms.telematics.stoppage-threshold-minutes` (default 45) outside every
+terminal geofence raises one EXTENDED_STOPPAGE ticket, and a device that stops
+reporting altogether is therefore not caught. ETA and temperature detectors are
+not built, and those categories are raised by hand.
 
 Gaps the freight-mode, warehouse and billing work left open on purpose:
 
