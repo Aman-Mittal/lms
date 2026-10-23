@@ -55,6 +55,14 @@ public record FreightBill(
          * by a lane tariff, so {@code tariffId} is null when this is set.
          */
         UUID circuitRunId,
+        /**
+         * The rail leg of a multimodal itinerary this bill pays for, or null.
+         * A bill has exactly one subject: a trip (tripId and loadId set, and
+         * possibly a circuit run) or a rail leg (those null). A rail leg has no
+         * load and no lane tariff; its expected charge is the cost recorded on
+         * the leg when the itinerary was planned.
+         */
+        UUID itineraryLegId,
         UUID vendorPartnerId,
         String billNo,
         BillStatus status,
@@ -119,7 +127,7 @@ public record FreightBill(
     public static FreightBill priced(UUID id, UUID tenantId, UUID orgUnitId, UUID tripId,
                                      UUID loadId, UUID vendorPartnerId, String billNo,
                                      UUID tariffId, LocalDate pricedOn, CostSheet sheet) {
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, null, vendorPartnerId,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, null, null, vendorPartnerId,
                 billNo, BillStatus.DRAFT, sheet.currency(), tariffId, pricedOn,
                 sheet.chargeableWeightKg(), sheet.detentionHours(), sheet.dropCount(),
                 sheet.baseFreight(), sheet.detentionAmount(), sheet.multiDropAmount(),
@@ -137,7 +145,7 @@ public record FreightBill(
     public static FreightBill unpriced(UUID id, UUID tenantId, UUID orgUnitId, UUID tripId,
                                        UUID loadId, UUID vendorPartnerId, String billNo,
                                        LocalDate pricedOn, String why) {
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, null, vendorPartnerId,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, null, null, vendorPartnerId,
                 billNo, BillStatus.UNPRICED, "INR", null, pricedOn,
                 null, null, null,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
@@ -161,12 +169,39 @@ public record FreightBill(
     public static FreightBill forCircuit(UUID id, UUID tenantId, UUID orgUnitId, UUID tripId,
                                          UUID loadId, UUID circuitRunId, UUID vendorPartnerId,
                                          String billNo, LocalDate pricedOn, CostSheet sheet) {
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId, null,
                 vendorPartnerId, billNo, BillStatus.DRAFT, sheet.currency(), null, pricedOn,
                 sheet.chargeableWeightKg(), sheet.detentionHours(), sheet.dropCount(),
                 sheet.baseFreight(), sheet.detentionAmount(), sheet.multiDropAmount(),
                 sheet.fuelSurchargeAmount(), sheet.total(),
                 null, null, null, null, null, null, Instant.now(), Instant.now());
+    }
+
+    /**
+     * The carrier's payable for a completed rail leg.
+     *
+     * <p>Priced by the multimodal module when the itinerary was planned, from
+     * the rail rate card in force on the leg's departure day or from the
+     * planner's own figure, and taken as given: that recorded cost is the
+     * expected charge the carrier's invoice is matched against, by exactly the
+     * same tolerance rule as a trip bill.
+     *
+     * @param pricedOn the departure day, which chose the rail rate card
+     */
+    public static FreightBill forRailLeg(UUID id, UUID tenantId, UUID orgUnitId,
+                                         UUID itineraryLegId, UUID carrierPartnerId,
+                                         String billNo, LocalDate pricedOn, CostSheet sheet) {
+        return new FreightBill(id, tenantId, orgUnitId, null, null, null, itineraryLegId,
+                carrierPartnerId, billNo, BillStatus.DRAFT, sheet.currency(), null, pricedOn,
+                sheet.chargeableWeightKg(), sheet.detentionHours(), sheet.dropCount(),
+                sheet.baseFreight(), sheet.detentionAmount(), sheet.multiDropAmount(),
+                sheet.fuelSurchargeAmount(), sheet.total(),
+                null, null, null, null, null, null, Instant.now(), Instant.now());
+    }
+
+    /** Whether this bill pays for a rail leg of an itinerary. */
+    public boolean isForRailLeg() {
+        return itineraryLegId != null;
     }
 
     /** Whether this bill pays for a milk-run circuit rather than a lane trip. */
@@ -265,7 +300,7 @@ public record FreightBill(
             throw new BusinessRuleViolationException("bill-illegal-transition",
                     "Bill " + billNo + " cannot move from " + status + " to " + target);
         }
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId, itineraryLegId,
                 vendorPartnerId, billNo, target, currency, tariffId, pricedOn, chargeableWeightKg,
                 detentionHours, dropCount, baseFreight, detentionAmount, multiDropAmount,
                 fuelSurchargeAmount, computedAmount, claimedAmount, varianceAmount,
@@ -274,7 +309,7 @@ public record FreightBill(
 
     private FreightBill withMatch(BigDecimal claimed, BigDecimal variance, BigDecimal pct,
                                   String note, Instant at) {
-        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId,
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId, itineraryLegId,
                 vendorPartnerId, billNo, status, currency, tariffId, pricedOn, chargeableWeightKg,
                 detentionHours, dropCount, baseFreight, detentionAmount, multiDropAmount,
                 fuelSurchargeAmount, computedAmount, claimed, variance, pct, note, at,

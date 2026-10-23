@@ -34,15 +34,18 @@ FreightBill:
       description: The exact rate version this bill was priced against, kept
         so a dispute months later is argued from that card rather than from
         today's numbers. Null for a milk-run bill, which is priced by its
-        route.
+        route, and for a rail bill, which is priced at the leg's recorded
+        cost.
     source:
       type: string
-      enum: [TRIP, MILK_RUN]
+      enum: [TRIP, MILK_RUN, RAIL]
       description: What the bill pays for. `TRIP` is priced on a lane
         tariff when the trip completes; `MILK_RUN` is a completed circuit,
         priced at its route's run rate plus a fee per supplier collected
-        from. Both are matched against the vendor's claim by the same
-        tolerance rule.
+        from. `RAIL` is a released rail leg of an itinerary, priced at the
+        cost recorded on the leg (from the rail rate card or the planner's
+        figure) and carrying no trip or load. All are matched against the
+        carrier's claim by the same tolerance rule.
     circuitRunId:
       type: string
       format: uuid
@@ -50,6 +53,17 @@ FreightBill:
     routeCode:
       type: string
       description: The milk-run route of that circuit.
+    itineraryLegId:
+      type: string
+      format: uuid
+      description: The rail leg a `RAIL` bill pays for. A rail bill has no
+        `tripId` or `loadId`.
+    itineraryNo:
+      type: string
+      description: The itinerary of that rail leg.
+    legSeq:
+      type: integer
+      description: The rail leg's position in its itinerary.
     pricedOn:
       type: string
       format: date
