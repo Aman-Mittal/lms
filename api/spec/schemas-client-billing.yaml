@@ -323,6 +323,24 @@ ClientCreditNoteLineRequest:
         credits everything that remains creditable on the line.
   required: [lineNo]
 
+ClientPaymentRequest:
+  type: object
+  properties:
+    amount:
+      type: number
+      exclusiveMinimum: 0
+      description: What arrived, tax included, at most two decimals.
+    receivedOn:
+      type: string
+      format: date
+      description: The day the money reached the bank.
+    reference:
+      type: string
+      minLength: 1
+      description: The client's remittance reference. One receipt per client and
+        reference; a second is refused.
+  required: [amount, receivedOn, reference]
+
 ClientCreditNoteRequest:
   type: object
   description: |
@@ -383,10 +401,12 @@ ClientCreditNote:
 ClientStatementEntry:
   type: object
   description: |
-    One document on a client's statement. Amounts include tax. Payments
-    received are not modelled, so the balance is invoiced less credited.
+    One document on a client's statement. Amounts include tax. An invoice
+    is a debit; a credit note and a payment are credits, so the balance is
+    invoiced less credited and paid, and a negative balance is a client in
+    credit.
   properties:
-    entryType: { type: string, enum: [INVOICE, CREDIT_NOTE] }
+    entryType: { type: string, enum: [INVOICE, CREDIT_NOTE, PAYMENT] }
     documentId: { type: string, format: uuid }
     documentNo: { type: string }
     issuedAt: { type: string, format: date-time }
@@ -396,7 +416,8 @@ ClientStatementEntry:
       description: The invoice itself, or the invoice a credit note corrects.
     reason:
       type: string
-      description: A credit note's reason; absent for an invoice.
+      description: A credit note's reason, or a payment's remittance reference;
+        absent for an invoice.
     currency: { type: string }
     debit: { type: number }
     credit: { type: number }
