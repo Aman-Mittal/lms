@@ -306,7 +306,7 @@ OutboundOrder:
     shipTo: { type: string }
     status:
       type: string
-      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED]
+      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED, BACK_ORDER_CANCELLED]
       description: |
         BACK_ORDERED -- what was found has been dispatched and at least one
         line is still short; a further pick fills it into a further unit.
@@ -414,7 +414,7 @@ OutboundOrderSummary:
     shipTo: { type: string }
     status:
       type: string
-      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED]
+      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED, BACK_ORDER_CANCELLED]
     orderedUnits: { type: integer }
     pickedUnits: { type: integer }
     backOrderedUnits:
@@ -485,12 +485,40 @@ PickWaveOrder:
     orderNo: { type: string }
     status:
       type: string
-      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED]
+      enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED, BACK_ORDER_CANCELLED]
     orderedUnits: { type: integer }
     pickedUnits: { type: integer }
     shortUnits:
       type: integer
       description: Still owed by this order -- the wave's shortfall, attributed.
+
+PickWaveSummary:
+  type: object
+  description: One row of the wave listing.
+  properties:
+    id: { type: string, format: uuid }
+    waveNo: { type: string }
+    warehouseId: { type: string, format: uuid }
+    status:
+      type: string
+      enum: [RELEASED, PICKED]
+    orderCount: { type: integer }
+    pickedAt: { type: string, format: date-time }
+    createdAt: { type: string, format: date-time }
+  required: [id, waveNo, warehouseId, status, orderCount, createdAt]
+
+PickWaveSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/PickWaveSummary" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
 
 PickWave:
   type: object
