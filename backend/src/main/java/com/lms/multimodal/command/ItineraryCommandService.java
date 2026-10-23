@@ -31,10 +31,12 @@ import java.util.UUID;
 import com.lms.execution.api.TripLookupPort;
 import com.lms.masterdata.api.PartnerStandingPort;
 import com.lms.masterdata.api.TerminalCategoryPort;
+import com.lms.masterdata.api.TerminalOrgUnitPort;
 import com.lms.multimodal.command.domain.Itinerary;
 import com.lms.multimodal.command.domain.ItineraryLeg;
 import com.lms.multimodal.command.domain.RailTariff;
 import com.lms.multimodal.events.ConnectionMissed;
+import com.lms.multimodal.events.RailLegCompleted;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -55,6 +57,9 @@ import org.springframework.transaction.annotation.Transactional;
  * that has already happened, and idempotent, because the outbox delivers at
  * least once. The missed-connection sweep is a third, unguarded for the same
  * reason: it is the platform noticing that a fact failed to happen.
+ *
+ * <p>Releasing a rail leg publishes {@link RailLegCompleted}, which finance
+ * turns into the carrier's freight bill.
  *
  * <p>A rail leg planned without a cost is priced from the rail rate card in
  * force on its planned departure day, and refused when there is none. An
@@ -85,18 +90,21 @@ public class ItineraryCommandService {
     private final TripLookupPort trips;
     private final RailTariffRepository railTariffs;
     private final TerminalCategoryPort terminals;
+    private final TerminalOrgUnitPort terminalOwners;
     private final PartnerStandingPort partners;
     private final ApplicationEventPublisher events;
 
     public ItineraryCommandService(ItineraryRepository itineraries, ItineraryLegRepository legs,
                                    TripLookupPort trips, RailTariffRepository railTariffs,
-                                   TerminalCategoryPort terminals, PartnerStandingPort partners,
+                                   TerminalCategoryPort terminals, TerminalOrgUnitPort terminalOwners,
+                                   PartnerStandingPort partners,
                                    ApplicationEventPublisher events) {
         this.itineraries = itineraries;
         this.legs = legs;
         this.trips = trips;
         this.railTariffs = railTariffs;
         this.terminals = terminals;
+        this.terminalOwners = terminalOwners;
         this.partners = partners;
         this.events = events;
     }
@@ -178,6 +186,9 @@ public class ItineraryCommandService {
         ItineraryLeg saved = legs.save(moved);
         if (saved.status() == ItineraryLeg.Status.ARRIVED) {
             checkConnection(itinerary, all, saved, now);
+        }
+        if (saved.status() == ItineraryLeg.Status.RELEASED) {
+            announceCompleted(itinerary, saved);
         }
     }
 
@@ -291,6 +302,22 @@ public class ItineraryCommandService {
         events.publishEvent(new ConnectionMissed(itinerary.tenantId(), itinerary.id(),
                 itinerary.itineraryNo(), marked.id(), marked.seq(), marked.mode().name(),
                 arrived.id(), arrived.tripId(), marked.plannedDepartureAt(), earliest, now));
+    }
+
+    /**
+     * Tells finance a rail leg is done and its carrier can be paid. The owning
+     * unit is that of the origin railhead, as for a rail rate card.
+     */
+    private void announceCompleted(Itinerary itinerary, ItineraryLeg released) {
+        UUID orgUnitId = terminalOwners.orgUnitOf(released.fromTerminalId())
+                .orElseThrow(() -> new ResourceNotFoundException("Terminal",
+                        released.fromTerminalId()));
+        events.publishEvent(new RailLegCompleted(itinerary.tenantId(), itinerary.id(),
+                itinerary.itineraryNo(), released.id(), released.seq(), orgUnitId,
+                released.carrierPartnerId(), released.costAmount(), itinerary.currency(),
+                released.unitType() == null ? null : released.unitType().name(),
+                released.unitCount(), released.bookingRef(), released.trainNo(),
+                released.departedAt(), released.releasedAt()));
     }
 
     private static ItineraryLeg predecessorOf(List<ItineraryLeg> all, ItineraryLeg leg) {
