@@ -24,13 +24,17 @@ import java.util.UUID;
  * One document on a client's statement, with the balance after it.
  *
  * <p>Amounts are what the client owes, tax included: an invoice is a debit of
- * its total, a credit note a credit of its total. Payments received are not
- * modelled, so the balance is what has been invoiced less what has been
- * credited.
+ * its total, a credit note or a payment a credit of its amount, so the
+ * balance is what has been invoiced less what has been credited or paid. A
+ * negative balance is a client in credit.
  *
- * @param entryType  {@code INVOICE} or {@code CREDIT_NOTE}
- * @param invoiceNo  the invoice itself, or the invoice a credit note corrects
- * @param reason     a credit note's reason; null for an invoice
+ * @param entryType  {@code INVOICE}, {@code CREDIT_NOTE} or {@code PAYMENT}
+ * @param periodStart the invoiced month; null for a payment, which belongs to
+ *                   the client's account rather than to a month
+ * @param invoiceNo  the invoice itself, or the invoice a credit note corrects;
+ *                   null for a payment
+ * @param reason     a credit note's reason, or a payment's remittance
+ *                   reference; null for an invoice
  * @param balance    running balance after this entry, over the client's whole
  *                   history, not only this page
  */
