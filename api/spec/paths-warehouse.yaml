@@ -321,7 +321,7 @@
       - name: status
         in: query
         required: false
-        schema: { type: string, enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED] }
+        schema: { type: string, enum: [OPEN, PICKED, SHORT_PICKED, PACKED, DISPATCHED, BACK_ORDERED, BACK_ORDER_CANCELLED] }
         description: Restricts the listing to one status.
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
@@ -398,6 +398,32 @@
       anything the order is owed. Refused with `outbound-order-in-wave`
       while the order waits in a released wave, and with
       `outbound-order-illegal-transition` once nothing is owed.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/outbound-orders/{id}/cancel-back-order:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Warehouse]
+    operationId: cancelOutboundOrderBackOrder
+    summary: Cancel what a back-ordered order is still owed
+    description: |
+      Requires `WAREHOUSE_OPERATE`. Only a BACK_ORDERED order has a remainder
+      to cancel; it becomes BACK_ORDER_CANCELLED, is no longer offered to a
+      pick or a wave and drops out of the back-order listing. Refused while
+      the order waits in a released wave.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     responses:
@@ -519,6 +545,34 @@
       "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/pick-waves:
+  get:
+    tags: [Warehouse]
+    operationId: listPickWaves
+    summary: A warehouse's pick waves, newest first
+    description: |
+      Requires `WAREHOUSE_READ`. `RELEASED` lists the waves waiting for a
+      picker; each row carries the number of orders the wave holds.
+    parameters:
+      - name: warehouseId
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: status
+        in: query
+        required: false
+        schema: { type: string, enum: [RELEASED, PICKED] }
+        description: Restricts the listing to one status.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of waves, newest first.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PickWaveSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
   post:
     tags: [Warehouse]
     operationId: releasePickWave
