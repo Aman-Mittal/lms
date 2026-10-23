@@ -37,3 +37,10 @@ Feature: A road, rail and road shipment is planned and walked, over the wire
     Then the itinerary is completed over 3 legs with no missed connection
     And the rail leg was priced at 80000 from the rate card
     And the cost by carrier is 12000 for the first road carrier, 80000 for rail and 9000 for the second road carrier
+
+  Scenario: Releasing the train raises the rail carrier's freight bill, matched like any other
+    When the first-mile lorry leaves the origin 48 hours ago and delivers to the railhead 40 hours ago
+    And the train is reported placed, loaded and departed, then arrived and released
+    Then a rail freight bill of 80000 is published for the rail carrier and the rail leg
+    When the rail carrier invoices 81000 against it
+    Then the rail freight bill is approved for payment
