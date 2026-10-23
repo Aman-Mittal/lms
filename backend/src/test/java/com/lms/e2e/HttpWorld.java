@@ -104,6 +104,10 @@ final class HttpWorld {
         assertThat(me.getOrgUnitId()).as("login names the caller's unit").isNotNull();
     }
 
+    UUID userId() {
+        return me.getUserId();
+    }
+
     UUID orgUnitId() {
         return me.getOrgUnitId();
     }
