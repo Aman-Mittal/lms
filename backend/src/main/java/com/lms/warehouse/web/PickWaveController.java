@@ -21,7 +21,9 @@ import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.query.Slice;
 import com.lms.warehouse.command.WaveCommandService;
+import com.lms.warehouse.query.PickWaveSummaryView;
 import com.lms.warehouse.query.PickWaveView;
 import com.lms.warehouse.query.WarehouseQueryService;
 import jakarta.validation.Valid;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Wave picking: several outbound orders released and picked together. */
@@ -51,6 +54,14 @@ public class PickWaveController {
         UUID id = waves.release(request.warehouseId(), request.orderIds());
         return ResponseEntity.created(URI.create("/api/v1/pick-waves/" + id))
                 .body(new IdResponse(id));
+    }
+
+    @GetMapping("/api/v1/pick-waves")
+    public Slice<PickWaveSummaryView> waves(@RequestParam UUID warehouseId,
+                                            @RequestParam(required = false) String status,
+                                            @RequestParam(required = false) String cursor,
+                                            @RequestParam(required = false) Integer limit) {
+        return queries.pickWaves(warehouseId, status, cursor, limit);
     }
 
     @GetMapping("/api/v1/pick-waves/{id}")

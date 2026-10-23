@@ -262,6 +262,47 @@ Feature: A third-party logistics provider bills each client for what it did
       | INVOICE     | 708   | 0      | 2124    |
       | CREDIT_NOTE | 0     | 118    | 2006    |
 
+  Scenario: A payment is a credit on the statement, and a client who overpays is in credit
+    Given a trading partner "CLIENT-P"
+    And client "CLIENT-P" holds contract "P-2026" effective 100 days ago:
+      | storage per pallet-day | 12 |
+      | warehouse tax percent  | 18 |
+    And "CLIENT-P" stored 100 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-P"
+    When a payment of 1000 from "CLIENT-P" arrives referenced "NEFT-1"
+    And a payment of 500 from "CLIENT-P" arrives referenced "NEFT-2"
+    And the statement of "CLIENT-P" is read 2 entries a page
+    Then the statement reads:
+      | type    | debit | credit | balance |
+      | INVOICE | 1416  | 0      | 1416    |
+      | PAYMENT | 0     | 1000   | 416     |
+      | PAYMENT | 0     | 500    | -84     |
+
+  Scenario: A remittance is recorded once, and only for a client who has been invoiced
+    Given a trading partner "CLIENT-Q"
+    And client "CLIENT-Q" holds contract "Q-2026" effective 100 days ago:
+      | storage per pallet-day | 12 |
+    When a payment of 100 from "CLIENT-Q" arrives referenced "NEFT-9"
+    Then client billing refuses mentioning "has not been invoiced"
+    Given "CLIENT-Q" stored 10 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-Q"
+    When a payment of 100 from "CLIENT-Q" arrives referenced "NEFT-9"
+    Then the payment is recorded in the audit trail
+    When a payment of 100 from "CLIENT-Q" arrives referenced "NEFT-9"
+    Then client billing refuses mentioning "already recorded"
+    When a payment of 0 from "CLIENT-Q" arrives referenced "NEFT-10"
+    Then client billing refuses mentioning "more than nothing"
+
+  Scenario: Recording a payment is billing-desk work
+    Given a trading partner "CLIENT-R"
+    And client "CLIENT-R" holds contract "R-2026" effective 100 days ago:
+      | storage per pallet-day | 12 |
+    And "CLIENT-R" stored 10 pallet-days on day 5 of last month
+    And last month is billed for "CLIENT-R"
+    And the signed-in user lacks "CLIENT_BILLING_RUN"
+    When a payment of 100 from "CLIENT-R" arrives referenced "NEFT-1"
+    Then the client billing request is refused as unauthorised
+
   # -------------------------------------------------- storage from the ledger
 
   Scenario: Storage is computed from the stock the client owns in the warehouse, once

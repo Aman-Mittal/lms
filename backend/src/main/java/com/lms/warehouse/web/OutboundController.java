@@ -87,6 +87,12 @@ public class OutboundController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/api/v1/outbound-orders/{id}/cancel-back-order")
+    public ResponseEntity<Void> cancelBackOrder(@PathVariable UUID id) {
+        outbound.cancelBackOrder(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/api/v1/outbound-orders/{id}/pack")
     public ResponseEntity<IdResponse> pack(@PathVariable UUID id) {
         UUID unitId = outbound.pack(id);

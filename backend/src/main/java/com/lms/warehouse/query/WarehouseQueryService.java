@@ -323,6 +323,36 @@ public class WarehouseQueryService {
 
     // ------------------------------------------------------------ pick waves
 
+    /** A warehouse's waves, newest first, optionally narrowed to one status. */
+    public Slice<PickWaveSummaryView> pickWaves(UUID warehouseId, String status, String cursor,
+                                                Integer limit) {
+        int pageSize = Slice.clampLimit(limit);
+        Keyset after = Keyset.parse(cursor);
+        List<PickWaveSummaryView> rows = jdbc.sql("""
+                        SELECT w.id, w.wave_no, w.warehouse_id, w.status, w.picked_at,
+                               w.created_at,
+                               (SELECT count(*) FROM pick_wave_order m
+                                 WHERE m.tenant_id = w.tenant_id
+                                   AND m.wave_id = w.id)::int AS order_count
+                          FROM pick_wave w
+                         WHERE w.warehouse_id = :warehouseId
+                           AND (CAST(:status AS text) IS NULL OR w.status = CAST(:status AS text))
+                           AND (CAST(:afterAt AS timestamptz) IS NULL
+                                OR (w.created_at, w.id) < (CAST(:afterAt AS timestamptz),
+                                                           CAST(:afterId AS uuid)))
+                         ORDER BY w.created_at DESC, w.id DESC
+                         LIMIT :limit
+                        """)
+                .param("warehouseId", warehouseId)
+                .param("status", blankToNull(status))
+                .param("afterAt", after == null ? null : after.at())
+                .param("afterId", after == null ? null : after.id())
+                .param("limit", pageSize + 1)
+                .query(PickWaveSummaryView.class)
+                .list();
+        return Slice.of(rows, pageSize, view -> Keyset.of(view.createdAt(), view.id()).encode());
+    }
+
     public Optional<PickWaveView> pickWave(UUID id) {
         return jdbc.sql("""
                         SELECT id, wave_no, warehouse_id, status, picked_by, picked_at, created_at

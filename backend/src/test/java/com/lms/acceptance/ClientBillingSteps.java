@@ -31,6 +31,7 @@ import com.lms.clientbilling.command.ClientBillingRunService;
 import com.lms.clientbilling.command.ClientChargeService;
 import com.lms.clientbilling.command.ClientContractService;
 import com.lms.clientbilling.command.ClientCreditNoteService;
+import com.lms.clientbilling.command.ClientPaymentService;
 import com.lms.clientbilling.command.ClientStorageService;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
@@ -79,6 +80,8 @@ public class ClientBillingSteps {
     private ClientBillingQueryService queries;
     @Autowired
     private ClientCreditNoteService creditNotes;
+    @Autowired
+    private ClientPaymentService payments;
     @Autowired
     private ClientStorageService storage;
     @Autowired
@@ -474,6 +477,26 @@ public class ClientBillingSteps {
         assertThat(view.receivable()).isEqualByComparingTo(receivable);
         assertThat(view.credited()).isEqualByComparingTo(credited);
         assertThat(view.margin()).isEqualByComparingTo(receivable.subtract(view.carrierPayable()));
+    }
+
+    // ------------------------------------------------------------ payments
+
+    @When("a payment of {bigdecimal} from {string} arrives referenced {string}")
+    public void paymentArrives(BigDecimal amount, String clientCode, String reference) {
+        failure = null;
+        try {
+            payments.record(world.ref(clientCode), amount, LocalDate.now(), reference);
+        } catch (RuntimeException e) {
+            failure = e;
+        }
+    }
+
+    @Then("the payment is recorded in the audit trail")
+    public void paymentAudited() {
+        assertThat(failure).as("the payment should have been recorded").isNull();
+        assertThat(inTransaction(() -> jdbc.sql(
+                "SELECT count(*) FROM audit_log WHERE action = 'CLIENT_PAYMENT_RECORDED'")
+                .query(Long.class).single())).isEqualTo(1L);
     }
 
     // ------------------------------------------------------------ statement

@@ -262,7 +262,10 @@ request after a quiet spell pays the start-up cost above.
   is derived, never edited, and the database refuses negative stock, an overfull
   bin and any edit of a movement. A correction is a new adjustment.
 - A pick that cannot be filled stays owed as a back-order, filled by a later
-  pick into a further handling unit. Damaged stock sits in quarantine until an
+  pick into a further handling unit, or is cancelled (`cancel-back-order`),
+  which closes the order as BACK_ORDER_CANCELLED. Waves are listed per
+  warehouse and status (`GET /api/v1/pick-waves`). Damaged stock sits in
+  quarantine until an
   adjustment releases or writes it off. A cross-docked receipt skips the bins.
 - A dispatched handling unit with a destination, consignee and weighed gross
   becomes a full-truckload consignment in planning, ready to go on a load.
@@ -294,9 +297,15 @@ request after a quiet spell pays the start-up cost above.
   and day so the computation is idempotent. `storage-computations` runs it and
   `storage` reads the days.
 - Statement: `GET /api/v1/client-billing/clients/{clientId}/statement` lists the
-  client's invoices (debit) and credit notes (credit) oldest first with a
-  running balance over the whole history. The balance is invoiced less credited:
-  payments received are not modelled.
+  client's invoices (debit), credit notes and payments (credit) oldest first
+  with a running balance over the whole history; a negative balance is a client
+  in credit.
+- Payments: `POST /api/v1/client-billing/clients/{clientId}/payments` records
+  money received (amount, the day it arrived, the client's remittance
+  reference). It is held against the client, not an invoice, so no receipt is
+  matched to the invoices it settles; the reference is unique per client, so a
+  receipt entered twice is refused. Needs `CLIENT_BILLING_RUN` in the caller's
+  subtree, is audited, never edited or removed.
 
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
@@ -386,11 +395,9 @@ cold-storage archival.
 Left open by the freight-mode, warehouse and billing work, on purpose:
 
 - Rail carriers are not settled through finance freight bills.
-- Pick waves cannot be listed, only fetched by id.
-- A back-order cannot be cancelled.
 - A warehouse hand-off consignment has no sales order, so client billing skips it.
-- Payments and receipts are not modelled against client invoices; the
-  statement balance is invoiced less credited.
+- A payment is recorded against the client, not matched to invoices, so there
+  is no per-invoice "paid" or "overdue" state and no ageing report.
 - Of the control-tower detectors, stoppage, ETA and temperature are not built.
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a

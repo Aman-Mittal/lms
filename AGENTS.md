@@ -523,13 +523,11 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
 
 - Rail carriers are not settled through finance freight bills; a rail leg's
   cost is recorded and reported by carrier, not paid through settlement.
-- Pick waves can be released and fetched by id but not listed.
-- A back-order cannot be cancelled; it is filled by a later pick.
 - A warehouse hand-off consignment has no sales order, so client billing
   skips it (client charges are drawn from order-backed consignments).
-- Payments and receipts are not modelled against client invoices. The client
-  statement lists invoices and credit notes with a running balance, which is
-  invoiced less credited, not what the client still owes.
+- A client payment is recorded against the client, not matched to an invoice
+  (V30). The statement balance is invoiced less credited and paid; there is no
+  per-invoice paid or overdue state and no ageing.
 
 The vision document's §5.1 target of 20 000 GPS pings/second is a **production**
 NFR. The free-tier deployment sustains roughly 50–100/second. Say so plainly

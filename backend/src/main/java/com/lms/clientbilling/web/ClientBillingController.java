@@ -25,6 +25,7 @@ import com.lms.clientbilling.command.ClientBillingRunService;
 import com.lms.clientbilling.command.ClientChargeService;
 import com.lms.clientbilling.command.ClientContractService;
 import com.lms.clientbilling.command.ClientCreditNoteService;
+import com.lms.clientbilling.command.ClientPaymentService;
 import com.lms.clientbilling.command.ClientStorageService;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
@@ -69,18 +70,21 @@ public class ClientBillingController {
     private final ClientChargeService charges;
     private final ClientBillingRunService runs;
     private final ClientCreditNoteService creditNotes;
+    private final ClientPaymentService payments;
     private final ClientStorageService storage;
     private final ClientBillingQueryService queries;
 
     public ClientBillingController(ClientContractService contracts, ClientChargeService charges,
                                    ClientBillingRunService runs,
                                    ClientCreditNoteService creditNotes,
+                                   ClientPaymentService payments,
                                    ClientStorageService storage,
                                    ClientBillingQueryService queries) {
         this.contracts = contracts;
         this.charges = charges;
         this.runs = runs;
         this.creditNotes = creditNotes;
+        this.payments = payments;
         this.storage = storage;
         this.queries = queries;
     }
@@ -193,6 +197,16 @@ public class ClientBillingController {
         return queries.statementOf(clientId, cursor, limit);
     }
 
+    @PostMapping("/clients/{clientId}/payments")
+    public ResponseEntity<IdResponse> recordPayment(
+            @PathVariable UUID clientId, @Valid @RequestBody PaymentRequest request) {
+        UUID paymentId = payments.record(clientId, request.amount(), request.receivedOn(),
+                request.reference());
+        return ResponseEntity.created(URI.create("/api/v1/client-billing/clients/" + clientId
+                        + "/statement"))
+                .body(new IdResponse(paymentId));
+    }
+
     @PostMapping("/invoices/{id}/credit-notes")
     public ResponseEntity<IdResponse> issueCreditNote(
             @PathVariable UUID id, @Valid @RequestBody CreditNoteRequest request) {
@@ -266,6 +280,16 @@ public class ClientBillingController {
     public record CreditNoteRequest(@NotBlank String reason,
                                     @Positive BigDecimal amount,
                                     List<@Valid CreditNoteLineRequest> lines) {
+    }
+
+    /**
+     * @param amount     what arrived, tax included, at most two decimals
+     * @param receivedOn the day the money reached the bank
+     * @param reference  the client's remittance reference; one per client
+     */
+    public record PaymentRequest(@NotNull @Positive BigDecimal amount,
+                                 @NotNull LocalDate receivedOn,
+                                 @NotBlank String reference) {
     }
 
     /** @param amount taxable amount to credit; omitted credits what remains on the line */

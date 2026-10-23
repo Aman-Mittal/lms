@@ -358,6 +358,12 @@ public class ClientBillingQueryService {
                              WHERE cn.client_partner_id = :client
                                AND (cn.issued_at, cn.id) <= (CAST(:afterAt AS timestamptz),
                                                              CAST(:afterId AS uuid))
+                            UNION ALL
+                            SELECT -p.amount
+                              FROM client_payment p
+                             WHERE p.client_partner_id = :client
+                               AND (p.recorded_at, p.id) <= (CAST(:afterAt AS timestamptz),
+                                                             CAST(:afterId AS uuid))
                         ) before_cursor
                         """)
                 .param("client", clientPartnerId)
@@ -386,6 +392,15 @@ public class ClientBillingQueryService {
                              WHERE cn.client_partner_id = :client
                                AND (CAST(:afterAt AS timestamptz) IS NULL
                                     OR (cn.issued_at, cn.id) > (CAST(:afterAt AS timestamptz),
+                                                                CAST(:afterId AS uuid)))
+                            UNION ALL
+                            SELECT 'PAYMENT', p.id, p.payment_no, p.recorded_at,
+                                   CAST(NULL AS date), CAST(NULL AS text), p.reference,
+                                   p.currency, 0, p.amount, 0
+                              FROM client_payment p
+                             WHERE p.client_partner_id = :client
+                               AND (CAST(:afterAt AS timestamptz) IS NULL
+                                    OR (p.recorded_at, p.id) > (CAST(:afterAt AS timestamptz),
                                                                 CAST(:afterId AS uuid)))
                         ) entries
                          ORDER BY issued_at, document_id

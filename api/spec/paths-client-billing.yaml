@@ -360,6 +360,40 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
 
+/api/v1/client-billing/clients/{clientId}/payments:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client partner.
+  post:
+    tags: [Client billing]
+    operationId: recordClientPayment
+    summary: Record money received from a client
+    description: |
+      Requires `CLIENT_BILLING_RUN`, and a client in the caller's own
+      organisational unit or one beneath it (access policy
+      `client-billing-write-org-subtree`). Recorded against the client, not
+      an invoice, in the currency the client is invoiced in, and shown on the
+      statement as a credit. Refused (409) for a client with no invoice, and
+      when the remittance reference was already recorded for the client.
+      Never edited or removed. Audited. Refused to client portal users.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientPaymentRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
 /api/v1/client-billing/invoices/{id}/credit-notes:
   parameters:
     - name: id
