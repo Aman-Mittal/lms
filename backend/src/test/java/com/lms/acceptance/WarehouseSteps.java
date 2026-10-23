@@ -48,6 +48,7 @@ import com.lms.warehouse.query.HandlingUnitSummaryView;
 import com.lms.warehouse.query.HandlingUnitView;
 import com.lms.warehouse.query.OutboundOrderSummaryView;
 import com.lms.warehouse.query.OutboundOrderView;
+import com.lms.warehouse.query.PickWaveSummaryView;
 import com.lms.warehouse.query.PickWaveView;
 import com.lms.warehouse.query.StockBalanceView;
 import com.lms.warehouse.query.WarehouseQueryService;
@@ -215,6 +216,11 @@ public class WarehouseSteps {
     @When("the cross-dock unit of ASN {string} is dispatched as {string}")
     public void crossDockDispatched(String asnNo, String reference) {
         attempt(() -> outbound.dispatch(crossDockUnit(asnNo), reference));
+    }
+
+    @When("the back-order of outbound order {string} is cancelled")
+    public void backOrderCancelled(String orderNo) {
+        attempt(() -> outbound.cancelBackOrder(orderId(orderNo)));
     }
 
     // ------------------------------------------------------------- pick waves
@@ -574,6 +580,25 @@ public class WarehouseSteps {
                 statusOrNull(status), cursor, pageSize), HandlingUnitSummaryView::id);
         assertThat(listed).containsExactlyElementsOf(
                 names(units).stream().map(unit -> world.ref("hu:" + unit)).toList());
+    }
+
+    @Then("listing {word} pick waves of {string} gives {string}")
+    public void waveListing(String status, String warehouse, String waves) {
+        List<UUID> listed = allPages(cursor -> queries.pickWaves(warehouseId(warehouse),
+                statusOrNull(status), cursor, 1), PickWaveSummaryView::id);
+        assertThat(listed).containsExactlyElementsOf(
+                names(waves).stream().map(wave -> world.ref("wave:" + wave)).toList());
+    }
+
+    @Then("wave {string} is listed holding {int} orders")
+    public void waveListedWithCount(String wave, int orders) {
+        UUID id = world.ref("wave:" + wave);
+        PickWaveView view = inTransaction(() -> queries.pickWave(id).orElseThrow());
+        PickWaveSummaryView row = inTransaction(() -> queries.pickWaves(view.warehouseId(), null,
+                        null, 200).items().stream()
+                .filter(candidate -> candidate.id().equals(id)).findFirst()
+                .orElseThrow(() -> new AssertionError("Wave " + wave + " is not listed")));
+        assertThat(row.orderCount()).isEqualTo(orders);
     }
 
     @Then("outbound order {string} is listed with {int} ordered, {int} picked and {int} back-ordered")
