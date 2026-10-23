@@ -245,7 +245,10 @@ request after a quiet spell pays the start-up cost above.
 - Rail runs between two RAILHEAD terminals. Rail carriers publish versioned
   rate cards per railhead pair; a rail leg planned without a cost is priced from
   the card in force on its planned departure day. The itinerary reports its
-  cost by carrier.
+  cost by carrier. When a rail leg is RELEASED (unloaded and handed on) finance
+  raises one freight bill against the rail carrier for it, expected at the leg's
+  recorded cost, which then goes through the same tolerance match, dispute and
+  approval path as a road bill.
 - The hand-off rule: a leg cannot start before its predecessor has arrived and
   the transfer dwell has passed. A rail departure that breaks it is refused; a
   road dispatch cannot be refused from here, so it is recorded as an early
@@ -398,7 +401,7 @@ cold-storage archival.
 
 Left open by the freight-mode, warehouse and billing work, on purpose:
 
-- Rail carriers are not settled through finance freight bills.
+- Control-tower settlement holds are per trip, so they do not freeze a rail leg's freight bill.
 - A warehouse hand-off consignment has no sales order, so client billing skips it.
 - A payment is recorded against the client, not matched to invoices: the ageing
   report applies payments to the oldest invoice first, which is a convention,

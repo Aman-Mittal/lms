@@ -58,9 +58,19 @@
  * the vendor's claim by the same tolerance rule, but keyed on the circuit run
  * and carrying no lane tariff. The circuit's bill supersedes an unsettled trip
  * bill for the same lorry, so one movement is never payable twice.
+ *
+ * <p>Listens to {@code multimodal::events} for released rail legs. A rail leg
+ * has no trip, load or lane tariff; its expected charge is the cost recorded on
+ * the leg when the itinerary was planned (from the rail rate card or the
+ * planner's figure). Finance raises the rail carrier's freight bill with the
+ * leg as its subject, once per leg, and from there it is matched, disputed and
+ * approved by the same rule and the same approval limit as any other bill.
+ * Settlement holds are keyed on trips, so a rail leg's bill is not frozen by
+ * them: a missed-connection ticket is on the predecessor's trip, not the leg.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
         allowedDependencies = {"planning::api", "planning::events", "execution::events",
-                "controltower::events", "identity::access", "milkrun::events"})
+                "controltower::events", "identity::access", "milkrun::events",
+                "multimodal::events"})
 package com.lms.finance;

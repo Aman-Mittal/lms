@@ -19,13 +19,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.masterdata.api.TerminalCategoryPort;
+import com.lms.masterdata.api.TerminalOrgUnitPort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Serves {@link TerminalCategoryPort} from the terminal register. */
+/** Serves {@link TerminalCategoryPort} and {@link TerminalOrgUnitPort} from the terminal register. */
 @Service
 @Transactional(readOnly = true)
-public class TerminalCategoryService implements TerminalCategoryPort {
+public class TerminalCategoryService implements TerminalCategoryPort, TerminalOrgUnitPort {
 
     private final TerminalRepository terminals;
 
@@ -37,5 +38,10 @@ public class TerminalCategoryService implements TerminalCategoryPort {
     public Optional<String> functionalCategoryOf(UUID terminalId) {
         return terminals.findById(terminalId)
                 .map(terminal -> terminal.functionalCategory().name());
+    }
+
+    @Override
+    public Optional<UUID> orgUnitOf(UUID terminalId) {
+        return terminals.findById(terminalId).map(terminal -> terminal.orgUnitId());
     }
 }

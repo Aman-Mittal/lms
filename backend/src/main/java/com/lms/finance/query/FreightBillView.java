@@ -41,13 +41,20 @@ public record FreightBillView(
         /**
          * What the bill pays for: {@code TRIP}, priced on a lane tariff when
          * the trip completed, or {@code MILK_RUN}, a completed circuit priced
-         * at its route's rate. Both are matched by the same rule.
+         * at its route's rate, or {@code RAIL}, a released rail leg priced at
+         * the cost recorded on the leg. All are matched by the same rule.
          */
         String source,
         /** The circuit run a {@code MILK_RUN} bill pays for; null otherwise. */
         UUID circuitRunId,
         /** The milk-run route of that circuit; null for a trip bill. */
         String routeCode,
+        /** The rail leg a {@code RAIL} bill pays for; null otherwise. */
+        UUID itineraryLegId,
+        /** The itinerary of that rail leg; null for any other bill. */
+        String itineraryNo,
+        /** The rail leg's position in its itinerary; null for any other bill. */
+        Integer legSeq,
         LocalDate pricedOn,
         BigDecimal chargeableWeightKg,
         BigDecimal detentionHours,

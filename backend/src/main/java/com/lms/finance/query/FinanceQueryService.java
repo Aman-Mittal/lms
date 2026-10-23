@@ -50,8 +50,11 @@ public class FinanceQueryService {
                    b.load_id, l.load_no,
                    vp.legal_name AS vendor_name,
                    tf.code AS tariff_code,
-                   CASE WHEN b.circuit_run_id IS NULL THEN 'TRIP' ELSE 'MILK_RUN' END AS source,
+                   CASE WHEN b.circuit_run_id IS NOT NULL THEN 'MILK_RUN'
+                        WHEN b.itinerary_leg_id IS NOT NULL THEN 'RAIL'
+                        ELSE 'TRIP' END AS source,
                    b.circuit_run_id, cr.route_code,
+                   b.itinerary_leg_id, it.itinerary_no, il.seq AS leg_seq,
                    b.priced_on, b.chargeable_weight_kg, b.detention_hours, b.drop_count,
                    b.base_freight, b.detention_amount, b.multi_drop_amount,
                    b.fuel_surcharge_amount, b.computed_amount, b.claimed_amount,
@@ -62,11 +65,13 @@ public class FinanceQueryService {
                        AND h.released_at IS NULL) AS settlement_held_by,
                    b.created_at
               FROM freight_bill b
-              JOIN trip t ON t.id = b.trip_id
-              JOIN load_unit l ON l.id = b.load_id
+              LEFT JOIN trip t ON t.id = b.trip_id
+              LEFT JOIN load_unit l ON l.id = b.load_id
               JOIN business_partner vp ON vp.id = b.vendor_partner_id
               LEFT JOIN tariff tf ON tf.id = b.tariff_id
               LEFT JOIN circuit_run cr ON cr.id = b.circuit_run_id
+              LEFT JOIN itinerary_leg il ON il.id = b.itinerary_leg_id
+              LEFT JOIN itinerary it ON it.id = il.itinerary_id
             """;
 
     /**

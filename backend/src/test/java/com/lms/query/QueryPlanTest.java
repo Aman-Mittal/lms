@@ -980,6 +980,17 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a rail leg's payable is found by index")
+    void freightBillByItineraryLeg() {
+        // Runs on every delivery of a rail leg's release, redeliveries included.
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND itinerary_leg_id = '00000000-0000-0000-0000-000000000002'
+                """, "freight_bill");
+    }
+
+    @Test
     @DisplayName("the bill a trip is paid on is found by index, cancelled ones included")
     void freightBillByTrip() {
         // The redelivery check for trip bills. It must see a superseded,

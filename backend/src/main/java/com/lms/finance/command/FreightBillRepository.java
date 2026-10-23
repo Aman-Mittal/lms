@@ -47,6 +47,11 @@ public interface FreightBillRepository extends CrudRepository<FreightBill, UUID>
     Optional<FreightBill> findByCircuitRun(@Param("tenantId") UUID tenantId,
                                            @Param("runId") UUID runId);
 
+    /** Served by {@code freight_bill_itinerary_leg_idx}. */
+    @Query("SELECT * FROM freight_bill WHERE tenant_id = :tenantId AND itinerary_leg_id = :legId")
+    Optional<FreightBill> findByItineraryLeg(@Param("tenantId") UUID tenantId,
+                                             @Param("legId") UUID legId);
+
     @Query("SELECT * FROM freight_bill WHERE tenant_id = :tenantId AND bill_no = :billNo")
     Optional<FreightBill> findByBillNo(@Param("tenantId") UUID tenantId,
                                        @Param("billNo") String billNo);

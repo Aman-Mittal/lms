@@ -43,7 +43,10 @@
  * <p>Depends on {@code execution::api} to check that a road leg's trip exists,
  * has not yet left and runs between the leg's terminals,
  * {@code execution::events} to follow it, and {@code masterdata::api} to
- * check terminals, their categories and carriers.
+ * check terminals, their categories, owning units and carriers.
+ *
+ * <p>A released rail leg is announced as {@link com.lms.multimodal.events.RailLegCompleted},
+ * from which finance raises the rail carrier's freight bill.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Multimodal Itineraries",
