@@ -1,0 +1,111 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Load-test a running deployment with Apache JMeter, on demand.
+#
+# performance/jmeter/run.sh drives a mixed read and write workload at the
+# deployment and fails the run when the error rate or the 95th percentile is
+# over a limit. Defaults are sized for the free Render instance (0.1 CPU):
+# five virtual users for a minute. It is deliberately not part of every build:
+# it needs a deployed target, and a load test against a free instance that
+# nobody asked for is just a way to wake it.
+#
+# Needs one repository secret, DEMO_ADMIN_PASSWORD -- the value Render
+# generated for the service (its Environment tab).
+
+name: JMeter (deployed)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Base URL of the deployment
+        required: true
+        default: https://lms-platform.onrender.com
+      threads:
+        description: Virtual users
+        required: true
+        default: "5"
+      duration_seconds:
+        description: How long to hold the load
+        required: true
+        default: "60"
+      max_p95_ms:
+        description: Fail the run above this 95th percentile, in milliseconds
+        required: true
+        default: "3000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jmeter-deployed
+  cancel-in-progress: false
+
+env:
+  JMETER_VERSION: "5.6.3"
+  # SHA-512 of apache-jmeter-5.6.3.zip, as published by the Apache archive.
+  JMETER_SHA512: "387fadca903ee0aa30e3f2115fdfedb3898b102e6b9fe7cc3942703094bd2e65b235df2b0c6d0d3248e74c9a7950a36e42625fd74425368342c12e40b0163076"
+
+jobs:
+  jmeter:
+    name: Load the deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Pinned and checked: a load tool that runs with the repository's
+      # secrets in its environment is not one to take on trust from a mirror.
+      - name: Install Apache JMeter
+        run: |
+          curl -sSfLo "$RUNNER_TEMP/jmeter.zip" \
+            "https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-${JMETER_VERSION}.zip"
+          echo "${JMETER_SHA512}  $RUNNER_TEMP/jmeter.zip" | sha512sum --check -
+          unzip -q "$RUNNER_TEMP/jmeter.zip" -d "$RUNNER_TEMP"
+          echo "JMETER_BIN=$RUNNER_TEMP/apache-jmeter-${JMETER_VERSION}/bin/jmeter" >> "$GITHUB_ENV"
+
+      # Inputs and secrets reach the script as environment variables, never
+      # by textual substitution into the shell source.
+      - name: Run performance/jmeter/run.sh
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          DEMO_ADMIN_PASSWORD: ${{ secrets.DEMO_ADMIN_PASSWORD }}
+          THREADS: ${{ inputs.threads }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          MAX_P95_MS: ${{ inputs.max_p95_ms }}
+          RESULTS_DIR: ${{ runner.temp }}/jmeter-results
+        run: |
+          # A sleeping free instance takes about a minute to wake: wait for
+          # it, so the first virtual users do not time out against a cold start.
+          for _ in $(seq 1 36); do
+            curl -sf --max-time 10 "${BASE_URL%/}/actuator/health/readiness" >/dev/null && break
+            sleep 5
+          done
+          bash performance/jmeter/run.sh
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jmeter-results
+          path: ${{ runner.temp }}/jmeter-results/
+          retention-days: 30
