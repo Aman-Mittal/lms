@@ -330,6 +330,47 @@ Feature: Stock is counted in, stored, picked and handed off, and never edited
     When outbound order "OUT-1" is packed into handling unit "HU-1"
     Then handling unit "HU-1" is "PACKED" holding 15 of "SKU-A"
 
+  Scenario: Cancelling a back-order closes the order and takes it off every pick
+    Given 30 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And an outbound order "OUT-1" from "WH-1" for 50 of "SKU-A"
+    And outbound order "OUT-1" is picked
+    When the back-order of outbound order "OUT-1" is cancelled
+    Then the warehouse refuses mentioning "only a back-ordered order"
+    Given outbound order "OUT-1" is packed into handling unit "HU-1"
+    And handling unit "HU-1" is dispatched as "LOAD-1"
+    And outbound order "OUT-1" is "BACK_ORDERED"
+    When the back-order of outbound order "OUT-1" is cancelled
+    Then the warehouse accepts it
+    And outbound order "OUT-1" is "BACK_ORDER_CANCELLED"
+    And outbound order "OUT-1" line 1 was picked 30 with 20 short
+    When 25 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And outbound order "OUT-1" is picked
+    Then the warehouse refuses mentioning "cannot be picked"
+    When the back-order of outbound order "OUT-1" is cancelled
+    Then the warehouse refuses mentioning "only a back-ordered order"
+
+  Scenario: A back-order waiting in a released wave cannot be cancelled until the wave is picked
+    Given 5 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And an outbound order "OUT-1" from "WH-1" for 8 of "SKU-A"
+    And outbound order "OUT-1" is picked
+    And outbound order "OUT-1" is packed into handling unit "HU-1"
+    And handling unit "HU-1" is dispatched as "LOAD-1"
+    And outbound orders "OUT-1" are released in "WH-1" as wave "W-1"
+    When the back-order of outbound order "OUT-1" is cancelled
+    Then the warehouse refuses mentioning "waiting in wave"
+
+  Scenario: Waves are listed newest first and narrowed by status
+    Given 20 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
+    And an outbound order "OUT-1" from "WH-1" for 5 of "SKU-A"
+    And an outbound order "OUT-2" from "WH-1" for 5 of "SKU-A"
+    And outbound orders "OUT-1" are released in "WH-1" as wave "W-1"
+    And outbound orders "OUT-2" are released in "WH-1" as wave "W-2"
+    And wave "W-1" is picked
+    Then listing all pick waves of "WH-1" gives "W-2, W-1"
+    And listing RELEASED pick waves of "WH-1" gives "W-2"
+    And listing PICKED pick waves of "WH-1" gives "W-1"
+    And wave "W-2" is listed holding 1 orders
+
   Scenario: An order owed nothing is not picked again
     Given 30 of "SKU-A" have been received into "WH-1" and put away in bin "A-01"
     And an outbound order "OUT-1" from "WH-1" for 20 of "SKU-A"
