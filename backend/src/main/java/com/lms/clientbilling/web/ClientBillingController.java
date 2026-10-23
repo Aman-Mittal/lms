@@ -29,6 +29,8 @@ import com.lms.clientbilling.command.ClientPaymentService;
 import com.lms.clientbilling.command.ClientStorageService;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
+import com.lms.clientbilling.query.ClientAgeingQueryService;
+import com.lms.clientbilling.query.ClientAgeingView;
 import com.lms.clientbilling.query.ClientBillingQueryService;
 import com.lms.clientbilling.query.ClientChargeView;
 import com.lms.clientbilling.query.ClientContractView;
@@ -73,18 +75,21 @@ public class ClientBillingController {
     private final ClientPaymentService payments;
     private final ClientStorageService storage;
     private final ClientBillingQueryService queries;
+    private final ClientAgeingQueryService ageing;
 
     public ClientBillingController(ClientContractService contracts, ClientChargeService charges,
                                    ClientBillingRunService runs,
                                    ClientCreditNoteService creditNotes,
                                    ClientPaymentService payments,
                                    ClientStorageService storage,
-                                   ClientBillingQueryService queries) {
+                                   ClientBillingQueryService queries,
+                                   ClientAgeingQueryService ageing) {
         this.contracts = contracts;
         this.charges = charges;
         this.runs = runs;
         this.creditNotes = creditNotes;
         this.payments = payments;
+        this.ageing = ageing;
         this.storage = storage;
         this.queries = queries;
     }
@@ -195,6 +200,14 @@ public class ClientBillingController {
             @RequestParam(required = false) String cursor,
             @RequestParam(required = false) Integer limit) {
         return queries.statementOf(clientId, cursor, limit);
+    }
+
+    @GetMapping("/clients/{clientId}/ageing")
+    public ClientAgeingView ageing(
+            @PathVariable UUID clientId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+            LocalDate asOf) {
+        return ageing.ageing(clientId, asOf);
     }
 
     @PostMapping("/clients/{clientId}/payments")

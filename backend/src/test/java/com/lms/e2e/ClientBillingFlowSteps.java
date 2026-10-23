@@ -223,6 +223,23 @@ public class ClientBillingFlowSteps {
         assertThat(entries.get(2).getBalance()).isEqualByComparingTo(BigDecimal.valueOf(balance));
     }
 
+    @Then("the client's ageing shows {int} outstanding on {int} open invoice, all in the {string} bucket")
+    public void ageingShows(int outstanding, int openInvoices, String bucket) {
+        var view = world.api(ClientBillingApi.class).getClientAgeing(client, (LocalDate) null);
+        assertThat(view.getOutstanding()).isEqualByComparingTo(BigDecimal.valueOf(outstanding));
+        assertThat(view.getInvoices()).hasSize(openInvoices);
+        if (openInvoices > 0) {
+            assertThat(view.getInvoices().get(0).getBucket().getValue()).isEqualTo(bucket);
+            assertThat(view.getInvoices().get(0).getPaid())
+                    .isEqualByComparingTo(BigDecimal.valueOf(invoiceTotal - outstanding));
+        }
+    }
+
+    @When("the client pays {int} referenced {string}")
+    public void onePayment(int amount, String reference) {
+        pay(amount, reference);
+    }
+
     @Then("the remittance {string} is refused when it is entered again")
     public void duplicateRemittance(String reference) {
         assertThatThrownBy(() -> pay(1, reference))
