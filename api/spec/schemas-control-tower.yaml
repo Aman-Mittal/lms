@@ -25,7 +25,9 @@ ExceptionCategory:
     P3 -- ETA_DELAY, DOCUMENT_MISMATCH, MILK_RUN_STOP_SKIPPED,
           MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL.
     MISSED_CONNECTION, the milk-run and the warehouse categories are raised
-    automatically from those modules' events.
+    automatically from those modules' events. EXTENDED_STOPPAGE is also raised
+    automatically (source STOPPAGE_DETECTED) when a trip in transit sits still
+    outside every terminal for longer than the configured threshold.
   enum: [ACCIDENT, THEFT, BREAKDOWN, ROUTE_DEVIATION, EXTENDED_STOPPAGE,
          TEMPERATURE_EXCURSION, ETA_DELAY, DOCUMENT_MISMATCH,
          MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED, MILK_RUN_STOP_LATE,
@@ -67,7 +69,7 @@ Exception:
     source:
       type: string
       enum: [MANUAL, ROUTE_DEVIATION, MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED,
-             MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL]
+             MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL, STOPPAGE_DETECTED]
     lat: { type: number }
     lon: { type: number }
     positionSource:

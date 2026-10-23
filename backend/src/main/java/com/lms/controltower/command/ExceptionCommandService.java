@@ -155,6 +155,49 @@ public class ExceptionCommandService {
     }
 
     /**
+     * Turns a detected stoppage into a P2 ticket.
+     *
+     * <p>Unguarded and idempotent, like {@link #raiseForRouteDeviation}: the
+     * source key names the stop (the trip and when the vehicle arrived at the
+     * spot), so a redelivery is a no-op. On top of that a trip has at most one
+     * stoppage ticket being worked on: a second stop while the first is still
+     * open adds nothing a person has not been told. Once that ticket is
+     * resolved or closed, a later stop raises a fresh one.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<UUID> raiseForStoppage(UUID tripId, Instant stationarySince,
+                                           long stoppedMinutes, long thresholdMinutes,
+                                           BigDecimal lat, BigDecimal lon, Instant detectedAt) {
+        UUID tenantId = TenantContext.requireTenantId();
+        String sourceKey = "stoppage:" + tripId + ":" + stationarySince.toEpochMilli();
+
+        Optional<ExceptionTicket> already = tickets.findBySourceKey(tenantId, sourceKey);
+        if (already.isPresent()) {
+            return already.map(ExceptionTicket::id);
+        }
+        Optional<ExceptionTicket> open = tickets.findOpenStoppage(tenantId, tripId);
+        if (open.isPresent()) {
+            return open.map(ExceptionTicket::id);
+        }
+
+        TripLookupPort.TripSnapshot trip = trips.find(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException("Trip", tripId));
+
+        ExceptionTicket.Position position = lat == null || lon == null
+                ? ExceptionTicket.Position.none()
+                : new ExceptionTicket.Position(lat, lon, ExceptionTicket.PositionSource.DETECTOR,
+                        detectedAt);
+
+        String description = "Vehicle has not moved for " + stoppedMinutes
+                + " minutes outside any terminal; the threshold is " + thresholdMinutes
+                + " minutes";
+
+        return Optional.of(open(tenantId, trip, null, ExceptionCategory.EXTENDED_STOPPAGE,
+                description, ExceptionTicket.Source.STOPPAGE_DETECTED, sourceKey, position,
+                SYSTEM_ACTOR, Instant.now()));
+    }
+
+    /**
      * Turns another module's exception-like fact into a ticket.
      *
      * <p>Unguarded and idempotent on the source key, for the same reasons as
