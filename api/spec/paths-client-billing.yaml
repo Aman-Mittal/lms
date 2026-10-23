@@ -360,6 +360,40 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
 
+/api/v1/client-billing/clients/{clientId}/ageing:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client partner.
+  get:
+    tags: [Client billing]
+    operationId: getClientAgeing
+    summary: What a client still owes, by invoice and by age
+    description: |
+      Requires `CLIENT_BILLING_READ`. Lists only invoices with something
+      still owing, oldest first, and totals them by days since issue. Credit
+      notes reduce their own invoice; payments settle the oldest invoices
+      first. A portal user sees only their own client's.
+    parameters:
+      - name: asOf
+        in: query
+        required: false
+        schema: { type: string, format: date }
+        description: The day to age to; today (UTC) when omitted. Documents
+          and payments recorded after it are ignored.
+    responses:
+      "200":
+        description: The receivable.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientAgeing" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
 /api/v1/client-billing/clients/{clientId}/payments:
   parameters:
     - name: clientId
