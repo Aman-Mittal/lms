@@ -54,7 +54,9 @@ public record OutboundOrder(
         /** Everything ordered has left the warehouse. */
         DISPATCHED,
         /** What was found has left; the rest is owed and waits for stock. */
-        BACK_ORDERED
+        BACK_ORDERED,
+        /** The owed remainder was cancelled; what was dispatched is all there will be. */
+        BACK_ORDER_CANCELLED
     }
 
     public static OutboundOrder open(UUID tenantId, UUID warehouseId, String orderNo,
@@ -113,6 +115,16 @@ public record OutboundOrder(
             refuse("dispatched");
         }
         return with(backOrderOutstanding ? Status.BACK_ORDERED : Status.DISPATCHED, at);
+    }
+
+    /** Writes off what a back-ordered order is still owed. Only that state may. */
+    public OutboundOrder backOrderCancelled(Instant at) {
+        if (status != Status.BACK_ORDERED) {
+            throw new BusinessRuleViolationException("outbound-order-not-back-ordered",
+                    "Outbound order " + orderNo + " is " + status
+                            + "; only a back-ordered order has a remainder to cancel");
+        }
+        return with(Status.BACK_ORDER_CANCELLED, at);
     }
 
     private void refuse(String what) {

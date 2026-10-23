@@ -48,3 +48,11 @@ Feature: A 3PL bills its client for a month of warehousing, over the wire
     Then the credit note reverses 18 of tax for a total of 118 and the invoice shows 118 credited
     And the credit note is refused when it asks for more than the "HANDLING_IN" line charged
     And the client statement lists the invoice then the credit note and ends at a balance of 7021
+
+  Scenario: A client's payments are credited on the statement and a remittance is taken once
+    Given the warehouse reports 40 pallets in, 300 pallet-days stored, 35 pallets out and 200 labels for last month
+    And last month is billed for the client
+    When the client pays 5000 referenced "NEFT-A" and 2139 referenced "NEFT-B"
+    Then the client statement lists the invoice then two payments and ends at a balance of 0
+    And the remittance "NEFT-A" is refused when it is entered again
+    And a payment from a client that was never invoiced is refused
