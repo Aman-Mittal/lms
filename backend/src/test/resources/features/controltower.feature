@@ -176,6 +176,108 @@ Feature: Something went wrong on the road, and somebody owns it until it is clos
     When the route deviation on trip "TRIP-T1" is delivered again
     Then trip "TRIP-T1" has 1 exception ticket
 
+  # ----------------------------------------------------------- stoppage
+
+  Scenario: A trip that sits still outside a terminal raises one ticket
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 1 hours ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 1 exception ticket
+    And the ticket on trip "TRIP-T1" is a "EXTENDED_STOPPAGE" of severity "P2"
+    And the ticket on trip "TRIP-T1" came from the "STOPPAGE_DETECTED" detector
+    And the ticket on trip "TRIP-T1" was located at 19.2000,73.0000 from "DETECTOR"
+
+  Scenario: GPS jitter around a parked vehicle is still a stop
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2003,73.0003 2 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0001 1 hours ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 1 exception ticket
+
+  Scenario: A vehicle inside a terminal is loading, not stopped
+    Given a depot "WAYPOINT" at 19.2000,73.0000
+    And a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 1 hours ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 0 exception ticket
+
+  Scenario: A stop shorter than the threshold is not an exception
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 90 minutes ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 60 minutes ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 0 exception ticket
+
+  Scenario: A slow crawl that keeps moving is not a stop
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 90 minutes ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0020 60 minutes ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0040 30 minutes ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 0 exception ticket
+
+  Scenario: A trip that is not in transit cannot have an unplanned stop
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 1 hours ago
+    When the positions are ingested
+    Then trip "TRIP-T1" is "DISPATCHED"
+    And trip "TRIP-T1" has 0 exception ticket
+
+  Scenario: Staying put after the ticket is raised does not raise another
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 2 hours ago
+    And the positions are ingested
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 1 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 10 minutes ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 1 exception ticket
+
+  Scenario: A stoppage delivered twice is one ticket
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 1 hours ago
+    And the positions are ingested
+    When the stoppage on trip "TRIP-T1" is delivered again
+    Then trip "TRIP-T1" has 1 exception ticket
+
+  Scenario: A second stop while the first ticket is open adds nothing
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 6 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 5 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 4 hours ago
+    And a position for "MH-01-TL-0001" at 19.2500,73.0500 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2500,73.0500 1 hours ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 1 exception ticket
+
+  Scenario: Once the ticket is closed a later stop raises a new one
+    Given a dispatched trip "TRIP-T1" on lorry "MH-01-TL-0001" from "ORIGIN" to "DEST-A"
+    And a position for "MH-01-TL-0001" at 19.1000,72.9000 6 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 5 hours ago
+    And a position for "MH-01-TL-0001" at 19.2000,73.0000 4 hours ago
+    And the positions are ingested
+    And the ticket on trip "TRIP-T1" is known as ticket "X1"
+    And ticket "X1" is assigned to "desk@acme.test"
+    And ticket "X1" is taken under investigation
+    And ticket "X1" is resolved by "asha" because "Driver had a meal break"
+    And ticket "X1" is closed by "vikram"
+    And a position for "MH-01-TL-0001" at 19.2500,73.0500 3 hours ago
+    And a position for "MH-01-TL-0001" at 19.2500,73.0500 1 hours ago
+    When the positions are ingested
+    Then trip "TRIP-T1" has 2 exception tickets
+
   # ----------------------------------------------------------- settlement
 
   Scenario: A critical ticket freezes the bill until a manager closes it
