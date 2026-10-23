@@ -32,6 +32,7 @@ import com.lms.finance.command.domain.FreightBillLine;
 import com.lms.finance.command.domain.FuelSurchargeIndex;
 import com.lms.finance.command.domain.Tariff;
 import com.lms.finance.events.FreightBillRaised;
+import com.lms.multimodal.events.RailLegCompleted;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
@@ -253,6 +254,76 @@ public class BillingService {
     }
 
     /**
+     * Raises the rail carrier's payable for a released rail leg.
+     *
+     * <p>Unguarded by {@code @PreAuthorize} for the reason {@link #raiseBillFor}
+     * is: the actor is the platform, reacting to a leg that finished. Joins no
+     * caller's transaction, because the listener runs after the itinerary's
+     * has committed.
+     *
+     * <p>The expected charge is the cost recorded on the leg, taken as given:
+     * multimodal priced it from the rail rate card in force on the departure
+     * day, or recorded the planner's spot rate, and finance has no rail card
+     * of its own to second-guess it with. From here the bill is an ordinary
+     * freight bill: the carrier's invoice is matched against it by the same
+     * tolerance rule, disputed, approved and held to the same approval limit.
+     *
+     * <p>Idempotent on the leg. {@code freight_bill_itinerary_leg_idx} is the
+     * real guarantee; the lookup turns a redelivery into a no-op.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<UUID> raiseRailLegBill(RailLegCompleted leg) {
+        UUID tenantId = TenantContext.requireTenantId();
+
+        Optional<FreightBill> already = bills.findByItineraryLeg(tenantId, leg.legId());
+        if (already.isPresent()) {
+            return already.map(FreightBill::id);
+        }
+
+        LocalDate pricedOn = (leg.departedAt() == null ? leg.releasedAt() : leg.departedAt())
+                .atZone(ZoneOffset.UTC).toLocalDate();
+        CostSheet sheet = railSheet(leg);
+        FreightBill bill = bills.save(FreightBill.forRailLeg(UUID.randomUUID(), tenantId,
+                leg.orgUnitId(), leg.legId(), leg.carrierPartnerId(), railBillNo(leg), pricedOn,
+                sheet));
+
+        int lineNo = 1;
+        for (CostSheet.Charge charge : sheet.charges()) {
+            lines.save(FreightBillLine.of(UUID.randomUUID(), tenantId, bill.id(), lineNo++,
+                    charge.type(), charge.narrative(), charge.quantity(), charge.unit(),
+                    charge.rate(), charge.amount()));
+        }
+
+        publishRaised(tenantId, bill, true);
+        return Optional.of(bill.id());
+    }
+
+    /** The bill number of a rail leg's payable: unique per tenant because the itinerary's is. */
+    static String railBillNo(RailLegCompleted leg) {
+        return "RB-" + leg.itineraryNo() + "-" + leg.legSeq();
+    }
+
+    /**
+     * The leg's recorded cost as one base-freight line. The rate shown is the
+     * cost spread over the booked units, for the reader; the amount is the
+     * recorded cost itself, so the line never disagrees with what the leg says.
+     */
+    static CostSheet railSheet(RailLegCompleted leg) {
+        BigDecimal amount = leg.costAmount().setScale(2, RoundingMode.HALF_UP);
+        boolean counted = leg.unitCount() != null && leg.unitCount() > 0;
+        BigDecimal units = counted ? BigDecimal.valueOf(leg.unitCount()) : BigDecimal.ONE;
+        String booked = counted ? leg.unitCount() + " " + leg.unitType() : "1 booking";
+        String narrative = "Rail leg " + leg.legSeq() + " of " + leg.itineraryNo() + ": " + booked
+                + (leg.bookingRef() == null ? "" : " on booking " + leg.bookingRef())
+                + (leg.trainNo() == null ? "" : ", train " + leg.trainNo());
+        CostSheet.Charge charge = new CostSheet.Charge(FreightBillLine.ChargeType.BASE_FREIGHT,
+                narrative, units, counted ? leg.unitType().toLowerCase(java.util.Locale.ROOT)
+                : "booking", amount.divide(units, 4, RoundingMode.HALF_UP), amount);
+        return new CostSheet(leg.currency() == null ? "INR" : leg.currency(), null, null, 0,
+                amount, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, List.of(charge));
+    }
+
+    /**
      * What a completed circuit is worth, as finance records it.
      *
      * @param vendorPartnerId null when the tenant's own fleet ran the circuit
@@ -333,6 +404,11 @@ public class BillingService {
      * investigating; paying it is what has to wait.
      */
     private void refuseWhileHeld(FreightBill bill) {
+        if (bill.tripId() == null) {
+            // A rail leg's bill. Holds are placed per trip and a rail leg has
+            // none; a ticket on the road leg before it freezes that trip's bill.
+            return;
+        }
         List<String> holding = holds.holdingTickets(bill.tripId());
         if (!holding.isEmpty()) {
             throw new BusinessRuleViolationException("settlement-on-hold",
@@ -398,7 +474,8 @@ public class BillingService {
 
     private void publishRaised(UUID tenantId, FreightBill bill, boolean priced) {
         events.publishEvent(new FreightBillRaised(tenantId, bill.id(), bill.billNo(),
-                bill.tripId(), bill.vendorPartnerId(), bill.computedAmount(), priced,
+                bill.tripId(), bill.itineraryLegId(), bill.vendorPartnerId(), bill.computedAmount(),
+                priced,
                 Instant.now()));
     }
 
