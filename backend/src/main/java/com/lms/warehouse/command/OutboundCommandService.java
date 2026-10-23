@@ -126,6 +126,22 @@ public class OutboundCommandService {
         picker.pick(order.warehouseId(), List.of(order), null, true);
     }
 
+    /**
+     * Cancels the remainder a back-ordered order is still owed. Refused while
+     * the order waits in a released wave -- the wave would pick it.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('WAREHOUSE_OPERATE')")
+    public void cancelBackOrder(UUID orderId) {
+        OutboundOrder order = requireOrder(orderId);
+        waveMembers.awaitingWave(orderId).ifPresent(waveNo -> {
+            throw new BusinessRuleViolationException("outbound-order-in-wave",
+                    "Outbound order " + order.orderNo() + " is waiting in wave " + waveNo
+                            + "; its remainder cannot be cancelled until the wave is picked");
+        });
+        orders.save(order.backOrderCancelled(Instant.now()));
+    }
+
     /** Packs everything picked for the order into one new handling unit. */
     @Transactional
     @PreAuthorize("hasAuthority('WAREHOUSE_OPERATE')")
