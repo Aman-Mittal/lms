@@ -88,7 +88,10 @@ public class SourcingQueryService {
     }
 
     public Optional<AllocationView> findByLoad(UUID loadId) {
-        return jdbc.sql(SELECT + " WHERE a.load_id = :loadId" + PARTNER_SCOPE)
+        // A load can have several allocations (cancelled ones are kept as
+        // history); the live one is the answer, else the latest.
+        return jdbc.sql(SELECT + " WHERE a.load_id = :loadId" + PARTNER_SCOPE
+                        + " ORDER BY (a.status = 'CANCELLED'), a.created_at DESC LIMIT 1")
                 .param("loadId", loadId)
                 .param("partner", AccessSubject.current().partnerScope())
                 .query(AllocationView.class)
