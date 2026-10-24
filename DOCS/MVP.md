@@ -415,6 +415,19 @@ Left open by the freight-mode, warehouse and billing work, on purpose:
   report applies payments to the oldest invoice first, which is a convention,
   not what the client's remittance said. Contracts carry no payment terms, so
   ageing counts days since issue and nothing is "past due".
+- A trip that has not dispatched can be cancelled (`POST /trips/{id}/cancellation`,
+  reason required, refused from DISPATCHED on, idempotent), which frees the load for
+  a replacement trip. Terminals can be updated (version-checked, overlap-checked
+  geofence) and deleted (refused with `terminal-in-use` while anything references
+  them; the foreign keys are read from the catalog). Every order, consignment, load,
+  allocation and trip transition writes an audit row, and a cancelled LTL docket
+  cancels its unbilled receivable.
+- Cancelling an awarded allocation returns the load to PLANNED so it can be offered
+  again (refused while a live trip exists); cancelling an order also withdraws the
+  open sourcing work of any load it empties.
+- Bad input answers 400, 404, 405, 406 or 415 problem documents, and 401 and 403
+  carry problem documents; the API spec matches the server for offers, allocations,
+  users, positions and load consignments.
 - Conflicts answer 409 (`concurrent-modification`, `duplicate-resource`), not
   500; tenant isolation is proved per resource over HTTP and per table in the
   database; unknown properties in a request body (tenant, org id, owner) are
@@ -454,8 +467,8 @@ confirm image-backed deploys on the *free* instance type. The image and
 blueprint are ready, and the container was exercised under the free tier's
 memory and CPU limits locally (see the measurement above), but creating the
 service requires a Render account. If free instances turn out to be
-build-from-repo only, the fallback is the `jvm` Dockerfile target, which has
-not been measured here.
+build-from-repo only, the fallback is the `jvm` Dockerfile target, which
+has not been measured here.
 
 Also note: Render's free Postgres **expires 30 days after creation**.
 Migrations and seed data are idempotent and run unattended on startup so that
