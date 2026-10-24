@@ -217,6 +217,14 @@ request after a quiet spell pays the start-up cost above.
   and destination hubs, and both must really be HUB terminals.
   Its consignments are dockets in their own `DKT-` series; full truckloads keep
   `LR-` lorry receipts. RAIL is not bookable as a plain order mode.
+- Completing a full-truckload trip delivers the load's consignments, completes
+  the load and, once nothing is left to carry, fulfils the order. Cancelling an
+  order is refused (`order-work-dispatched`) once any freight has left; before
+  that it cancels the order's consignments and releases them from loads in the
+  same transaction, restating each load from the freight still aboard and
+  cancelling a load left empty. An optional `reason` is recorded in the audit
+  log. A part-load line haul still leaves its dockets at the hub and the order
+  unfulfilled.
 - An LTL load consolidates dockets from many customers gathered at one origin
   hub and bound for one destination hub; capacity, dangerous goods and
   compatibility rules apply as for any load. A docket then travels twice: line
