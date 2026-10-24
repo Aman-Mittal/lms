@@ -15,6 +15,8 @@
  */
 package com.lms.sourcing.command;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,6 +27,28 @@ import org.springframework.data.repository.query.Param;
 
 public interface AllocationRepository extends CrudRepository<Allocation, UUID> {
 
-    @Query("SELECT * FROM allocation WHERE tenant_id = :tenantId AND load_id = :loadId")
+    /**
+     * The load's live allocation, if it has one. A CANCELLED allocation is
+     * history and does not count: it is what lets a load whose award was
+     * cancelled be offered again. Served by {@code allocation_live_load_unique},
+     * which the literal predicate has to match.
+     */
+    @Query("""
+            SELECT * FROM allocation
+             WHERE tenant_id = :tenantId AND load_id = :loadId AND status <> 'CANCELLED'
+            """)
     Optional<Allocation> findByLoad(@Param("tenantId") UUID tenantId, @Param("loadId") UUID loadId);
+
+    /**
+     * The allocations of these loads that are still out with a vendor or
+     * awarded, for a cancelled load to take down. One read for all the loads.
+     * EXHAUSTED is finished and CANCELLED is history, so neither is returned.
+     */
+    @Query("""
+            SELECT * FROM allocation
+             WHERE tenant_id = :tenantId AND load_id IN (:loadIds)
+               AND status IN ('OFFERED', 'AWARDED')
+            """)
+    List<Allocation> findLiveForLoads(@Param("tenantId") UUID tenantId,
+                                      @Param("loadIds") Collection<UUID> loadIds);
 }

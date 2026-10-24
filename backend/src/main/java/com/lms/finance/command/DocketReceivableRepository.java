@@ -15,6 +15,8 @@
  */
 package com.lms.finance.command;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,4 +31,12 @@ public interface DocketReceivableRepository extends CrudRepository<DocketReceiva
     @Query("SELECT * FROM docket_receivable WHERE tenant_id = :tenantId AND docket_id = :docketId")
     Optional<DocketReceivable> findByDocket(@Param("tenantId") UUID tenantId,
                                             @Param("docketId") UUID docketId);
+
+    /** The receivables of these dockets, in one read; same index. */
+    @Query("""
+            SELECT * FROM docket_receivable
+             WHERE tenant_id = :tenantId AND docket_id IN (:docketIds)
+            """)
+    List<DocketReceivable> findByDockets(@Param("tenantId") UUID tenantId,
+                                         @Param("docketIds") Collection<UUID> docketIds);
 }

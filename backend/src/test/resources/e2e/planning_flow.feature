@@ -108,7 +108,7 @@ Feature: Planning reads, sourcing outcomes, the gate log and the control tower d
     And cancelling the planning-flow allocation again changes nothing
     And the cancelled planning-flow allocation is listed among cancelled allocations
 
-  Scenario: Cancelling an awarded allocation abandons it and keeps the history of the acceptance
+  Scenario: Cancelling an awarded allocation abandons it, keeps the history of the acceptance and returns the load to PLANNED
     Given planning-flow parties, vendors "ALPHA" and "BETA", two depots, a lorry and a driver are registered
     And the planning-flow load is planned and "ALPHA" is ranked first and "BETA" second
     When the planning-flow load is offered to its vendors
@@ -118,6 +118,7 @@ Feature: Planning reads, sourcing outcomes, the gate log and the control tower d
     Then the planning-flow allocation is CANCELLED at rank 1 after 1 offers
     And the planning-flow offer trail reads "ALPHA=ACCEPTED"
     And a further planning-flow acceptance by "ALPHA" is refused with "no-pending-offer"
+    And the planning-flow load is PLANNED
 
   Scenario: A retired routing guide stops being used for new loads
     Given planning-flow parties, vendors "ALPHA" and "BETA", two depots, a lorry and a driver are registered

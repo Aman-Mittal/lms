@@ -30,7 +30,7 @@ import com.lms.order.api.OrderCancellationHook;
 import com.lms.order.command.domain.OrderLine;
 import com.lms.order.command.domain.SalesOrder;
 import com.lms.order.events.OrderValidated;
-import com.lms.shared.audit.AuditTrail;
+import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
@@ -54,17 +54,20 @@ public class OrderCommandService {
     /** Master data's name for the functional category of a consolidation hub. */
     private static final String HUB_CATEGORY = "HUB";
 
+    /** The resource type of every audit row about an order. */
+    static final String AUDIT_TYPE = "SalesOrder";
+
     private final SalesOrderRepository orders;
     private final OrderLineRepository lines;
     private final ApplicationEventPublisher events;
     private final TerminalCategoryPort terminalCategories;
     private final List<OrderCancellationHook> cancellationHooks;
-    private final AuditTrail audit;
+    private final TransitionAudit audit;
 
     public OrderCommandService(SalesOrderRepository orders, OrderLineRepository lines,
                                ApplicationEventPublisher events,
                                TerminalCategoryPort terminalCategories,
-                               List<OrderCancellationHook> cancellationHooks, AuditTrail audit) {
+                               List<OrderCancellationHook> cancellationHooks, TransitionAudit audit) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
@@ -114,7 +117,12 @@ public class OrderCommandService {
             requireHub(orderNo, "destination", destinationHubTerminalId);
         }
 
-        return orders.save(order).id();
+        SalesOrder raised = orders.save(order);
+        audit.record("ORDER_RAISED", AUDIT_TYPE, raised.id(), null,
+                Json.object("status", raised.status().name(), "orderNo", raised.orderNo(),
+                        "customerPartnerId", raised.customerPartnerId().toString(),
+                        "freightMode", raised.freightMode().name()));
+        return raised.id();
     }
 
     /**
@@ -202,6 +210,9 @@ public class OrderCommandService {
         }
 
         orders.save(order.transitionTo(SalesOrder.OrderStatus.VALIDATED));
+        audit.record("ORDER_VALIDATED", AUDIT_TYPE, orderId,
+                Json.object("status", order.status().name()),
+                Json.object("status", "VALIDATED", "lines", String.valueOf(orderLines.size())));
 
         BigDecimal totalChargeable = orderLines.stream()
                 .map(OrderLine::chargeableWeightKg)
@@ -243,7 +254,7 @@ public class OrderCommandService {
         cancellationHooks.forEach(hook -> hook.onOrderCancelling(orderId));
         orders.save(cancelled);
 
-        audit.record("ORDER_CANCELLED", "SalesOrder", orderId,
+        audit.record("ORDER_CANCELLED", AUDIT_TYPE, orderId,
                 Json.object("status", order.status().name()),
                 reason == null || reason.isBlank()
                         ? Json.object("status", "CANCELLED")

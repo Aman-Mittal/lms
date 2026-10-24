@@ -156,9 +156,13 @@
       not left, and a load left empty is cancelled. Refused with
       `order-work-dispatched` when any of that freight is already dispatched,
       in transit or delivered, and with `order-illegal-transition` for an order
-      that was delivered. Cancelling an order that is already cancelled changes
-      nothing. The body, and the reason in it, are optional; a reason is kept
-      in the audit trail.
+      that was delivered, and with `load-has-active-trip` while a trip that is
+      not cancelled is raised against a load the freight is on (cancel the trip
+      first). A load the cancellation empties is cancelled and its pending
+      offer or award in sourcing is withdrawn; the receivable of each cancelled
+      part-load docket is cancelled. Cancelling an order that is already
+      cancelled changes nothing. The body, and the reason in it, are optional;
+      a reason is kept in the audit trail.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:

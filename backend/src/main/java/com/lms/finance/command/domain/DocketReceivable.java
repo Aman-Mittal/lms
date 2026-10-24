@@ -86,7 +86,28 @@ public record DocketReceivable(
          * Raised rather than skipped, as an unpriced freight bill is: a docket
          * with no receivable at all looks exactly like one nobody has got to.
          */
-        UNPRICED
+        UNPRICED,
+        /**
+         * The docket was cancelled, so nothing is billable. The row and the
+         * amounts it was quoted at are kept -- a dispute is argued from what
+         * was charged -- and {@code reason} says why. Never reached from an
+         * invoice: a docket receivable is on none today, and one that is must
+         * be credited rather than cancelled.
+         */
+        CANCELLED
+    }
+
+    /** This receivable, cancelled with the reason; a repeat returns it unchanged. */
+    public DocketReceivable cancel(String why) {
+        if (status == Status.CANCELLED) {
+            return this;
+        }
+        return new DocketReceivable(id, tenantId, docketId, docketNo, orderId, customerPartnerId,
+                Status.CANCELLED, currency, rateCardId, pricedOn, originZone, destinationZone,
+                deadWeightKg, volumeCft, volumetricWeightKg, chargeableWeightKg, minimumApplied,
+                outOfDeliveryArea, rateBasis, rateAmount, freightAmount, docketCharge,
+                odaSurcharge, odaBasis, fuelSurchargePct, fuelSurcharge, totalAmount, why,
+                version, createdAt);
     }
 
     public static DocketReceivable priced(UUID id, UUID tenantId, UUID docketId, String docketNo,

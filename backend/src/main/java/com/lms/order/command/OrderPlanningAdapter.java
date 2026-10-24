@@ -22,6 +22,8 @@ import java.util.UUID;
 import com.lms.order.api.OrderPlanningPort;
 import com.lms.order.command.domain.OrderLine;
 import com.lms.order.command.domain.SalesOrder;
+import com.lms.shared.audit.TransitionAudit;
+import com.lms.shared.config.Json;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Service;
@@ -41,10 +43,13 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
 
     private final SalesOrderRepository orders;
     private final OrderLineRepository lines;
+    private final TransitionAudit audit;
 
-    public OrderPlanningAdapter(SalesOrderRepository orders, OrderLineRepository lines) {
+    public OrderPlanningAdapter(SalesOrderRepository orders, OrderLineRepository lines,
+                                TransitionAudit audit) {
         this.orders = orders;
         this.lines = lines;
+        this.audit = audit;
     }
 
     @Override
@@ -94,6 +99,9 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
         SalesOrder order = require(orderId);
         if (order.status() == SalesOrder.OrderStatus.FULLY_PLANNED) {
             orders.save(order.transitionTo(SalesOrder.OrderStatus.FULFILLED));
+            audit.record("ORDER_FULFILLED", OrderCommandService.AUDIT_TYPE, orderId,
+                    Json.object("status", order.status().name()),
+                    Json.object("status", "FULFILLED"));
         }
     }
 

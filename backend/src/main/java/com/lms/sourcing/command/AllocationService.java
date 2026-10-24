@@ -26,6 +26,8 @@ import java.util.UUID;
 
 import com.lms.masterdata.api.PartnerStandingPort;
 import com.lms.planning.api.LoadLifecyclePort;
+import com.lms.shared.audit.TransitionAudit;
+import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -60,6 +62,9 @@ public class AllocationService {
 
     private static final Logger log = LoggerFactory.getLogger(AllocationService.class);
 
+    /** The resource type of every audit row about an allocation. */
+    static final String AUDIT_TYPE = "Allocation";
+
     private final LoadLifecyclePort loads;
     private final PartnerStandingPort partners;
     private final RoutingGuideRepository guides;
@@ -70,12 +75,15 @@ public class AllocationService {
     private final Map<RoutingGuide.Strategy, SourcingStrategy> strategies =
             new EnumMap<>(RoutingGuide.Strategy.class);
     private final ApplicationEventPublisher events;
+    private final AllocationCanceller canceller;
+    private final TransitionAudit audit;
 
     public AllocationService(LoadLifecyclePort loads, PartnerStandingPort partners,
                              RoutingGuideRepository guides, RoutingGuideEntryRepository entries,
                              AllocationRepository allocations, AllocationOfferRepository offers,
                              VendorAwardTally tally, List<SourcingStrategy> availableStrategies,
-                             ApplicationEventPublisher events) {
+                             ApplicationEventPublisher events, AllocationCanceller canceller,
+                             TransitionAudit audit) {
         this.loads = loads;
         this.partners = partners;
         this.guides = guides;
@@ -84,6 +92,8 @@ public class AllocationService {
         this.offers = offers;
         this.tally = tally;
         this.events = events;
+        this.canceller = canceller;
+        this.audit = audit;
 
         // Injected as a list and indexed here, so adding a strategy is adding a
         // bean. A switch in this class would be the one place every new
@@ -144,6 +154,8 @@ public class AllocationService {
                 loadId, guide.id(), guide.strategy(), first.rankNo()));
 
         makeOffer(tenantId, allocation, first, load.loadNo());
+        audit.record("ALLOCATION_OPENED", AUDIT_TYPE, allocation.id(), null,
+                snapshot(allocation, first.vendorPartnerId(), null));
         return allocation.id();
     }
 
@@ -168,6 +180,9 @@ public class AllocationService {
 
         events.publishEvent(new LoadAwarded(tenantId, allocation.loadId(), awarded.id(),
                 vendorPartnerId, pending.rankNo(), Instant.now()));
+        audit.record("ALLOCATION_AWARDED", AUDIT_TYPE, awarded.id(),
+                snapshot(allocation, vendorPartnerId, null),
+                snapshot(awarded, vendorPartnerId, null));
     }
 
     /** The vendor declines. The cascade moves on. */
@@ -179,7 +194,7 @@ public class AllocationService {
         AllocationOffer pending = requirePendingOffer(tenantId, allocation, vendorPartnerId);
 
         offers.save(pending.reject(Instant.now()));
-        cascade(tenantId, allocation);
+        cascade(tenantId, allocation, pending, "ALLOCATION_OFFER_REJECTED");
     }
 
     /**
@@ -206,25 +221,55 @@ public class AllocationService {
 
         Allocation allocation = require(offer.allocationId());
         if (allocation.isOpen()) {
-            cascade(tenantId, allocation);
+            cascade(tenantId, allocation, offer, "ALLOCATION_OFFER_TIMED_OUT");
         }
     }
 
-    /** Abandons an allocation, releasing the load for manual handling. */
+    /**
+     * Abandons an allocation, and gives the load back.
+     *
+     * <p>An OFFERED allocation withdraws its outstanding offer and the load,
+     * which never left PLANNED, can be offered again. An AWARDED one also
+     * takes the award back off the load, which returns to PLANNED with no
+     * vendor, so that sourcing can run again; the cancelled allocation stays
+     * as the history of who accepted it. A new offer is a new allocation.
+     *
+     * <p>Refused with {@code load-has-active-trip} while a trip that is not
+     * cancelled is raised against an awarded load: a vendor, a vehicle and a
+     * driver may already be committed to it, and the award is what they are
+     * committed to. Cancel the trip first.
+     *
+     * <p>Cancelling an allocation that is already CANCELLED changes nothing,
+     * and in particular does not touch the load: it may by now be awarded
+     * again, to a different allocation.
+     */
     @Transactional
     @PreAuthorize("hasAuthority('LOAD_ALLOCATE')")
     public void cancel(UUID allocationId) {
         UUID tenantId = TenantContext.requireTenantId();
         Allocation allocation = require(allocationId);
+        if (allocation.status() == Allocation.AllocationStatus.CANCELLED) {
+            return;
+        }
 
-        offers.findPending(tenantId, allocationId)
-                .ifPresent(pending -> offers.save(pending.cancel(Instant.now())));
-        allocations.save(allocation.cancel());
+        if (allocation.status() == Allocation.AllocationStatus.AWARDED) {
+            // First, so a refusal (a trip is raised) has changed nothing yet.
+            loads.recordAwardWithdrawn(allocation.loadId());
+        }
+        audit.recordAll("ALLOCATION_CANCELLED", AUDIT_TYPE,
+                List.of(canceller.cancel(tenantId, allocation, "cancelled by a user")));
     }
 
     // --------------------------------------------------------------- cascade
 
-    private void cascade(UUID tenantId, Allocation allocation) {
+    /**
+     * Moves the allocation on after an offer was rejected or lapsed, and audits
+     * what the answer led to: the offer's outcome (the action) and where the
+     * allocation went (the after-snapshot), plus a second entry when nobody is
+     * left.
+     */
+    private void cascade(UUID tenantId, Allocation allocation, AllocationOffer answered,
+                         String answerAction) {
         List<AllocationOffer> history = offers.findByAllocation(tenantId, allocation.id());
         List<UUID> asked = history.stream().map(AllocationOffer::vendorPartnerId).toList();
 
@@ -236,18 +281,51 @@ public class AllocationService {
                 .nextCandidate(eligible, asked,
                         contextFor(tenantId, allocation.guideId(), allocation.loadId()));
 
+        Json before = snapshot(allocation, answered.vendorPartnerId(), null);
+
         if (next.isEmpty()) {
             Allocation exhausted = allocations.save(allocation.exhaust());
             log.info("Allocation {} for load {} exhausted after {} offers",
                     exhausted.id(), exhausted.loadId(), history.size());
             events.publishEvent(new AllocationExhausted(tenantId, allocation.loadId(),
                     allocation.id(), asked, Instant.now()));
+            audit.record(answerAction, AUDIT_TYPE, allocation.id(), before,
+                    snapshot(exhausted, null, answered.vendorPartnerId()));
+            audit.record("ALLOCATION_EXHAUSTED", AUDIT_TYPE, allocation.id(),
+                    snapshot(allocation, answered.vendorPartnerId(), null),
+                    snapshot(exhausted, null, null));
             return;
         }
 
         RoutingGuideEntry entry = next.get();
         Allocation moved = allocations.save(allocation.cascadeTo(entry.rankNo()));
         makeOffer(tenantId, moved, entry, null);
+        audit.record(answerAction, AUDIT_TYPE, allocation.id(), before,
+                snapshot(moved, entry.vendorPartnerId(), answered.vendorPartnerId()));
+    }
+
+    // ------------------------------------------------------------------ audit
+
+    /** The allocation as it ends when cancelled, and why. */
+    static Json cancelledSnapshot(Allocation cancelled, UUID vendorPartnerId, String reason) {
+        return Json.object("status", cancelled.status().name(),
+                "rank", cancelled.currentRank() == null ? null : cancelled.currentRank().toString(),
+                "vendorPartnerId", vendorPartnerId == null ? null : vendorPartnerId.toString(),
+                "reason", reason);
+    }
+
+    /**
+     * The allocation as an audit snapshot: status, rank, and the vendor it is with.
+     *
+     * @param vendorPartnerId the vendor the allocation is with (the offeree,
+     *                        or the awardee)
+     * @param answeredBy      the vendor whose answer moved it on, when one did
+     */
+    static Json snapshot(Allocation allocation, UUID vendorPartnerId, UUID answeredBy) {
+        return Json.object("status", allocation.status().name(),
+                "rank", allocation.currentRank() == null ? null : allocation.currentRank().toString(),
+                "vendorPartnerId", vendorPartnerId == null ? null : vendorPartnerId.toString(),
+                "answeredByVendorPartnerId", answeredBy == null ? null : answeredBy.toString());
     }
 
     private void makeOffer(UUID tenantId, Allocation allocation, RoutingGuideEntry entry,
