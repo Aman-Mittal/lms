@@ -48,6 +48,7 @@ public class TripQueryService {
                         THEN floor(extract(epoch FROM (t.dispatched_at - t.gate_in_at)) / 60)::bigint
                    END AS origin_dwell_minutes,
                    coalesce(docs.document_count, 0) AS document_count,
+                   t.cancelled_at, t.cancellation_reason,
                    t.created_at
               FROM trip t
               JOIN load_unit l ON l.id = t.load_id
