@@ -263,6 +263,26 @@ public record LoadUnit(
                 freightMode, ltlLeg, version, createdAt, Instant.now());
     }
 
+    /**
+     * The load after some of its consignments have been taken off.
+     *
+     * <p>Totals are restated from what is left rather than subtracted, so that
+     * the load can never drift from the freight that is actually aboard, and
+     * dangerous goods leave the load when the last of them does. Only a load
+     * that has not left can lose freight.
+     */
+    public LoadUnit restated(BigDecimal weightKg, BigDecimal volumeM3, boolean hazmat) {
+        if (status != LoadStatus.DRAFT && status != LoadStatus.PLANNED
+                && status != LoadStatus.AWARDED) {
+            throw new BusinessRuleViolationException("load-not-open",
+                    "Load " + loadNo + " is " + status + " and its freight can no longer be changed");
+        }
+        return new LoadUnit(id, tenantId, orgUnitId, loadNo, originTerminalId, vehicleId,
+                vehicleType, vehicleHazmatCertified, capacityWeightKg, capacityVolumeM3,
+                weightKg, volumeM3, hazmat, awardedVendorPartnerId, status,
+                freightMode, ltlLeg, version, createdAt, Instant.now());
+    }
+
     public LoadUnit transitionTo(LoadStatus target) {
         if (status == target) {
             return this;
