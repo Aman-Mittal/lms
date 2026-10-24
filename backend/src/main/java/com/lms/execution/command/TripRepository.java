@@ -28,8 +28,16 @@ public interface TripRepository extends CrudRepository<Trip, UUID> {
     @Query("SELECT * FROM trip WHERE tenant_id = :tenantId AND trip_no = :tripNo")
     Optional<Trip> findByTripNo(@Param("tenantId") UUID tenantId, @Param("tripNo") String tripNo);
 
-    @Query("SELECT * FROM trip WHERE tenant_id = :tenantId AND load_id = :loadId")
-    Optional<Trip> findByLoad(@Param("tenantId") UUID tenantId, @Param("loadId") UUID loadId);
+    /**
+     * The trip currently holding a load: any that is not cancelled. A
+     * cancelled trip gives its load back, which {@code trip_live_load_unique}
+     * (a partial unique index) enforces in the database as well.
+     */
+    @Query("""
+            SELECT * FROM trip
+             WHERE tenant_id = :tenantId AND load_id = :loadId AND status <> 'CANCELLED'
+            """)
+    Optional<Trip> findLiveByLoad(@Param("tenantId") UUID tenantId, @Param("loadId") UUID loadId);
 
     /**
      * The trip a vehicle is currently running, if any.

@@ -42,7 +42,39 @@ Terminal:
     opensAt: { type: string }
     closesAt: { type: string }
     avgDwellMinutes: { type: integer }
+    version:
+      type: integer
+      format: int64
+      description: Send back as `version` when updating; a stale value is a 409.
     createdAt: { type: string, format: date-time }
+
+UpdateTerminalRequest:
+  type: object
+  description: |
+    Replaces what can change about a terminal. The code, the functional
+    category and the organisational unit never change. Omit the geofence to
+    keep it; to move it send either `ring` (a polygon) or `centre` with
+    `radiusMetres` (a circle), never both.
+  properties:
+    name: { type: string, minLength: 1 }
+    version:
+      type: integer
+      format: int64
+      description: The `version` last read. A stale value is refused with 409 `concurrent-modification`.
+    ring:
+      type: array
+      minItems: 3
+      items: { $ref: "#/components/schemas/Point" }
+    centre: { $ref: "#/components/schemas/Point" }
+    radiusMetres: { type: number, exclusiveMinimum: 0 }
+    dockCount: { type: integer }
+    opensAt: { type: string }
+    closesAt: { type: string }
+    avgDwellMinutes: { type: integer }
+    permittedVehicleTypes:
+      type: array
+      items: { type: string }
+  required: [name, version]
 
 RegisterPolygonTerminalRequest:
   type: object
