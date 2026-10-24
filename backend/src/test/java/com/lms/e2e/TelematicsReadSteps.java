@@ -255,35 +255,35 @@ public class TelematicsReadSteps {
 
     // ----------------------------------------------------------- fleet map
 
+    private static VehiclePosition positionOf(List<VehiclePosition> fleet, String registration) {
+        return fleet.stream().filter(p -> registration.equals(p.getRegistrationNo())).findFirst()
+                .orElseThrow(() -> new AssertionError("no position for " + registration));
+    }
+
     @Then("the fleet map holds the carrying lorry with its trip and the idle lorry without one, in registration order")
     public void fleetMap() {
-        // The contract says one VehiclePosition; the server answers an array.
-        // Read it as the array it is (see the defect noted in the report).
-        JsonNode fleet = support.rawGet("/api/v1/telematics/positions");
-        assertThat(fleet.isArray()).isTrue();
-        List<String> registrations = MovementSupport.texts(fleet, "registrationNo");
+        List<VehiclePosition> fleet = world.api(TelematicsApi.class).listPositions();
+        List<String> registrations = fleet.stream().map(VehiclePosition::getRegistrationNo).toList();
         assertThat(registrations).containsOnlyOnce(lorryRegistration, idleRegistration);
         assertThat(registrations.indexOf(lorryRegistration))
                 .isLessThan(registrations.indexOf(idleRegistration));
 
-        JsonNode carrying = MovementSupport.elementWhere(fleet, "registrationNo", lorryRegistration);
-        assertThat(carrying.path("vehicleId").asText()).isEqualTo(lorry.toString());
-        assertThat(carrying.path("tripNo").asText()).isEqualTo(tripNo);
-        assertThat(carrying.path("tripStatus").asText()).isEqualTo("IN_TRANSIT");
-        assertThat(carrying.path("lat").asDouble()).isCloseTo(LATE_LAT, within(1e-6));
+        VehiclePosition carrying = positionOf(fleet, lorryRegistration);
+        assertThat(carrying.getVehicleId()).isEqualTo(lorry);
+        assertThat(carrying.getTripNo()).isEqualTo(tripNo);
+        assertThat(carrying.getTripStatus()).isEqualTo("IN_TRANSIT");
+        assertThat(carrying.getLat().doubleValue()).isCloseTo(LATE_LAT, within(1e-6));
 
-        JsonNode idle = MovementSupport.elementWhere(fleet, "registrationNo", idleRegistration);
-        assertThat(idle.path("vehicleId").asText()).isEqualTo(idleLorry.toString());
-        assertThat(MovementSupport.absent(idle.path("tripNo"))).isTrue();
+        VehiclePosition idle = positionOf(fleet, idleRegistration);
+        assertThat(idle.getVehicleId()).isEqualTo(idleLorry);
+        assertThat(idle.getTripNo()).isNull();
     }
 
     @Then("the fleet map shows the idle lorry at its newest fix and not the delayed one")
     public void idleLatest() {
-        JsonNode fleet = support.rawGet("/api/v1/telematics/positions");
-        JsonNode idle = MovementSupport.elementWhere(fleet, "registrationNo", idleRegistration);
-        assertThat(idle.path("lat").asDouble()).isCloseTo(LATE_LAT, within(1e-6));
-        assertThat(MovementSupport.instant(idle.path("recordedAt")))
-                .isEqualTo(now.minusHours(1).toInstant());
+        VehiclePosition idle = positionOf(world.api(TelematicsApi.class).listPositions(), idleRegistration);
+        assertThat(idle.getLat().doubleValue()).isCloseTo(LATE_LAT, within(1e-6));
+        assertThat(idle.getRecordedAt().toInstant()).isEqualTo(now.minusHours(1).toInstant());
 
         VehiclePosition position = world.api(TelematicsApi.class).getPosition(idleLorry);
         assertThat(position.getLat().doubleValue()).isCloseTo(LATE_LAT, within(1e-6));
@@ -499,8 +499,8 @@ public class TelematicsReadSteps {
         assertThat(theirs.getTrack(tripId)).isEmpty();
         assertThat(theirs.listCrossings(tripId)).isEmpty();
         assertThat(theirs.listOpenDeviations()).isEmpty();
-        JsonNode fleet = support.rawGet(otherTenant, "/api/v1/telematics/positions");
-        assertThat(MovementSupport.texts(fleet, "vehicleId")).doesNotContain(lorry.toString());
+        assertThat(theirs.listPositions()).extracting(VehiclePosition::getVehicleId)
+                .doesNotContain(lorry);
 
         // Positions cannot be filed against another tenant's lorry either.
         IngestResult attempt = theirs.ingestPings(new PingBatchRequest().pings(List.of(
