@@ -86,7 +86,9 @@
     summary: Lines on an order
     responses:
       "200":
-        description: Lines in order.
+        description: |
+          Lines in order. An unknown id, or one that belongs to another tenant,
+          is an empty list and not a 404.
         content:
           application/json:
             schema:

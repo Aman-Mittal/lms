@@ -206,10 +206,15 @@
     summary: What is aboard a load
     responses:
       "200":
-        description: Consignments in drop sequence.
+        description: |
+          Consignments in drop sequence. An unknown id, or one that belongs to
+          another tenant, is an empty list and not a 404: nothing is hidden or
+          revealed by the answer.
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/Consignment" }
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/Consignment" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }

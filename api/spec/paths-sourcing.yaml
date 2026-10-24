@@ -91,7 +91,9 @@
     summary: Every offer made under an allocation
     responses:
       "200":
-        description: Offers in rank order.
+        description: |
+          Offers in rank order. An unknown id, or one that belongs to another
+          tenant, is an empty list and not a 404.
         content:
           application/json:
             schema:
