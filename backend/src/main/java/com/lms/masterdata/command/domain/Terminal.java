@@ -37,7 +37,7 @@ import org.springframework.data.relational.core.mapping.Table;
  * this platform's substitute for a spatial index (DOCS/adr/0004): the geofence
  * evaluator filters candidate terminals with an indexed range query on these
  * four columns, then runs exact point-in-polygon in Java over the survivors.
- * Keeping them in the aggregate means they cannot drift from the polygon —
+ * Keeping them in the aggregate means they cannot drift from the polygon — 
  * both are written in the same operation.
  */
 @Table("terminal")
@@ -121,6 +121,53 @@ public record Terminal(
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
                 null, Instant.now(), Instant.now());
+    }
+
+    /**
+     * The terminal with its descriptive fields replaced, geofence and identity
+     * unchanged. The code, category, organisational unit and creation time
+     * never change, which is why they are not parameters.
+     *
+     * @param expectedVersion the version the caller last read; the save is an
+     *                        update guarded on it, so a stale value loses
+     */
+    public Terminal revised(String newName, Integer newDockCount, LocalTime newOpensAt,
+                            LocalTime newClosesAt, Integer newAvgDwellMinutes,
+                            String[] newPermittedVehicleTypes, Long expectedVersion) {
+        if (newName == null || newName.isBlank()) {
+            throw new IllegalArgumentException("A terminal needs a name");
+        }
+        return new Terminal(id, tenantId, orgUnitId, code, newName.strip(), functionalCategory,
+                geofenceType, polygon, centreLat, centreLon, radiusM,
+                minLat, maxLat, minLon, maxLon,
+                newDockCount, newOpensAt, newClosesAt, newAvgDwellMinutes,
+                newPermittedVehicleTypes, expectedVersion, createdAt, Instant.now());
+    }
+
+    /** The same terminal with a polygon geofence, validated and boxed as on creation. */
+    public Terminal withPolygon(List<LatLon> ring) {
+        GeoUtils.validateRing(ring);
+        BoundingBox box = GeoUtils.boundingBoxOf(ring);
+        return new Terminal(id, tenantId, orgUnitId, code, name, functionalCategory,
+                GeofenceType.POLYGON, Json.of(toGeoJsonRing(ring)), null, null, null,
+                bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
+                dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
+                version, createdAt, Instant.now());
+    }
+
+    /** The same terminal with a point-radius geofence, boxed as on creation. */
+    public Terminal withPointRadius(LatLon centre, double radiusMetres) {
+        if (radiusMetres <= 0) {
+            throw new IllegalArgumentException("Terminal radius must be positive: " + radiusMetres);
+        }
+        BoundingBox box = new BoundingBox(centre.lat(), centre.lat(), centre.lon(), centre.lon())
+                .expandedBy(radiusMetres);
+        return new Terminal(id, tenantId, orgUnitId, code, name, functionalCategory,
+                GeofenceType.POINT_RADIUS, null, bd(centre.lat()), bd(centre.lon()),
+                BigDecimal.valueOf(radiusMetres),
+                bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
+                dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
+                version, createdAt, Instant.now());
     }
 
     /** The stored bounding box, for candidate filtering. */
