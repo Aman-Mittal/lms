@@ -34,6 +34,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -113,9 +114,14 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/cancel")
-    public ResponseEntity<Void> cancel(@PathVariable UUID id) {
-        orders.cancel(id);
+    public ResponseEntity<Void> cancel(@PathVariable UUID id,
+                                       @RequestBody(required = false) @Valid CancelOrderRequest request) {
+        orders.cancel(id, request == null ? null : request.reason());
         return ResponseEntity.noContent().build();
+    }
+
+    /** Why the order is being cancelled. The whole body is optional, and so is the reason. */
+    public record CancelOrderRequest(@Size(max = 500) String reason) {
     }
 
     public record RaiseOrderRequest(

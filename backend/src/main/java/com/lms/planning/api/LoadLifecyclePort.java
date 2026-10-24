@@ -60,8 +60,10 @@ public interface LoadLifecyclePort {
      * part-load LINE_HAUL load, the destination is a hub: its dockets have
      * ARRIVED_AT_HUB and wait there for a delivery load. For a part-load
      * DELIVERY load, its dockets are DELIVERED. Either way the load itself is
-     * COMPLETED. A full-truckload load is left as it was -- its consignments'
-     * delivery is not tracked through this call.
+     * COMPLETED. A full-truckload load's consignments are all DELIVERED and
+     * the load is COMPLETED; each order whose consignments are then all
+     * delivered is told, so that it can close as fulfilled. A part-load
+     * DELIVERY load's orders are told the same way.
      *
      * <p>Idempotent: dockets already moved on, and a load already completed,
      * are left alone, so a repeated call changes nothing.
