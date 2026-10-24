@@ -37,7 +37,7 @@ import org.springframework.data.relational.core.mapping.Table;
  * this platform's substitute for a spatial index (DOCS/adr/0004): the geofence
  * evaluator filters candidate terminals with an indexed range query on these
  * four columns, then runs exact point-in-polygon in Java over the survivors.
- * Keeping them in the aggregate means they cannot drift from the polygon — 
+ * Keeping them in the aggregate means they cannot drift from the polygon —
  * both are written in the same operation.
  */
 @Table("terminal")
