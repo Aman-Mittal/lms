@@ -437,7 +437,7 @@ Left open by the freight-mode, warehouse and billing work, on purpose:
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a
 production NFR. This deployment is a single 0.1-CPU instance and will sustain
-roughly 50–20100/second. The gap is architectural, not a tuning matter.
+roughly 50–100/second. The gap is architectural, not a tuning matter.
 
 ## Running it
 
