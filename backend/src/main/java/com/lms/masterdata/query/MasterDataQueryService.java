@@ -250,7 +250,8 @@ public class MasterDataQueryService {
                    d.document_type, d.document_no, d.issuing_authority,
                    d.issued_on, d.expires_on,
                    (d.expires_on - current_date) AS days_to_expiry,
-                   (d.expires_on < current_date) AS expired
+                   -- NULL < date is NULL, and a document without an expiry has not expired.
+                   coalesce(d.expires_on < current_date, false) AS expired
               FROM compliance_document d
               LEFT JOIN vehicle v ON d.owner_type = 'VEHICLE' AND v.id = d.owner_id
               LEFT JOIN driver dr ON d.owner_type = 'DRIVER' AND dr.id = d.owner_id
