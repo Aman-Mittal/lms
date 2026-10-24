@@ -16,11 +16,15 @@
 package com.lms.shared.error;
 
 import java.net.URI;
+import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
@@ -63,6 +67,60 @@ public class GlobalExceptionHandler {
     public ProblemDetail onBusinessRuleViolation(BusinessRuleViolationException e) {
         log.info("Business rule refused the operation: {} -- {}", e.code(), e.getMessage());
         return problem(HttpStatus.CONFLICT, e.code(), e.getMessage());
+    }
+
+    /**
+     * A write that lost a race for the same aggregate.
+     *
+     * <p>Every aggregate carries {@code @Version}, so a save of a stale copy
+     * matches no row and Spring Data raises this. It is the expected outcome of
+     * two callers editing one thing at once, not a server fault: 409, and the
+     * remedy is to re-read and decide again. The detail is fixed text because
+     * the exception's own message names the entity id and version.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ProblemDetail onConcurrentModification(OptimisticLockingFailureException e) {
+        log.info("A write lost an optimistic-lock race: {}", e.getClass().getSimpleName());
+        return problem(HttpStatus.CONFLICT, "concurrent-modification",
+                "The resource was changed by someone else at the same time; re-read it and try again");
+    }
+
+    /**
+     * A constraint the database enforced.
+     *
+     * <p>A unique violation is the other half of a lost race: the domain checks
+     * "is this number taken" and then inserts, which narrows the window without
+     * closing it, and the unique index is what actually decides. The loser gets
+     * the same 409 it would have got had it arrived a moment later and been
+     * refused by the check. Any other integrity failure -- a foreign key, a
+     * check, a not-null -- is a defect in the request path, not something the
+     * caller can act on, and is handled as unexpected. In neither case does the
+     * response carry the constraint name or SQL, which describe the schema.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail onDataIntegrity(DataIntegrityViolationException e) {
+        if (isUniqueViolation(e)) {
+            log.info("A write lost a unique-key race: {}", e.getClass().getSimpleName());
+            return problem(HttpStatus.CONFLICT, "duplicate-resource",
+                    "A resource with the same unique identifier already exists");
+        }
+        return onUnexpected(e);
+    }
+
+    /** PostgreSQL's {@code unique_violation}, wherever in the cause chain it surfaced. */
+    private static boolean isUniqueViolation(Throwable e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof DuplicateKeyException) {
+                return true;
+            }
+            if (cause instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
+                return true;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return false;
     }
 
     /**

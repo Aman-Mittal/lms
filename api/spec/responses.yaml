@@ -54,6 +54,12 @@ Conflict:
     blocking a dispatch, a load over vehicle capacity, an overlapping
     terminal. Deliberately not 400: this is not a mistake in the request,
     and reporting it as one sends the caller looking in the wrong place.
+
+    Also the answer to losing a race. Two writers editing one aggregate at the
+    same time (`code: concurrent-modification`), or two creating the same
+    unique business key at the same time (`code: duplicate-resource`), leave
+    the loser with this response: re-read the resource and decide again. The
+    problem document never names a constraint, a table or a statement.
   content:
     application/problem+json:
       schema: { $ref: "#/components/schemas/Problem" }

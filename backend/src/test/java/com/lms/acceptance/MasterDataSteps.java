@@ -58,6 +58,9 @@ public class MasterDataSteps {
     @Given("the tenant scope is {string} at {string}")
     public void setScope(String tenantCode, String orgPath) {
         TenantContext.set(world.tenantId(tenantCode), orgPath);
+        // Commands issued from here on name this scope's organisational unit, not the
+        // first tenant's: a row may not be created under another tenant's unit.
+        world.useScope(tenantCode, orgPath);
     }
 
     // ----------------------------------------------------- when (and given)
