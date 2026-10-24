@@ -56,6 +56,17 @@ public interface OrderPlanningPort {
     void markLinesPlanned(UUID orderId, Set<UUID> plannedLineIds);
 
     /**
+     * Records that every consignment cut from the order has been delivered, so
+     * the order can be closed as fulfilled.
+     *
+     * <p>Planning knows what has been delivered; the order knows whether any
+     * demand is still unplanned, and so whether "everything cut so far" is
+     * "everything". An order that is not FULLY_PLANNED is left as it is.
+     * Idempotent: an order already fulfilled, or cancelled, is not touched.
+     */
+    void recordFulfilled(UUID orderId);
+
+    /**
      * The order-level facts a consignment inherits: who is paying, in which
      * freight mode, and -- for a part load -- between which hubs.
      *

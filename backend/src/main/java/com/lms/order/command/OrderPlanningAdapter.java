@@ -89,6 +89,15 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
     }
 
     @Override
+    @Transactional
+    public void recordFulfilled(UUID orderId) {
+        SalesOrder order = require(orderId);
+        if (order.status() == SalesOrder.OrderStatus.FULLY_PLANNED) {
+            orders.save(order.transitionTo(SalesOrder.OrderStatus.FULFILLED));
+        }
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public OrderTerms termsOf(UUID orderId) {
         SalesOrder order = require(orderId);
