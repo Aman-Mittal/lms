@@ -28,10 +28,13 @@ import com.lms.execution.command.domain.GateEvent;
 import com.lms.execution.command.domain.Trip;
 import com.lms.execution.command.domain.TripDocument;
 import com.lms.execution.command.domain.WeighbridgeReading;
+import com.lms.execution.events.TripCancelled;
 import com.lms.execution.events.TripCompleted;
 import com.lms.execution.events.TripDispatched;
 import com.lms.masterdata.api.FleetCompliancePort;
 import com.lms.planning.api.LoadLifecyclePort;
+import com.lms.shared.audit.AuditTrail;
+import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -69,6 +72,7 @@ public class TripCommandService {
     private final LoadLifecyclePort loads;
     private final FleetCompliancePort compliance;
     private final org.springframework.context.ApplicationEventPublisher events;
+    private final AuditTrail audit;
 
     /**
      * How far the weighed payload may differ from the planned weight before
@@ -85,6 +89,7 @@ public class TripCommandService {
                               WeighbridgeReadingRepository weighings,
                               LoadLifecyclePort loads, FleetCompliancePort compliance,
                               org.springframework.context.ApplicationEventPublisher events,
+                              AuditTrail audit,
                               @Value("${lms.execution.weight-tolerance-pct:5}")
                               BigDecimal weightTolerancePct) {
         this.trips = trips;
@@ -94,6 +99,7 @@ public class TripCommandService {
         this.loads = loads;
         this.compliance = compliance;
         this.events = events;
+        this.audit = audit;
         this.weightTolerancePct = weightTolerancePct;
     }
 
@@ -112,7 +118,8 @@ public class TripCommandService {
                             + "; a trip can only be raised against an awarded load");
         }
 
-        trips.findByLoad(tenantId, loadId).ifPresent(existing -> {
+        // A cancelled trip no longer holds its load, so a replacement can be raised.
+        trips.findLiveByLoad(tenantId, loadId).ifPresent(existing -> {
             throw new BusinessRuleViolationException("load-already-has-trip",
                     "Load " + load.loadNo() + " already has trip " + existing.tripNo());
         });
@@ -122,9 +129,11 @@ public class TripCommandService {
                     "A trip numbered " + tripNo + " already exists");
         });
 
-        return trips.save(Trip.raise(UUID.randomUUID(), tenantId, load.orgUnitId(), loadId,
+        Trip raised = trips.save(Trip.raise(UUID.randomUUID(), tenantId, load.orgUnitId(), loadId,
                 tripNo, load.awardedVendorPartnerId(), load.originTerminalId(),
-                load.destinationTerminalId(), plannedStartAt)).id();
+                load.destinationTerminalId(), plannedStartAt));
+        auditTransition("TRIP_RAISED", null, raised);
+        return raised.id();
     }
 
     /**
@@ -154,7 +163,8 @@ public class TripCommandService {
                             + ": " + verdict.summary());
         }
 
-        trips.save(trip.assign(vehicleId, driverId));
+        Trip assigned = trips.save(trip.assign(vehicleId, driverId));
+        auditTransition("TRIP_ASSIGNED", trip, assigned);
     }
 
     @Transactional
@@ -169,8 +179,12 @@ public class TripCommandService {
                             + "added retrospectively");
         }
 
-        return documents.save(TripDocument.attach(UUID.randomUUID(), tenantId, tripId,
+        UUID documentId = documents.save(TripDocument.attach(UUID.randomUUID(), tenantId, tripId,
                 documentType, documentRef)).id();
+        audit.recordAtomically("TRIP_DOCUMENT_ATTACHED", "TRIP", tripId, null,
+                Json.object("tripNo", trip.tripNo(), "documentType", documentType,
+                        "documentRef", documentRef, "documentId", documentId.toString()));
+        return documentId;
     }
 
     // ------------------------------------------------------------ 3.6.2 gate
@@ -184,7 +198,9 @@ public class TripCommandService {
 
         gateEvents.save(GateEvent.record(UUID.randomUUID(), tenantId, tripId, terminalId,
                 GateEvent.EventType.GATE_IN, when, remarks));
-        trips.save(trip.gateIn(when));
+        Trip arrived = trips.save(trip.gateIn(when));
+        auditTransition("TRIP_GATE_IN", trip, arrived, "terminalId", String.valueOf(terminalId),
+                "at", when.toString());
     }
 
     /**
@@ -216,7 +232,9 @@ public class TripCommandService {
                 ? trip.recordWeighing(weightKg, null)
                 : trip.recordWeighing(null, weightKg);
 
-        trips.save(updated);
+        Trip weighed = trips.save(updated);
+        auditTransition("TRIP_WEIGHED", trip, weighed, "readingType", type.name(),
+                "terminalId", String.valueOf(terminalId), "weightKg", weightKg.toPlainString());
     }
 
     /** Loading is finished and the vehicle has been weighed laden. */
@@ -231,7 +249,8 @@ public class TripCommandService {
                             + "and a gross weighbridge reading");
         }
 
-        trips.save(trip.markLoaded(at == null ? Instant.now() : at));
+        Trip loaded = trips.save(trip.markLoaded(at == null ? Instant.now() : at));
+        auditTransition("TRIP_LOADED", trip, loaded);
     }
 
     // ------------------------------------------------------- 3.6.3 dispatch
@@ -282,6 +301,7 @@ public class TripCommandService {
 
         Trip dispatched = trips.save(trip.dispatch(when));
         loads.recordDispatched(trip.loadId());
+        auditTransition("TRIP_DISPATCHED", trip, dispatched, "at", when.toString());
 
         events.publishEvent(new TripDispatched(tenantId, dispatched.id(), dispatched.tripNo(),
                 dispatched.loadId(), dispatched.vehicleId(), dispatched.driverId(),
@@ -294,7 +314,11 @@ public class TripCommandService {
     @Transactional
     @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void beginTransit(UUID tripId) {
-        trips.save(require(tripId).beginTransit());
+        Trip trip = require(tripId);
+        Trip moving = trips.save(trip.beginTransit());
+        if (moving.status() != trip.status()) {
+            auditTransition("TRIP_IN_TRANSIT", trip, moving);
+        }
     }
 
     /** Inside the destination geofence. */
@@ -309,7 +333,8 @@ public class TripCommandService {
             gateEvents.save(GateEvent.record(UUID.randomUUID(), tenantId, tripId,
                     trip.destinationTerminalId(), GateEvent.EventType.GATE_IN, when, null));
         }
-        trips.save(trip.arrive(when));
+        Trip arrived = trips.save(trip.arrive(when));
+        auditTransition("TRIP_ARRIVED", trip, arrived, "at", when.toString());
     }
 
     /** Proof of delivery accepted. */
@@ -325,10 +350,93 @@ public class TripCommandService {
         // freight aboard -- a part-load line haul's dockets have now arrived
         // at their destination hub -- and a refusal there must undo this.
         loads.recordTripCompleted(completed.loadId());
+        auditTransition("TRIP_COMPLETED", trip, completed, "at", when.toString());
 
         events.publishEvent(new TripCompleted(tenantId, completed.id(), completed.tripNo(),
                 completed.loadId(), completed.vendorPartnerId(), completed.dispatchedAt(),
                 when, completed.originDwell(), completed.payloadWeightKg(), Instant.now()));
+    }
+
+    // ---------------------------------------------------------------- cancel
+
+    /**
+     * Cancels a trip that has not left the yard.
+     *
+     * <p>What the trip held is released by the cancellation itself. The load
+     * was never moved by raising the trip (it stays AWARDED until dispatch),
+     * so there is nothing to hand back there; the trip stops holding it
+     * because only a live trip counts against the one-trip-per-load rule. The
+     * vendor's award stands: whether to re-offer the load is the planner's
+     * call, made through sourcing. No freight bill can exist for the trip, as
+     * billing follows completion and a cancelled trip never completes.
+     *
+     * <p>Cancelling twice is a no-op, not an error, so a retried request whose
+     * first answer was lost still succeeds. Once the vehicle has been
+     * dispatched the state machine refuses with {@code trip-not-cancellable}.
+     *
+     * <p>Held to the caller's organisational subtree like raising a trip
+     * (the {@code trip-write-org-subtree} policy, applied to the trip's own
+     * unit).
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE') and @abac.permits('TRIP_EXECUTE', 'TRIP', #tripId)")
+    public void cancel(UUID tripId, String reason) {
+        UUID tenantId = TenantContext.requireTenantId();
+        Trip trip = require(tripId);
+        if (trip.status() == Trip.TripStatus.CANCELLED) {
+            return;
+        }
+        Instant now = Instant.now();
+
+        Trip cancelled = trips.save(trip.cancel(reason, now));
+        auditTransition("TRIP_CANCELLED", trip, cancelled, "reason", cancelled.cancellationReason());
+
+        events.publishEvent(new TripCancelled(tenantId, cancelled.id(), cancelled.tripNo(),
+                cancelled.loadId(), cancelled.vendorPartnerId(), cancelled.cancellationReason(),
+                now, now));
+    }
+
+    // ----------------------------------------------------------------- audit
+
+    /**
+     * One audit row per transition, with the trip before and after.
+     *
+     * <p>Written in the transaction of the change itself, so the two commit
+     * or roll back together and no second connection is taken (see
+     * {@code AuditTrail.recordAtomically}). A refused transition therefore
+     * leaves no entry; refusals are not audited here.
+     *
+     * <p>Not written for GPS pings or geofence crossings: those are
+     * telemetry arriving at a rate the audit log is not built for, and the
+     * decisions they lead to are already durable records of their own -- a
+     * stoppage or deviation becomes a control tower ticket with its own
+     * activity history.
+     */
+    private void auditTransition(String action, Trip before, Trip after, String... extra) {
+        Json afterState = snapshot(after, extra);
+        audit.recordAtomically(action, "TRIP", after.id(),
+                before == null ? null : snapshot(before), afterState);
+    }
+
+    private static Json snapshot(Trip trip, String... extra) {
+        List<String> pairs = new ArrayList<>();
+        add(pairs, "tripNo", trip.tripNo());
+        add(pairs, "status", trip.status().name());
+        add(pairs, "loadId", String.valueOf(trip.loadId()));
+        add(pairs, "vehicleId", trip.vehicleId());
+        add(pairs, "driverId", trip.driverId());
+        add(pairs, "tareWeightKg", trip.tareWeightKg());
+        add(pairs, "grossWeightKg", trip.grossWeightKg());
+        add(pairs, "payloadWeightKg", trip.payloadWeightKg());
+        for (int i = 0; i < extra.length; i += 2) {
+            add(pairs, extra[i], extra[i + 1]);
+        }
+        return Json.object(pairs.toArray(String[]::new));
+    }
+
+    private static void add(List<String> pairs, String key, Object value) {
+        pairs.add(key);
+        pairs.add(value == null ? null : value.toString());
     }
 
     // -------------------------------------------------------------- blockers
