@@ -232,6 +232,14 @@ Rules that make the split worth having:
   `@NamedInterface`, so peers declare `allowedDependencies = "masterdata::events"`
   and get the events without gaining access to `command`, `query` or `domain`.
   Everything else is internal and the build enforces that.
+- **When a module needs a synchronous answer from one that depends on it, it
+  publishes an SPI in its own `api/`** and the dependent module implements it.
+  `order::api` defines `OrderCancellationHook`, implemented by planning, so that
+  cancelling an order can refuse (when freight has left) or cascade (to
+  consignments and loads) inside the same transaction. `OrderPlanningPort` is the
+  opposite direction: planning telling order what happened (lines planned, order
+  fulfilled). Do not replace either with an after-commit event if the caller must
+  be able to stop the operation.
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
@@ -493,11 +501,22 @@ includes production, after the image has been built and pushed.
   against the application in every build, the native-image workflow runs it
   against each binary, and the *Smoke (deployed)* workflow runs it against
   Render. Change the script, not three copies of it.
+- **Integration tests at the HTTP and database level.** Cucumber acceptance
+  scenarios call services in-process; anything about transactions, triggers or
+  the wire needs a Spring test on Testcontainers Postgres (see
+  `OrderLifecycleIntegrationTest`: a trigger forces a failure mid-cascade and
+  the test asserts nothing was left half-done) or an HTTP end-to-end scenario
+  (`e2e/lifecycle.feature`). Reproduce a defect with a failing scenario before
+  fixing it.
 - **Performance** tests carry `@Tag("performance")` and are excluded from the
   default build; run them with `./mvnw verify -Pperformance` (also weekly in
   the *Performance* workflow, or on a PR labelled `performance`). Assert
   relative properties -- a deep keyset page costs what the first page costs --
-  over absolute timings, which vary by machine. Restart tests start a pod with
+  over absolute timings, which vary by machine. Count statements with
+  `pg_stat_statements` rather than timing them: `LifecycleBulkPerformanceTest`
+  asserts that completing a load and cancelling an order cost about one
+  statement per consignment at 40 and at 400, so an N+1 shows up as a ratio.
+  Restart tests start a pod with
   `SpringApplicationBuilder.run("--key=value")`: builder `.properties()` are
   defaults that `application.yaml` silently overrides.
 - **JMeter** (`performance/jmeter/`): `lms-api.jmx` signs in once and drives a

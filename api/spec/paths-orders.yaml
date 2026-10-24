@@ -148,8 +148,22 @@
     tags: [Orders]
     operationId: cancelOrder
     summary: Cancel an order
+    description: |
+      Cancels the order and, in the same transaction, every consignment cut
+      from it that has not been delivered: they are taken off any load that has
+      not left, and a load left empty is cancelled. Refused with
+      `order-work-dispatched` when any of that freight is already dispatched,
+      in transit or delivered, and with `order-illegal-transition` for an order
+      that was delivered. Cancelling an order that is already cancelled changes
+      nothing. The body, and the reason in it, are optional; a reason is kept
+      in the audit trail.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelOrderRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }

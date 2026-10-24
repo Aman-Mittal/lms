@@ -15,6 +15,8 @@
  */
 package com.lms.planning.command;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 import com.lms.planning.command.domain.LoadUnit;
@@ -107,5 +109,69 @@ public class PlanningLinks {
                 .param("loadId", loadId)
                 .param("consignmentId", consignmentId)
                 .update();
+    }
+
+    /** Where a consignment sits: the load, and that load's status. */
+    public record Placement(UUID consignmentId, UUID loadId, String loadStatus) {
+    }
+
+    /**
+     * Every load placement of an order's consignments, in one statement.
+     *
+     * <p>Served by {@code consignment_order_idx} and the unique
+     * {@code (consignment_id, leg)} index on {@code load_consignment}.
+     */
+    public List<Placement> placementsOfOrder(UUID tenantId, UUID orderId) {
+        return jdbc.sql("""
+                        SELECT lc.consignment_id, lc.load_id, l.status
+                          FROM load_consignment lc
+                          JOIN load_unit l ON l.id = lc.load_id
+                         WHERE lc.tenant_id = :tenantId
+                           AND lc.consignment_id IN (SELECT c.id FROM consignment c
+                                                      WHERE c.tenant_id = :tenantId
+                                                        AND c.order_id = :orderId)
+                        """)
+                .param("tenantId", tenantId)
+                .param("orderId", orderId)
+                .query((rs, n) -> new Placement(rs.getObject("consignment_id", UUID.class),
+                        rs.getObject("load_id", UUID.class), rs.getString("status")))
+                .list();
+    }
+
+    /** Takes consignments off whatever loads hold them, in one statement. */
+    public void unlinkAll(UUID tenantId, Collection<UUID> consignmentIds) {
+        if (consignmentIds.isEmpty()) {
+            return;
+        }
+        jdbc.sql("""
+                        DELETE FROM load_consignment
+                         WHERE tenant_id = :tenantId AND consignment_id IN (:ids)
+                        """)
+                .param("tenantId", tenantId)
+                .param("ids", consignmentIds)
+                .update();
+    }
+
+    /**
+     * Of these orders, the ones whose consignments have all been delivered or
+     * cancelled and at least one delivered: nothing is left to carry.
+     *
+     * <p>Served by {@code consignment_order_idx}.
+     */
+    public List<UUID> orderIdsWithNothingLeftToCarry(UUID tenantId, Collection<UUID> orderIds) {
+        if (orderIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("""
+                        SELECT order_id FROM consignment
+                         WHERE tenant_id = :tenantId AND order_id IN (:orderIds)
+                         GROUP BY order_id
+                        HAVING count(*) FILTER (WHERE status NOT IN ('DELIVERED', 'CANCELLED')) = 0
+                           AND count(*) FILTER (WHERE status = 'DELIVERED') > 0
+                        """)
+                .param("tenantId", tenantId)
+                .param("orderIds", orderIds)
+                .query(UUID.class)
+                .list();
     }
 }

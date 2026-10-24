@@ -26,9 +26,12 @@ import java.util.UUID;
 import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
+import com.lms.order.api.OrderCancellationHook;
 import com.lms.order.command.domain.OrderLine;
 import com.lms.order.command.domain.SalesOrder;
 import com.lms.order.events.OrderValidated;
+import com.lms.shared.audit.AuditTrail;
+import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -55,14 +58,19 @@ public class OrderCommandService {
     private final OrderLineRepository lines;
     private final ApplicationEventPublisher events;
     private final TerminalCategoryPort terminalCategories;
+    private final List<OrderCancellationHook> cancellationHooks;
+    private final AuditTrail audit;
 
     public OrderCommandService(SalesOrderRepository orders, OrderLineRepository lines,
                                ApplicationEventPublisher events,
-                               TerminalCategoryPort terminalCategories) {
+                               TerminalCategoryPort terminalCategories,
+                               List<OrderCancellationHook> cancellationHooks, AuditTrail audit) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
         this.terminalCategories = terminalCategories;
+        this.cancellationHooks = cancellationHooks;
+        this.audit = audit;
     }
 
     /** Raises a full-truckload order, which is what an order without a mode has always been. */
@@ -205,11 +213,41 @@ public class OrderCommandService {
                 Instant.now()));
     }
 
+    /**
+     * Cancels an order, and with it the freight cut from it.
+     *
+     * <p>Whatever planning holds for the order is wound up in this transaction:
+     * its undelivered consignments are cancelled and taken off any load that
+     * has not left, and a load left empty is cancelled. If any of that freight
+     * has been dispatched the cancellation is refused
+     * ({@code order-work-dispatched}) and nothing changes: a lorry on the road
+     * cannot be un-ordered by a click.
+     *
+     * <p>Cancelling an order that is already cancelled is a no-op, so a retry
+     * after a lost response is harmless. An order that was delivered cannot be
+     * cancelled (the state machine refuses it).
+     *
+     * @param reason why, for the audit trail; optional, so that existing
+     *               callers that send nothing keep working
+     */
     @Transactional
     @PreAuthorize("hasAuthority('ORDER_UPDATE')")
-    public void cancel(UUID orderId) {
+    public void cancel(UUID orderId, String reason) {
         SalesOrder order = require(orderId);
-        orders.save(order.transitionTo(SalesOrder.OrderStatus.CANCELLED));
+        if (order.status() == SalesOrder.OrderStatus.CANCELLED) {
+            return;
+        }
+        // Legality first, so a delivered order is refused for being delivered
+        // before anything downstream is asked about it.
+        SalesOrder cancelled = order.transitionTo(SalesOrder.OrderStatus.CANCELLED);
+        cancellationHooks.forEach(hook -> hook.onOrderCancelling(orderId));
+        orders.save(cancelled);
+
+        audit.record("ORDER_CANCELLED", "SalesOrder", orderId,
+                Json.object("status", order.status().name()),
+                reason == null || reason.isBlank()
+                        ? Json.object("status", "CANCELLED")
+                        : Json.object("status", "CANCELLED", "reason", reason.strip()));
     }
 
     // ------------------------------------------------------------- validation
