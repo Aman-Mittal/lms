@@ -144,6 +144,39 @@
             </ResponseAssertion>
             <hashTree/>
           </hashTree>
+          <!-- The same partner code on every virtual user, within the hour. The first
+               write wins (201); each later one loses the race or the existence check and
+               must be a 409 conflict. A 500 here is the defect this sampler exists to catch. -->
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Register one shared partner code (write, 409 allowed)">
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{&quot;orgUnitId&quot;:&quot;${__P(orgUnitId)}&quot;,&quot;code&quot;:&quot;JM-SHARED-${__time(yyyyMMddHH,)}&quot;,&quot;legalName&quot;:&quot;JMeter shared partner&quot;,&quot;partnerType&quot;:&quot;CUSTOMER&quot;,&quot;taxId&quot;:&quot;TAX-JM-SHARED&quot;}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+            <stringProp name="HTTPSampler.port">${__P(port,8080)}</stringProp>
+            <stringProp name="HTTPSampler.protocol">${__P(protocol,http)}</stringProp>
+            <stringProp name="HTTPSampler.path">/api/v1/partners</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <stringProp name="HTTPSampler.connect_timeout">${__P(connectTimeoutMs,10000)}</stringProp>
+            <stringProp name="HTTPSampler.response_timeout">${__P(responseTimeoutMs,30000)}</stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Created or conflict (201 or 409)">
+              <collectionProp name="Asserion.test_strings"><stringProp name="1">^(201|409)$</stringProp></collectionProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">1</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+          </hashTree>
           </hashTree>
           <RandomController guiclass="RandomControlGui" testclass="RandomController" testname="One read per iteration">
             <intProp name="InterleaveControl.style">1</intProp>
