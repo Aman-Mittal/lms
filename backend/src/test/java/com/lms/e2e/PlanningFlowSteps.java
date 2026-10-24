@@ -275,21 +275,14 @@ public class PlanningFlowSteps {
         assertThat(tracked.getLoadNo()).isEqualTo(world.code("LD-PF"));
     }
 
-    @Then("the planning-flow load lists exactly its consignment, read as raw HTTP")
+    @Then("the planning-flow load lists exactly its consignment")
     public void loadContents() {
-        // The generated client cannot read this operation (the contract says one
-        // object, the server sends the array its description promises), so it is
-        // read over the wire directly.
-        PlanningFlowSupport.Raw raw = support.get("/api/v1/loads/" + loadId + "/consignments",
-                support.demoAdministratorToken());
-        assertThat(raw.status()).isEqualTo(200);
-        JsonNode items = raw.json();
-        assertThat(items.isArray()).isTrue();
-        assertThat(items.size()).isEqualTo(1);
-        assertThat(items.get(0).path("id").asString()).isEqualTo(consignmentId.toString());
-        assertThat(items.get(0).path("trackingRef").asString()).isEqualTo(trackingRef);
-        assertThat(items.get(0).path("loadNo").asString()).isEqualTo(world.code("LD-PF"));
-        assertThat(items.get(0).path("status").asString()).isEqualTo("ASSIGNED_TO_LOAD");
+        List<Consignment> items = world.api(PlanningApi.class).listLoadConsignments(loadId);
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).getId()).isEqualTo(consignmentId);
+        assertThat(items.get(0).getTrackingRef()).isEqualTo(trackingRef);
+        assertThat(items.get(0).getLoadNo()).isEqualTo(world.code("LD-PF"));
+        assertThat(items.get(0).getStatus()).isEqualTo("ASSIGNED_TO_LOAD");
     }
 
     @Then("an unknown planning-flow load, and another tenant's view of this one, list no consignments")
@@ -476,11 +469,7 @@ public class PlanningFlowSteps {
         Allocation allocation = world.api(SourcingApi.class).getAllocation(allocationId);
         assertThat(allocation.getStatus()).isEqualTo(status);
         assertThat(allocation.getCurrentRank()).isEqualTo(rank);
-        // The contract names the count offerCount; the server sends offersMade,
-        // so the count is read off the wire.
-        JsonNode wire = support.get("/api/v1/allocations/" + allocationId,
-                support.demoAdministratorToken()).json();
-        assertThat(wire.path("offersMade").asInt()).isEqualTo(offers);
+        assertThat(allocation.getOffersMade()).isEqualTo(offers);
         assertThat(allocation.getLoadId()).isEqualTo(loadId);
         assertThat(allocation.getLoadNo()).isEqualTo(world.code("LD-PF"));
         assertThat(allocation.getStrategy()).isEqualTo(Allocation.StrategyEnum.CONTRACTUAL);
@@ -488,36 +477,24 @@ public class PlanningFlowSteps {
 
     @Then("the planning-flow offer trail reads {string}")
     public void offerTrail(String expected) {
-        // The generated Offer model reads the content that is in the contract...
         List<Offer> offers = world.api(SourcingApi.class).listOffers(allocationId);
         String[] wanted = expected.split(",");
         assertThat(offers).hasSize(wanted.length);
         for (int i = 0; i < wanted.length; i++) {
-            String vendor = wanted[i].split("=")[0];
-            assertThat(offers.get(i).getRankNo()).isEqualTo(i + 1);
-            assertThat(offers.get(i).getVendorPartnerId()).isEqualTo(vendors.get(vendor));
-            assertThat(offers.get(i).getVendorName()).startsWith("PF" + vendor);
-            assertThat(offers.get(i).getOfferedAt()).isNotNull();
-        }
-        // ...and the wire carries each offer's outcome and deadline under the
-        // names the server uses, which the contract does not.
-        JsonNode wire = support.get("/api/v1/allocations/" + allocationId + "/offers",
-                support.demoAdministratorToken()).json();
-        assertThat(wire.size()).isEqualTo(wanted.length);
-        for (int i = 0; i < wanted.length; i++) {
-            String outcome = wanted[i].split("=")[1];
-            assertThat(wire.get(i).path("outcome").asString()).isEqualTo(outcome);
-            assertThat(wire.get(i).path("vendorPartnerId").asString())
-                    .isEqualTo(vendors.get(wanted[i].split("=")[0]).toString());
-            Instant respondsBy = Instant.parse(wire.get(i).path("respondsBy").asString());
-            Instant offeredAt = Instant.parse(wire.get(i).path("offeredAt").asString());
+            String[] parts = wanted[i].split("=");
+            Offer offer = offers.get(i);
+            assertThat(offer.getRankNo()).isEqualTo(i + 1);
+            assertThat(offer.getVendorPartnerId()).isEqualTo(vendors.get(parts[0]));
+            assertThat(offer.getVendorName()).startsWith("PF" + parts[0]);
+            assertThat(offer.getOfferedAt()).isNotNull();
+            assertThat(offer.getOutcome().getValue()).isEqualTo(parts[1]);
             long slaMinutes = i == 0 ? 60 : 90;
-            assertThat(Duration.between(offeredAt, respondsBy)).isEqualTo(Duration.ofMinutes(slaMinutes));
-            if ("PENDING".equals(outcome)) {
-                assertThat(wire.get(i).path("respondedAt").isNull()
-                        || wire.get(i).path("respondedAt").isMissingNode()).isTrue();
+            assertThat(Duration.between(offer.getOfferedAt(), offer.getRespondsBy()))
+                    .isEqualTo(Duration.ofMinutes(slaMinutes));
+            if ("PENDING".equals(parts[1])) {
+                assertThat(offer.getRespondedAt()).isNull();
             } else {
-                assertThat(wire.get(i).path("respondedAt").asString()).isNotBlank();
+                assertThat(offer.getRespondedAt()).isNotNull();
             }
         }
     }
