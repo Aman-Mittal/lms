@@ -49,10 +49,14 @@
     summary: Where every vehicle was last seen
     responses:
       "200":
-        description: Latest position per vehicle.
+        description: |
+          Latest position per vehicle. Not paginated: one row per vehicle that
+          has reported, so the list is as long as the fleet.
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/VehiclePosition" }
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/VehiclePosition" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
 
