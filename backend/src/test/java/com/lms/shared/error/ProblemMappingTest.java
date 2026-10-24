@@ -24,6 +24,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -104,6 +107,45 @@ class ProblemMappingTest {
     }
 
     @Test
+    @DisplayName("a lost optimistic-lock race is 409 with a stable code and no entity id")
+    void staleWriteIsConflict() throws Exception {
+        mvc.perform(get("/boom/stale"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("concurrent-modification"))
+                .andExpect(content().string(not(containsString("3f0c"))))
+                .andExpect(content().string(not(containsString("business_partner"))));
+    }
+
+    @Test
+    @DisplayName("a unique violation is 409 and leaks neither the constraint nor the SQL")
+    void uniqueViolationIsConflict() throws Exception {
+        mvc.perform(get("/boom/duplicate"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("duplicate-resource"))
+                .andExpect(content().string(not(containsString("business_partner"))))
+                .andExpect(content().string(not(containsString("INSERT"))))
+                .andExpect(content().string(not(containsString("constraint"))));
+    }
+
+    @Test
+    @DisplayName("a unique violation is recognised by SQLSTATE when it arrives untranslated")
+    void uniqueViolationBySqlState() throws Exception {
+        mvc.perform(get("/boom/duplicate-by-state"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("duplicate-resource"));
+    }
+
+    @Test
+    @DisplayName("any other integrity failure stays 500 and tells the client nothing")
+    void otherIntegrityFailureIsOpaque() throws Exception {
+        mvc.perform(get("/boom/foreign-key"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("internal-error"))
+                .andExpect(content().string(not(containsString("fk_load_vehicle"))))
+                .andExpect(content().string(not(containsString("DELETE"))));
+    }
+
+    @Test
     @DisplayName("an unexpected failure is 500 and tells the client nothing")
     void unexpectedIsOpaque() throws Exception {
         // The only handler that withholds its detail. An unexpected failure may
@@ -152,6 +194,34 @@ class ProblemMappingTest {
         @GetMapping("/boom/invalid")
         void invalid() {
             throw new IllegalArgumentException("Latitude 91 is out of range");
+        }
+
+        @GetMapping("/boom/stale")
+        void stale() {
+            throw new org.springframework.dao.OptimisticLockingFailureException(
+                    "Failed to update versioned entity with id '3f0c' (version 4) of business_partner");
+        }
+
+        @GetMapping("/boom/duplicate")
+        void duplicate() {
+            throw new org.springframework.dao.DuplicateKeyException(
+                    "PreparedStatementCallback; SQL [INSERT INTO business_partner ...]; "
+                            + "ERROR: duplicate key value violates unique constraint "
+                            + "\"business_partner_code_unique\"");
+        }
+
+        @GetMapping("/boom/duplicate-by-state")
+        void duplicateByState() {
+            throw new org.springframework.dao.DataIntegrityViolationException("insert failed",
+                    new java.sql.SQLException("unique_violation on business_partner_code_unique",
+                            "23505"));
+        }
+
+        @GetMapping("/boom/foreign-key")
+        void foreignKey() {
+            throw new org.springframework.dao.DataIntegrityViolationException(
+                    "DELETE FROM vehicle violates foreign key constraint fk_load_vehicle",
+                    new java.sql.SQLException("fk_load_vehicle", "23503"));
         }
 
         @GetMapping("/boom/unexpected")
