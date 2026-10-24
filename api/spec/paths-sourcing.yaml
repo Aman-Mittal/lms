@@ -164,6 +164,14 @@
     tags: [Sourcing]
     operationId: cancelAllocation
     summary: Abandon the allocation
+    description: |
+      Cancels an OFFERED or AWARDED allocation. The outstanding offer is
+      withdrawn and the cancelled allocation is kept as history. Cancelling an
+      award returns the load to `PLANNED` with no vendor, so it can be offered
+      again (a new allocation); it is refused with `load-has-active-trip` while
+      a trip that is not cancelled is raised against the load. An allocation
+      that is already cancelled stays cancelled and the load is not touched;
+      an EXHAUSTED one is refused with `allocation-illegal-transition`.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     responses:

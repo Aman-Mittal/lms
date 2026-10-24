@@ -82,7 +82,11 @@ DocketReceivable:
     id: { type: string, format: uuid }
     docketId: { type: string, format: uuid }
     docketNo: { type: string }
-    status: { type: string, enum: [PRICED, UNPRICED] }
+    status:
+      type: string
+      enum: [PRICED, UNPRICED, CANCELLED]
+      description: CANCELLED when the docket was cancelled with its order;
+        the amounts are what it was quoted at and are not billable.
     customerPartnerId: { type: string, format: uuid }
     customerName: { type: string }
     currency: { type: string }
@@ -123,7 +127,8 @@ DocketReceivable:
         fuelSurcharge.
     reason:
       type: string
-      description: Why an UNPRICED docket could not be priced.
+      description: Why an UNPRICED docket could not be priced, or why a
+        CANCELLED one was cancelled.
     createdAt: { type: string, format: date-time }
 
 DocketReceivableSlice:
