@@ -165,6 +165,17 @@ public class TripController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Cancels a trip that has not left the yard. A reason is mandatory; once
+     * dispatched the answer is 409 {@code trip-not-cancellable}.
+     */
+    @PostMapping("/{id}/cancellation")
+    public ResponseEntity<Void> cancel(@PathVariable UUID id,
+                                       @Valid @RequestBody CancelTripRequest request) {
+        trips.cancel(id, request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
     private static Instant at(AtRequest request) {
         return request == null ? null : request.at();
     }
@@ -177,6 +188,9 @@ public class TripController {
             @NotBlank String tripNo,
             @NotNull UUID loadId,
             Instant plannedStartAt) {
+    }
+
+    public record CancelTripRequest(@NotBlank String reason) {
     }
 
     public record AssignRequest(@NotNull UUID vehicleId, UUID driverId) {

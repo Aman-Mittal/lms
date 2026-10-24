@@ -68,6 +68,29 @@ public class AuditTrail {
     }
 
     /**
+     * Records a mutation in the <em>caller's</em> transaction, so the entry
+     * commits or rolls back with the change it describes.
+     *
+     * <p>For a change that has succeeded, this is the better home: the row and
+     * its audit entry are one atomic fact, and no second connection is taken.
+     * That matters on a pool of five. {@link #record} opens a new transaction
+     * while the caller still holds its own connection, so when every
+     * connection is held by a request waiting on a row lock the holder of that
+     * lock cannot get the connection its audit entry needs, and everything
+     * waits for the pool's timeout. Use {@link #record} where the entry must
+     * outlive a rollback -- a refusal, a failed login.
+     *
+     * @throws org.springframework.transaction.IllegalTransactionStateException
+     *         if there is no transaction to join
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordAtomically(String action, String resourceType, UUID resourceId,
+                                 Json before, Json after) {
+        write(TenantContext.current().map(TenantContext.Scope::tenantId).orElse(null),
+                currentActorId(), action, resourceType, resourceId, before, after);
+    }
+
+    /**
      * Records against an explicit tenant and actor.
      *
      * <p>Needed by authentication, which happens before a scope exists and, on
@@ -76,6 +99,11 @@ public class AuditTrail {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordFor(UUID tenantId, UUID actorId, String action, String resourceType,
                           UUID resourceId, Json before, Json after) {
+        write(tenantId, actorId, action, resourceType, resourceId, before, after);
+    }
+
+    private void write(UUID tenantId, UUID actorId, String action, String resourceType,
+                       UUID resourceId, Json before, Json after) {
         if (tenantId == null) {
             // Nothing to attribute it to, and the table requires a tenant. Log
             // rather than throw: failing the caller's real work because the

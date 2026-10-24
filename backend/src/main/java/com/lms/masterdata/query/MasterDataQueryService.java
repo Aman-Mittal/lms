@@ -207,7 +207,7 @@ public class MasterDataQueryService {
             SELECT t.id, t.code, t.name, t.functional_category, t.geofence_type,
                    CAST(t.polygon AS text) AS polygon,
                    t.centre_lat, t.centre_lon, t.radius_m, t.dock_count,
-                   t.opens_at, t.closes_at, t.avg_dwell_minutes, t.created_at
+                   t.opens_at, t.closes_at, t.avg_dwell_minutes, t.version, t.created_at
               FROM terminal t
             """;
 

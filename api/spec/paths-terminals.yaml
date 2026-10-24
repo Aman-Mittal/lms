@@ -57,6 +57,43 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Terminals]
+    operationId: updateTerminal
+    summary: Change a terminal's name, geofence, docks, hours or dwell
+    description: |
+      The code never changes. A new geofence is refused with 409
+      `terminal-overlap` if it overlaps another terminal of the same category
+      (the terminal's own old footprint does not count). Send the `version`
+      last read: a stale one is refused with 409 `concurrent-modification`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateTerminalRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  delete:
+    tags: [Terminals]
+    operationId: deleteTerminal
+    summary: Remove a terminal nothing refers to
+    description: |
+      Refused with 409 `terminal-in-use` while any trip, load, consignment,
+      order, itinerary, milk-run route or circuit, warehouse record, gate or
+      weighbridge entry, routing guide or tariff still refers to it. The
+      database's foreign keys are the backstop behind that check.
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/terminals/polygon:
   post:

@@ -95,3 +95,79 @@ Feature: Master data -- the geospatial terminal network
     And the tenant scope is "globex" at "/globex/"
     When a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
     Then the terminal is registered
+
+  Scenario: A terminal is renamed and resized in place, and the change is audited
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    When terminal "WH-1" is renamed "Main warehouse" with 8 docks
+    Then the terminal is updated
+    And terminal "WH-1" is named "Main warehouse" with 8 docks
+    And the audit trail has 1 "TERMINAL_UPDATED" entry for terminal "WH-1"
+
+  Scenario: A terminal's geofence can be moved
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    When terminal "WH-1" is moved to the square from 19.20,72.80 to 19.21,72.81
+    Then the terminal is updated
+    And terminal "WH-1" contains the point 19.205,72.805
+    And terminal "WH-1" does not contain the point 19.005,72.805
+
+  Scenario: A terminal's geofence can change shape
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    When terminal "WH-1" is moved to the circle at 19.40,72.80 with radius 300 m
+    Then the terminal is updated
+    And terminal "WH-1" contains the point 19.4005,72.8005
+    And terminal "WH-1" does not contain the point 19.005,72.805
+
+  Scenario: A terminal may grow over its own old footprint
+    # Its own footprint is not a clash with itself.
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    When terminal "WH-1" is moved to the square from 18.99,72.79 to 19.02,72.82
+    Then the terminal is updated
+
+  Scenario: A terminal may not be moved onto a neighbour of the same category
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    And a WAREHOUSE terminal "WH-2" is registered with the square from 19.10,72.80 to 19.11,72.81
+    When terminal "WH-2" is moved to the square from 19.005,72.805 to 19.015,72.815
+    Then the update is refused with "terminal-overlap"
+    And terminal "WH-2" contains the point 19.105,72.805
+
+  Scenario: A terminal may be moved across a terminal of a different category
+    Given a PORT terminal "PORT-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    And a WAREHOUSE terminal "WH-2" is registered with the square from 19.10,72.80 to 19.11,72.81
+    When terminal "WH-2" is moved to the square from 19.002,72.802 to 19.003,72.803
+    Then the terminal is updated
+
+  Scenario: A badly drawn new geofence is refused and the old one stays
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    When terminal "WH-1" is moved to the square from 10.00,70.00 to 20.00,80.00
+    Then the update is refused with "IllegalArgumentException"
+    And terminal "WH-1" contains the point 19.005,72.805
+
+  Scenario: Two people editing the same terminal cannot overwrite each other
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    And terminal "WH-1" is renamed "First edit" with 5 docks
+    When terminal "WH-1" is renamed "Second edit" from the version before the last change
+    Then the update is refused with "concurrent-modification"
+    And terminal "WH-1" is named "First edit" with 5 docks
+
+  Scenario: An unreferenced terminal is deleted
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    When terminal "WH-1" is deleted
+    Then the terminal is deleted
+    And terminal "WH-1" no longer exists
+    And the audit trail has 1 "TERMINAL_DELETED" entry for terminal "WH-1"
+
+  Scenario: A deleted terminal's code and ground can be used again
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    And terminal "WH-1" is deleted
+    When a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    Then the terminal is registered
+
+  Scenario: Another tenant cannot change or delete a terminal and learns nothing about it
+    Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    And a tenant "globex" named "Globex Freight"
+    And tenant "globex" has an organisational unit "/globex/" named "Globex HQ" of type "HQ"
+    And the tenant scope is "globex" at "/globex/"
+    When terminal "WH-1" is deleted
+    Then deleting the terminal is refused as not found
+    And terminal "WH-1" still exists
+

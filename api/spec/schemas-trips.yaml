@@ -44,6 +44,8 @@ Trip:
       type: integer
       description: Gate-in to gate-out. What detention is billed on.
     documentCount: { type: integer }
+    cancelledAt: { type: string, format: date-time }
+    cancellationReason: { type: string }
     createdAt: { type: string, format: date-time }
 
 GateEvent:
@@ -62,6 +64,15 @@ RaiseTripRequest:
     loadId: { type: string, format: uuid }
     plannedStartAt: { type: string, format: date-time }
   required: [tripNo, loadId]
+
+CancelTripRequest:
+  type: object
+  properties:
+    reason:
+      type: string
+      minLength: 1
+      description: Why the trip is being cancelled. Recorded on the trip and in the audit trail.
+  required: [reason]
 
 AssignTripRequest:
   type: object

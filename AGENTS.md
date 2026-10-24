@@ -239,7 +239,10 @@ Rules that make the split worth having:
   consignments and loads) inside the same transaction. `OrderPlanningPort` is the
   opposite direction: planning telling order what happened (lines planned, order
   fulfilled). Do not replace either with an after-commit event if the caller must
-  be able to stop the operation.
+  be able to stop the operation. The same pattern is used by `planning::api`:
+  `LoadInUseGuard` (execution implements it: a live trip on the load) and
+  `LoadCancellationHook` (sourcing implements it: withdraw the open allocation),
+  so planning never depends on execution or sourcing.
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
@@ -255,6 +258,24 @@ least once** and republishes incomplete events after a restart.
   `IdempotencyService`. The claim is an `INSERT`, not check-then-insert — the
   primary key settles the race between concurrent retries instead of leaving it
   to chance.
+- **Bad input answers a 4xx problem document, never 500.** `GlobalExceptionHandler`
+  extends `ResponseEntityExceptionHandler`, so malformed or empty bodies, wrong
+  types, missing parameters, unrouted paths and wrong methods are 400, 404, 405,
+  406 or 415 with a stable `code` (`malformed-request`, `missing-parameter`,
+  `invalid-parameter`, `validation-failed`, `not-found`, `method-not-allowed`,
+  ...); the catch-all is for genuinely unexpected errors only and says nothing
+  about them. 401 and 403 from the security chain are problem documents too
+  (`ProblemSecurityHandlers`): a rejected token's reason is never echoed (expiry
+  is the one exception, because a client needs it to refresh).
+- **Jackson 3 sets `FAIL_ON_NULL_FOR_PRIMITIVES` on**, so a record with an `int`
+  or `boolean` sent `{}` fails before bean validation runs. The default is turned
+  off in `application.yaml`; where a silent default would be unsafe (a `boolean
+  enabled` that would switch a policy off) the field is boxed and `@NotNull`.
+- **Lifecycle transitions are audited in the transition's own transaction**
+  (`TransitionAudit`, `MANDATORY`, batched; or `AuditTrail.recordAtomically`), so a
+  rolled-back transition leaves no audit row. `AuditTrail.record` (`REQUIRES_NEW`)
+  is only for entries that must outlive a failure, and see the pool hazard under
+  section 8.
 - **Lost races answer 409, never 500.** `GlobalExceptionHandler` maps a stale
   `@Version` write to 409 `concurrent-modification` and a unique violation (after
   a check-then-insert) to 409 `duplicate-resource`; the client re-reads and
@@ -522,6 +543,10 @@ includes production, after the image has been built and pushed.
   against the application in every build, the native-image workflow runs it
   against each binary, and the *Smoke (deployed)* workflow runs it against
   Render. Change the script, not three copies of it.
+- **Cancelled rows must not hold a unique key.** `allocation_load_unique` (V33)
+  and `trip_live_load_unique` (V34) are partial indexes that ignore CANCELLED
+  rows, so a load can be offered or given a trip again; keep the cancelled row as
+  history rather than deleting it.
 - **Integration tests at the HTTP and database level.** Cucumber acceptance
   scenarios call services in-process; anything about transactions, triggers or
   the wire needs a Spring test on Testcontainers Postgres (see
@@ -562,15 +587,27 @@ includes production, after the image has been built and pushed.
 ## 8. Deliberately deferred
 
 **Known defects, found by the specification audit and not yet fixed**
-- `GET /loads/{id}/consignments` is declared in `api/spec/paths-planning.yaml` as
-  returning one `Consignment`; the server returns an array, so the generated
-  client cannot read it.
-- The catch-all handler swallows Spring MVC errors: a missing required query
-  parameter (for example `GET /api/v1/asns` with no `warehouseId`) returns 500
-  instead of 400, and malformed JSON, a bad UUID in a path or an unsupported
-  method probably do too. Handling `ErrorResponse` exceptions would fix it.
-- `/offers`, `/lines` and `/history` sub-collections answer 200 with an empty
-  list, not 404, for another tenant's id. Nothing leaks.
+- **`AuditTrail.record` can starve the connection pool.** It runs in
+  `REQUIRES_NEW`, so it takes a second connection while the caller still holds
+  one. With the free-tier pool of 5, five requests queued on a row lock leave the
+  lock holder unable to get a connection for its audit row, and everything stalls
+  until the 10 s timeout (seen in a 12-way concurrent-cancel test). The order,
+  planning, sourcing and trip paths now audit through `TransitionAudit` /
+  `AuditTrail.recordAtomically`, which join the caller's transaction; every
+  other `audit.record` call made inside a transaction (finance, client billing,
+  warehouse inventory, identity, control tower, milk run, rail tariffs) has the
+  same hazard and should move to the atomic form.
+- Two audit mechanisms now exist side by side: `TransitionAudit` (batched, for
+  bulk transitions) and `AuditTrail.recordAtomically` (single). They should be
+  one.
+- Order coverage changes (FULLY_PLANNED) and LTL docket movements are not
+  audited. Telematics is deliberately not audited (a stoppage or deviation
+  already becomes a control-tower ticket with its own history).
+- Cancelling an order or allocation withdraws sourcing work, but a trip already
+  raised on a load is refused (`load-has-active-trip`) rather than cancelled:
+  cancel the trip first.
+- Existing databases may hold AWARDED allocations on CANCELLED loads from before
+  the lifecycle fixes; cancelling such an allocation is a no-op on the load.
 - Not every id taken from a request body has been audited for cross-tenant
   references (see the multi-tenancy section); only org units are tested.
 
