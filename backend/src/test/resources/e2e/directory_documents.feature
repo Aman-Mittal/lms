@@ -41,3 +41,7 @@ Feature: Statutory documents are filed, listed by owner and swept for expiry, ov
     And filing a certificate is refused as 403 to a read-only user and to a user with no permissions, for each kind of owner
     And a certificate filed twice under one idempotency key is stored once, and the key refuses a different certificate
     And a certificate with only a type, a number and an expiry is accepted and reads back without issue date or authority
+
+  Scenario: A certificate with no expiry date lists cleanly for every kind of owner
+    Given a partner, a lorry and a driver are registered to file documents against
+    Then a certificate with no expiry date is listed for a partner, a lorry and a driver as not expired, with no days to expiry
