@@ -38,7 +38,7 @@ Feature: Planning reads, sourcing outcomes, the gate log and the control tower d
     Then tracking the planning-flow reference shows status PLANNED for the one consignee and no load
     When the planning-flow consignment is put on a planned load
     Then tracking the planning-flow reference shows status ASSIGNED_TO_LOAD on the planning-flow load
-    And the planning-flow load lists exactly its consignment, read as raw HTTP
+    And the planning-flow load lists exactly its consignment
     And an unknown planning-flow load, and another tenant's view of this one, list no consignments
     And tracking an unknown planning-flow reference is a 404 problem and so is another tenant's lookup
 
