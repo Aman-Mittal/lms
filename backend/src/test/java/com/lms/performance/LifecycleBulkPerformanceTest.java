@@ -228,7 +228,13 @@ class LifecycleBulkPerformanceTest {
                         SELECT coalesce(sum(calls), 0)::bigint FROM pg_stat_statements
                          WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
                            AND query NOT LIKE '%pg_stat_statements%'
+                           AND query NOT LIKE '%FROM ONLY%FOR KEY SHARE%'
                         """).query(Long.class).single();
+        // The foreign-key probes are left out: with track=all the database
+        // counts the lookup it makes itself for every row it inserts into a
+        // table with a foreign key -- here one per audit_log row -- and that
+        // is not a statement the application sent. See AuditOverheadPerformanceTest,
+        // which counts the audit rows and statements on their own.
         return new Measured(statements, nanos);
     }
 
