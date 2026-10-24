@@ -120,7 +120,7 @@ public class AuditTrail {
      * <p>Null is the honest answer during authentication itself: at that point
      * the claim of identity is exactly what is in question.
      */
-    private static UUID currentActorId() {
+    static UUID currentActorId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
             return null;
