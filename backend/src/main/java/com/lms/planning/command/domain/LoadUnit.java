@@ -88,7 +88,9 @@ public record LoadUnit(
     static {
         TRANSITIONS.put(LoadStatus.DRAFT, EnumSet.of(LoadStatus.PLANNED, LoadStatus.CANCELLED));
         TRANSITIONS.put(LoadStatus.PLANNED, EnumSet.of(LoadStatus.AWARDED, LoadStatus.DRAFT, LoadStatus.CANCELLED));
-        TRANSITIONS.put(LoadStatus.AWARDED, EnumSet.of(LoadStatus.DISPATCHED, LoadStatus.CANCELLED));
+        // AWARDED back to PLANNED is the award being withdrawn (see withdrawAward).
+        TRANSITIONS.put(LoadStatus.AWARDED, EnumSet.of(LoadStatus.DISPATCHED, LoadStatus.PLANNED,
+                LoadStatus.CANCELLED));
         TRANSITIONS.put(LoadStatus.DISPATCHED, EnumSet.of(LoadStatus.COMPLETED));
         // Terminal states.
         TRANSITIONS.put(LoadStatus.COMPLETED, EnumSet.noneOf(LoadStatus.class));
@@ -317,6 +319,24 @@ public record LoadUnit(
                 vendorPartnerId, awarded.status, awarded.freightMode, awarded.ltlLeg,
                 awarded.version,
                 awarded.createdAt, Instant.now());
+    }
+
+    /**
+     * Takes the award back: the load returns to PLANNED with no vendor, which
+     * is the state sourcing can run from again.
+     *
+     * <p>The reverse of {@link #awardTo}, and the only way an AWARDED load goes
+     * backwards. A load that has left (DISPATCHED, COMPLETED) is refused by the
+     * state machine: an award cannot be withdrawn from a vehicle on the road.
+     */
+    public LoadUnit withdrawAward() {
+        LoadUnit planned = transitionTo(LoadStatus.PLANNED);
+        return new LoadUnit(planned.id, planned.tenantId, planned.orgUnitId, planned.loadNo,
+                planned.originTerminalId, planned.vehicleId, planned.vehicleType,
+                planned.vehicleHazmatCertified, planned.capacityWeightKg, planned.capacityVolumeM3,
+                planned.plannedWeightKg, planned.plannedVolumeM3, planned.requiresHazmat,
+                null, planned.status, planned.freightMode, planned.ltlLeg, planned.version,
+                planned.createdAt, Instant.now());
     }
 
     /** Percentage of weight capacity used, for the utilisation the platform exists to improve. */
