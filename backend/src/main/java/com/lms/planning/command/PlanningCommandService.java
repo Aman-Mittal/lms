@@ -36,6 +36,7 @@ import com.lms.planning.command.domain.LoadUnit;
 import com.lms.planning.events.ConsignmentsGenerated;
 import com.lms.planning.events.DocketBooked;
 import com.lms.planning.events.LoadPlanned;
+import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -60,16 +61,19 @@ public class PlanningCommandService {
     private final LoadUnitRepository loads;
     private final PlanningLinks links;
     private final ApplicationEventPublisher events;
+    private final TransitionAudit audit;
 
     public PlanningCommandService(OrderPlanningPort orderPlanning, FleetCapacityPort fleetCapacity,
                                   ConsignmentRepository consignments, LoadUnitRepository loads,
-                                  PlanningLinks links, ApplicationEventPublisher events) {
+                                  PlanningLinks links, ApplicationEventPublisher events,
+                                  TransitionAudit audit) {
         this.orderPlanning = orderPlanning;
         this.fleetCapacity = fleetCapacity;
         this.consignments = consignments;
         this.loads = loads;
         this.links = links;
         this.events = events;
+        this.audit = audit;
     }
 
     // ------------------------------------------------------------ 3.4.1
@@ -116,6 +120,7 @@ public class PlanningCommandService {
 
         List<UUID> created = new ArrayList<>();
         List<String> refs = new ArrayList<>();
+        List<TransitionAudit.Entry> generated = new ArrayList<>();
         Set<UUID> plannedLineIds = new LinkedHashSet<>();
 
         for (Map.Entry<GroupKey, List<OrderPlanningPort.PlannableLine>> group : groups.entrySet()) {
@@ -146,6 +151,9 @@ public class PlanningCommandService {
                     ltl ? terms.originHubTerminalId() : null,
                     ltl ? terms.destinationHubTerminalId() : null));
 
+            generated.add(new TransitionAudit.Entry(consignment.id(), null,
+                    PlanningAudit.consignment(consignment)));
+
             if (ltl) {
                 dockets.add(new DocketBooked(tenantId, consignment.id(), consignment.trackingRef(),
                         orderId, terms.customerPartnerId(), consignment.consigneePartnerId(),
@@ -166,6 +174,7 @@ public class PlanningCommandService {
         // leaves the order's coverage untouched rather than claiming lines that
         // no consignment holds.
         orderPlanning.markLinesPlanned(orderId, plannedLineIds);
+        audit.recordAll("CONSIGNMENT_GENERATED", PlanningAudit.CONSIGNMENT, generated);
 
         events.publishEvent(new ConsignmentsGenerated(tenantId, orderId, created, refs,
                 terms.freightMode().name(), Instant.now()));
@@ -218,10 +227,13 @@ public class PlanningCommandService {
                             .divide(CM3_PER_KG, 3, RoundingMode.HALF_UP);
                     BigDecimal chargeable = grossWeightKg.max(volumetric)
                             .setScale(3, RoundingMode.HALF_UP);
-                    return consignments.save(Consignment.fromHandlingUnit(UUID.randomUUID(),
-                            tenantId, handlingUnitId, nextTrackingRef(tenantId, "LR-"),
-                            consigneePartnerId, destinationTerminalId, grossWeightKg, volume,
-                            chargeable)).id();
+                    Consignment received = consignments.save(Consignment.fromHandlingUnit(
+                            UUID.randomUUID(), tenantId, handlingUnitId,
+                            nextTrackingRef(tenantId, "LR-"), consigneePartnerId,
+                            destinationTerminalId, grossWeightKg, volume, chargeable));
+                    audit.record("CONSIGNMENT_GENERATED", PlanningAudit.CONSIGNMENT,
+                            received.id(), null, PlanningAudit.consignment(received));
+                    return received.id();
                 });
     }
 
@@ -269,10 +281,13 @@ public class PlanningCommandService {
                 .orElseThrow(() -> new BusinessRuleViolationException("vehicle-unavailable",
                         "Vehicle " + vehicleId + " does not exist or is not available to plan against"));
 
-        return loads.save(LoadUnit.open(UUID.randomUUID(), tenantId, orgUnitId, loadNo,
+        LoadUnit opened = loads.save(LoadUnit.open(UUID.randomUUID(), tenantId, orgUnitId, loadNo,
                 originTerminalId, capacity.vehicleId(), capacity.vehicleType(),
                 capacity.hazmatCertified(), capacity.payloadCapacityKg(),
-                capacity.maxVolumeM3(), freightMode, ltlLeg)).id();
+                capacity.maxVolumeM3(), freightMode, ltlLeg));
+        audit.record("LOAD_OPENED", PlanningAudit.LOAD, opened.id(), null,
+                PlanningAudit.load(opened));
+        return opened.id();
     }
 
     /**
@@ -342,7 +357,10 @@ public class PlanningCommandService {
                 load.ltlLeg());
 
         loads.save(updated);
-        consignments.save(consignment.transitionTo(boarded));
+        Consignment assigned = consignments.save(consignment.transitionTo(boarded));
+        audit.record("CONSIGNMENT_ASSIGNED", PlanningAudit.CONSIGNMENT, consignmentId,
+                PlanningAudit.consignment(consignment),
+                PlanningAudit.consignmentOn(assigned, loadId));
     }
 
     /** Closes a load to further building and offers it for sourcing. */
@@ -361,6 +379,10 @@ public class PlanningCommandService {
         }
 
         LoadUnit planned = loads.save(load.transitionTo(LoadUnit.LoadStatus.PLANNED));
+        if (load.status() != planned.status()) {
+            audit.record("LOAD_PLANNED", PlanningAudit.LOAD, loadId, PlanningAudit.load(load),
+                    PlanningAudit.load(planned));
+        }
 
         events.publishEvent(new LoadPlanned(tenantId, planned.id(), planned.loadNo(),
                 planned.originTerminalId(), planned.vehicleType(), onLoad.size(),
