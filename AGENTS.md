@@ -255,6 +255,11 @@ least once** and republishes incomplete events after a restart.
   `IdempotencyService`. The claim is an `INSERT`, not check-then-insert — the
   primary key settles the race between concurrent retries instead of leaving it
   to chance.
+- **Lost races answer 409, never 500.** `GlobalExceptionHandler` maps a stale
+  `@Version` write to 409 `concurrent-modification` and a unique violation (after
+  a check-then-insert) to 409 `duplicate-resource`; the client re-reads and
+  retries. Problem documents carry a fixed detail and never a constraint, table
+  or SQL text. Other integrity violations (a foreign key, say) stay 500.
 - A retry receives **the original response**, not a 409. The client is retrying
   precisely because it never learned the first outcome.
 - Reusing a key with a different body is rejected: that is a client defect, and
@@ -376,6 +381,22 @@ self-invocation proxy problems too. The same rule applies in tests; see
 The acceptance suite proves isolation rather than assuming it: `identity.feature`
 runs a query with **no tenant predicate at all** and asserts the result is
 confined to the scoped tenant, and that an unscoped query returns nothing.
+`tenant_isolation.feature` does the same for twelve more tables (read, update,
+delete and move-into-another-tenant all refused, as `lms_app`), and
+`TenantIsolationApiTest` and the `e2e/tenant_isolation.feature` scenarios prove
+over HTTP that tenant B gets 404 for tenant A's order, consignment, load, trip,
+allocation, freight bill, exception ticket, ASN, outbound order, handling unit
+and client invoice, and sees none of their rows in a listing.
+
+**A foreign key is checked as the table owner, so row-level security does not
+stop an id in a request body from naming another tenant's row.** This was a real
+hole: tenant B could POST a partner with tenant A's `orgUnitId` and get 201, a
+row of B's pointing into A's organisation (and confirming that the unit exists).
+Organisational units are now refused centrally in `PolicyDecisionPoint.permitsIn`
+(403, identical for a foreign and a nonexistent unit). Every other id a service
+takes from a body must be looked up under RLS (which makes a foreign id read as
+absent) and never trusted because the database accepted the insert. Only the org
+unit path is covered by a test today; auditing the rest is open work.
 
 ---
 
@@ -508,6 +529,12 @@ includes production, after the image has been built and pushed.
   the test asserts nothing was left half-done) or an HTTP end-to-end scenario
   (`e2e/lifecycle.feature`). Reproduce a defect with a failing scenario before
   fixing it.
+- **Contention and isolation tests** run against real Postgres over HTTP:
+  `ConflictHandlingApiTest` (12 threads, same unique key or same aggregate;
+  exactly the expected winners, every loser a 409, no 500) and
+  `TenantIsolationApiTest`, built on the shared `ApiTestKit` (HTTP, tokens, a
+  start-gated `race()`) and `TenantSeeds` (one row of everything per tenant).
+  A race test must release all threads together or it measures nothing.
 - **Performance** tests carry `@Tag("performance")` and are excluded from the
   default build; run them with `./mvnw verify -Pperformance` (also weekly in
   the *Performance* workflow, or on a PR labelled `performance`). Assert
@@ -516,7 +543,10 @@ includes production, after the image has been built and pushed.
   `pg_stat_statements` rather than timing them: `LifecycleBulkPerformanceTest`
   asserts that completing a load and cancelling an order cost about one
   statement per consignment at 40 and at 400, so an N+1 shows up as a ratio.
-  Restart tests start a pod with
+  `WriteContentionPerformanceTest` puts 20 threads on one aggregate and one
+  unique key for 15 rounds and asserts only relative properties (no 500, no
+  hang, median loser latency a small factor of the winner's, contended cost
+  within a factor of uncontended). Restart tests start a pod with
   `SpringApplicationBuilder.run("--key=value")`: builder `.properties()` are
   defaults that `application.yaml` silently overrides.
 - **JMeter** (`performance/jmeter/`): `lms-api.jmx` signs in once and drives a
@@ -530,6 +560,21 @@ includes production, after the image has been built and pushed.
 ---
 
 ## 8. Deliberately deferred
+
+**Known defects, found by the specification audit and not yet fixed**
+- `GET /loads/{id}/consignments` is declared in `api/spec/paths-planning.yaml` as
+  returning one `Consignment`; the server returns an array, so the generated
+  client cannot read it.
+- The catch-all handler swallows Spring MVC errors: a missing required query
+  parameter (for example `GET /api/v1/asns` with no `warehouseId`) returns 500
+  instead of 400, and malformed JSON, a bad UUID in a path or an unsupported
+  method probably do too. Handling `ErrorResponse` exceptions would fix it.
+- `/offers`, `/lines` and `/history` sub-collections answer 200 with an empty
+  list, not 404, for another tenant's id. Nothing leaks.
+- Not every id taken from a request body has been audited for cross-tenant
+  references (see the multi-tenancy section); only org units are tested.
+
+**Deferred by design**
 
 Not built, and interfaces are left open for them. Do not describe these as
 implemented: reverse auction / spot bidding, OCR pipeline, ERP synchronisation,
