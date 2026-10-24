@@ -101,6 +101,6 @@ public class InventoryController {
 
     /** @param quantity signed; negative for a loss found on counting */
     public record AdjustStockRequest(@NotNull UUID binId, @NotNull UUID skuId, String lotNo,
-                                     int quantity, @NotBlank String reason) {
+                                     @NotNull Integer quantity, @NotBlank String reason) {
     }
 }

@@ -222,6 +222,9 @@ public class AuthService {
             String orgPath,
             List<String> permissions) {
 
+        // A record serialises only its components; the spec and RFC 6750 clients
+        // expect the token type beside the token.
+        @com.fasterxml.jackson.annotation.JsonProperty("tokenType")
         public String tokenType() {
             return "Bearer";
         }

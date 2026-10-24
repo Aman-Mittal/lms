@@ -23,5 +23,6 @@ User:
     fullName: { type: string }
     status: { type: string, enum: [ACTIVE, SUSPENDED, LOCKED] }
     orgPath: { type: string }
-    orgUnitName: { type: string }
+    orgUnitId: { type: string, format: uuid }
+    orgName: { type: string }
     lastLoginAt: { type: string, format: date-time }

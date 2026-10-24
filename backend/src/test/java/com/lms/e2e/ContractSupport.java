@@ -134,7 +134,8 @@ final class ContractSupport {
             request.header("Content-Type", "application/json");
         }
         for (int i = 0; i + 1 < headerPairs.length; i += 2) {
-            request.header(headerPairs[i], headerPairs[i + 1]);
+            // setHeader, so that a caller can replace the default Content-Type.
+            request.setHeader(headerPairs[i], headerPairs[i + 1]);
         }
         request.method(method, body == null
                 ? HttpRequest.BodyPublishers.noBody()

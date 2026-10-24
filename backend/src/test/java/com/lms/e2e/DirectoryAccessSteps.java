@@ -137,29 +137,24 @@ public class DirectoryAccessSteps {
 
     @Then("the user directory lists the whole tenant to its administrator but only the branch to the branch user")
     public void userListing() {
-        JsonNode all = support.rawGet(cast.demo().getAccessToken(), "/api/v1/users");
-        assertThat(all.isArray()).as("the listing is an array").isTrue();
-        List<String> emails = DirectorySupport.texts(all, "email");
+        List<User> all = users(cast.demo().getAccessToken()).listUsers();
+        List<String> emails = all.stream().map(User::getEmail).toList();
         assertThat(emails).contains(HttpWorld.DEMO_ADMIN, branchUser.email(),
                 cast.readerAccount().email(), cast.nobodyAccount().email());
         assertThat(emails).doesNotContain(cast.other().adminEmail());
 
-        JsonNode branch = null;
-        for (JsonNode row : all) {
-            if (row.get("email").asString().equals(branchUser.email())) {
-                branch = row;
-            }
-        }
+        User branch = all.stream().filter(u -> u.getEmail().equals(branchUser.email()))
+                .findFirst().orElse(null);
         assertThat(branch).isNotNull();
-        assertThat(branch.get("id").asString()).isEqualTo(branchUser.id().toString());
-        assertThat(branch.get("fullName").asString()).isEqualTo("Branch User " + world.salt);
-        assertThat(branch.get("status").asString()).isEqualTo("ACTIVE");
-        assertThat(branch.get("orgPath").asString()).isEqualTo(branchPath);
-        // The server names the unit "orgName"; the contract says "orgUnitName".
-        assertThat(branch.get("orgName").asString()).isEqualTo("Branch " + world.salt);
+        assertThat(branch.getId()).isEqualTo(branchUser.id());
+        assertThat(branch.getFullName()).isEqualTo("Branch User " + world.salt);
+        assertThat(branch.getStatus()).isEqualTo(User.StatusEnum.ACTIVE);
+        assertThat(branch.getOrgPath()).isEqualTo(branchPath);
+        assertThat(branch.getOrgName()).isEqualTo("Branch " + world.salt);
+        assertThat(branch.getOrgUnitId()).isNotNull();
 
-        JsonNode own = support.rawGet(branchSession.getAccessToken(), "/api/v1/users");
-        assertThat(DirectorySupport.texts(own, "email")).containsExactly(branchUser.email());
+        List<User> own = users(branchSession.getAccessToken()).listUsers();
+        assertThat(own).extracting(User::getEmail).containsExactly(branchUser.email());
     }
 
     @Then("a user reads back by id with name, status, path, unit and last sign-in")

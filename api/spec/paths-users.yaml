@@ -29,7 +29,9 @@
         description: Users the caller may see.
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/User" }
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/User" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -72,7 +74,9 @@
       and joining it in would make every listing pay for it.
     responses:
       "200":
-        description: Permission codes.
+        description: |
+          Permission codes. An unknown id, or one that belongs to another
+          tenant, is an empty list and not a 404.
         content:
           application/json:
             schema:

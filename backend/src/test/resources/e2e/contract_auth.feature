@@ -26,6 +26,8 @@ Feature: Anyone without a valid credential is turned away, whatever they ask for
   Scenario Outline: <tag>: a request with no token is refused with 401 and a Bearer challenge
     When the contract caller sends "<operation>" without a token
     Then the contract answer is 401 with a Bearer challenge
+    And the contract refusal is a problem document that does not say why the token failed
+    And the contract refusal code is "authentication-required"
 
     Examples:
       | tag            | operation                                                |
@@ -53,6 +55,7 @@ Feature: Anyone without a valid credential is turned away, whatever they ask for
   Scenario Outline: <credential> is refused on <operation>
     When the contract caller presents "<credential>" to "<operation>"
     Then the contract answer is 401 with a Bearer challenge
+    And the contract refusal is a problem document that does not say why the token failed
 
     Examples:
       | credential                 | operation                |
@@ -71,6 +74,7 @@ Feature: Anyone without a valid credential is turned away, whatever they ask for
     When the contract caller presents "an expired token" to "GET /api/v1/partners"
     Then the contract answer is 401 with a Bearer challenge
     And the contract challenge says the token expired
+    And the contract refusal code is "invalid-token"
     When the contract caller presents a freshly minted token with the same claims to list partners
     Then the contract answer is 200
 

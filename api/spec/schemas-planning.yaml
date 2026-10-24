@@ -65,11 +65,11 @@ Load:
     capacityWeightKg: { type: number }
     plannedWeightKg: { type: number }
     weightUtilisationPct: { type: number }
+    volumeUtilisationPct: { type: number }
     capacityVolumeM3: { type: number }
     plannedVolumeM3: { type: number }
     requiresHazmat: { type: boolean }
     consignmentCount: { type: integer }
-    awardedVendorName: { type: string }
     freightMode: { type: string }
     ltlLeg:
       $ref: "#/components/schemas/LtlLeg"

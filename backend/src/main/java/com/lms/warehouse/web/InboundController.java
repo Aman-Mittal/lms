@@ -109,7 +109,7 @@ public class InboundController {
     }
 
     public record CountedLine(@Positive int lineNo,
-                              @PositiveOrZero int receivedQty,
+                              @NotNull @PositiveOrZero Integer receivedQty,
                               @PositiveOrZero int damagedQty) {
     }
 

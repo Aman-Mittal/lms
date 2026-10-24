@@ -73,26 +73,6 @@ public class ContractSteps {
 
     private static final Pattern PERMISSION_CODE = Pattern.compile("\\b[A-Z]+(_[A-Z]+)+\\b");
 
-    /**
-     * Write operations whose probe with an empty body answers 500 instead of a
-     * 400 problem document: a product defect reported with this change, not
-     * behaviour to assert. They are left out of the routing probe rather than
-     * allowed to fail it, and every one of them is still driven by the
-     * per-mode scenarios with a real body.
-     */
-    private static final Set<String> EMPTY_BODY_PROBE_ANSWERS_500 = Set.of(
-            "PUT /api/v1/access-policies/{id}",
-            "POST /api/v1/orders/{id}/lines",
-            "POST /api/v1/routing-guides/{id}/vendors",
-            "POST /api/v1/drivers",
-            "POST /api/v1/vehicles",
-            "POST /api/v1/terminals/point-radius",
-            "POST /api/v1/warehouses/{warehouseId}/bins",
-            "POST /api/v1/putaways",
-            "POST /api/v1/stock/adjustments",
-            "POST /api/v1/stock/quarantine/releases",
-            "POST /api/v1/stock/quarantine/write-offs");
-
     /** Writes the routing probe must not send: one generates runs for the whole tenant. */
     private static final Set<String> NOT_PROBED = Set.of(
             "POST /api/v1/milk-runs/generate",
@@ -184,6 +164,15 @@ public class ContractSteps {
             case "a load" -> """
                     {"orgUnitId":"%s","loadNo":"CT-%s","originTerminalId":"%s","vehicleId":"%s"}"""
                     .formatted(world.orgUnitId(), world.salt, id, id);
+            case "malformed JSON" -> "{not json";
+            case "truncated JSON" -> "{\"code\":\"X\"";
+            case "a bare scalar" -> "\"text\"";
+            case "an array" -> "[]";
+            case "a wrong JSON type" -> "{\"code\":[1,2],\"legalName\":{}}";
+            case "an unknown enum value" -> """
+                    {"orgUnitId":"%s","code":"CT-ENUM-%s","legalName":"Enum Pvt Ltd","partnerType":"NOPE"}"""
+                    .formatted(world.orgUnitId(), world.salt);
+            case "a malformed id in the body" -> "{\"orgUnitId\":\"not-a-uuid\"}";
             case "an allocation" -> "{\"loadId\":\"%s\"}".formatted(id);
             case "a partner" -> partnerBody("CT-DENIED-" + world.salt, "Denied Pvt Ltd");
             case "a terminal" -> """
@@ -229,6 +218,25 @@ public class ContractSteps {
     public void unauthorised() {
         assertThat(reply.status()).as("answer: " + reply).isEqualTo(401);
         assertThat(reply.header("WWW-Authenticate")).as("the challenge").startsWith("Bearer");
+    }
+
+    @Then("the contract refusal is a problem document that does not say why the token failed")
+    public void genericRefusal() {
+        assertThat(reply.isProblem()).as("content type " + reply.contentType() + ": " + reply).isTrue();
+        Map<String, Object> problem = reply.json();
+        assertThat(problem.get("status")).isEqualTo(401);
+        assertThat(problem.get("code")).isIn("authentication-required", "invalid-token");
+        assertThat(problem.get("instance")).isEqualTo(requestPath.replaceAll("\\?.*$", ""));
+        assertThat(reply.body()).doesNotContainIgnoringCase("jwt").doesNotContainIgnoringCase("signature")
+                .doesNotContainIgnoringCase("decode").doesNotContainIgnoringCase("algorithm")
+                .doesNotContain("Exception").doesNotContain("com.lms");
+        assertThat(String.valueOf(reply.header("WWW-Authenticate"))).doesNotContainIgnoringCase("jwt")
+                .doesNotContainIgnoringCase("signature").doesNotContainIgnoringCase("decode");
+    }
+
+    @Then("the contract refusal code is {string}")
+    public void refusalCode(String code) {
+        assertThat(reply.code()).isEqualTo(code);
     }
 
     @Then("the contract challenge says the token expired")
@@ -314,6 +322,22 @@ public class ContractSteps {
         assertThat((String) problem.get("detail")).isNotBlank();
     }
 
+    @Then("the contract problem keeps the Allow header listing {string}")
+    public void allowHeader(String methods) {
+        String allow = reply.header("Allow");
+        assertThat(allow).as("Allow header on " + reply).isNotBlank();
+        for (String method : methods.split(",\\s*")) {
+            assertThat(allow).contains(method);
+        }
+    }
+
+    @Then("the contract problem reveals nothing of the implementation")
+    public void noInternals() {
+        assertThat(reply.body()).doesNotContain("Exception").doesNotContain("com.lms")
+                .doesNotContain("org.springframework").doesNotContain("jackson")
+                .doesNotContain("java.lang").doesNotContain("SELECT").doesNotContain("\tat ");
+    }
+
     @Then("the contract problem does not name a permission")
     public void noPermissionNamed() {
         assertThat((String) reply.json().get("detail")).doesNotContainPattern(PERMISSION_CODE);
@@ -373,6 +397,11 @@ public class ContractSteps {
     @When("the contract administrator sends {string} to {string} with {string} as the body")
     public void adminSendsBody(String method, String path, String bodyKind) {
         send(admin, method, resolve(path), bodyOfKind(bodyKind));
+    }
+
+    @When("the contract administrator posts a plain text body to {string}")
+    public void adminPostsPlainText(String path) {
+        send(admin, "POST", resolve(path), "not json at all", "Content-Type", "text/plain");
     }
 
     @When("the contract administrator sends {string} to {string} with the correlation id {string}")
@@ -1034,7 +1063,7 @@ public class ContractSteps {
                     continue;
                 }
                 String key = method.toUpperCase(Locale.ROOT) + " " + entry.getKey();
-                if (NOT_PROBED.contains(key) || EMPTY_BODY_PROBE_ANSWERS_500.contains(key)) {
+                if (NOT_PROBED.contains(key)) {
                     continue;
                 }
                 List<Map<String, Object>> declared = new ArrayList<>();
@@ -1111,13 +1140,18 @@ public class ContractSteps {
         Reply r = support.get(path, null);
         assertThat(r.status()).as(path + ": " + r).isEqualTo(401);
         assertThat(r.header("WWW-Authenticate")).startsWith("Bearer");
-        assertThat(r.body()).as("nothing leaks to an anonymous caller").isNullOrEmpty();
+        assertThat(r.isProblem()).as("a problem document: " + r).isTrue();
+        assertThat(r.code()).isEqualTo("authentication-required");
+        assertThat(r.json().get("detail")).as("nothing leaks to an anonymous caller")
+                .isEqualTo("This operation requires authentication");
     }
 
     @Then("the actuator path {string} is not exposed even to the administrator")
     public void notExposed(String path) {
         Reply r = support.get(path, admin);
-        assertThat(r.status()).as(path + " must not be served: " + r).isNotEqualTo(200);
+        assertThat(r.status()).as(path + " must not be served: " + r).isEqualTo(404);
+        assertThat(r.isProblem()).as("a problem document: " + r).isTrue();
+        assertThat(r.code()).isEqualTo("not-found");
         assertThat(r.body()).doesNotContain("\"propertySources\"").doesNotContain("\"names\"");
     }
 

@@ -366,4 +366,29 @@ public class DirectoryDocumentSteps {
         assertThat(badge.getDaysToExpiry()).isEqualTo(90);
         assertThat(badge.getExpired()).isFalse();
     }
+
+    @Then("a certificate with no expiry date is listed for a partner, a lorry and a driver as not expired, with no days to expiry")
+    public void certificateWithoutExpiry() {
+        AttachDocumentRequest open = new AttachDocumentRequest()
+                .documentType("LICENCE").documentNo("NX-" + world.salt);
+        UUID onPartner = world.api(PartnersApi.class).attachPartnerDocument(partner, open, null).getId();
+        UUID onLorry = world.api(VehiclesApi.class).attachVehicleDocument(lorry, open, null).getId();
+        UUID onDriver = world.api(DriversApi.class).attachDriverDocument(driver, open, null).getId();
+
+        assertNoExpiry(world.api(PartnersApi.class).listPartnerDocuments(partner), onPartner);
+        assertNoExpiry(world.api(VehiclesApi.class).listVehicleDocuments(lorry), onLorry);
+        assertNoExpiry(world.api(DriversApi.class).listDriverDocuments(driver), onDriver);
+        // It has nothing to lapse, so the expiry watch never lists it.
+        assertThat(world.api(ComplianceApi.class).listExpiringDocuments(3650))
+                .extracting(ComplianceDocument::getId)
+                .doesNotContain(onPartner, onLorry, onDriver);
+    }
+
+    private static void assertNoExpiry(List<ComplianceDocument> documents, UUID id) {
+        ComplianceDocument document = documents.stream().filter(d -> id.equals(d.getId())).findFirst()
+                .orElseThrow(() -> new AssertionError("document " + id + " is not listed"));
+        assertThat(document.getExpired()).isFalse();
+        assertThat(document.getExpiresOn()).isNull();
+        assertThat(document.getDaysToExpiry()).isNull();
+    }
 }

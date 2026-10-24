@@ -109,6 +109,8 @@ public class AccessPolicyController {
     public record RevisePolicyRequest(@NotNull AccessPolicy.Effect effect,
                                       @NotBlank String description,
                                       @NotEmpty Map<String, Object> condition,
-                                      boolean enabled) {
+                                      // Boxed and required: a revision that left the flag
+                                      // out would otherwise switch the policy off.
+                                      @NotNull Boolean enabled) {
     }
 }

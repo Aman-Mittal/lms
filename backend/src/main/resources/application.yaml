@@ -21,6 +21,18 @@ spring:
   application:
     name: lms-platform
 
+  jackson:
+    deserialization:
+      # Jackson 3 turned this on; Jackson 2 (and every Spring Boot before 4)
+      # had it off. On, a request that leaves out an optional primitive -- a
+      # boolean flag such as hazmatEndorsed -- fails to deserialise, and an
+      # empty object sent to any record with a primitive answered 500 before
+      # bean validation could name the missing fields. Off, an absent
+      # primitive is its zero value and validation does the refusing. A
+      # primitive that must be supplied is declared as a boxed type with
+      # @NotNull, so that omitting it is reported rather than read as zero.
+      fail-on-null-for-primitives: false
+
   # Consumed by DataSourceConfig, which reads these from the Environment
   # directly rather than through @ConfigurationProperties binding. DATABASE_URL
   # may be supplied in libpq form; it is normalised to JDBC form at that point.

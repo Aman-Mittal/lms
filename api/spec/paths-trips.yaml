@@ -88,7 +88,10 @@
       Append-only in practice: this is the evidence in a detention dispute.
     responses:
       "200":
-        description: Events in order.
+        description: |
+          Events in order. An unknown id, or one that belongs to another tenant,
+          is an empty list and not a 404. Only GATE_IN and GATE_OUT events are
+          logged; weighbridge readings are recorded separately.
         content:
           application/json:
             schema:
