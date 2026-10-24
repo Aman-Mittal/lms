@@ -67,35 +67,56 @@ VehiclePosition:
   properties:
     vehicleId: { type: string, format: uuid }
     registrationNo: { type: string }
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    tripStatus: { type: string }
     lat: { type: number }
     lon: { type: number }
     speedKph: { type: number }
     headingDeg: { type: number }
+    ignitionOn: { type: boolean }
     recordedAt: { type: string, format: date-time }
-    tripNo: { type: string }
+    ageSeconds:
+      type: integer
+      format: int64
+      description: Seconds since the fix, so a stale position is not read as current.
 
 GeofenceCrossing:
   type: object
   properties:
+    id: { type: string, format: uuid }
+    eventType: { type: string, enum: [ENTERED, EXITED] }
     terminalCode: { type: string }
-    terminalName: { type: string }
-    crossing: { type: string, enum: [ENTERED, EXITED] }
     occurredAt: { type: string, format: date-time }
+    lat: { type: number }
+    lon: { type: number }
 
 TripProgress:
   type: object
   properties:
     tripId: { type: string, format: uuid }
-    progressPct: { type: number }
-    remainingMetres: { type: number }
-    estimatedArrivalAt: { type: string, format: date-time }
+    tripNo: { type: string }
+    status: { type: string }
+    lat: { type: number }
+    lon: { type: number }
+    lastFixAt: { type: string, format: date-time }
+    remainingDistanceM: { type: number }
+    estimatedMinutesRemaining:
+      type: integer
+      description: Straight-line estimate at an assumed average speed.
+    completionPct: { type: number }
+    offRoute: { type: boolean }
+    deviationM: { type: number }
 
 Deviation:
   type: object
   properties:
     id: { type: string, format: uuid }
+    tripId: { type: string, format: uuid }
     tripNo: { type: string }
-    vehicleRegistrationNo: { type: string }
-    offRouteMetres: { type: number }
-    openedAt: { type: string, format: date-time }
-    closedAt: { type: string, format: date-time }
+    detectedAt: { type: string, format: date-time }
+    distanceM: { type: number }
+    corridorM: { type: number }
+    lat: { type: number }
+    lon: { type: number }
+

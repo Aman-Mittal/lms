@@ -30,6 +30,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtGra
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import com.lms.shared.error.ProblemSecurityHandlers;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -60,7 +61,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemSecurityHandlers problems)
+            throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 // CodeQL reports this as "Disabled Spring CSRF protection", high
@@ -118,7 +120,14 @@ public class SecurityConfig {
                         // Pages generates its client from it.
                         .requestMatchers(HttpMethod.GET, "/openapi.yaml").permitAll()
                         .anyRequest().authenticated())
+                // A refusal by the filter chain is a problem document like any
+                // other, with the Bearer challenge kept; see ProblemSecurityHandlers.
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint(problems)
+                        .accessDeniedHandler(problems))
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(problems)
+                        .accessDeniedHandler(problems)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable());

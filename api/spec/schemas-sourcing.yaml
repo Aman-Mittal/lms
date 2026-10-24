@@ -23,9 +23,19 @@ Allocation:
     loadNo: { type: string }
     strategy: { type: string, enum: [CONTRACTUAL, ROUND_ROBIN] }
     status: { type: string }
+    pendingVendorName:
+      type: string
+      description: The vendor whose offer is open. Absent once the load is awarded.
+    respondsBy:
+      type: string
+      format: date-time
+      description: When the open offer lapses. Absent when no offer is open.
     awardedVendorName: { type: string }
+    awardedAt: { type: string, format: date-time }
     currentRank: { type: integer }
-    offerCount: { type: integer }
+    offersMade:
+      type: integer
+      description: How many offers the cascade has made so far, answered or not.
     createdAt: { type: string, format: date-time }
 
 Offer:
@@ -35,9 +45,14 @@ Offer:
     vendorPartnerId: { type: string, format: uuid }
     vendorName: { type: string }
     rankNo: { type: integer }
-    status: { type: string }
+    outcome:
+      type: string
+      enum: [PENDING, ACCEPTED, REJECTED, TIMED_OUT, CANCELLED]
     offeredAt: { type: string, format: date-time }
-    respondByAt: { type: string, format: date-time }
+    respondsBy:
+      type: string
+      format: date-time
+      description: When the offer lapses if the vendor has not answered.
     respondedAt: { type: string, format: date-time }
 
 AllocateRequest:
