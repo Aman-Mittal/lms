@@ -415,6 +415,10 @@ Left open by the freight-mode, warehouse and billing work, on purpose:
   report applies payments to the oldest invoice first, which is a convention,
   not what the client's remittance said. Contracts carry no payment terms, so
   ageing counts days since issue and nothing is "past due".
+- Conflicts answer 409 (`concurrent-modification`, `duplicate-resource`), not
+  500; tenant isolation is proved per resource over HTTP and per table in the
+  database; unknown properties in a request body (tenant, org id, owner) are
+  ignored and the tenant is always the caller's.
 - Of the control-tower detectors, ETA and temperature are not built. Stoppage
   is ping-driven, so a device that goes silent is not caught.
 
