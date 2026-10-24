@@ -47,6 +47,20 @@ public interface LoadLifecyclePort {
      */
     void recordAwarded(UUID loadId, UUID vendorPartnerId);
 
+    /**
+     * Records that the load's award has been withdrawn: the load returns to
+     * PLANNED with no vendor, so that sourcing can offer it again.
+     *
+     * <p>Refused with {@code load-has-active-trip} while a trip that is not
+     * cancelled is raised against it (see {@link LoadInUseGuard}); a load that
+     * has left is refused by the state machine
+     * ({@code load-illegal-transition}).
+     *
+     * <p>Idempotent: a load already PLANNED, or CANCELLED (nothing to give
+     * back), is left as it is.
+     */
+    void recordAwardWithdrawn(UUID loadId);
+
     /** Records that the load has physically left the origin. */
     void recordDispatched(UUID loadId);
 
