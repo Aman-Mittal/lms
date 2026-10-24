@@ -24,9 +24,11 @@ import java.util.function.Function;
 
 import com.lms.order.api.FreightMode;
 import com.lms.order.api.OrderPlanningPort;
+import com.lms.planning.api.LoadInUseGuard;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.LoadUnit;
+import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -44,13 +46,18 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     private final ConsignmentRepository consignments;
     private final PlanningLinks links;
     private final OrderPlanningPort orderPlanning;
+    private final List<LoadInUseGuard> inUseGuards;
+    private final TransitionAudit audit;
 
     public LoadLifecycleAdapter(LoadUnitRepository loads, ConsignmentRepository consignments,
-                                PlanningLinks links, OrderPlanningPort orderPlanning) {
+                                PlanningLinks links, OrderPlanningPort orderPlanning,
+                                List<LoadInUseGuard> inUseGuards, TransitionAudit audit) {
         this.loads = loads;
         this.consignments = consignments;
         this.links = links;
         this.orderPlanning = orderPlanning;
+        this.inUseGuards = inUseGuards;
+        this.audit = audit;
     }
 
     @Override
@@ -80,7 +87,30 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     @Override
     @Transactional
     public void recordAwarded(UUID loadId, UUID vendorPartnerId) {
-        loads.save(require(loadId).awardTo(vendorPartnerId));
+        LoadUnit before = require(loadId);
+        LoadUnit awarded = loads.save(before.awardTo(vendorPartnerId));
+        // Only a change is a transition: awarding a load to the vendor it is
+        // already awarded to is a repeat, and a repeat audits nothing.
+        if (before.status() != awarded.status()
+                || !java.util.Objects.equals(before.awardedVendorPartnerId(), vendorPartnerId)) {
+            audit.record("LOAD_AWARDED", PlanningAudit.LOAD, loadId, PlanningAudit.load(before),
+                    PlanningAudit.load(awarded));
+        }
+    }
+
+    @Override
+    @Transactional
+    public void recordAwardWithdrawn(UUID loadId) {
+        LoadUnit before = require(loadId);
+        if (before.status() == LoadUnit.LoadStatus.PLANNED
+                || before.status() == LoadUnit.LoadStatus.CANCELLED) {
+            return;
+        }
+        // Asked before anything changes: a trip raised against the load refuses.
+        inUseGuards.forEach(guard -> guard.requireNotInUse(List.of(loadId)));
+        LoadUnit planned = loads.save(before.withdrawAward());
+        audit.record("LOAD_AWARD_WITHDRAWN", PlanningAudit.LOAD, loadId,
+                PlanningAudit.load(before), PlanningAudit.load(planned));
     }
 
     /**
@@ -93,7 +123,12 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     @Override
     @Transactional
     public void recordDispatched(UUID loadId) {
-        LoadUnit load = loads.save(require(loadId).transitionTo(LoadUnit.LoadStatus.DISPATCHED));
+        LoadUnit before = require(loadId);
+        LoadUnit load = loads.save(before.transitionTo(LoadUnit.LoadStatus.DISPATCHED));
+        if (before.status() != load.status()) {
+            audit.record("LOAD_DISPATCHED", PlanningAudit.LOAD, loadId, PlanningAudit.load(before),
+                    PlanningAudit.load(load));
+        }
         if (load.freightMode() != FreightMode.LTL) {
             return;
         }
@@ -127,6 +162,9 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
             List<Consignment> arrivedDockets = advanceDockets(load, moving, arrived);
             // At a hub a docket has not been delivered; only a delivery load's have.
             delivered = load.isDelivery() ? arrivedDockets : List.of();
+            if (load.isDelivery()) {
+                auditDelivered(delivered, Consignment.ConsignmentStatus.OUT_FOR_DELIVERY);
+            }
         } else {
             delivered = deliverFullTruckload(load);
         }
@@ -134,7 +172,9 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
         // Only a dispatched load can finish. Anything else -- already
         // COMPLETED on a repeat call -- is left as it is.
         if (load.status() == LoadUnit.LoadStatus.DISPATCHED) {
-            loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+            LoadUnit completed = loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+            audit.record("LOAD_COMPLETED", PlanningAudit.LOAD, load.id(), PlanningAudit.load(load),
+                    PlanningAudit.load(completed));
         }
 
         fulfilOrders(load.tenantId(), delivered);
@@ -160,6 +200,7 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
             return List.of();
         }
         List<Consignment> delivered = new ArrayList<>();
+        List<TransitionAudit.Entry> deliveredEntries = new ArrayList<>();
         for (Consignment consignment : consignments.findOnLoad(load.tenantId(), load.id())) {
             Consignment.ConsignmentStatus status = consignment.status();
             if (consignment.isDocket() || (status != Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD
@@ -167,10 +208,24 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
                 continue;
             }
             Consignment moving = consignment.transitionTo(Consignment.ConsignmentStatus.IN_TRANSIT);
-            delivered.add(consignments.save(
-                    moving.transitionTo(Consignment.ConsignmentStatus.DELIVERED)));
+            Consignment done = consignments.save(
+                    moving.transitionTo(Consignment.ConsignmentStatus.DELIVERED));
+            delivered.add(done);
+            deliveredEntries.add(PlanningAudit.entry(consignment, done));
         }
+        audit.recordAll("CONSIGNMENT_DELIVERED", PlanningAudit.CONSIGNMENT, deliveredEntries);
         return delivered;
+    }
+
+    /** Audits dockets a delivery load has just delivered, all from the same earlier state. */
+    private void auditDelivered(List<Consignment> delivered,
+                                Consignment.ConsignmentStatus from) {
+        audit.recordAll("CONSIGNMENT_DELIVERED", PlanningAudit.CONSIGNMENT, delivered.stream()
+                .map(c -> new TransitionAudit.Entry(c.id(),
+                        com.lms.shared.config.Json.object("status", from.name(),
+                                "trackingRef", c.trackingRef()),
+                        PlanningAudit.consignment(c)))
+                .toList());
     }
 
     /**
@@ -230,7 +285,11 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
                             + " consignment(s) that have not been delivered");
         }
 
-        loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+        LoadUnit completed = loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+        if (load.status() != completed.status()) {
+            audit.record("LOAD_COMPLETED", PlanningAudit.LOAD, loadId, PlanningAudit.load(load),
+                    PlanningAudit.load(completed));
+        }
     }
 
     /**
