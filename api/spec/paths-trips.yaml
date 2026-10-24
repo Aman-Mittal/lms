@@ -341,3 +341,40 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/trips/{id}/cancellation:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Trips]
+    operationId: cancelTrip
+    summary: Cancel a trip that has not left the yard
+    description: |
+      Allowed from PLANNED, ASSIGNED, AT_ORIGIN and LOADED. Once the vehicle
+      has been dispatched the trip cannot be cancelled -- bringing the freight
+      back is a new movement, and its own trip -- and the answer is 409
+      `trip-not-cancellable`. The reason is mandatory and is recorded on the
+      trip and in the audit trail.
+
+      The load stays awarded to its vendor and a replacement trip can be
+      raised against it; no freight bill is ever raised for a cancelled trip.
+      Cancelling a trip that is already cancelled is a no-op that succeeds and
+      keeps the original reason.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelTripRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
