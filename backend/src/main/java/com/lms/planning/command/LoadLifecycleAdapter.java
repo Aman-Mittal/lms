@@ -15,12 +15,15 @@
  */
 package com.lms.planning.command;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
 import com.lms.order.api.FreightMode;
+import com.lms.order.api.OrderPlanningPort;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.LoadUnit;
@@ -39,10 +42,15 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
 
     private final LoadUnitRepository loads;
     private final ConsignmentRepository consignments;
+    private final PlanningLinks links;
+    private final OrderPlanningPort orderPlanning;
 
-    public LoadLifecycleAdapter(LoadUnitRepository loads, ConsignmentRepository consignments) {
+    public LoadLifecycleAdapter(LoadUnitRepository loads, ConsignmentRepository consignments,
+                                PlanningLinks links, OrderPlanningPort orderPlanning) {
         this.loads = loads;
         this.consignments = consignments;
+        this.links = links;
+        this.orderPlanning = orderPlanning;
     }
 
     @Override
@@ -102,27 +110,81 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     @Transactional
     public void recordTripCompleted(UUID loadId) {
         LoadUnit load = require(loadId);
-        if (load.freightMode() != FreightMode.LTL) {
-            return;
+        List<Consignment> delivered;
+        if (load.freightMode() == FreightMode.LTL) {
+            Consignment.ConsignmentStatus boarded = load.isDelivery()
+                    ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
+                    : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
+            Consignment.ConsignmentStatus moving = load.isDelivery()
+                    ? Consignment.ConsignmentStatus.OUT_FOR_DELIVERY
+                    : Consignment.ConsignmentStatus.IN_TRANSIT;
+            Consignment.ConsignmentStatus arrived = load.isDelivery()
+                    ? Consignment.ConsignmentStatus.DELIVERED
+                    : Consignment.ConsignmentStatus.ARRIVED_AT_HUB;
+            // A line haul dispatched before dispatch moved its dockets still has
+            // them boarded rather than moving; they have travelled all the same.
+            advanceDockets(load, boarded, moving);
+            List<Consignment> arrivedDockets = advanceDockets(load, moving, arrived);
+            // At a hub a docket has not been delivered; only a delivery load's have.
+            delivered = load.isDelivery() ? arrivedDockets : List.of();
+        } else {
+            delivered = deliverFullTruckload(load);
         }
-        Consignment.ConsignmentStatus boarded = load.isDelivery()
-                ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
-                : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
-        Consignment.ConsignmentStatus moving = load.isDelivery()
-                ? Consignment.ConsignmentStatus.OUT_FOR_DELIVERY
-                : Consignment.ConsignmentStatus.IN_TRANSIT;
-        Consignment.ConsignmentStatus arrived = load.isDelivery()
-                ? Consignment.ConsignmentStatus.DELIVERED
-                : Consignment.ConsignmentStatus.ARRIVED_AT_HUB;
-        // A line haul dispatched before dispatch moved its dockets still has
-        // them boarded rather than moving; they have travelled all the same.
-        advanceDockets(load, boarded, moving);
-        advanceDockets(load, moving, arrived);
 
         // Only a dispatched load can finish. Anything else -- already
         // COMPLETED on a repeat call -- is left as it is.
         if (load.status() == LoadUnit.LoadStatus.DISPATCHED) {
             loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+        }
+
+        fulfilOrders(load.tenantId(), delivered);
+    }
+
+    /**
+     * Delivers a full truckload's consignments: they board, travel and arrive
+     * in one step, because a full truckload goes from its origin straight to
+     * its consignee and nothing is tracked in between.
+     *
+     * <p>Walks the existing state machine (ASSIGNED_TO_LOAD, IN_TRANSIT,
+     * DELIVERED) in memory and writes each consignment once. Only a load that
+     * has left is delivered; a COMPLETED one is revisited too, so a load
+     * completed before this was tracked heals on its next completion call.
+     * Consignments in any other state -- already delivered, cancelled -- are
+     * skipped, so a repeat call changes nothing.
+     *
+     * @return the consignments delivered by this call
+     */
+    private List<Consignment> deliverFullTruckload(LoadUnit load) {
+        if (load.status() != LoadUnit.LoadStatus.DISPATCHED
+                && load.status() != LoadUnit.LoadStatus.COMPLETED) {
+            return List.of();
+        }
+        List<Consignment> delivered = new ArrayList<>();
+        for (Consignment consignment : consignments.findOnLoad(load.tenantId(), load.id())) {
+            Consignment.ConsignmentStatus status = consignment.status();
+            if (consignment.isDocket() || (status != Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD
+                    && status != Consignment.ConsignmentStatus.IN_TRANSIT)) {
+                continue;
+            }
+            Consignment moving = consignment.transitionTo(Consignment.ConsignmentStatus.IN_TRANSIT);
+            delivered.add(consignments.save(
+                    moving.transitionTo(Consignment.ConsignmentStatus.DELIVERED)));
+        }
+        return delivered;
+    }
+
+    /**
+     * Tells each order whose consignments are now all delivered, so that the
+     * order closes as fulfilled. One query decides which orders qualify, however
+     * many consignments were delivered; the order itself decides whether it
+     * has any demand still unplanned.
+     */
+    private void fulfilOrders(UUID tenantId, List<Consignment> delivered) {
+        Set<UUID> orderIds = delivered.stream().map(Consignment::orderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        for (UUID orderId : links.orderIdsWithNothingLeftToCarry(tenantId, orderIds)) {
+            orderPlanning.recordFulfilled(orderId);
         }
     }
 
@@ -132,14 +194,18 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
      * <p>Dockets in any other state are skipped rather than refused: on a
      * line haul's arrival, a docket already put on a delivery load must not
      * be dragged back, and on a repeat call everything has already moved.
+     *
+     * @return the dockets moved
      */
-    private void advanceDockets(LoadUnit load, Consignment.ConsignmentStatus from,
-                                Consignment.ConsignmentStatus to) {
+    private List<Consignment> advanceDockets(LoadUnit load, Consignment.ConsignmentStatus from,
+                                             Consignment.ConsignmentStatus to) {
+        List<Consignment> moved = new ArrayList<>();
         for (Consignment docket : consignments.findOnLoad(load.tenantId(), load.id())) {
             if (docket.isDocket() && docket.status() == from) {
-                consignments.save(docket.transitionTo(to));
+                moved.add(consignments.save(docket.transitionTo(to)));
             }
         }
+        return moved;
     }
 
     @Override
