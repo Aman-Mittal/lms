@@ -21,7 +21,6 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import com.lms.execution.command.TripCommandService;
-import com.lms.execution.command.TripRepository;
 import com.lms.order.command.OrderCommandService;
 import com.lms.order.command.domain.SalesOrder;
 import com.lms.order.api.MaterialClass;
@@ -68,8 +67,6 @@ public class SourcingLifecycleSteps {
     @Autowired
     private TripCommandService trips;
     @Autowired
-    private TripRepository tripRepository;
-    @Autowired
     private JdbcClient jdbc;
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -101,10 +98,7 @@ public class SourcingLifecycleSteps {
 
     @Given("trip {string} has been cancelled")
     public void tripCancelled(String tripNo) {
-        inTransaction(() -> {
-            var trip = tripRepository.findById(world.ref("trip:" + tripNo)).orElseThrow();
-            return tripRepository.save(trip.cancel());
-        });
+        trips.cancel(world.ref("trip:" + tripNo), "Cancelled for the scenario");
     }
 
     @Given("{string} has been tallied {int} awards this month")
