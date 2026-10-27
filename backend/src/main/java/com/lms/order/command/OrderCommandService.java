@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.lms.masterdata.api.PartnerStandingPort;
 import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
@@ -61,17 +62,20 @@ public class OrderCommandService {
     private final OrderLineRepository lines;
     private final ApplicationEventPublisher events;
     private final TerminalCategoryPort terminalCategories;
+    private final PartnerStandingPort partners;
     private final List<OrderCancellationHook> cancellationHooks;
     private final TransitionAudit audit;
 
     public OrderCommandService(SalesOrderRepository orders, OrderLineRepository lines,
                                ApplicationEventPublisher events,
                                TerminalCategoryPort terminalCategories,
+                               PartnerStandingPort partners,
                                List<OrderCancellationHook> cancellationHooks, TransitionAudit audit) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
         this.terminalCategories = terminalCategories;
+        this.partners = partners;
         this.cancellationHooks = cancellationHooks;
         this.audit = audit;
     }
@@ -102,6 +106,11 @@ public class OrderCommandService {
                            UUID destinationHubTerminalId) {
         UUID tenantId = TenantContext.requireTenantId();
 
+        // Ids from the body, looked up under row-level security: a foreign
+        // tenant's partner or terminal reads as absent, exactly as a made-up one.
+        requirePartner(customerPartnerId);
+        requireTerminal(originTerminalId);
+
         orders.findByOrderNo(tenantId, orderNo).ifPresent(existing -> {
             throw new BusinessRuleViolationException("order-no-taken",
                     "An order numbered " + orderNo + " already exists");
@@ -123,6 +132,18 @@ public class OrderCommandService {
                         "customerPartnerId", raised.customerPartnerId().toString(),
                         "freightMode", raised.freightMode().name()));
         return raised.id();
+    }
+
+    private void requirePartner(UUID partnerId) {
+        if (partnerId != null && !partners.exists(partnerId)) {
+            throw new ResourceNotFoundException("BusinessPartner", partnerId);
+        }
+    }
+
+    private void requireTerminal(UUID terminalId) {
+        if (terminalId != null && terminalCategories.functionalCategoryOf(terminalId).isEmpty()) {
+            throw new ResourceNotFoundException("Terminal", terminalId);
+        }
     }
 
     /**
@@ -171,6 +192,8 @@ public class OrderCommandService {
             throw new BusinessRuleViolationException("order-not-editable",
                     "Order " + order.orderNo() + " is " + order.status() + " and can no longer be amended");
         }
+        requirePartner(consigneePartnerId);
+        requireTerminal(destinationTerminalId);
 
         OrderLine line = new OrderLine(UUID.randomUUID(), tenantId, orderId, lineNo,
                 materialCode, materialDescription,
