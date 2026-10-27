@@ -64,7 +64,11 @@
     summary: One order
     responses:
       "200":
-        description: The order.
+        description: The order. Its `ETag` is the version to send in `If-Match`.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The order's version, quoted.
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Order" }
@@ -72,6 +76,31 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+
+  put:
+    tags: [Orders]
+    operationId: updateOrder
+    summary: Edit a draft order's header
+    description: |
+      Replaces the commercial header of an order that is still a draft. Refused
+      with `order-not-editable` once it is validated (use the amendment instead),
+      and with 409 `concurrent-modification` when `If-Match` is not the current
+      version. The change is audited with before and after.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateOrderRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/orders/{id}/lines:
   parameters:
@@ -112,6 +141,95 @@
       "201": { $ref: "#/components/responses/Created" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+  put:
+    tags: [Orders]
+    operationId: replaceOrderLines
+    summary: Replace the lines of a draft order
+    description: |
+      Replaces every line of a draft order with the given set, atomically.
+      Refused with `order-not-editable` once the order is validated and with 409
+      `concurrent-modification` when `If-Match` is not the current version.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReplaceOrderLinesRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/lines/{lineId}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the order.
+    - name: lineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the line.
+  delete:
+    tags: [Orders]
+    operationId: removeOrderLine
+    summary: Remove a line from a draft order
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/amend:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Orders]
+    operationId: amendOrder
+    summary: Amend a validated order
+    description: |
+      The controlled way to change demand after validation. Allowed only while
+      the order is VALIDATED and no consignment has been cut from it; the order
+      is validated again against the result in the same transaction, stays
+      VALIDATED, and its version moves on. The amendment is audited as
+      `ORDER_AMENDED` with before and after. Refused, all 409:
+      `order-not-amendable` for a cancelled or fulfilled order,
+      `order-has-consignments` once freight has been cut (including a partly or
+      fully planned order), `order-not-validated` for a draft (edit it),
+      `order-validation-failed` when the amended order would not validate, and
+      `concurrent-modification` when `If-Match` is not the current version.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AmendOrderRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 
