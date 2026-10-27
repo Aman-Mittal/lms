@@ -149,7 +149,7 @@ public class MilkRunRouteCommandService {
                     stop.plannedDwellMin()));
         }
 
-        audit.record("MILK_RUN_ROUTE_PUBLISHED", "MILK_RUN_ROUTE", published.id(), null,
+        audit.recordAtomically("MILK_RUN_ROUTE_PUBLISHED", "MILK_RUN_ROUTE", published.id(), null,
                 Json.object("code", published.code(),
                         "effectiveFrom", effectiveFrom.toString(),
                         "days", published.daysOfWeek(),

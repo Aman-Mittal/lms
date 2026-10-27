@@ -80,7 +80,7 @@ public class AccessPolicyCommandService {
 
         AccessPolicy created = policies.save(AccessPolicy.create(UUID.randomUUID(), tenantId,
                 code, action, effect, description, validated, enabled));
-        audit.record("ACCESS_POLICY_CREATED", "ACCESS_POLICY", created.id(), null,
+        audit.recordAtomically("ACCESS_POLICY_CREATED", "ACCESS_POLICY", created.id(), null,
                 snapshot(created));
         return created.id();
     }
@@ -92,7 +92,7 @@ public class AccessPolicyCommandService {
         AccessPolicy existing = require(policyId);
         AccessPolicy revised = policies.save(
                 existing.revise(effect, description, validated(condition), enabled));
-        audit.record("ACCESS_POLICY_REVISED", "ACCESS_POLICY", revised.id(),
+        audit.recordAtomically("ACCESS_POLICY_REVISED", "ACCESS_POLICY", revised.id(),
                 snapshot(existing), snapshot(revised));
     }
 
@@ -101,7 +101,7 @@ public class AccessPolicyCommandService {
     public void delete(UUID policyId) {
         AccessPolicy existing = require(policyId);
         policies.delete(existing);
-        audit.record("ACCESS_POLICY_DELETED", "ACCESS_POLICY", existing.id(),
+        audit.recordAtomically("ACCESS_POLICY_DELETED", "ACCESS_POLICY", existing.id(),
                 snapshot(existing), null);
     }
 
@@ -161,7 +161,7 @@ public class AccessPolicyCommandService {
             throw new ResourceNotFoundException("AppUser", userId);
         }
 
-        audit.record("USER_ACCESS_ATTRIBUTES_SET", "APP_USER", userId, null,
+        audit.recordAtomically("USER_ACCESS_ATTRIBUTES_SET", "APP_USER", userId, null,
                 Json.object("region", attributes.region(),
                         "freightModes", attributes.freightModes() == null ? null
                                 : String.join(",", attributes.freightModes()),
