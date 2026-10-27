@@ -143,7 +143,7 @@ public class ClientCreditNoteService {
                     lineNo++, credit));
         }
 
-        audit.record("CLIENT_CREDIT_NOTE_ISSUED", "CLIENT_CREDIT_NOTE", note.id(), null,
+        audit.recordAtomically("CLIENT_CREDIT_NOTE_ISSUED", "CLIENT_CREDIT_NOTE", note.id(), null,
                 Json.object("invoice", invoice.invoiceNo(),
                         "client", invoice.clientPartnerId().toString(),
                         "period", invoice.periodStart().toString(),
