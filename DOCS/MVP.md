@@ -285,7 +285,8 @@ request after a quiet spell pays the start-up cost above.
 - A client is a CUSTOMER partner holding a versioned, immutable client
   contract. Completed full-truckload trips become transport charges for each
   contracted client aboard (part-load dockets are billed as docket receivables
-  instead, never twice); warehousing arrives as idempotent service usage
+  instead, never twice); a warehouse hand-off to transport is charged to the client that owns
+  the goods (handling out and transport); warehousing arrives as idempotent service usage
   (storage pallet-days, handling in and out, value-added services).
 - A month is invoiced once per client however often the run is repeated, a
   billed month is closed (late charges go on the next invoice), and an invoice
@@ -410,7 +411,8 @@ cold-storage archival.
 Left open by the freight-mode, warehouse and billing work, on purpose:
 
 - Control-tower settlement holds are per trip, so they do not freeze a rail leg's freight bill.
-- A warehouse hand-off consignment has no sales order, so client billing skips it.
+- A warehouse hand-off is billed to the owning client as handling out plus transport on gross
+  weight, at contract rates, idempotent per unit; the carrier cost of that movement is not matched to it.
 - A payment is recorded against the client, not matched to invoices: the ageing
   report applies payments to the oldest invoice first, which is a convention,
   not what the client's remittance said. Contracts carry no payment terms, so
