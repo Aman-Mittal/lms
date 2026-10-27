@@ -105,7 +105,7 @@ public class InventoryCommandService {
         UUID movementId = ledger.post(bin.warehouseId(), MovementType.ADJUST, LocationType.BIN,
                 binId, skuId, lot, quantity, null, reason.strip(), actor, now);
 
-        audit.record("STOCK_ADJUSTED", "STOCK_MOVEMENT", movementId,
+        audit.recordAtomically("STOCK_ADJUSTED", "STOCK_MOVEMENT", movementId,
                 Json.object("onHand", String.valueOf(onHand)),
                 Json.object("onHand", String.valueOf(onHand + quantity),
                         "reason", reason.strip()));
@@ -151,7 +151,7 @@ public class InventoryCommandService {
         ledger.post(bin.warehouseId(), MovementType.ADJUST, LocationType.BIN, binId, skuId, lot,
                 quantity, reference, why, actor, now);
 
-        audit.record("QUARANTINE_RELEASED", "STOCK_MOVEMENT", movementId,
+        audit.recordAtomically("QUARANTINE_RELEASED", "STOCK_MOVEMENT", movementId,
                 Json.object("quarantined", String.valueOf(held)),
                 Json.object("quarantined", String.valueOf(held - quantity),
                         "binId", binId.toString(), "reason", why));
@@ -186,7 +186,7 @@ public class InventoryCommandService {
         UUID movementId = ledger.post(warehouseId, MovementType.ADJUST, LocationType.QUARANTINE,
                 warehouseId, skuId, lot, -quantity, null, why, actor, now);
 
-        audit.record("QUARANTINE_WRITTEN_OFF", "STOCK_MOVEMENT", movementId,
+        audit.recordAtomically("QUARANTINE_WRITTEN_OFF", "STOCK_MOVEMENT", movementId,
                 Json.object("quarantined", String.valueOf(held)),
                 Json.object("quarantined", String.valueOf(held - quantity), "reason", why));
         events.publishEvent(new QuarantineResolved(TenantContext.requireTenantId(), movementId,

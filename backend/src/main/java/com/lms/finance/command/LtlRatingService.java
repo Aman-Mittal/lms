@@ -82,7 +82,7 @@ public class LtlRatingService {
             throw new BusinessRuleViolationException("terminal-unknown",
                     "Terminal " + terminalId + " does not exist and cannot be zoned");
         }
-        audit.record("LTL_ZONE_ASSIGNED", "TERMINAL", terminalId, null,
+        audit.recordAtomically("LTL_ZONE_ASSIGNED", "TERMINAL", terminalId, null,
                 Json.object("zone", zone, "outOfDeliveryArea", String.valueOf(outOfDeliveryArea)));
     }
 
@@ -136,7 +136,7 @@ public class LtlRatingService {
         });
 
         LtlRateCard published = cards.save(card);
-        audit.record("LTL_RATE_CARD_PUBLISHED", "LTL_RATE_CARD", published.id(), null,
+        audit.recordAtomically("LTL_RATE_CARD_PUBLISHED", "LTL_RATE_CARD", published.id(), null,
                 Json.object("code", published.code(),
                         "lane", published.originZone() + "-" + published.destinationZone(),
                         "effectiveFrom", published.effectiveFrom().toString(),
