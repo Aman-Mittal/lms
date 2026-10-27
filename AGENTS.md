@@ -243,6 +243,17 @@ Rules that make the split worth having:
   `LoadInUseGuard` (execution implements it: a live trip on the load) and
   `LoadCancellationHook` (sourcing implements it: withdraw the open allocation),
   so planning never depends on execution or sourcing.
+  `order::api` also defines `OrderAmendmentGuard` (planning implements it: refuse
+  while a live consignment exists), which is what lets a validated order be
+  amended only before freight is cut from it.
+- **Order edits carry `If-Match`.** `GET /orders/{id}` returns the version as its
+  `ETag`; the edit endpoints (`PUT /orders/{id}`, `PUT /orders/{id}/lines`,
+  `DELETE /orders/{id}/lines/{lineId}`, `POST /orders/{id}/amend`) require it in
+  `If-Match` (quoted or bare, never `*`) and a stale value is 409
+  `concurrent-modification`. A draft is edited freely; a VALIDATED order with no
+  consignments only through the amendment, which validates it again and audits
+  `ORDER_AMENDED` with before and after. Other update endpoints (terminals) still
+  take the version in the body; the header form is the one to copy.
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
