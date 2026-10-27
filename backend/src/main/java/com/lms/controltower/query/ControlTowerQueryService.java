@@ -105,6 +105,20 @@ public class ControlTowerQueryService {
                 view.raisedAt().atOffset(ZoneOffset.UTC), view.id()).encode());
     }
 
+    /** The terms a trip is being watched against, if it is watched. */
+    public Optional<TripWatchView> watchOf(UUID tripId) {
+        return jdbc.sql("""
+                        SELECT trip_id, committed_arrival_at, temp_min_c AS temp_min_c,
+                               temp_max_c AS temp_max_c, temp_out_since AS outside_range_since,
+                               last_temp_at AS last_reading_at
+                          FROM trip_watch
+                         WHERE trip_id = :tripId
+                        """)
+                .param("tripId", tripId)
+                .query(TripWatchView.class)
+                .optional();
+    }
+
     /** Every step the ticket has been through, oldest first. */
     public List<ExceptionActivityView> historyOf(UUID exceptionId) {
         return jdbc.sql("""
