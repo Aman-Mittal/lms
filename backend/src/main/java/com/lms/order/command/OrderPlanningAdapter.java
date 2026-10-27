@@ -90,7 +90,21 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
         // table knows what was planned before.
         long total = lines.countByOrder(tenantId, orderId);
         long planned = lines.countPlannedByOrder(tenantId, orderId);
-        orders.save(order.withCoverage((int) planned, (int) total));
+        SalesOrder covered = orders.save(order.withCoverage((int) planned, (int) total));
+        // Only a change of status is a transition. Planning a further line of
+        // an order that was already partly planned, or being told the same
+        // thing twice, moves nothing and audits nothing.
+        if (order.status() != covered.status()) {
+            audit.record(switch (covered.status()) {
+                        case PARTIALLY_PLANNED -> "ORDER_PARTIALLY_PLANNED";
+                        case FULLY_PLANNED -> "ORDER_FULLY_PLANNED";
+                        default -> "ORDER_COVERAGE_CHANGED";
+                    }, OrderCommandService.AUDIT_TYPE, orderId,
+                    Json.object("status", order.status().name()),
+                    Json.object("status", covered.status().name(),
+                            "plannedLines", String.valueOf(planned),
+                            "totalLines", String.valueOf(total)));
+        }
     }
 
     @Override

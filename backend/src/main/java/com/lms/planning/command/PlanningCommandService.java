@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.lms.masterdata.api.FleetCapacityPort;
+import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
 import com.lms.order.api.OrderPlanningPort;
@@ -62,11 +63,12 @@ public class PlanningCommandService {
     private final PlanningLinks links;
     private final ApplicationEventPublisher events;
     private final TransitionAudit audit;
+    private final TerminalCategoryPort terminals;
 
     public PlanningCommandService(OrderPlanningPort orderPlanning, FleetCapacityPort fleetCapacity,
                                   ConsignmentRepository consignments, LoadUnitRepository loads,
                                   PlanningLinks links, ApplicationEventPublisher events,
-                                  TransitionAudit audit) {
+                                  TransitionAudit audit, TerminalCategoryPort terminals) {
         this.orderPlanning = orderPlanning;
         this.fleetCapacity = fleetCapacity;
         this.consignments = consignments;
@@ -74,6 +76,7 @@ public class PlanningCommandService {
         this.links = links;
         this.events = events;
         this.audit = audit;
+        this.terminals = terminals;
     }
 
     // ------------------------------------------------------------ 3.4.1
@@ -276,6 +279,12 @@ public class PlanningCommandService {
             throw new BusinessRuleViolationException("load-no-taken",
                     "A load numbered " + loadNo + " already exists");
         });
+
+        // From the body, so looked up under row-level security: another
+        // tenant's terminal reads as absent.
+        if (terminals.functionalCategoryOf(originTerminalId).isEmpty()) {
+            throw new ResourceNotFoundException("Terminal", originTerminalId);
+        }
 
         FleetCapacityPort.VehicleCapacity capacity = fleetCapacity.capacityOf(vehicleId)
                 .orElseThrow(() -> new BusinessRuleViolationException("vehicle-unavailable",

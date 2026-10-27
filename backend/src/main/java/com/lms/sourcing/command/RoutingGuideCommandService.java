@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.masterdata.api.PartnerStandingPort;
+import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -45,14 +46,17 @@ public class RoutingGuideCommandService {
     private final RoutingGuideEntryRepository entries;
     private final PartnerStandingPort partners;
     private final JdbcClient jdbc;
+    private final TerminalCategoryPort terminals;
 
     public RoutingGuideCommandService(RoutingGuideRepository guides,
                                       RoutingGuideEntryRepository entries,
-                                      PartnerStandingPort partners, JdbcClient jdbc) {
+                                      PartnerStandingPort partners, JdbcClient jdbc,
+                                      TerminalCategoryPort terminals) {
         this.guides = guides;
         this.entries = entries;
         this.partners = partners;
         this.jdbc = jdbc;
+        this.terminals = terminals;
     }
 
     /**
@@ -70,6 +74,14 @@ public class RoutingGuideCommandService {
     public UUID define(UUID orgUnitId, UUID originTerminalId, UUID destinationTerminalId,
                        String vehicleType, RoutingGuide.Strategy strategy) {
         UUID tenantId = TenantContext.requireTenantId();
+
+        // From the body, so looked up under row-level security: another
+        // tenant's terminal reads as absent.
+        for (UUID terminalId : new UUID[] {originTerminalId, destinationTerminalId}) {
+            if (terminals.functionalCategoryOf(terminalId).isEmpty()) {
+                throw new ResourceNotFoundException("Terminal", terminalId);
+            }
+        }
 
         boolean exists = jdbc.sql("""
                         SELECT EXISTS (SELECT 1 FROM routing_guide

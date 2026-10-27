@@ -196,7 +196,7 @@ class AuditTransitionIntegrationTest {
         });
 
         assertThat(actions(orderId)).containsExactly("ORDER_RAISED", "ORDER_VALIDATED",
-                "ORDER_CANCELLED");
+                "ORDER_FULLY_PLANNED", "ORDER_CANCELLED");
         assertThat(actions(consignmentOf(orderId)))
                 .containsExactly("CONSIGNMENT_GENERATED", "CONSIGNMENT_ASSIGNED",
                         "CONSIGNMENT_CANCELLED");
@@ -222,7 +222,8 @@ class AuditTransitionIntegrationTest {
 
         // The consignment's CONSIGNMENT_CANCELLED row was inserted before the
         // load's write failed; it must have gone with the rest.
-        assertThat(actions(orderId)).containsExactly("ORDER_RAISED", "ORDER_VALIDATED");
+        assertThat(actions(orderId)).containsExactly("ORDER_RAISED", "ORDER_VALIDATED",
+                "ORDER_FULLY_PLANNED");
         assertThat(actions(consignmentId)).containsExactly("CONSIGNMENT_GENERATED",
                 "CONSIGNMENT_ASSIGNED");
         assertThat(actions(loadId)).containsExactly("LOAD_OPENED", "LOAD_PLANNED");

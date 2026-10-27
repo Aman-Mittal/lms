@@ -162,9 +162,6 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
             List<Consignment> arrivedDockets = advanceDockets(load, moving, arrived);
             // At a hub a docket has not been delivered; only a delivery load's have.
             delivered = load.isDelivery() ? arrivedDockets : List.of();
-            if (load.isDelivery()) {
-                auditDelivered(delivered, Consignment.ConsignmentStatus.OUT_FOR_DELIVERY);
-            }
         } else {
             delivered = deliverFullTruckload(load);
         }
@@ -217,17 +214,6 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
         return delivered;
     }
 
-    /** Audits dockets a delivery load has just delivered, all from the same earlier state. */
-    private void auditDelivered(List<Consignment> delivered,
-                                Consignment.ConsignmentStatus from) {
-        audit.recordAll("CONSIGNMENT_DELIVERED", PlanningAudit.CONSIGNMENT, delivered.stream()
-                .map(c -> new TransitionAudit.Entry(c.id(),
-                        com.lms.shared.config.Json.object("status", from.name(),
-                                "trackingRef", c.trackingRef()),
-                        PlanningAudit.consignment(c)))
-                .toList());
-    }
-
     /**
      * Tells each order whose consignments are now all delivered, so that the
      * order closes as fulfilled. One query decides which orders qualify, however
@@ -250,16 +236,22 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
      * line haul's arrival, a docket already put on a delivery load must not
      * be dragged back, and on a repeat call everything has already moved.
      *
-     * @return the dockets moved
+     * @return the dockets moved, each audited as CONSIGNMENT_ plus the status it reached
      */
     private List<Consignment> advanceDockets(LoadUnit load, Consignment.ConsignmentStatus from,
                                              Consignment.ConsignmentStatus to) {
         List<Consignment> moved = new ArrayList<>();
+        List<TransitionAudit.Entry> movedEntries = new ArrayList<>();
         for (Consignment docket : consignments.findOnLoad(load.tenantId(), load.id())) {
             if (docket.isDocket() && docket.status() == from) {
-                moved.add(consignments.save(docket.transitionTo(to)));
+                Consignment next = consignments.save(docket.transitionTo(to));
+                moved.add(next);
+                movedEntries.add(PlanningAudit.entry(docket, next));
             }
         }
+        // One statement for the whole movement; none when nothing moved, which
+        // is what a repeated completion of the same load does.
+        audit.recordAll("CONSIGNMENT_" + to.name(), PlanningAudit.CONSIGNMENT, movedEntries);
         return moved;
     }
 

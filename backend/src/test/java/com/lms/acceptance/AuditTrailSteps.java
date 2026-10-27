@@ -27,8 +27,6 @@ import com.lms.order.command.domain.SalesOrder;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.planning.command.ConsignmentRepository;
 import com.lms.planning.command.PlanningCommandService;
-import com.lms.shared.audit.AuditTrail;
-import com.lms.shared.config.Json;
 import com.lms.shared.tenant.TenantContext;
 import com.lms.sourcing.command.RoutingGuideEntryRepository;
 import com.lms.sourcing.command.RoutingGuideRepository;
@@ -36,10 +34,8 @@ import com.lms.sourcing.command.domain.RoutingGuide;
 import com.lms.sourcing.command.domain.RoutingGuideEntry;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
-import io.cucumber.java.en.When;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -71,12 +67,7 @@ public class AuditTrailSteps {
     @Autowired
     private RoutingGuideEntryRepository guideEntries;
     @Autowired
-    private AuditTrail auditTrail;
-    @Autowired
     private JdbcClient jdbc;
-
-    private UUID probeId;
-    private Throwable probeFailure;
     @Autowired
     private PlatformTransactionManager transactionManager;
 
@@ -145,6 +136,12 @@ public class AuditTrailSteps {
         assertMoved(action, allocationIds(loadNo).get(0), from, to);
     }
 
+    @Then("the audit entry {string} of the shipment of order {string} for {string} moved status from {string} to {string}")
+    public void shipmentMoved(String action, String orderNo, String consigneeCode, String from,
+                              String to) {
+        assertMoved(action, shipmentId(orderNo, consigneeCode), from, to);
+    }
+
     @Then("the audit entry {string} of load {string} has no before state")
     public void noBefore(String action, String loadNo) {
         Map<String, Object> row = single(action, world.ref("load:" + loadNo));
@@ -152,54 +149,18 @@ public class AuditTrailSteps {
         assertThat(String.valueOf(row.get("after_state"))).contains("status");
     }
 
+    @Then("the audit entry {string} of order {string} records {int} of {int} lines planned")
+    public void recordsCoverage(String action, String orderNo, int planned, int total) {
+        Map<String, Object> row = single(action, world.ref("order:" + orderNo));
+        assertThat(String.valueOf(row.get("after_state")))
+                .contains("\"plannedLines\": \"" + planned + "\"")
+                .contains("\"totalLines\": \"" + total + "\"");
+    }
+
     @Then("the audit entry {string} of order {string} carries the reason {string}")
     public void carriesReason(String action, String orderNo, String reason) {
         Map<String, Object> row = single(action, world.ref("order:" + orderNo));
         assertThat(String.valueOf(row.get("after_state"))).contains(reason);
-    }
-
-
-    // ------------------------------------------------------- atomic entries
-
-    @When("an atomic audit entry is written and its transaction is rolled back")
-    public void atomicEntryRolledBack() {
-        probeId = UUID.randomUUID();
-        TenantContext.requireTenantId();
-        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            auditTrail.recordAtomically("PROBE_ATOMIC", "PROBE", probeId, null,
-                    Json.object("k", "v"));
-            status.setRollbackOnly();
-        });
-    }
-
-    @When("an atomic audit entry is written outside any transaction")
-    public void atomicEntryOutsideTransaction() {
-        probeFailure = null;
-        try {
-            auditTrail.recordAtomically("PROBE_ATOMIC", "PROBE", UUID.randomUUID(), null,
-                    Json.object("k", "v"));
-        } catch (IllegalTransactionStateException e) {
-            probeFailure = e;
-        }
-    }
-
-    @Then("the audit log holds no entry for that change")
-    public void noProbeEntry() {
-        assertThat(assertTrailActions(List.of(probeId))).isEmpty();
-    }
-
-    @Then("the audit write is refused for want of a transaction")
-    public void probeRefused() {
-        assertThat(probeFailure).isInstanceOf(IllegalTransactionStateException.class);
-    }
-
-    private List<String> assertTrailActions(List<UUID> resources) {
-        return inTransaction(() -> jdbc.sql(
-                        "SELECT action FROM audit_log WHERE tenant_id = :tenant"
-                                + " AND resource_id IN (:ids)")
-                .param("tenant", TenantContext.requireTenantId())
-                .param("ids", resources)
-                .query(String.class).list());
     }
 
     // ---------------------------------------------------------------- helpers
