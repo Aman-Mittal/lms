@@ -38,6 +38,13 @@
  * outbound order rather than a trip, and one with no trip never holds
  * settlement.
  *
+ * <p>Two more detectors run off telematics events. A trip given terms through
+ * a trip watch -- the arrival it committed to, the temperature band its cargo
+ * must stay in -- raises an ETA_DELAY ticket when the projected arrival is later
+ * than committed by more than the tenant's tolerance, and a TEMPERATURE_EXCURSION
+ * ticket when readings stay out of band for longer than the tenant's duration.
+ * Each is at most one unclosed ticket per trip and kind.
+ *
  * <p>Uses {@code identity::access} to tell the access decision point whether a
  * ticket is holding money, which is what decides who may close it.
  */
