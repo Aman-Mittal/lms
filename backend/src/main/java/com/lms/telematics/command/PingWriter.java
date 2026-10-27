@@ -55,7 +55,7 @@ public class PingWriter {
         StringBuilder sql = new StringBuilder("""
                 INSERT INTO gps_ping
                     (id, tenant_id, vehicle_id, trip_id, recorded_at, lat, lon,
-                     speed_kph, heading_deg, accuracy_m, ignition_on, source, created_at)
+                     speed_kph, heading_deg, accuracy_m, ignition_on, source, temperature_c, created_at)
                 VALUES
                 """);
 
@@ -73,6 +73,7 @@ public class PingWriter {
                     .append(", :accuracy").append(i)
                     .append(", :ignition").append(i)
                     .append(", :source").append(i)
+                    .append(", :temperature").append(i)
                     .append(", :createdAt").append(i)
                     .append(")");
         }
@@ -93,6 +94,7 @@ public class PingWriter {
                     .param("accuracy" + i, ping.accuracyM())
                     .param("ignition" + i, ping.ignitionOn())
                     .param("source" + i, ping.source())
+                    .param("temperature" + i, ping.temperatureC())
                     .param("createdAt" + i, ping.createdAt().atOffset(ZoneOffset.UTC));
         }
         statement.update();

@@ -74,6 +74,10 @@ public final class PingSanityFilter {
      */
     private static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(5);
 
+    /** The range of cargo temperatures a reefer probe can truthfully report. */
+    private static final double MIN_PLAUSIBLE_TEMPERATURE_C = -60;
+    private static final double MAX_PLAUSIBLE_TEMPERATURE_C = 100;
+
     private PingSanityFilter() {
     }
 
@@ -113,6 +117,14 @@ public final class PingSanityFilter {
 
         if (ping.recordedAt().isAfter(now.plus(MAX_CLOCK_SKEW))) {
             return Optional.of("recorded in the future at " + ping.recordedAt());
+        }
+
+        // A probe that has lost its sensor reports an extreme, and an extreme
+        // would raise a temperature ticket for a load that is fine.
+        if (ping.temperatureC() != null
+                && (ping.temperatureC().doubleValue() < MIN_PLAUSIBLE_TEMPERATURE_C
+                || ping.temperatureC().doubleValue() > MAX_PLAUSIBLE_TEMPERATURE_C)) {
+            return Optional.of("implausible cargo temperature of " + ping.temperatureC() + " C");
         }
 
         if (ping.speedKph() != null

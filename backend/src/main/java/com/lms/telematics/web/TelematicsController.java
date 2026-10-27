@@ -79,7 +79,7 @@ public class TelematicsController {
         PingIngestPort.IngestResult result = ingest.ingest(request.pings().stream()
                 .map(p -> new PingIngestPort.PingReport(p.vehicleId(), p.recordedAt(),
                         p.lat(), p.lon(), p.speedKph(), p.headingDeg(), p.accuracyM(),
-                        p.ignitionOn(), p.source()))
+                        p.ignitionOn(), p.source(), p.temperatureC()))
                 .toList());
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(result);
@@ -146,6 +146,7 @@ public class TelematicsController {
             BigDecimal headingDeg,
             BigDecimal accuracyM,
             Boolean ignitionOn,
-            String source) {
+            String source,
+            BigDecimal temperatureC) {
     }
 }

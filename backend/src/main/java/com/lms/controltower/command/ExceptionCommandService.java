@@ -269,6 +269,48 @@ public class ExceptionCommandService {
     }
 
     /**
+     * Raises the ticket an ETA or temperature detector found, unless the trip
+     * already has one of that kind that has not been closed.
+     *
+     * <p>Unguarded and idempotent, and it joins the caller's transaction so a
+     * detector's own bookkeeping and the ticket commit together. Two checks
+     * make it so: the source key turns a redelivery into a no-op, and the
+     * unclosed ticket of the same category means a trip is not flooded while
+     * one is being worked. Two deliveries racing past both meet
+     * {@code exception_ticket_open_detector_idx} instead.
+     *
+     * @return the ticket, new or existing; empty when the trip is gone or cancelled
+     */
+    @Transactional
+    public Optional<UUID> raiseForTripDetector(UUID tripId, ExceptionCategory category,
+                                               ExceptionTicket.Source source, String sourceKey,
+                                               String description, BigDecimal lat,
+                                               BigDecimal lon, Instant detectedAt) {
+        UUID tenantId = TenantContext.requireTenantId();
+        Optional<ExceptionTicket> already = tickets.findBySourceKey(tenantId, sourceKey);
+        if (already.isPresent()) {
+            return already.map(ExceptionTicket::id);
+        }
+        Optional<ExceptionTicket> unclosed = tickets.findUnclosed(tenantId, tripId,
+                category.name());
+        if (unclosed.isPresent()) {
+            return unclosed.map(ExceptionTicket::id);
+        }
+        Optional<TripLookupPort.TripSnapshot> trip = trips.find(tripId)
+                .filter(snapshot -> !snapshot.isCancelled());
+        if (trip.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ExceptionTicket.Position position = lat == null || lon == null
+                ? ExceptionTicket.Position.none()
+                : new ExceptionTicket.Position(lat, lon, ExceptionTicket.PositionSource.DETECTOR,
+                        detectedAt);
+        return Optional.of(open(tenantId, trip.get(), null, category, description, source,
+                sourceKey, position, SYSTEM_ACTOR, Instant.now()));
+    }
+
+    /**
      * A manager closes the ticket, releasing anything it was holding up.
      *
      * <p>Audited with before and after state, because for a critical ticket

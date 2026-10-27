@@ -16,10 +16,12 @@
 package com.lms.telematics.command;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +41,8 @@ import com.lms.telematics.command.domain.GpsPing;
 import com.lms.telematics.events.GeofenceCrossed;
 import com.lms.telematics.events.RouteDeviationDetected;
 import com.lms.telematics.events.StoppageDetected;
+import com.lms.telematics.events.TemperatureReported;
+import com.lms.telematics.events.TripEtaProjected;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -83,13 +87,16 @@ public class PingIngestService implements PingIngestPort {
     private final FleetCapacityPort fleet;
     private final TripTrackingPort tripTracking;
     private final ApplicationEventPublisher events;
+    private final double assumedSpeedKph;
 
     public PingIngestService(PingWriter pings, GeofencePresenceStore presence,
                              GeofenceEventRepository geofenceEvents,
                              RouteDeviationService deviations, StoppageService stoppages,
                              TerminalGeofencePort terminals, FleetCapacityPort fleet,
                              TripTrackingPort tripTracking,
-                             ApplicationEventPublisher events) {
+                             ApplicationEventPublisher events,
+                             @Value("${lms.telematics.assumed-speed-kph:40}")
+                             double assumedSpeedKph) {
         this.pings = pings;
         this.presence = presence;
         this.geofenceEvents = geofenceEvents;
@@ -99,6 +106,7 @@ public class PingIngestService implements PingIngestPort {
         this.fleet = fleet;
         this.tripTracking = tripTracking;
         this.events = events;
+        this.assumedSpeedKph = assumedSpeedKph;
     }
 
     @Override
@@ -140,6 +148,9 @@ public class PingIngestService implements PingIngestPort {
         Map<UUID, LatLon> lastPoint = new HashMap<>();
         Map<UUID, Instant> lastAt = new HashMap<>();
         Map<UUID, Boolean> knownVehicles = new HashMap<>();
+        // The latest accepted fix of each trip in the batch, for the ETA
+        // projection. Batches are sorted by device time, so the last put wins.
+        Map<UUID, TripFix> latestPerTrip = new LinkedHashMap<>();
 
         for (PingReport report : ordered) {
             UUID vehicleId = report.vehicleId();
@@ -177,16 +188,22 @@ public class PingIngestService implements PingIngestPort {
                     trip.map(TripTrackingPort.ActiveTrip::tripId).orElse(null),
                     report.recordedAt(), report.lat(), report.lon(), report.speedKph(),
                     report.headingDeg(), report.accuracyM(), report.ignitionOn(),
-                    report.source() == null ? "DEVICE" : report.source(), now);
+                    report.source() == null ? "DEVICE" : report.source(),
+                    report.temperatureC(), now);
 
             accepted.add(ping);
             lastPoint.put(vehicleId, ping.point());
             lastAt.put(vehicleId, report.recordedAt());
 
-            trip.ifPresent(active -> evaluate(tenantId, active, ping));
+            trip.ifPresent(active -> {
+                evaluate(tenantId, active, ping);
+                reportTemperature(tenantId, active, ping);
+                latestPerTrip.put(active.tripId(), new TripFix(active, ping));
+            });
         }
 
         pings.insertAll(accepted);
+        latestPerTrip.values().forEach(fix -> projectEta(tenantId, fix));
 
         if (!rejections.isEmpty()) {
             log.info("Ingested {} points, rejected {}", accepted.size(), rejections.size());
@@ -266,6 +283,42 @@ public class PingIngestService implements PingIngestPort {
                         tenantId, trip.tripId(), trip.tripNo(), stop.since(),
                         stop.stoppedMinutes(), stop.thresholdMinutes(), ping.lat(), ping.lon(),
                         ping.recordedAt(), Instant.now())));
+    }
+
+    private record TripFix(TripTrackingPort.ActiveTrip trip, GpsPing ping) {
+    }
+
+    /** One event per reading, so a consumer can time how long one stayed out of range. */
+    private void reportTemperature(UUID tenantId, TripTrackingPort.ActiveTrip trip,
+                                   GpsPing ping) {
+        if (ping.temperatureC() == null) {
+            return;
+        }
+        events.publishEvent(new TemperatureReported(tenantId, trip.tripId(), trip.tripNo(),
+                ping.temperatureC(), ping.recordedAt(), ping.lat(), ping.lon(), Instant.now()));
+    }
+
+    /**
+     * Where the trip's latest fix says it will arrive: straight-line distance
+     * to the destination at the assumed average speed, the same stand-in the
+     * progress view uses. Only for a trip that is under way; a trip still being
+     * loaded has no arrival to slip. Telematics reports the projection and
+     * judges nothing, because the committed window is not its to know.
+     */
+    private void projectEta(UUID tenantId, TripFix fix) {
+        TripTrackingPort.ActiveTrip trip = fix.trip();
+        if (trip.destinationTerminalId() == null
+                || !("IN_TRANSIT".equals(trip.status()) || "DISPATCHED".equals(trip.status()))) {
+            return;
+        }
+        terminals.centreOf(trip.destinationTerminalId()).ifPresent(destination -> {
+            double metres = GeoUtils.haversineMetres(fix.ping().point(), destination);
+            Duration remaining = Duration.ofSeconds(
+                    Math.round(metres / 1000.0 / assumedSpeedKph * 3600));
+            events.publishEvent(new TripEtaProjected(tenantId, trip.tripId(), trip.tripNo(),
+                    trip.destinationTerminalId(), fix.ping().recordedAt().plus(remaining),
+                    fix.ping().recordedAt(), fix.ping().lat(), fix.ping().lon(), Instant.now()));
+        });
     }
 
     private void record(UUID tenantId, TripTrackingPort.ActiveTrip trip, UUID terminalId,

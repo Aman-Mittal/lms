@@ -42,4 +42,19 @@ public interface ExceptionTicketRepository extends CrudRepository<ExceptionTicke
             """)
     Optional<ExceptionTicket> findOpenStoppage(@Param("tenantId") UUID tenantId,
                                                @Param("tripId") UUID tripId);
+
+    /**
+     * The ticket of this category on the trip that has not been closed, if
+     * any. Backed by {@code exception_ticket_open_detector_idx} for the
+     * detectors' categories.
+     */
+    @Query("""
+            SELECT * FROM exception_ticket
+             WHERE tenant_id = :tenantId AND trip_id = :tripId
+               AND category = :category AND status <> 'CLOSED'
+             LIMIT 1
+            """)
+    Optional<ExceptionTicket> findUnclosed(@Param("tenantId") UUID tenantId,
+                                           @Param("tripId") UUID tripId,
+                                           @Param("category") String category);
 }
