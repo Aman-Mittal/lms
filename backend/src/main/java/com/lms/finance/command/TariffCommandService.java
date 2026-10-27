@@ -94,7 +94,7 @@ public class TariffCommandService {
                 additionalDropFee, minimumCharge));
 
         // Rate changes are the mutations an auditor asks about first.
-        audit.record("TARIFF_PUBLISHED", "TARIFF", published.id(), null,
+        audit.recordAtomically("TARIFF_PUBLISHED", "TARIFF", published.id(), null,
                 Json.object("code", code, "effectiveFrom", effectiveFrom.toString(),
                         "vehicleType", vehicleType));
 
