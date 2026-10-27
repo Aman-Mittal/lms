@@ -34,6 +34,11 @@ Order:
     requestedPickupAt: { type: string, format: date-time }
     requestedDeliveryAt: { type: string, format: date-time }
     createdAt: { type: string, format: date-time }
+    version:
+      type: integer
+      format: int64
+      description: The optimistic-lock version, also the `ETag`. Send it back in
+        `If-Match` when editing the order.
 
 OrderLine:
   type: object
@@ -107,7 +112,43 @@ AddOrderLineRequest:
     volumetricDivisor: { type: number }
     consigneePartnerId: { type: string, format: uuid }
     destinationTerminalId: { type: string, format: uuid }
-  required: [lineNo, materialCode, materialClass, quantity, uom, deadWeightKg, destinationTerminalId]
+  required: [lineNo, materialCode, materialDescription, materialClass, quantity, uom, deadWeightKg, destinationTerminalId]
+
+UpdateOrderRequest:
+  type: object
+  description: |
+    The editable header of an order, stated whole: a pickup or delivery left out
+    is cleared, not kept. The order number, organisational unit, source and
+    freight mode never change. The hubs follow the order's mode: both for LTL
+    (each a HUB terminal), none for FTL.
+  properties:
+    customerPartnerId: { type: string, format: uuid }
+    originTerminalId: { type: string, format: uuid }
+    requestedPickupAt: { type: string, format: date-time }
+    requestedDeliveryAt: { type: string, format: date-time }
+    originHubTerminalId: { type: string, format: uuid }
+    destinationHubTerminalId: { type: string, format: uuid }
+  required: [customerPartnerId, originTerminalId]
+
+ReplaceOrderLinesRequest:
+  type: object
+  properties:
+    lines:
+      type: array
+      minItems: 1
+      items: { $ref: "#/components/schemas/AddOrderLineRequest" }
+  required: [lines]
+
+AmendOrderRequest:
+  type: object
+  description: Either part may be left out to keep it as it is, but not both.
+  properties:
+    header: { $ref: "#/components/schemas/UpdateOrderRequest" }
+    lines:
+      type: array
+      minItems: 1
+      description: The complete replacement set of lines.
+      items: { $ref: "#/components/schemas/AddOrderLineRequest" }
 
 OrderSlice:
   type: object

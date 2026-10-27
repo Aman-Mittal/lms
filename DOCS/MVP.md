@@ -225,6 +225,12 @@ request after a quiet spell pays the start-up cost above.
   cancelling a load left empty. An optional `reason` is recorded in the audit
   log. A part-load line haul still leaves its dockets at the hub and the order
   unfulfilled.
+- A draft order's header and lines can be edited (replace the lines, remove one).
+  A validated order that has no consignments can be amended: it is validated
+  again, stays VALIDATED and its before and after are audited. Once freight is
+  cut from it, or it is cancelled or delivered, it cannot be amended
+  (`order-has-consignments`, `order-not-amendable`). Every edit sends the
+  version it read in `If-Match`; a stale one is 409 `concurrent-modification`.
 - An LTL load consolidates dockets from many customers gathered at one origin
   hub and bound for one destination hub; capacity, dangerous goods and
   compatibility rules apply as for any load. A docket then travels twice: line

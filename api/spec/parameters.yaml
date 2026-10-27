@@ -47,3 +47,14 @@ idempotencyKey:
     a key for a *different* request is refused with 409: that is a client
     defect, and answering it with the earlier response would hide the defect
     while returning an answer to a question nobody asked.
+
+ifMatch:
+  name: If-Match
+  in: header
+  required: true
+  schema: { type: string }
+  description: |
+    The version of the resource as last read: the `ETag` of its `GET`, quoted
+    or not. A version that is no longer current is refused with 409
+    `concurrent-modification` and nothing changes, so two people editing the
+    same resource cannot overwrite each other. Mandatory; `*` is not accepted.

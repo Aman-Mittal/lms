@@ -31,6 +31,7 @@ import com.lms.masterdata.command.domain.BusinessPartner;
 import com.lms.masterdata.command.domain.Terminal;
 import com.lms.order.api.MaterialClass;
 import com.lms.order.command.OrderCommandService;
+import com.lms.order.command.OrderLineSpec;
 import com.lms.order.command.domain.SalesOrder;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.planning.command.PlanningCommandService;
@@ -268,6 +269,30 @@ class OrderLifecycleIntegrationTest {
         assertThat(jdbc.sql("SELECT version FROM consignment WHERE order_id = :o LIMIT 1")
                 .param("o", orderId).query(Long.class).single())
                 .as("delivered in one write, and not rewritten by the repeat").isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("an order with live consignments cannot be amended even when it reads as validated")
+    void liveConsignmentsRefuseAnAmendment() {
+        UUID orderId = plannedOrder("SO-AMEND", 2);
+        // As if planning had stepped back: the order reads VALIDATED and its
+        // lines are free, but the consignments cut from it are still live. The
+        // planning guard, not the status, is what has to refuse.
+        jdbc.sql("UPDATE sales_order SET status = 'VALIDATED' WHERE id = :o").param("o", orderId).update();
+        jdbc.sql("UPDATE order_line SET planned = false WHERE order_id = :o").param("o", orderId).update();
+        long version = jdbc.sql("SELECT version FROM sales_order WHERE id = :o")
+                .param("o", orderId).query(Long.class).single();
+
+        assertThatThrownBy(() -> inTenant(() -> {
+            orders.amend(orderId, version, null, List.of(new OrderLineSpec(1, "MAT-X", "x",
+                    MaterialClass.GENERAL, null, BigDecimal.ONE, "EA", new BigDecimal("10"), null, null,
+                    null, null, consignees.get(0), destination)));
+            return null;
+        })).isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                e -> assertThat(e.code()).isEqualTo("order-has-consignments"));
+
+        assertThat(jdbc.sql("SELECT count(*) FROM order_line WHERE order_id = :o")
+                .param("o", orderId).query(Integer.class).single()).isEqualTo(2);
     }
 
     // ------------------------------------------------------------- building
