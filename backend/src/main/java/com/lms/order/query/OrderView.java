@@ -38,5 +38,7 @@ public record OrderView(
         BigDecimal totalDeadWeightKg,
         boolean containsHazmat,
         String freightMode,
-        Instant createdAt) {
+        Instant createdAt,
+        /** The optimistic-lock version: the ETag, and what an edit sends back in If-Match. */
+        Long version) {
 }

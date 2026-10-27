@@ -47,6 +47,16 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
     List<Consignment> findByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
 
     /**
+     * How many of the order's consignments are not cancelled. Served by
+     * {@code consignment_order_idx}.
+     */
+    @Query("""
+            SELECT count(*) FROM consignment
+             WHERE tenant_id = :tenantId AND order_id = :orderId AND status <> 'CANCELLED'
+            """)
+    long countLiveByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
+
+    /**
      * The consignments already on a load.
      *
      * <p>Read before an assignment so the compatibility matrix can be applied

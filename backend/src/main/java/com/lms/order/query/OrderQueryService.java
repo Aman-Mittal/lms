@@ -52,7 +52,7 @@ public class OrderQueryService {
                    o.requested_pickup_at, o.requested_delivery_at,
                    agg.line_count, agg.planned_line_count,
                    agg.total_dead_weight_kg, agg.contains_hazmat,
-                   o.freight_mode, o.created_at
+                   o.freight_mode, o.created_at, o.version
               FROM sales_order o
               JOIN business_partner c ON c.id = o.customer_partner_id
               LEFT JOIN terminal t ON t.id = o.origin_terminal_id
