@@ -432,8 +432,11 @@ Left open by the freight-mode, warehouse and billing work, on purpose:
   500; tenant isolation is proved per resource over HTTP and per table in the
   database; unknown properties in a request body (tenant, org id, owner) are
   ignored and the tenant is always the caller's.
-- Of the control-tower detectors, ETA and temperature are not built. Stoppage
-  is ping-driven, so a device that goes silent is not caught.
+- The ETA and temperature detectors are event-driven and need a trip watch (V35):
+  nothing upstream carries a committed arrival or a cargo temperature band, so
+  the desk records them per trip. The projected arrival is the straight-line
+  stand-in at an assumed 40 km/h, not a routing engine, and all three
+  ping-driven detectors miss a device that goes silent.
 
 **Throughput.** Vision §5.1 targets 20,000 GPS pings/second. That is a
 production NFR. This deployment is a single 0.1-CPU instance and will sustain
