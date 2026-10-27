@@ -16,7 +16,10 @@
 package com.lms.clientbilling.query;
 
 import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -91,5 +94,28 @@ public class ClientDirectory {
                 .param("loadId", loadId)
                 .query(ClientShare.class)
                 .list();
+    }
+
+    /**
+     * Who owns each of these SKUs; a SKU with no owner, which the tenant holds
+     * for itself, is absent from the answer.
+     */
+    public Map<UUID, UUID> ownersOf(Collection<UUID> skuIds) {
+        Map<UUID, UUID> owners = new HashMap<>();
+        if (skuIds.isEmpty()) {
+            return owners;
+        }
+        jdbc.sql("""
+                        SELECT id, owner_partner_id FROM sku
+                         WHERE id IN (:ids) AND owner_partner_id IS NOT NULL
+                        """)
+                .param("ids", skuIds)
+                .query((rs, row) -> {
+                    owners.put(rs.getObject("id", UUID.class),
+                            rs.getObject("owner_partner_id", UUID.class));
+                    return null;
+                })
+                .list();
+        return owners;
     }
 }
