@@ -417,7 +417,8 @@ Organisational units are now refused centrally in `PolicyDecisionPoint.permitsIn
 (403, identical for a foreign and a nonexistent unit). Every other id a service
 takes from a body must be looked up under RLS (which makes a foreign id read as
 absent) and never trusted because the database accepted the insert. Only the org
-unit path is covered by a test today; auditing the rest is open work.
+unit path and the ids listed in `ForeignReferenceApiTest` are covered by tests
+today; the rest are listed under known defects.
 
 ---
 
@@ -600,16 +601,30 @@ includes production, after the image has been built and pushed.
 - Two audit mechanisms now exist side by side: `TransitionAudit` (batched, for
   bulk transitions) and `AuditTrail.recordAtomically` (single). They should be
   one.
-- Order coverage changes (FULLY_PLANNED) and LTL docket movements are not
-  audited. Telematics is deliberately not audited (a stoppage or deviation
-  already becomes a control-tower ticket with its own history).
+- Telematics is deliberately not audited (a stoppage or deviation already
+  becomes a control-tower ticket with its own history). Order coverage changes
+  (`ORDER_PARTIALLY_PLANNED`, `ORDER_FULLY_PLANNED`) and LTL docket movements
+  (`CONSIGNMENT_IN_TRANSIT`, `_ARRIVED_AT_HUB`, `_OUT_FOR_DELIVERY`,
+  `_DELIVERED`, one batched row-set per movement) are audited through
+  `TransitionAudit`. `ORDER_PARTIALLY_PLANNED` has no scenario: planning draws
+  every plannable line in one call, so a partial state is not reachable through
+  the services today.
 - Cancelling an order or allocation withdraws sourcing work, but a trip already
   raised on a load is refused (`load-has-active-trip`) rather than cancelled:
   cancel the trip first.
 - Existing databases may hold AWARDED allocations on CANCELLED loads from before
   the lifecycle fixes; cancelling such an allocation is a no-op on the load.
-- Not every id taken from a request body has been audited for cross-tenant
-  references (see the multi-tenancy section); only org units are tested.
+- Cross-tenant body ids: `ForeignReferenceApiTest` covers order customer and
+  origin terminal, order-line consignee and destination terminal, load origin
+  terminal and vehicle, routing-guide terminals, and trip, allocation,
+  exception, consolidation and ASN references. **Not checked**: the other
+  body ids (warehouse bins and SKUs on stock and pick-wave requests, milk-run
+  stop terminals, circuit trip assignment, client-billing contract and
+  portal-user ids, LTL zone and rate-card terminals, tariff terminals, rail
+  and itinerary legs, access-attribute targets, exception assignee user).
+- `POST /orders/{id}/lines` without `materialDescription` fails with a 500
+  (the column is NOT NULL and the request does not require it); it should be
+  a 400 or default to the material code.
 
 **Deferred by design**
 
