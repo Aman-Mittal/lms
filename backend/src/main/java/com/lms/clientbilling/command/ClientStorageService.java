@@ -198,7 +198,7 @@ public class ClientStorageService {
                     .update();
         }
 
-        audit.record("CLIENT_STORAGE_COMPUTED", "CLIENT", clientPartnerId, null,
+        audit.recordAtomically("CLIENT_STORAGE_COMPUTED", "CLIENT", clientPartnerId, null,
                 Json.object("period", periodStart.toString(),
                         "palletDays", String.valueOf(palletDays),
                         "charges", String.valueOf(chargeOfContract.size())));

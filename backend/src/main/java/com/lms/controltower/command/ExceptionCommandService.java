@@ -287,7 +287,7 @@ public class ExceptionCommandService {
         ExceptionTicket closed = tickets.save(ticket.close(currentActor(), now));
         record(ticket, closed, "CLOSED", note, now);
 
-        audit.record("EXCEPTION_CLOSED", "EXCEPTION_TICKET", closed.id(),
+        audit.recordAtomically("EXCEPTION_CLOSED", "EXCEPTION_TICKET", closed.id(),
                 Json.object("status", ticket.status().name(),
                         "resolvedBy", String.valueOf(ticket.resolvedBy())),
                 Json.object("status", closed.status().name(),

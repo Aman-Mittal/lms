@@ -85,7 +85,7 @@ public class RailTariffCommandService {
                 incumbent -> tariffs.save(incumbent.closeOn(candidate.effectiveFrom().minusDays(1))));
 
         RailTariff published = tariffs.save(candidate);
-        audit.record("RAIL_TARIFF_PUBLISHED", "RAIL_TARIFF", published.id(), null,
+        audit.recordAtomically("RAIL_TARIFF_PUBLISHED", "RAIL_TARIFF", published.id(), null,
                 Json.object("code", published.code(),
                         "effectiveFrom", published.effectiveFrom().toString()));
         return published.id();

@@ -177,7 +177,7 @@ public class ClientBillingRunService {
                 .param("period", periodStart)
                 .update();
 
-        audit.record("CLIENT_INVOICE_ISSUED", "CLIENT_INVOICE", invoice.id(), null,
+        audit.recordAtomically("CLIENT_INVOICE_ISSUED", "CLIENT_INVOICE", invoice.id(), null,
                 Json.object("client", clientPartnerId.toString(),
                         "period", periodStart.toString(), "total", total.toPlainString(),
                         "tax", tax.toPlainString(),

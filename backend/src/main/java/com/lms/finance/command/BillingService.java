@@ -360,7 +360,7 @@ public class BillingService {
         FreightBill matched = bills.save(
                 bill.matchAgainst(claimedAmount, tolerancePct, toleranceAbsolute, Instant.now()));
 
-        audit.record(matched.status() == FreightBill.BillStatus.APPROVED_FOR_PAYMENT
+        audit.recordAtomically(matched.status() == FreightBill.BillStatus.APPROVED_FOR_PAYMENT
                         ? "INVOICE_APPROVED" : "INVOICE_DISPUTED",
                 "FREIGHT_BILL", matched.id(),
                 Json.object("status", bill.status().name(),
@@ -386,7 +386,7 @@ public class BillingService {
         refuseWhileHeld(bill);
         FreightBill resolved = bills.save(bill.resolveDispute(reason, Instant.now()));
 
-        audit.record("INVOICE_DISPUTE_RESOLVED", "FREIGHT_BILL", resolved.id(),
+        audit.recordAtomically("INVOICE_DISPUTE_RESOLVED", "FREIGHT_BILL", resolved.id(),
                 Json.object("status", bill.status().name()),
                 Json.object("status", resolved.status().name(), "reason", reason));
     }

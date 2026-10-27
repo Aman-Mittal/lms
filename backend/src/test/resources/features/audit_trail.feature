@@ -146,3 +146,11 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     Then the audit trail of the allocation of load "LOAD-AU-10" reads "ALLOCATION_OPENED, ALLOCATION_AWARDED, ALLOCATION_CANCELLED"
     And the audit trail of load "LOAD-AU-10" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_AWARD_WITHDRAWN"
     And the audit entry "ALLOCATION_CANCELLED" of the allocation of load "LOAD-AU-10" moved status from "AWARDED" to "CANCELLED"
+
+  Scenario: An atomic audit entry rolls back with the change it describes
+    When an atomic audit entry is written and its transaction is rolled back
+    Then the audit log holds no entry for that change
+
+  Scenario: An atomic audit entry cannot be written outside a transaction
+    When an atomic audit entry is written outside any transaction
+    Then the audit write is refused for want of a transaction
