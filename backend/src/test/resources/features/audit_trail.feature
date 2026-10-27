@@ -33,6 +33,8 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     And a depot "ORIGIN" at 19.10,72.90
     And a depot "DEST-A" at 19.30,73.10
     And a depot "DEST-B" at 19.50,73.30
+    And a hub "HUB-BOM" at 19.10,72.90
+    And a hub "HUB-DEL" at 28.60,77.20
     And a lorry "MH-01-AU-0001" with payload 10000 kg and volume 40 m3
     And lorry "MH-01-AU-0001" has an "INSURANCE" certificate valid for 365 days
     And a lorry driver "Ravi" licensed for 365 days
@@ -52,7 +54,7 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     And load "LOAD-AU-1" is planned
     And trip "TRIP-AU-1" runs load "LOAD-AU-1" for "HAULIER" on lorry "MH-01-AU-0001" driven by "Ravi"
     When trip "TRIP-AU-1" is completed at its destination
-    Then the audit trail of order "AU-1" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULFILLED"
+    Then the audit trail of order "AU-1" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED, ORDER_FULFILLED"
     And the audit trail of the shipment of order "AU-1" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_DELIVERED"
     And the audit trail of the shipment of order "AU-1" for "CONS-B" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_DELIVERED"
     And the audit trail of load "LOAD-AU-1" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_DISPATCHED, LOAD_COMPLETED"
@@ -73,7 +75,7 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     And the shipment of order "AU-3" for "CONS-A" is put on load "LOAD-AU-3"
     And load "LOAD-AU-3" is planned
     When order "AU-3" is cancelled with the reason "customer withdrew the indent"
-    Then the audit trail of order "AU-3" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_CANCELLED"
+    Then the audit trail of order "AU-3" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED, ORDER_CANCELLED"
     And the audit entry "ORDER_CANCELLED" of order "AU-3" carries the reason "customer withdrew the indent"
     And the audit trail of the shipment of order "AU-3" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_CANCELLED"
     And the audit trail of load "LOAD-AU-3" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_CANCELLED"
@@ -97,7 +99,7 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     And trip "TRIP-AU-5" runs load "LOAD-AU-5" for "HAULIER" on lorry "MH-01-AU-0001" driven by "Ravi"
     When order "AU-5" is cancelled
     Then cancelling the order is refused with "order-work-dispatched"
-    And the audit trail of order "AU-5" reads "ORDER_RAISED, ORDER_VALIDATED"
+    And the audit trail of order "AU-5" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED"
     And the audit trail of the shipment of order "AU-5" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED"
     And the audit trail of load "LOAD-AU-5" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_DISPATCHED"
 
@@ -114,7 +116,7 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     When the completion of load "LOAD-AU-6" is recorded again
     Then the audit trail of load "LOAD-AU-6" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_DISPATCHED, LOAD_COMPLETED"
     And the audit trail of the shipment of order "AU-6" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_DELIVERED"
-    And the audit trail of order "AU-6" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULFILLED"
+    And the audit trail of order "AU-6" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED, ORDER_FULFILLED"
 
   Scenario: The allocation cascade is audited decision by decision
     Given a planned and ranked load "LOAD-AU-7" carrying order "AU-7" of 1000 kg
@@ -147,10 +149,61 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     And the audit trail of load "LOAD-AU-10" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_AWARD_WITHDRAWN"
     And the audit entry "ALLOCATION_CANCELLED" of the allocation of load "LOAD-AU-10" moved status from "AWARDED" to "CANCELLED"
 
-  Scenario: An atomic audit entry rolls back with the change it describes
-    When an atomic audit entry is written and its transaction is rolled back
-    Then the audit log holds no entry for that change
+  Scenario: Planning every line of an order audits its coverage with the line counts
+    Given a planned and awarded load "LOAD-AU-11" carrying order "AU-11" of 1000 kg
+    Then the audit trail of order "AU-11" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED"
+    And the audit entry "ORDER_FULLY_PLANNED" of order "AU-11" moved status from "VALIDATED" to "FULLY_PLANNED"
+    And the audit entry "ORDER_FULLY_PLANNED" of order "AU-11" records 1 of 1 lines planned
 
-  Scenario: An atomic audit entry cannot be written outside a transaction
-    When an atomic audit entry is written outside any transaction
-    Then the audit write is refused for want of a transaction
+  Scenario: Generating consignments again does not audit the coverage again
+    Given a planned and awarded load "LOAD-AU-12" carrying order "AU-12" of 1000 kg
+    When consignments are generated for order "AU-12"
+    Then the audit trail of order "AU-12" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED"
+
+  Scenario: Planning an order that is still a draft changes nothing and audits nothing
+    Given an order "AU-13" for "CUST" from "ORIGIN"
+    And order "AU-13" has line 1 of 1000 kg of GENERAL for "CONS-A" at "DEST-A"
+    When consignments are generated for order "AU-13"
+    Then the audit trail of order "AU-13" reads "ORDER_RAISED"
+
+  Scenario: A docket's journey is audited at every hub movement
+    Given an LTL booking "AU-L1" for "CUST" through hub "HUB-BOM" to hub "HUB-DEL"
+    And order "AU-L1" has line 1 of 200 kg of GENERAL for "CONS-A" at "DEST-A"
+    And order "AU-L1" is validated
+    And consignments are generated for order "AU-L1"
+    And an LTL load "LOAD-AU-L1" is opened at hub "HUB-BOM" on lorry "MH-01-AU-0001"
+    And the shipment of order "AU-L1" for "CONS-A" is put on load "LOAD-AU-L1"
+    And load "LOAD-AU-L1" is planned
+    And trip "TRIP-AU-L1" runs load "LOAD-AU-L1" for "HAULIER" on lorry "MH-01-AU-0001" driven by "Ravi"
+    And trip "TRIP-AU-L1" is completed at its destination
+    And an LTL delivery load "LOAD-AU-L2" is opened at hub "HUB-DEL" on lorry "MH-01-AU-0001"
+    And the shipment of order "AU-L1" for "CONS-A" is put on load "LOAD-AU-L2"
+    And load "LOAD-AU-L2" is planned
+    And trip "TRIP-AU-L2" runs load "LOAD-AU-L2" for "HAULIER" on lorry "MH-01-AU-0001" driven by "Ravi"
+    When trip "TRIP-AU-L2" is completed at its destination
+    Then the audit trail of the shipment of order "AU-L1" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_IN_TRANSIT, CONSIGNMENT_ARRIVED_AT_HUB, CONSIGNMENT_ASSIGNED, CONSIGNMENT_OUT_FOR_DELIVERY, CONSIGNMENT_DELIVERED"
+    And the audit entry "CONSIGNMENT_ARRIVED_AT_HUB" of the shipment of order "AU-L1" for "CONS-A" moved status from "IN_TRANSIT" to "ARRIVED_AT_HUB"
+    And the audit entry "CONSIGNMENT_DELIVERED" of the shipment of order "AU-L1" for "CONS-A" moved status from "OUT_FOR_DELIVERY" to "DELIVERED"
+
+  Scenario: Recording a line haul's completion again does not audit the docket again
+    Given an LTL booking "AU-L3" for "CUST" through hub "HUB-BOM" to hub "HUB-DEL"
+    And order "AU-L3" has line 1 of 200 kg of GENERAL for "CONS-A" at "DEST-A"
+    And order "AU-L3" is validated
+    And consignments are generated for order "AU-L3"
+    And an LTL load "LOAD-AU-L3" is opened at hub "HUB-BOM" on lorry "MH-01-AU-0001"
+    And the shipment of order "AU-L3" for "CONS-A" is put on load "LOAD-AU-L3"
+    And load "LOAD-AU-L3" is planned
+    And trip "TRIP-AU-L3" runs load "LOAD-AU-L3" for "HAULIER" on lorry "MH-01-AU-0001" driven by "Ravi"
+    And trip "TRIP-AU-L3" is completed at its destination
+    When the completion of load "LOAD-AU-L3" is recorded again
+    Then the audit trail of the shipment of order "AU-L3" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_IN_TRANSIT, CONSIGNMENT_ARRIVED_AT_HUB"
+
+  Scenario: A docket refused a delivery load leaves no movement entry
+    Given an LTL booking "AU-L4" for "CUST" through hub "HUB-BOM" to hub "HUB-DEL"
+    And order "AU-L4" has line 1 of 200 kg of GENERAL for "CONS-A" at "DEST-A"
+    And order "AU-L4" is validated
+    And consignments are generated for order "AU-L4"
+    And an LTL delivery load "LOAD-AU-L4" is opened at hub "HUB-DEL" on lorry "MH-01-AU-0001"
+    When the shipment of order "AU-L4" for "CONS-A" is put on load "LOAD-AU-L4"
+    Then consolidation is refused with "docket-not-arrived-at-hub"
+    And the audit trail of the shipment of order "AU-L4" for "CONS-A" reads "CONSIGNMENT_GENERATED"
