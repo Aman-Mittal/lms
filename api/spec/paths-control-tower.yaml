@@ -81,6 +81,91 @@
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
 
+/api/v1/exceptions/detector-settings:
+  get:
+    tags: [Control tower]
+    operationId: getDetectorSettings
+    summary: The tolerances of the ETA and temperature detectors
+    description: Requires `EXCEPTION_READ`. Platform defaults until the tenant sets its own.
+    responses:
+      "200":
+        description: The tolerances in force.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DetectorSettings" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+  put:
+    tags: [Control tower]
+    operationId: setDetectorSettings
+    summary: Set the tenant's detector tolerances
+    description: Requires `EXCEPTION_MANAGE`. Applies to readings from now on.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SetDetectorSettingsRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/exceptions/trip-watches/{tripId}:
+  parameters:
+    - name: tripId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+  get:
+    tags: [Control tower]
+    operationId: getTripWatch
+    summary: What a trip is being watched against
+    description: Requires `EXCEPTION_READ`.
+    responses:
+      "200":
+        description: The trip's terms and the detectors' progress.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TripWatch" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+  put:
+    tags: [Control tower]
+    operationId: setTripWatch
+    summary: Record a trip's committed arrival and temperature band
+    description: |
+      Requires `EXCEPTION_MANAGE`, and the tenant's access policies on the
+      trip. Replaces any earlier terms and forgets what the temperature
+      detector had seen. From then on an ETA projected later than committed
+      by more than the tolerance raises an ETA_DELAY ticket, and a reading
+      outside the band for longer than the tolerance raises a
+      TEMPERATURE_EXCURSION ticket; each at most once per trip until closed.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SetTripWatchRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  delete:
+    tags: [Control tower]
+    operationId: clearTripWatch
+    summary: Stop watching a trip
+    description: Requires `EXCEPTION_MANAGE`. Tickets already raised stay.
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
 /api/v1/exceptions/{id}:
   parameters:
     - name: id

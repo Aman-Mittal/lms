@@ -179,7 +179,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  shared
 | `execution` | Trip state machine, gate log, weighbridge, dispatch gate, LTL delivery leg. |
 | `telematics` | GPS ingest, geofence crossings, route deviation, stoppage detection, retention. |
 | `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables, rail-leg carrier payables. |
-| `controltower` | Exception tickets from people and detectors (route deviation, stoppage, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
+| `controltower` | Exception tickets from people and detectors (route deviation, stoppage, ETA slip, temperature excursion, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
 | `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
@@ -642,8 +642,15 @@ The stoppage detector is ping-driven: a trip in transit that reports no
 movement (within `lms.telematics.stoppage-radius-m`, default 100) for
 `lms.telematics.stoppage-threshold-minutes` (default 45) outside every
 terminal geofence raises one EXTENDED_STOPPAGE ticket, and a device that stops
-reporting altogether is therefore not caught. ETA and temperature detectors are
-not built, and those categories are raised by hand.
+reporting altogether is therefore not caught. The ETA and temperature detectors
+(V35) run off `TripEtaProjected` (one per trip per ingested batch) and
+`TemperatureReported` (one per probe reading) events and judge only a trip with
+a `trip_watch` row, which the desk sets through
+`PUT /api/v1/exceptions/trip-watches/{tripId}` (committed arrival, temperature
+band). Tolerances are per tenant in `detector_setting`, defaulting to
+`lms.controltower.eta-slip-minutes` (60) and
+`lms.controltower.temperature-excursion-minutes` (15). One unclosed ticket per
+trip and kind is enforced by `exception_ticket_open_detector_idx`.
 
 Gaps the freight-mode, warehouse and billing work left open on purpose:
 

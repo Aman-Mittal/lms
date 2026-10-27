@@ -27,7 +27,10 @@ ExceptionCategory:
     MISSED_CONNECTION, the milk-run and the warehouse categories are raised
     automatically from those modules' events. EXTENDED_STOPPAGE is also raised
     automatically (source STOPPAGE_DETECTED) when a trip in transit sits still
-    outside every terminal for longer than the configured threshold.
+    outside every terminal for longer than the configured threshold. ETA_DELAY
+    (source ETA_SLIP_DETECTED) and TEMPERATURE_EXCURSION (source
+    TEMPERATURE_EXCURSION_DETECTED) are raised automatically for a trip that
+    has a trip watch; see `/api/v1/exceptions/trip-watches/{tripId}`.
   enum: [ACCIDENT, THEFT, BREAKDOWN, ROUTE_DEVIATION, EXTENDED_STOPPAGE,
          TEMPERATURE_EXCURSION, ETA_DELAY, DOCUMENT_MISMATCH,
          MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED, MILK_RUN_STOP_LATE,
@@ -69,7 +72,8 @@ Exception:
     source:
       type: string
       enum: [MANUAL, ROUTE_DEVIATION, MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED,
-             MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL, STOPPAGE_DETECTED]
+             MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL, STOPPAGE_DETECTED,
+             ETA_SLIP_DETECTED, TEMPERATURE_EXCURSION_DETECTED]
     lat: { type: number }
     lon: { type: number }
     positionSource:
@@ -177,3 +181,52 @@ ReopenExceptionRequest:
   properties:
     reason: { type: string, minLength: 1 }
   required: [reason]
+
+TripWatch:
+  type: object
+  properties:
+    tripId: { type: string, format: uuid }
+    committedArrivalAt: { type: string, format: date-time }
+    tempMinC: { type: number }
+    tempMaxC: { type: number }
+    outsideRangeSince:
+      type: string
+      format: date-time
+      description: Since when the temperature readings have been outside the
+        band. Absent while they are inside it.
+    lastReadingAt:
+      type: string
+      format: date-time
+      description: The newest temperature reading judged.
+
+SetTripWatchRequest:
+  type: object
+  description: At least a committed arrival or a temperature band. A band
+    needs both its minimum and its maximum.
+  properties:
+    committedArrivalAt: { type: string, format: date-time }
+    tempMinC: { type: number }
+    tempMaxC: { type: number }
+
+DetectorSettings:
+  type: object
+  properties:
+    etaSlipMinutes:
+      type: integer
+      description: How many minutes later than committed a projected arrival
+        may be before it is a slip.
+    temperatureExcursionMinutes:
+      type: integer
+      description: How many minutes a reading may stay outside its band
+        before it is an excursion.
+    customised:
+      type: boolean
+      description: False while the tenant has set nothing and the platform
+        defaults apply.
+
+SetDetectorSettingsRequest:
+  type: object
+  properties:
+    etaSlipMinutes: { type: integer, minimum: 1, maximum: 10080 }
+    temperatureExcursionMinutes: { type: integer, minimum: 1, maximum: 10080 }
+  required: [etaSlipMinutes, temperatureExcursionMinutes]

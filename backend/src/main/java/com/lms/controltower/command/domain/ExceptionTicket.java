@@ -106,7 +106,11 @@ public record ExceptionTicket(
         /** Warehousing could not pick an outbound line in full. */
         PICK_SHORTFALL,
         /** Telematics saw a trip in transit sit still outside every terminal. */
-        STOPPAGE_DETECTED
+        STOPPAGE_DETECTED,
+        /** A trip's projected arrival slipped past its committed one by more than the tolerance. */
+        ETA_SLIP_DETECTED,
+        /** A reefer's temperature stayed outside its band for longer than the tolerance. */
+        TEMPERATURE_EXCURSION_DETECTED
     }
 
     /** What a ticket is about, when it is not (only) a trip. */

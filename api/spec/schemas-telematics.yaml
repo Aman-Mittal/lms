@@ -32,6 +32,12 @@ Ping:
     accuracyM: { type: number }
     ignitionOn: { type: boolean }
     source: { type: string }
+    temperatureC:
+      type: number
+      description: Cargo temperature of a refrigerated vehicle, in degrees
+        Celsius. Optional. Outside -60 to 100 the point is rejected as an
+        implausible probe reading. On a trip, it feeds the temperature
+        excursion detector.
   required: [vehicleId, recordedAt, lat, lon]
 
 PingBatchRequest:

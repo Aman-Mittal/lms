@@ -17,25 +17,32 @@ package com.lms.controltower.web;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.lms.controltower.command.DetectorSettingsService;
 import com.lms.controltower.command.ExceptionCommandService;
+import com.lms.controltower.command.TripWatchCommandService;
 import com.lms.controltower.command.domain.ExceptionCategory;
 import com.lms.controltower.query.ControlTowerQueryService;
 import com.lms.controltower.query.ExceptionActivityView;
 import com.lms.controltower.query.ExceptionSummaryView;
 import com.lms.controltower.query.ExceptionView;
+import com.lms.controltower.query.TripWatchView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -55,11 +62,17 @@ public class ExceptionController {
 
     private final ExceptionCommandService exceptions;
     private final ControlTowerQueryService queries;
+    private final TripWatchCommandService watches;
+    private final DetectorSettingsService detectorSettings;
 
     public ExceptionController(ExceptionCommandService exceptions,
-                               ControlTowerQueryService queries) {
+                               ControlTowerQueryService queries,
+                               TripWatchCommandService watches,
+                               DetectorSettingsService detectorSettings) {
         this.exceptions = exceptions;
         this.queries = queries;
+        this.watches = watches;
+        this.detectorSettings = detectorSettings;
     }
 
     @GetMapping
@@ -73,6 +86,39 @@ public class ExceptionController {
     @GetMapping("/summary")
     public ExceptionSummaryView summary() {
         return queries.summary();
+    }
+
+    /** What the ETA and temperature detectors tolerate, for this tenant. */
+    @GetMapping("/detector-settings")
+    public DetectorSettingsService.Settings detectorSettings() {
+        return detectorSettings.view();
+    }
+
+    @PutMapping("/detector-settings")
+    public ResponseEntity<Void> setDetectorSettings(
+            @Valid @RequestBody DetectorSettingsRequest request) {
+        detectorSettings.update(request.etaSlipMinutes(), request.temperatureExcursionMinutes());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** The terms a trip is watched against: its committed arrival and temperature band. */
+    @GetMapping("/trip-watches/{tripId}")
+    public TripWatchView tripWatch(@PathVariable UUID tripId) {
+        return queries.watchOf(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException("Trip watch", tripId));
+    }
+
+    @PutMapping("/trip-watches/{tripId}")
+    public ResponseEntity<Void> setTripWatch(@PathVariable UUID tripId,
+                                             @Valid @RequestBody TripWatchRequest request) {
+        watches.set(tripId, request.committedArrivalAt(), request.tempMinC(), request.tempMaxC());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/trip-watches/{tripId}")
+    public ResponseEntity<Void> clearTripWatch(@PathVariable UUID tripId) {
+        watches.clear(tripId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}")
@@ -150,5 +196,18 @@ public class ExceptionController {
     }
 
     public record ReopenRequest(@NotBlank String reason) {
+    }
+
+    public record DetectorSettingsRequest(@Positive int etaSlipMinutes,
+                                          @Positive int temperatureExcursionMinutes) {
+    }
+
+    /**
+     * @param committedArrivalAt optional; when the trip promised to arrive
+     * @param tempMinC           optional, with {@code tempMaxC}; the cargo's band
+     */
+    public record TripWatchRequest(Instant committedArrivalAt,
+                                   BigDecimal tempMinC,
+                                   BigDecimal tempMaxC) {
     }
 }
