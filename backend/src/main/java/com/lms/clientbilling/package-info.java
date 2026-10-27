@@ -27,6 +27,10 @@
  * aboard. Part-load dockets are not charged here: finance bills each one to its
  * customer as a docket receivable, and charging the trips it rode as well
  * would bill the same shipment twice.
+ * A handling unit the warehouse hands to transport (the unit's SKUs name the
+ * client that owns the goods) is charged handling out and transport at the
+ * client's contract rates, from {@code warehouse::events}; the consignment it
+ * becomes has no order, so no trip charge ever covers it.
  * Warehousing arrives as recorded service usage -- storage pallet-days,
  * handling in and out, value-added services -- through an idempotent endpoint
  * any warehouse system can feed. Storage can instead be computed from the
@@ -49,5 +53,6 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "3PL Client Billing",
-        allowedDependencies = {"execution::events", "identity::access", "warehouse::api"})
+        allowedDependencies = {"execution::events", "identity::access", "warehouse::api",
+                "warehouse::events"})
 package com.lms.clientbilling;

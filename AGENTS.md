@@ -669,8 +669,13 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   `itinerary_leg_id`, expected amount the leg's recorded cost) and then follows
   the ordinary match, dispute and approval path. Settlement holds are per trip,
   so a control-tower hold does not freeze a rail leg's bill.
-- A warehouse hand-off consignment has no sales order, so client billing
-  skips it (client charges are drawn from order-backed consignments).
+- A warehouse hand-off consignment has no sales order, so trip charges skip it;
+  client billing instead charges the hand-off itself from `warehouse::events`
+  (`ClientHandOffListener`): handling out (a pallet per unit) and transport (gross
+  kg), for the client owning the SKUs inside, split by units held when a unit mixes
+  owners, keyed `HANDOFF:<unit>:<client>:<service>` so a redelivery charges once.
+  Owners without a client contract, and unowned SKUs, are not billed. Transport on
+  such a charge has no `trip_id`, so the margin shows no carrier cost for it.
 - A client payment is recorded against the client, not matched to an invoice
   (V30). The ageing endpoint applies payments to the oldest invoice first, a
   convention rather than the client's remittance; with no payment terms on a
