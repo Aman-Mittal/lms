@@ -89,7 +89,7 @@ public class ClientPaymentService {
         ClientPayment payment = payments.save(ClientPayment.record(UUID.randomUUID(), tenantId,
                 clientPartnerId, newPaymentNo(), currency, amount, receivedOn, reference,
                 currentActor(), now));
-        audit.record("CLIENT_PAYMENT_RECORDED", "CLIENT_PAYMENT", payment.id(), null,
+        audit.recordAtomically("CLIENT_PAYMENT_RECORDED", "CLIENT_PAYMENT", payment.id(), null,
                 Json.object("client", clientPartnerId.toString(),
                         "amount", payment.amount().toPlainString(),
                         "currency", currency,

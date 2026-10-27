@@ -107,7 +107,7 @@ public class ClientContractService {
                     published.id(), term.serviceCode(), term.unit(), term.rate()));
         }
 
-        audit.record("CLIENT_CONTRACT_PUBLISHED", "CLIENT_CONTRACT", published.id(), null,
+        audit.recordAtomically("CLIENT_CONTRACT_PUBLISHED", "CLIENT_CONTRACT", published.id(), null,
                 Json.object("code", code, "client", clientPartnerId.toString(),
                         "effectiveFrom", effectiveFrom.toString()));
         return published.id();
@@ -139,7 +139,7 @@ public class ClientContractService {
                 .param("grantedAt", Instant.now().atOffset(ZoneOffset.UTC))
                 .update();
 
-        audit.record("CLIENT_PORTAL_ACCESS_GRANTED", "APP_USER", userId, null,
+        audit.recordAtomically("CLIENT_PORTAL_ACCESS_GRANTED", "APP_USER", userId, null,
                 Json.object("client", clientPartnerId.toString()));
     }
 
