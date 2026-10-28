@@ -112,6 +112,13 @@ public final class ApiTestKit {
                 .POST(HttpRequest.BodyPublishers.ofString(body)).build());
     }
 
+    public Outcome put(Tenant tenant, String path, String body, String... permissions) {
+        return send(HttpRequest.newBuilder(uri(path))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token(tenant, permissions))
+                .PUT(HttpRequest.BodyPublishers.ofString(body)).build());
+    }
+
     public JsonNode parse(Outcome outcome) {
         return json.readTree(outcome.body());
     }
