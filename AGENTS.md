@@ -599,16 +599,13 @@ includes production, after the image has been built and pushed.
 ## 8. Deliberately deferred
 
 **Known defects, found by the specification audit and not yet fixed**
-- **`AuditTrail.record` can starve the connection pool.** It runs in
-  `REQUIRES_NEW`, so it takes a second connection while the caller still holds
-  one. With the free-tier pool of 5, five requests queued on a row lock leave the
-  lock holder unable to get a connection for its audit row, and everything stalls
-  until the 10 s timeout (seen in a 12-way concurrent-cancel test). The order,
-  planning, sourcing and trip paths now audit through `TransitionAudit` /
-  `AuditTrail.recordAtomically`, which join the caller's transaction; every
-  other `audit.record` call made inside a transaction (finance, client billing,
-  warehouse inventory, identity, control tower, milk run, rail tariffs) has the
-  same hazard and should move to the atomic form.
+- **`AuditTrail.record` and `recordFor` still take a second connection.** They run
+  in `REQUIRES_NEW`; with the free-tier pool of 5, requests queued on a row lock
+  can leave the lock holder unable to get a connection for its audit row. Every
+  command path now audits through `TransitionAudit` or `AuditTrail.recordAtomically`,
+  which join the caller's transaction; only the login path (`AuthService`, via
+  `recordFor`) still uses the new-transaction form, on purpose, so a failed login
+  is recorded. New code must use the atomic form.
 - Two audit mechanisms now exist side by side: `TransitionAudit` (batched, for
   bulk transitions) and `AuditTrail.recordAtomically` (single). They should be
   one.
@@ -627,16 +624,12 @@ includes production, after the image has been built and pushed.
   the lifecycle fixes; cancelling such an allocation is a no-op on the load.
 - Cross-tenant body ids: `ForeignReferenceApiTest` covers order customer and
   origin terminal, order-line consignee and destination terminal, load origin
-  terminal and vehicle, routing-guide terminals, and trip, allocation,
-  exception, consolidation and ASN references, and rate-card vendor and
-  terminals and LTL zone terminals. **Not checked**: the other body ids
-  (warehouse bins and SKUs on stock and pick-wave requests, milk-run stop
-  terminals, circuit trip assignment, client-billing contract and portal-user
-  ids, rail and itinerary legs, access-attribute targets, exception assignee
-  user).
-- `POST /orders/{id}/lines` without `materialDescription` fails with a 500
-  (the column is NOT NULL and the request does not require it); it should be
-  a 400 or default to the material code.
+  terminal and vehicle, routing-guide terminals, trip, allocation, exception,
+  consolidation and ASN references, rate-card vendor and terminals, LTL zone
+  terminals, client portal users, exception assignees and a user's partner
+  attribute. **No test**: warehouse bin and SKU ids and milk-run, rail and
+  itinerary ids, which are looked up through repositories or ports under RLS but
+  not proved. **Not checked at all**: `orgUnitId` on `POST /tariffs`.
 
 **Deferred by design**
 
