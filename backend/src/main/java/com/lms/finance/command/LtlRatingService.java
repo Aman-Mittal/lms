@@ -26,10 +26,12 @@ import com.lms.finance.command.domain.DocketReceivable;
 import com.lms.finance.command.domain.FuelSurchargeIndex;
 import com.lms.finance.command.domain.LtlQuote;
 import com.lms.finance.command.domain.LtlRateCard;
+import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.planning.events.DocketBooked;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -52,16 +54,19 @@ public class LtlRatingService {
     private final DocketReceivableRepository receivables;
     private final LtlRatingEngine engine;
     private final FuelSurchargeIndexRepository fuelIndex;
+    private final TerminalCategoryPort terminals;
     private final AuditTrail audit;
 
     public LtlRatingService(LtlZones zones, LtlRateCardRepository cards,
                             DocketReceivableRepository receivables, LtlRatingEngine engine,
-                            FuelSurchargeIndexRepository fuelIndex, AuditTrail audit) {
+                            FuelSurchargeIndexRepository fuelIndex, TerminalCategoryPort terminals,
+                            AuditTrail audit) {
         this.zones = zones;
         this.cards = cards;
         this.receivables = receivables;
         this.engine = engine;
         this.fuelIndex = fuelIndex;
+        this.terminals = terminals;
         this.audit = audit;
     }
 
@@ -76,6 +81,10 @@ public class LtlRatingService {
     @PreAuthorize("hasAuthority('TARIFF_MANAGE')")
     public void assignZone(UUID terminalId, String zoneCode, boolean outOfDeliveryArea) {
         String zone = LtlRateCard.zone(zoneCode);
+        // The foreign key below would accept another tenant's terminal.
+        if (terminals.functionalCategoryOf(terminalId).isEmpty()) {
+            throw new ResourceNotFoundException("Terminal", terminalId);
+        }
         try {
             zones.assign(terminalId, zone, outOfDeliveryArea);
         } catch (DataIntegrityViolationException e) {
