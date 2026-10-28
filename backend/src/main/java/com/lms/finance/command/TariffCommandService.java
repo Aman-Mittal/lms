@@ -22,6 +22,8 @@ import java.util.UUID;
 import com.lms.finance.command.domain.FuelSurchargeIndex;
 import com.lms.finance.command.domain.Tariff;
 import com.lms.finance.command.domain.TariffSlab;
+import com.lms.masterdata.api.PartnerStandingPort;
+import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
@@ -46,13 +48,19 @@ public class TariffCommandService {
     private final TariffRepository tariffs;
     private final TariffSlabRepository slabs;
     private final FuelSurchargeIndexRepository fuelIndex;
+    private final TerminalCategoryPort terminals;
+    private final PartnerStandingPort partners;
     private final AuditTrail audit;
 
     public TariffCommandService(TariffRepository tariffs, TariffSlabRepository slabs,
-                                FuelSurchargeIndexRepository fuelIndex, AuditTrail audit) {
+                                FuelSurchargeIndexRepository fuelIndex,
+                                TerminalCategoryPort terminals, PartnerStandingPort partners,
+                                AuditTrail audit) {
         this.tariffs = tariffs;
         this.slabs = slabs;
         this.fuelIndex = fuelIndex;
+        this.terminals = terminals;
+        this.partners = partners;
         this.audit = audit;
     }
 
@@ -73,6 +81,14 @@ public class TariffCommandService {
                               BigDecimal detentionFreeHours, BigDecimal detentionHourlyRate,
                               BigDecimal additionalDropFee, BigDecimal minimumCharge) {
         UUID tenantId = TenantContext.requireTenantId();
+
+        // A foreign key is checked as the table owner, so it would accept another
+        // tenant's terminal or vendor; a lookup under row-level security does not.
+        requireTerminal(originTerminalId);
+        requireTerminal(destinationTerminalId);
+        if (!partners.exists(vendorPartnerId)) {
+            throw new ResourceNotFoundException("Partner", vendorPartnerId);
+        }
 
         tariffs.findOpenVersion(tenantId, vendorPartnerId, originTerminalId,
                 destinationTerminalId, vehicleType).ifPresent(incumbent -> {
@@ -160,5 +176,11 @@ public class TariffCommandService {
                 .map(existing -> fuelIndex.save(existing.correctTo(surchargePct)).id())
                 .orElseGet(() -> fuelIndex.save(FuelSurchargeIndex.of(UUID.randomUUID(),
                         tenantId, month, surchargePct)).id());
+    }
+
+    private void requireTerminal(UUID terminalId) {
+        if (terminals.functionalCategoryOf(terminalId).isEmpty()) {
+            throw new ResourceNotFoundException("Terminal", terminalId);
+        }
     }
 }
