@@ -72,5 +72,5 @@
         displayName = "Rating & Settlement",
         allowedDependencies = {"planning::api", "planning::events", "execution::events",
                 "controltower::events", "identity::access", "milkrun::events",
-                "multimodal::events"})
+                "multimodal::events", "masterdata::api"})
 package com.lms.finance;

@@ -195,4 +195,28 @@ class ForeignReferenceApiTest {
                 "{\"warehouseId\":\"" + a.id("warehouse") + "\",\"asnNo\":\"FR-ASN\","
                         + "\"lines\":[{\"skuId\":\"" + UUID.randomUUID() + "\",\"quantity\":1}]}"));
     }
+
+    @Test
+    @DisplayName("a rate card and an LTL zone cannot name another tenant's terminal or vendor")
+    void financeReferences() {
+        UUID aVendor = first("business_partner", a, " AND partner_type = 'VENDOR'");
+        UUID bVendor = first("business_partner", b, " AND partner_type = 'VENDOR'");
+        UUID bOther = b.id("warehouse");
+        String tariff = "{\"orgUnitId\":\"" + b.orgUnitId() + "\",\"code\":\"%s\","
+                + "\"vendorPartnerId\":\"%s\",\"originTerminalId\":\"%s\","
+                + "\"destinationTerminalId\":\"%s\",\"vehicleType\":\"RIGID\","
+                + "\"effectiveFrom\":\"2026-01-01\"}";
+        accepted("control", post("/api/v1/tariffs", tariff.formatted("FRT-A", bVendor, bTerminal, bOther)));
+        refused("foreign vendor",
+                post("/api/v1/tariffs", tariff.formatted("FRT-B", aVendor, bTerminal, bOther)));
+        refused("foreign origin",
+                post("/api/v1/tariffs", tariff.formatted("FRT-C", bVendor, aTerminal, bOther)));
+        refused("foreign destination",
+                post("/api/v1/tariffs", tariff.formatted("FRT-D", bVendor, bTerminal, aTerminal)));
+
+        String zone = "{\"zoneCode\":\"WEST\"}";
+        accepted("zone control", kit.put(callerB, "/api/v1/ltl/zones/" + bTerminal, zone, everything));
+        refused("foreign terminal in a zone",
+                kit.put(callerB, "/api/v1/ltl/zones/" + aTerminal, zone, everything));
+    }
 }
