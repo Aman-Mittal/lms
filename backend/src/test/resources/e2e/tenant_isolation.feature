@@ -28,5 +28,9 @@ Feature: A second company cannot see the first company's freight, over the wire
     Then the second company is told the demo company's order, consignment, load, trip and allocation do not exist
     And none of the second company's listings contain the demo company's freight
 
+  Scenario: Another tenant's ids in a request body are refused
+    Then the second company cannot attach the demo company's partner to its own user
+    And the second company is told another company's user does not exist
+
   Scenario: The owner is unaffected and still reads everything
     Then the demo administrator reads the order, consignment, load, trip and allocation by id
