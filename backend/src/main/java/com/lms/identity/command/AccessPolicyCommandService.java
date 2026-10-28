@@ -133,6 +133,15 @@ public class AccessPolicyCommandService {
             throw new IllegalArgumentException("An approval limit cannot be negative");
         }
 
+        // The foreign key on partner_id is checked as the table owner, so it
+        // would accept another tenant's partner; this lookup runs under RLS.
+        if (attributes.partnerId() != null && jdbc
+                .sql("SELECT count(*) FROM business_partner WHERE id = :id")
+                .param("id", attributes.partnerId()).query(Long.class).single() == 0) {
+            throw new IllegalArgumentException("No partner " + attributes.partnerId()
+                    + " exists in this tenant");
+        }
+
         int updated;
         try {
             updated = jdbc.sql("""

@@ -36,6 +36,7 @@ import com.lms.shared.tenant.TenantContext;
 import com.lms.telematics.api.VehicleFixPort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -64,6 +65,7 @@ public class ExceptionCommandService {
     private final VehicleFixPort fixes;
     private final AuditTrail audit;
     private final ApplicationEventPublisher events;
+    private final JdbcClient jdbc;
 
     /**
      * How old a telematics fix may be and still count as where the vehicle is.
@@ -80,6 +82,7 @@ public class ExceptionCommandService {
                                    ExceptionActivityRepository activities,
                                    TripLookupPort trips, VehicleFixPort fixes,
                                    AuditTrail audit, ApplicationEventPublisher events,
+                                   JdbcClient jdbc,
                                    @Value("${lms.controltower.max-fix-age-minutes:30}")
                                    long maxFixAgeMinutes) {
         this.tickets = tickets;
@@ -88,6 +91,7 @@ public class ExceptionCommandService {
         this.fixes = fixes;
         this.audit = audit;
         this.events = events;
+        this.jdbc = jdbc;
         this.maxFixAge = Duration.ofMinutes(maxFixAgeMinutes);
     }
 
@@ -237,6 +241,12 @@ public class ExceptionCommandService {
     @PreAuthorize("hasAuthority('EXCEPTION_MANAGE')")
     public void assign(UUID ticketId, UUID assigneeUserId, String note) {
         ExceptionTicket ticket = require(ticketId);
+        // A foreign key would accept another tenant's user; this lookup runs
+        // under row-level security and so does not.
+        if (jdbc.sql("SELECT count(*) FROM app_user WHERE id = :id")
+                .param("id", assigneeUserId).query(Long.class).single() == 0) {
+            throw new ResourceNotFoundException("AppUser", assigneeUserId);
+        }
         Instant now = Instant.now();
         record(ticket, tickets.save(ticket.assignTo(assigneeUserId, now)), "ASSIGNED", note, now);
     }
