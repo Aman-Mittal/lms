@@ -30,6 +30,7 @@ import com.lms.clientbilling.query.ClientDirectory;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -124,6 +125,12 @@ public class ClientContractService {
     public void grantPortalAccess(UUID clientPartnerId, UUID userId) {
         UUID tenantId = TenantContext.requireTenantId();
         requireCustomer(clientPartnerId);
+        // The foreign key is checked as the table owner and would accept another
+        // tenant's user; a lookup under row-level security does not.
+        if (jdbc.sql("SELECT count(*) FROM app_user WHERE id = :id")
+                .param("id", userId).query(Long.class).single() == 0) {
+            throw new ResourceNotFoundException("AppUser", userId);
+        }
 
         jdbc.sql("""
                         INSERT INTO client_portal_user (tenant_id, user_id, client_partner_id,
