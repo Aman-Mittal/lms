@@ -219,4 +219,27 @@ class ForeignReferenceApiTest {
         refused("foreign terminal in a zone",
                 kit.put(callerB, "/api/v1/ltl/zones/" + aTerminal, zone, everything));
     }
+
+    @Test
+    @DisplayName("a portal user, an assignee and a user's partner cannot name another tenant's row")
+    void identityReferences() {
+        UUID aUser = fixtures.createUser(a.tenantId(), a.orgUnitId(), a.orgPath(),
+                "fr-user@a.test", "Fr-pass-1234");
+        UUID bUser = fixtures.createUser(b.tenantId(), b.orgUnitId(), b.orgPath(),
+                "fr-user@b.test", "Fr-pass-1234");
+
+        String portal = "/api/v1/client-billing/clients/" + bPartner + "/portal-users";
+        accepted("portal control", post(portal, "{\"userId\":\"" + bUser + "\"}"));
+        refused("foreign portal user", post(portal, "{\"userId\":\"" + aUser + "\"}"));
+
+        String assign = "/api/v1/exceptions/" + b.id("exception_ticket") + "/assign";
+        accepted("assign control", post(assign, "{\"assigneeUserId\":\"" + bUser + "\"}"));
+        refused("foreign assignee", post(assign, "{\"assigneeUserId\":\"" + aUser + "\"}"));
+
+        String attributes = "/api/v1/users/" + bUser + "/access-attributes";
+        accepted("attributes control",
+                kit.put(callerB, attributes, "{\"partnerId\":\"" + bPartner + "\"}", everything));
+        refused("foreign partner attribute",
+                kit.put(callerB, attributes, "{\"partnerId\":\"" + aPartner + "\"}", everything));
+    }
 }
