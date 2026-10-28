@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -177,7 +178,7 @@ public class IdempotencyService {
                                    AND created_at < :before
                                 """)
                         .param("tenantId", tenantId)
-                        .param("before", before)
+                        .param("before", before.atOffset(ZoneOffset.UTC))
                         .update());
     }
 
