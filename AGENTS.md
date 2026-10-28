@@ -628,11 +628,12 @@ includes production, after the image has been built and pushed.
 - Cross-tenant body ids: `ForeignReferenceApiTest` covers order customer and
   origin terminal, order-line consignee and destination terminal, load origin
   terminal and vehicle, routing-guide terminals, and trip, allocation,
-  exception, consolidation and ASN references. **Not checked**: the other
-  body ids (warehouse bins and SKUs on stock and pick-wave requests, milk-run
-  stop terminals, circuit trip assignment, client-billing contract and
-  portal-user ids, LTL zone and rate-card terminals, tariff terminals, rail
-  and itinerary legs, access-attribute targets, exception assignee user).
+  exception, consolidation and ASN references, and rate-card vendor and
+  terminals and LTL zone terminals. **Not checked**: the other body ids
+  (warehouse bins and SKUs on stock and pick-wave requests, milk-run stop
+  terminals, circuit trip assignment, client-billing contract and portal-user
+  ids, rail and itinerary legs, access-attribute targets, exception assignee
+  user).
 - `POST /orders/{id}/lines` without `materialDescription` fails with a 500
   (the column is NOT NULL and the request does not require it); it should be
   a 400 or default to the material code.
