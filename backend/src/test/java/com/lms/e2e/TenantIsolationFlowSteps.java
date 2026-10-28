@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import com.lms.acceptance.TestFixtures;
+import com.lms.client.api.AccessPoliciesApi;
 import com.lms.client.api.AuthenticationApi;
 import com.lms.client.api.OrdersApi;
 import com.lms.client.api.PlanningApi;
@@ -28,6 +29,7 @@ import com.lms.client.model.AuthResult;
 import com.lms.client.model.LoginRequest;
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.RegisterPointRadiusTerminalRequest;
+import com.lms.client.model.SetUserAccessAttributesRequest;
 import feign.FeignException;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
@@ -68,6 +70,9 @@ public class TenantIsolationFlowSteps {
     private UUID loadId;
     private UUID tripId;
     private UUID allocationId;
+    private UUID demoCustomerId;
+    private UUID secondTenantId;
+    private UUID secondUserId;
     private String secondToken;
     private String secondTenantCode;
 
@@ -81,6 +86,7 @@ public class TenantIsolationFlowSteps {
         UUID destination = demo.terminal(site, "ISO-DEST", 25.30, 73.10);
         UUID vendor = demo.activeVendor("ISV");
         UUID customer = demo.partner("ISC", RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER);
+        demoCustomerId = customer;
         UUID consignee = demo.partner("ISN", RegisterPartnerRequest.PartnerTypeEnum.CONSIGNEE);
         UUID lorry = demo.lorry("IS", 20000);
         UUID driver = demo.driver("IS");
@@ -113,9 +119,11 @@ public class TenantIsolationFlowSteps {
         String email = "admin@" + secondTenantCode + ".test";
 
         UUID tenantId = fixtures.createTenant(secondTenantCode, "Second Company " + salt);
+        secondTenantId = tenantId;
         UUID orgUnitId = fixtures.createOrgUnit(tenantId, orgPath, "Head Office", "HQ", null);
         UUID userId = fixtures.createUser(tenantId, orgUnitId, orgPath, email, PASSWORD);
 
+        secondUserId = userId;
         UUID roleId = UUID.randomUUID();
         jdbc.sql("INSERT INTO role (id, tenant_id, code, name) VALUES (:id, :t, 'ADMIN', 'Administrator')")
                 .param("id", roleId).param("t", tenantId).update();
@@ -151,6 +159,23 @@ public class TenantIsolationFlowSteps {
                 .isEmpty();
     }
 
+    @Then("the second company cannot attach the demo company's partner to its own user")
+    public void foreignPartnerRefused() {
+        AccessPoliciesApi users = second(AccessPoliciesApi.class);
+        assertStatus("a partner of another company", 400, () -> users.setUserAccessAttributes(
+                secondUserId, new SetUserAccessAttributesRequest().partnerId(demoCustomerId)));
+        // The same call without the foreign id is accepted, so the refusal is about the id.
+        users.setUserAccessAttributes(secondUserId, new SetUserAccessAttributesRequest());
+    }
+
+    @Then("the second company is told another company's user does not exist")
+    public void foreignUserNotFound() {
+        UUID demoUser = jdbc.sql("SELECT id FROM app_user WHERE tenant_id <> :t LIMIT 1")
+                .param("t", secondTenantId).query(UUID.class).single();
+        assertStatus("a user of another company", 404, () -> second(AccessPoliciesApi.class)
+                .setUserAccessAttributes(demoUser, new SetUserAccessAttributesRequest()));
+    }
+
     @Then("the demo administrator reads the order, consignment, load, trip and allocation by id")
     public void ownerReadsEverything() {
         assertThat(demo.api(OrdersApi.class).getOrder(orderId).getId()).isEqualTo(orderId);
@@ -164,6 +189,11 @@ public class TenantIsolationFlowSteps {
 
     private <T extends com.lms.client.ApiClient.Api> T second(Class<T> type) {
         return demo.client(secondToken, type);
+    }
+
+    private static void assertStatus(String what, int status, Runnable call) {
+        assertThatThrownBy(call::run).as(what)
+                .isInstanceOfSatisfying(FeignException.class, e -> assertThat(e.status()).isEqualTo(status));
     }
 
     private static void assertNotFound(String what, Runnable call) {
