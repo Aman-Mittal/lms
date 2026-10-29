@@ -74,7 +74,7 @@ public class TariffCommandService {
      * cannot leave two.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('TARIFF_MANAGE')")
+    @PreAuthorize("hasAuthority('TARIFF_MANAGE') and @abac.permitsIn('TARIFF_MANAGE', #orgUnitId)")
     public UUID publishTariff(UUID orgUnitId, String code, UUID vendorPartnerId,
                               UUID originTerminalId, UUID destinationTerminalId,
                               String vehicleType, String currency, LocalDate effectiveFrom,

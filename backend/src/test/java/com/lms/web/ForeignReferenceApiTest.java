@@ -213,6 +213,13 @@ class ForeignReferenceApiTest {
                 post("/api/v1/tariffs", tariff.formatted("FRT-C", bVendor, aTerminal, bOther)));
         refused("foreign destination",
                 post("/api/v1/tariffs", tariff.formatted("FRT-D", bVendor, bTerminal, aTerminal)));
+        // Its own lane (vehicle type), so that nothing but the organisational unit can refuse it.
+        String ownLane = tariff.replace("RIGID", "TRAILER");
+        accepted("own unit, own lane", post("/api/v1/tariffs",
+                ownLane.formatted("FRT-E", bVendor, bTerminal, bOther)));
+        refused("foreign organisational unit", post("/api/v1/tariffs",
+                ownLane.replace(b.orgUnitId().toString(), a.orgUnitId().toString())
+                        .replace("TRAILER", "TANKER").formatted("FRT-F", bVendor, bTerminal, bOther)));
 
         String zone = "{\"zoneCode\":\"WEST\"}";
         accepted("zone control", kit.put(callerB, "/api/v1/ltl/zones/" + bTerminal, zone, everything));
