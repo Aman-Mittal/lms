@@ -1,0 +1,8 @@
+{
+  "name": "lms-demo-swagger",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "swagger-ui-dist": "^5.32.0"
+  }
+}

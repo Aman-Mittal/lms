@@ -1,0 +1,24 @@
+:root { --ink:#1b2430; --muted:#667085; --line:#d9dee7; --accent:#1f5eff; --bg:#f6f8fb; --err:#b42318; }
+* { box-sizing: border-box; }
+body { margin:0; font:15px/1.5 system-ui, sans-serif; color:var(--ink); background:var(--bg); }
+header { display:flex; align-items:center; gap:1.25rem; padding:.75rem 1rem; background:#fff; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+nav { display:flex; gap:.25rem; flex:1; flex-wrap:wrap; }
+nav a { padding:.3rem .65rem; border-radius:6px; color:var(--ink); text-decoration:none; }
+nav a.active { background:var(--accent); color:#fff; }
+main { padding:1rem; max-width:64rem; margin:0 auto; }
+h1 { font-size:1.4rem; margin:.5rem 0; } h2 { font-size:1.1rem; margin-top:2rem; }
+.card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:1.5rem; margin-top:12vh; }
+.narrow { max-width:26rem; }
+label { display:block; margin:.75rem 0; font-weight:600; }
+input, select { display:block; width:100%; margin-top:.25rem; padding:.5rem; border:1px solid var(--line); border-radius:6px; font:inherit; }
+button { padding:.5rem 1rem; border:0; border-radius:6px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+button:disabled { opacity:.6; cursor:wait; }
+button.link { background:none; color:var(--accent); padding:.3rem; }
+.muted { color:var(--muted); } .error { color:var(--err); }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr)); gap:.75rem; }
+.tile { background:#fff; border:1px solid var(--line); border-radius:10px; padding:1rem; color:var(--muted); }
+.tile span { display:block; font-size:1.8rem; color:var(--ink); font-weight:700; }
+table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); }
+th, td { text-align:left; padding:.5rem .75rem; border-bottom:1px solid var(--line); }
+th { background:#eef2f8; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+form.inline { display:flex; gap:.5rem; flex-wrap:wrap; } form.inline input, form.inline select { width:auto; margin:0; }
