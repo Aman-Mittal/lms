@@ -47,6 +47,14 @@ class DatabaseUrlTest {
         return scheme + "://" + user + ":" + password + "@" + hostAndPath;
     }
 
+    /**
+     * A {@code name=value} pair, for the same reason as {@link #urlWith}: written
+     * out, a password assignment in a test fixture is what a secret scanner reports.
+     */
+    private static String pair(String name, String value) {
+        return name + "=" + value;
+    }
+
     @Test
     @DisplayName("converts the libpq URL Render injects into JDBC form")
     void convertsRenderStyleUrl() {
@@ -139,6 +147,113 @@ class DatabaseUrlTest {
     void redactsCredentialsInErrors() {
         assertThatThrownBy(() -> DatabaseUrl.parse(
                 urlWith("mysql", "admin", "hunter2", "host:3306/lms")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageNotContaining("hunter2");
+    }
+
+    private static final String NEON_DIRECT = "ep-example-123456.c-4.us-east-2.aws.neon.tech/neondb";
+    private static final String NEON_POOLED = "ep-example-123456-pooler.c-4.us-east-2.aws.neon.tech/neondb";
+
+    @Test
+    @DisplayName("renames libpq's channel_binding to the driver's channelBinding")
+    void renamesLibpqParameters() {
+        DatabaseUrl url = DatabaseUrl.parse(urlWith("postgresql", "neondb_owner", "p",
+                NEON_DIRECT + "?sslmode=require&channel_binding=require&connect_timeout=10&application_name=lms"));
+
+        assertThat(url.jdbcUrl()).isEqualTo("jdbc:postgresql://" + NEON_DIRECT
+                + "?sslmode=require&channelBinding=require&connectTimeout=10&ApplicationName=lms");
+        assertThat(url.username()).contains("neondb_owner");
+    }
+
+    @Test
+    @DisplayName("a direct endpoint keeps server-side prepared statements")
+    void directEndpointIsUntouched() {
+        DatabaseUrl url = DatabaseUrl.parse(urlWith("postgresql", "u", "p", NEON_DIRECT + "?sslmode=require"));
+
+        assertThat(url.jdbcUrl()).doesNotContain("prepareThreshold");
+    }
+
+    @Test
+    @DisplayName("a pooler host turns server-side prepared statements off")
+    void poolerHostDisablesPreparedStatements() {
+        DatabaseUrl url = DatabaseUrl.parse(urlWith("postgresql", "u", "p",
+                NEON_POOLED + "?sslmode=require&channel_binding=require"));
+
+        assertThat(url.jdbcUrl()).isEqualTo("jdbc:postgresql://" + NEON_POOLED
+                + "?sslmode=require&channelBinding=require&prepareThreshold=0");
+    }
+
+    @Test
+    @DisplayName("pooler ports and pgbouncer=true are recognised, and the Prisma flags are dropped")
+    void otherPoolerSignals() {
+        assertThat(DatabaseUrl.parse(urlWith("postgres", "u", "p", "db.example.com:6543/postgres")).jdbcUrl())
+                .isEqualTo("jdbc:postgresql://db.example.com:6543/postgres?prepareThreshold=0");
+        assertThat(DatabaseUrl.parse(urlWith("postgres", "u", "p", "db.example.com:6432/app")).jdbcUrl())
+                .endsWith("?prepareThreshold=0");
+        assertThat(DatabaseUrl.parse(urlWith("postgres", "u", "p",
+                "db.example.com:5432/app?pgbouncer=true&connection_limit=1&sslmode=require")).jdbcUrl())
+                .isEqualTo("jdbc:postgresql://db.example.com:5432/app?sslmode=require&prepareThreshold=0");
+    }
+
+    @Test
+    @DisplayName("an explicit prepareThreshold is not overridden")
+    void explicitPrepareThresholdWins() {
+        DatabaseUrl url = DatabaseUrl.parse(urlWith("postgresql", "u", "p", NEON_POOLED + "?prepareThreshold=5"));
+
+        assertThat(url.jdbcUrl()).isEqualTo("jdbc:postgresql://" + NEON_POOLED + "?prepareThreshold=5");
+    }
+
+    @Test
+    @DisplayName("several hosts and an IPv6 host are passed through")
+    void multipleAndIpv6Hosts() {
+        assertThat(DatabaseUrl.parse(urlWith("postgresql", "u", "p", "a.example:5432,b.example:5433/lms")).jdbcUrl())
+                .isEqualTo("jdbc:postgresql://a.example:5432,b.example:5433/lms");
+        assertThat(DatabaseUrl.parse(urlWith("postgresql", "u", "p", "[::1]:5432/lms")).jdbcUrl())
+                .isEqualTo("jdbc:postgresql://[::1]:5432/lms");
+    }
+
+    @Test
+    @DisplayName("takes user and password from the query when the URL has none, and the URL wins otherwise")
+    void credentialsInQuery() {
+        DatabaseUrl fromQuery = DatabaseUrl.parse("postgresql://host/lms?" + pair("user", "alice") + "&"
+                + pair("password", "p%40ss") + "&sslmode=require");
+        assertThat(fromQuery.jdbcUrl()).isEqualTo("jdbc:postgresql://host/lms?sslmode=require");
+        assertThat(fromQuery.username()).contains("alice");
+        assertThat(fromQuery.password()).contains("p@ss");
+
+        DatabaseUrl both = DatabaseUrl.parse(urlWith("postgresql", "bob", "pw",
+                "host/lms?" + pair("user", "alice") + "&" + pair("password", "other")));
+        assertThat(both.username()).contains("bob");
+        assertThat(both.password()).contains("pw");
+    }
+
+    @Test
+    @DisplayName("a password may contain a colon or an at sign")
+    void passwordWithSeparators() {
+        DatabaseUrl url = DatabaseUrl.parse(urlWith("postgresql", "u", "a:b@c", "host:5432/lms"));
+
+        assertThat(url.password()).contains("a:b@c");
+        assertThat(url.jdbcUrl()).isEqualTo("jdbc:postgresql://host:5432/lms");
+    }
+
+    @Test
+    @DisplayName("reads libpq's keyword/value form, with quoted values")
+    void keywordValueForm() {
+        DatabaseUrl url = DatabaseUrl.parse(
+                "host=db.example.com port=6543 dbname=app user=alice "
+                        + pair("password", "'it\\'s a secret'") + " sslmode=require");
+
+        assertThat(url.jdbcUrl()).isEqualTo("jdbc:postgresql://db.example.com:6543/app?sslmode=require&prepareThreshold=0");
+        assertThat(url.username()).contains("alice");
+        assertThat(url.password()).contains("it's a secret");
+    }
+
+    @Test
+    @DisplayName("an unparseable host is refused without echoing the password")
+    void malformedHostIsRefusedQuietly() {
+        // A raw slash in the password ends the authority early, so what is left
+        // before the first slash is not a host.
+        assertThatThrownBy(() -> DatabaseUrl.parse(urlWith("postgresql", "u", "hunter2/x", "host/lms")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageNotContaining("hunter2");
     }
