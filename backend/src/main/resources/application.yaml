@@ -38,7 +38,9 @@ spring:
   # may be supplied in libpq form; it is normalised to JDBC form at that point.
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/lms}
-    username: ${DATABASE_USERNAME:lms}
+    # No default here: a non-blank default would beat the user in DATABASE_URL.
+    # DataSourceConfig falls back to the URL's user, then to "lms".
+    username: ${DATABASE_USERNAME:}
     # No default. A fallback password is a password: if DATABASE_PASSWORD is
     # ever unset in a deployed environment, a default would have the service
     # quietly try a guessable credential instead of refusing to start. Local
