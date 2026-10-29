@@ -65,6 +65,8 @@ public class DataSourceConfig {
      */
     private static final String BUILD_TIME_PLACEHOLDER_URL = "jdbc:postgresql://localhost:5432/lms";
 
+    private static final String DEFAULT_USERNAME = "lms";
+
     @Bean
     @ConditionalOnMissingBean(DataSource.class)
     DataSource dataSource(Environment environment) {
@@ -93,12 +95,16 @@ public class DataSourceConfig {
             }
         }
 
+        // Only reached with a URL that names no user (a JDBC URL in local
+        // development); the database role the repository's compose file creates.
+        if (username == null) {
+            username = DEFAULT_USERNAME;
+        }
+
         HikariDataSource dataSource = new HikariDataSource();
         dataSource.setJdbcUrl(jdbcUrl);
         dataSource.setDriverClassName("org.postgresql.Driver");
-        if (username != null) {
-            dataSource.setUsername(username);
-        }
+        dataSource.setUsername(username);
         if (password != null) {
             dataSource.setPassword(password);
         }
