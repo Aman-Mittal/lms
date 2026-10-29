@@ -112,6 +112,8 @@ tags:
     description: Third-party logistics -- client contracts, client-scoped charges, monthly client invoices and the margin per client.
   - name: Control tower
     description: Exception tickets and their lifecycle (vision document 3.8).
+  - name: Custom fields
+    description: Attributes a tenant defines for itself on partners, vehicles, drivers, terminals, orders, loads and trips, and the values it records.
 
 components:
 

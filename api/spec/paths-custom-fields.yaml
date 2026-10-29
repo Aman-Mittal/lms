@@ -1,0 +1,137 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/custom-fields/definitions:
+  get:
+    tags: [Custom fields]
+    operationId: listCustomFieldDefinitions
+    summary: The custom fields a tenant has defined
+    description: |
+      Requires `CUSTOM_FIELD_READ`. Every definition, retired ones included
+      (`active: false`), in display order. A tenant has a handful, so this is
+      one slice with no cursor.
+    parameters:
+      - name: entityType
+        in: query
+        description: Only the fields of this kind of record.
+        schema: { $ref: "#/components/schemas/CustomFieldEntityType" }
+    responses:
+      "200":
+        description: The definitions.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomFieldDefinitionSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Custom fields]
+    operationId: defineCustomField
+    summary: Define a custom field
+    description: |
+      Requires `CUSTOM_FIELD_MANAGE`. The key and the type cannot be changed
+      afterwards. A key is unique per kind of record.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/DefineCustomFieldRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/custom-fields/definitions/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the definition.
+  put:
+    tags: [Custom fields]
+    operationId: reviseCustomField
+    summary: Change a custom field, or retire it
+    description: |
+      Requires `CUSTOM_FIELD_MANAGE`. Changes the label, whether it is
+      required, its options and its place. Setting `active` to false retires
+      it: stored values are kept, but it is no longer validated or required.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReviseCustomFieldRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/custom-fields/values/{entityType}/{entityId}:
+  parameters:
+    - name: entityType
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/CustomFieldEntityType" }
+    - name: entityId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the record.
+  get:
+    tags: [Custom fields]
+    operationId: getCustomFieldValues
+    summary: The custom values of one record
+    description: Requires `CUSTOM_FIELD_READ`. Empty when nothing has been recorded.
+    responses:
+      "200":
+        description: The values, keyed by field key.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomFieldValues" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+  put:
+    tags: [Custom fields]
+    operationId: setCustomFieldValues
+    summary: Replace the custom values of one record
+    description: |
+      Requires `CUSTOM_FIELD_WRITE`. Replaces, not merges: a field left out is
+      cleared. Every value is checked against its definition and every
+      required field must be present; the answer lists everything wrong at
+      once (`code: custom-field-invalid`). The record must exist in this
+      tenant.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CustomFieldValues" }
+    responses:
+      "200":
+        description: The values as stored.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomFieldValues" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
