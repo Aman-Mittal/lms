@@ -1,0 +1,30 @@
+{
+  "name": "lms-demo-angular",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "generate": "openapi-generator-cli generate",
+    "prestart": "npm run generate",
+    "start": "ng serve",
+    "prebuild": "npm run generate",
+    "build": "ng build"
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/common": "^22.2.0",
+    "@angular/compiler": "^22.2.0",
+    "@angular/core": "^22.2.0",
+    "@angular/forms": "^22.2.0",
+    "@angular/platform-browser": "^22.2.0",
+    "@angular/router": "^22.2.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.2.5",
+    "@angular/cli": "^22.2.5",
+    "@angular/compiler-cli": "^22.2.0",
+    "@openapitools/openapi-generator-cli": "^2.42.0",
+    "typescript": "~6.0.2"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "lms-demo-react",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "generate": "openapi-generator-cli generate",
+    "prebuild": "npm run generate",
+    "build": "tsc -b && vite build",
+    "predev": "npm run generate",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5"
+  },
+  "devDependencies": {
+    "@openapitools/openapi-generator-cli": "^2.42.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.5"
+  }
+}
