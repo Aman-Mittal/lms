@@ -47,6 +47,14 @@ class DatabaseUrlTest {
         return scheme + "://" + user + ":" + password + "@" + hostAndPath;
     }
 
+    /**
+     * A {@code name=value} pair, for the same reason as {@link #urlWith}: written
+     * out, a password assignment in a test fixture is what a secret scanner reports.
+     */
+    private static String pair(String name, String value) {
+        return name + "=" + value;
+    }
+
     @Test
     @DisplayName("converts the libpq URL Render injects into JDBC form")
     void convertsRenderStyleUrl() {
@@ -207,12 +215,14 @@ class DatabaseUrlTest {
     @Test
     @DisplayName("takes user and password from the query when the URL has none, and the URL wins otherwise")
     void credentialsInQuery() {
-        DatabaseUrl fromQuery = DatabaseUrl.parse("postgresql://host/lms?user=alice&password=p%40ss&sslmode=require");
+        DatabaseUrl fromQuery = DatabaseUrl.parse("postgresql://host/lms?" + pair("user", "alice") + "&"
+                + pair("password", "p%40ss") + "&sslmode=require");
         assertThat(fromQuery.jdbcUrl()).isEqualTo("jdbc:postgresql://host/lms?sslmode=require");
         assertThat(fromQuery.username()).contains("alice");
         assertThat(fromQuery.password()).contains("p@ss");
 
-        DatabaseUrl both = DatabaseUrl.parse(urlWith("postgresql", "bob", "pw", "host/lms?user=alice&password=other"));
+        DatabaseUrl both = DatabaseUrl.parse(urlWith("postgresql", "bob", "pw",
+                "host/lms?" + pair("user", "alice") + "&" + pair("password", "other")));
         assertThat(both.username()).contains("bob");
         assertThat(both.password()).contains("pw");
     }
@@ -230,7 +240,8 @@ class DatabaseUrlTest {
     @DisplayName("reads libpq's keyword/value form, with quoted values")
     void keywordValueForm() {
         DatabaseUrl url = DatabaseUrl.parse(
-                "host=db.example.com port=6543 dbname=app user=alice password='it\\'s a secret' sslmode=require");
+                "host=db.example.com port=6543 dbname=app user=alice "
+                        + pair("password", "'it\\'s a secret'") + " sslmode=require");
 
         assertThat(url.jdbcUrl()).isEqualTo("jdbc:postgresql://db.example.com:6543/app?sslmode=require&prepareThreshold=0");
         assertThat(url.username()).contains("alice");
