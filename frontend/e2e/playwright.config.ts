@@ -35,7 +35,8 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  // In CI each shard writes a blob report; a later job merges them into one.
+  reporter: process.env.CI ? [['github'], ['blob']] : 'list',
   use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'angular', use: { baseURL: `${origin}/angular/` } },
