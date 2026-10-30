@@ -114,6 +114,8 @@ tags:
     description: Exception tickets and their lifecycle (vision document 3.8).
   - name: Custom fields
     description: Attributes a tenant defines for itself on partners, vehicles, drivers, terminals, orders, loads and trips, and the values it records.
+  - name: Delivery and claims
+    description: Proof of delivery with a one-time code, and claims against a consignment.
 
 components:
 
