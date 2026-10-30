@@ -15,16 +15,18 @@
  */
 
 import {
-  AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DriversApi, OrdersApi,
+  AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
+  OrdersApi,
   PartnersApi, PlanningApi, ResponseError, SettlementApi, TerminalsApi, TripsApi, VehiclesApi,
-  type CustomFieldDefinition, type CustomFieldEntityType, type CustomFieldType,
+  type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
+  type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
 } from '../api';
 import { API_URL } from '../config';
 import {
-  ApiProblem, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
-  type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
-  type PartnerDraft, type ResourceKey, type Row, type SignedIn,
+  ApiProblem, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
+  type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
+  type OtpIssued, type PartnerDraft, type ProofDraft, type ResourceKey, type Row, type SignedIn,
 } from './lmsGateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -67,6 +69,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const trips = new TripsApi(config);
   const freightBills = new SettlementApi(config);
   const customFields = new CustomFieldsApi(config);
+  const delivery = new DeliveryAndClaimsApi(config);
 
   const listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: async () => (await partners.listPartners({ limit: 50 })).items.map((p) => ({
@@ -97,6 +100,11 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     exceptions: async () => (await controlTower.listExceptions({ limit: 50 })).items.map((e) => ({
       id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
       category: text(e.category), description: text(e.description) })),
+    claims: async () => (await delivery.listClaims({ limit: 50 })).items.map((c) => ({
+      id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
+      status: text(c.status), consignmentId: text(c.consignmentId),
+      approvedAmount: text(c.approvedAmount), description: text(c.description),
+      resolutionNote: text(c.resolutionNote) })),
   };
 
   return {
@@ -172,6 +180,62 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           entityType: kind as CustomFieldEntityType, entityId: recordId, customFieldValues: { values },
         });
         return saved.values as CustomValues;
+      }),
+
+    raiseClaim: (draft: ClaimDraft) =>
+      guard(async () => {
+        const made = await delivery.raiseClaim({
+          raiseClaimRequest: {
+            consignmentId: draft.consignmentId, claimType: draft.claimType as ApiClaimType,
+            amount: draft.amount, description: draft.description,
+          },
+        });
+        return made.id ?? '';
+      }),
+
+    transitionClaim: (id: string, move: ClaimMove) =>
+      guard(async () => {
+        await delivery.transitionClaim({
+          id,
+          transitionClaimRequest: {
+            target: move.target as ApiClaimStatus, approvedAmount: move.approvedAmount,
+            resolutionNote: move.resolutionNote,
+          },
+        });
+      }),
+
+    issueDeliveryOtp: (consignmentId: string): Promise<OtpIssued> =>
+      guard(async () => {
+        const issued = await delivery.issueDeliveryOtp({ consignmentId });
+        return { expiresAt: text(issued.expiresAt), otp: issued.otp };
+      }),
+
+    recordDeliveryProof: (consignmentId: string, draft: ProofDraft) =>
+      guard(async () => {
+        await delivery.recordDeliveryProof({
+          consignmentId,
+          recordDeliveryProofRequest: {
+            otp: draft.otp, recipientName: draft.recipientName, photoRef: draft.photoRef || undefined,
+          },
+        });
+      }),
+
+    deliveryProof: (consignmentId: string): Promise<DeliveryProofView | null> =>
+      guard(async () => {
+        try {
+          const p = await delivery.getDeliveryProof({ consignmentId });
+          return {
+            consignmentId: p.consignmentId ?? consignmentId,
+            status: p.status === 'CONFIRMED' ? 'CONFIRMED' : 'OTP_ISSUED',
+            recipientName: text(p.recipientName), photoRef: text(p.photoRef),
+            deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
+          };
+        } catch (e) {
+          if (e instanceof ResponseError && e.response.status === 404) {
+            return null;
+          }
+          throw e;
+        }
       }),
   };
 }

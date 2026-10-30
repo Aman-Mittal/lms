@@ -86,7 +86,7 @@
               "buildTarget": "angular:build:development"
             }
           },
-          "defaultConfiguration": "production"
+          "defaultConfiguration": "development"
         }
       }
     }

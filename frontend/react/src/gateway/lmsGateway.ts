@@ -50,7 +50,7 @@ export interface ControlTowerSummary {
 
 export const RESOURCE_KEYS = [
   'partners', 'vehicles', 'drivers', 'terminals', 'orders', 'loads', 'trips', 'freight-bills',
-  'exceptions',
+  'exceptions', 'claims',
 ] as const;
 export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 
@@ -108,6 +108,51 @@ export type CustomValue = string | number | boolean;
 /** Field key to value. A field with no value is simply absent. */
 export type CustomValues = Record<string, CustomValue>;
 
+// ---------------------------------------------------------------- delivery and claims
+
+export const CLAIM_TYPES = ['DAMAGE', 'SHORTAGE', 'LOSS', 'DELAY'] as const;
+export type ClaimType = (typeof CLAIM_TYPES)[number];
+
+/** Where a claim may be moved to; OPEN is only ever where it starts. */
+export type ClaimTarget = 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'SETTLED';
+
+export interface ClaimDraft {
+  consignmentId: string;
+  claimType: ClaimType;
+  amount: number;
+  description: string;
+}
+
+export interface ClaimMove {
+  target: ClaimTarget;
+  /** Required to approve. */
+  approvedAmount?: number;
+  /** Required to reject. */
+  resolutionNote?: string;
+}
+
+export interface OtpIssued {
+  expiresAt: string;
+  /** Present only where the deployment hands the code back (a demo). */
+  otp?: string;
+}
+
+export interface ProofDraft {
+  otp: string;
+  recipientName: string;
+  photoRef?: string;
+}
+
+/** A consignment's proof of delivery, every cell already formatted for display. */
+export interface DeliveryProofView {
+  consignmentId: string;
+  status: 'OTP_ISSUED' | 'CONFIRMED';
+  recipientName: string;
+  photoRef: string;
+  deliveredAt: string;
+  otpExpiresAt: string;
+}
+
 /** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
 export class ApiProblem extends Error {
   constructor(message: string, readonly status?: number) {
@@ -129,4 +174,12 @@ export interface LmsGateway {
   customValues(kind: CustomFieldKind, recordId: string): Promise<CustomValues>;
   /** Replaces the record's values; resolves to what was stored. */
   saveCustomValues(kind: CustomFieldKind, recordId: string, values: CustomValues): Promise<CustomValues>;
+
+  /** Resolves to the new claim's id. */
+  raiseClaim(draft: ClaimDraft): Promise<string>;
+  transitionClaim(id: string, move: ClaimMove): Promise<void>;
+  issueDeliveryOtp(consignmentId: string): Promise<OtpIssued>;
+  recordDeliveryProof(consignmentId: string, draft: ProofDraft): Promise<void>;
+  /** Null when no code has been issued for the consignment yet. */
+  deliveryProof(consignmentId: string): Promise<DeliveryProofView | null>;
 }
