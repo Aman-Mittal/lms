@@ -43,8 +43,13 @@ public class SourcingQueryService {
                    pv.legal_name AS pending_vendor_name, pending.responds_by,
                    av.legal_name AS awarded_vendor_name, a.awarded_at,
                    coalesce(counted.offers_made, 0) AS offers_made,
-                   a.created_at
+                   a.created_at,
+                   -- The tenant's own preferences are not for a vendor to read.
+                   CASE WHEN CAST(:partner AS uuid) IS NULL THEN rf.rule_id END AS applied_rule_id,
+                   CASE WHEN CAST(:partner AS uuid) IS NULL THEN rf.rule_name END AS applied_rule_name,
+                   CASE WHEN CAST(:partner AS uuid) IS NULL THEN rf.action END AS applied_rule_action
               FROM allocation a
+              LEFT JOIN allocation_rule_firing rf ON rf.allocation_id = a.id
               JOIN load_unit l ON l.id = a.load_id
               LEFT JOIN LATERAL (
                     SELECT o.vendor_partner_id, o.responds_by
