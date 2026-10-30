@@ -1,0 +1,127 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/event-dead-letters:
+  get:
+    tags: [Event dead-letter]
+    operationId: listParkedEvents
+    summary: A page of parked events
+    description: |
+      Requires `EVENT_DEAD_LETTER_READ`. Events whose listener failed on every
+      retry and were taken out of the live registry, the caller's tenant only.
+      Parked events by default; ordered by when they were parked.
+    parameters:
+      - name: status
+        in: query
+        schema: { $ref: "#/components/schemas/ParkedEventStatus" }
+      - name: eventType
+        in: query
+        description: The event's fully qualified type name.
+        schema: { type: string }
+      - name: listenerId
+        in: query
+        schema: { type: string }
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of parked events.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ParkedEventSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/event-dead-letters/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the parked event (the publication's identifier).
+  get:
+    tags: [Event dead-letter]
+    operationId: getParkedEvent
+    summary: One parked event, with its payload
+    description: Requires `EVENT_DEAD_LETTER_READ`.
+    responses:
+      "200":
+        description: The parked event.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ParkedEventDetail" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/event-dead-letters/{id}/replays:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the parked event.
+  post:
+    tags: [Event dead-letter]
+    operationId: replayParkedEvent
+    summary: Replay a parked event to its listener
+    description: |
+      Requires `EVENT_DEAD_LETTER_MANAGE`. Puts the event back into the live
+      registry and resubmits it to the same listener. `REPLAYED` when the
+      listener completes; `PARKED_AGAIN` when it fails once more, with the
+      failure counted. Only a parked event can be replayed
+      (`code: dead-letter-not-parked`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "200":
+        description: What the replay did.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ParkedEventReplay" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/event-dead-letters/{id}/discards:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the parked event.
+  post:
+    tags: [Event dead-letter]
+    operationId: discardParkedEvent
+    summary: Give up on a parked event
+    description: |
+      Requires `EVENT_DEAD_LETTER_MANAGE`. The event is kept, marked discarded,
+      with the reason; it will not be retried again. A reason is required
+      (`code: dead-letter-reason-required`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/DiscardParkedEventRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
