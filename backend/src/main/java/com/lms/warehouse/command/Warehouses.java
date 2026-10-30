@@ -53,8 +53,9 @@ class Warehouses {
 
     /** Any terminal of this tenant's: where a dispatched unit is bound. */
     void requireTerminal(UUID terminalId) {
-        terminals.functionalCategoryOf(terminalId)
-                .orElseThrow(() -> new ResourceNotFoundException("Terminal", terminalId));
+        if (terminals.functionalCategoryOf(terminalId).isEmpty()) {
+            throw new ResourceNotFoundException("Terminal", terminalId);
+        }
     }
 
     static String currentActor() {
