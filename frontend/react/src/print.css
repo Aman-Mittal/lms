@@ -15,8 +15,8 @@
  */
 
 /*
- * Slips: a claim slip and a proof-of-delivery slip, drawn on screen as a
- * preview and, when the browser prints, the only thing on the page.
+ * Slips: a claim slip, a proof-of-delivery slip and a tracking-link slip, drawn
+ * on screen as a preview and, when the browser prints, the only thing on the page.
  */
 .slip { border:1px solid #d8dee9; border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; background:#fff; color:#111; }
 .slip h3 { margin:0 0 .5rem; }
@@ -31,3 +31,7 @@
   .slip { position:absolute; left:0; top:0; width:100%; margin:0; border:0; border-radius:0; }
   .slip .no-print, .no-print { display:none !important; }
 }
+
+/* The page a customer sees from a tracking link: no sidebar, a narrow column. */
+.public { max-width:36rem; margin:2rem auto; padding:0 1rem; }
+.public dl { margin:1rem 0; }

@@ -22,6 +22,8 @@ import { FieldsSettings } from './pages/FieldsSettings';
 import { ListPage } from './pages/ListPage';
 import { Login } from './pages/Login';
 import { Shell } from './pages/Shell';
+import { TrackingLinks } from './pages/TrackingLinks';
+import { TrackPage } from './pages/TrackPage';
 import { useSession } from './session';
 
 /** Wraps the screens that need a signed-in user; others are sent to /login. */
@@ -34,12 +36,15 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Public: a customer follows a link with no account, so no sign-in is asked for. */}
+      <Route path="/track/:token" element={<TrackPage />} />
       <Route element={<RequireSignIn />}>
         <Route element={<Shell />}>
           <Route index element={<Dashboard />} />
           <Route path="settings/custom-fields" element={<FieldsSettings />} />
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="delivery" element={<DeliveryDesk />} />
+          <Route path="tracking" element={<TrackingLinks />} />
           <Route path=":resource" element={<ListPage />} />
         </Route>
       </Route>
