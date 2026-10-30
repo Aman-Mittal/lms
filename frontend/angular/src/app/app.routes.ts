@@ -23,6 +23,7 @@ import { TrackingLinks } from './pages/tracking-links';
 import { ClaimsPage } from './pages/claims';
 import { Dashboard } from './pages/dashboard';
 import { DeliveryDesk } from './pages/delivery-desk';
+import { DemoSettings } from './pages/demo-settings';
 import { ListPage } from './pages/list';
 import { FieldsSettings } from './pages/fields-settings';
 
@@ -37,6 +38,7 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', component: Dashboard },
       { path: 'settings/custom-fields', component: FieldsSettings },
+      { path: 'settings/demo', component: DemoSettings },
       { path: 'claims', component: ClaimsPage },
       { path: 'delivery', component: DeliveryDesk },
       { path: 'tracking', component: TrackingLinks },

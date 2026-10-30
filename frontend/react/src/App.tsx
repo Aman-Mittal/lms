@@ -18,6 +18,7 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { ClaimsPage } from './pages/ClaimsPage';
 import { Dashboard } from './pages/Dashboard';
 import { DeliveryDesk } from './pages/DeliveryDesk';
+import { DemoSettings } from './pages/DemoSettings';
 import { FieldsSettings } from './pages/FieldsSettings';
 import { ListPage } from './pages/ListPage';
 import { Login } from './pages/Login';
@@ -42,6 +43,7 @@ export function App() {
         <Route element={<Shell />}>
           <Route index element={<Dashboard />} />
           <Route path="settings/custom-fields" element={<FieldsSettings />} />
+          <Route path="settings/demo" element={<DemoSettings />} />
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="delivery" element={<DeliveryDesk />} />
           <Route path="tracking" element={<TrackingLinks />} />
