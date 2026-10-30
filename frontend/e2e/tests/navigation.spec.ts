@@ -20,7 +20,7 @@ import { signIn } from './support';
 const SCREENS: Array<[string, string]> = [
   ['partners', 'Partners'], ['vehicles', 'Vehicles'], ['drivers', 'Drivers'],
   ['terminals', 'Terminals'], ['orders', 'Orders'], ['loads', 'Loads'], ['trips', 'Trips'],
-  ['freight-bills', 'Freight bills'], ['exceptions', 'Exceptions'],
+  ['freight-bills', 'Freight bills'], ['exceptions', 'Exceptions'], ['claims', 'Claims'],
 ];
 
 test.describe('moving around', () => {
@@ -41,6 +41,14 @@ test.describe('moving around', () => {
     await page.getByTestId('nav-custom-fields').click();
     await expect(page.getByRole('heading', { name: 'Custom fields', level: 1 })).toBeVisible();
     await expect(page.getByTestId('kind')).toBeVisible();
+  });
+
+  test('the delivery desk is offered to someone who may read proofs of delivery', async ({ page }) => {
+    await signIn(page);
+
+    await page.getByTestId('nav-delivery').click();
+    await expect(page.getByRole('heading', { name: 'Delivery desk', level: 1 })).toBeVisible();
+    await expect(page.getByTestId('consignment-id')).toBeVisible();
   });
 
   test('the layout fits a phone: nothing makes the page scroll sideways', async ({ page }) => {

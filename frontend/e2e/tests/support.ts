@@ -91,3 +91,127 @@ export async function retireFields(
     }
   }
 }
+
+// ------------------------------------------------------------ data made through the API
+
+export interface Session {
+  token: string;
+  orgUnitId: string;
+}
+
+/** Signs in to the API as the demo administrator, for specs that build their own data. */
+export async function apiSession(request: APIRequestContext): Promise<Session> {
+  const login = await request.post(`${API}/api/v1/auth/login`, {
+    data: { tenantCode: 'demo', email: DEMO_EMAIL, password: password() },
+  });
+  expect(login.ok(), 'API sign-in').toBeTruthy();
+  const body = await login.json();
+  return { token: body.accessToken, orgUnitId: body.orgUnitId };
+}
+
+async function post(request: APIRequestContext, session: Session, path: string, data: unknown) {
+  const response = await request.post(`${API}${path}`, {
+    headers: { Authorization: `Bearer ${session.token}` },
+    data,
+  });
+  expect(response.ok(), `POST ${path}: ${response.status()} ${await response.text()}`).toBeTruthy();
+  return response.status() === 204 ? null : response.json();
+}
+
+function uuid(): string {
+  return crypto.randomUUID();
+}
+
+function between(low: number, high: number): number {
+  return Number((low + Math.random() * (high - low)).toFixed(6));
+}
+
+/**
+ * The partners it makes are coded to sort last: lists are ordered by code and show
+ * one page, so partners that sorted early would push a later spec's own partner
+ * off the first page.
+ *
+ * Builds a consignment the way a planner would -- a customer, a consignee, two
+ * sites, an order with one line, validated and split into consignments -- and
+ * returns its id. Nothing is mocked and nothing needs a database, so it runs
+ * the same against CI and a local stack. The consignment has not left, which
+ * is exactly what the delivery desk should refuse to prove.
+ */
+export async function newConsignment(request: APIRequestContext, session: Session): Promise<string> {
+  const org = session.orgUnitId;
+  const customer = await post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-E2E-C-${uuid()}`, legalName: 'E2E customer', partnerType: 'CUSTOMER',
+    taxId: `TAX-${uuid()}`,
+  });
+  const consignee = await post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-E2E-N-${uuid()}`, legalName: 'E2E consignee', partnerType: 'CONSIGNEE',
+    taxId: `TAX-${uuid()}`,
+  });
+  const site = (name: string) => ({
+    orgUnitId: org, code: `E2E-${name}-${uuid()}`, name: `E2E ${name}`, category: 'CUSTOMER_SITE',
+    centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 500, dockCount: 2,
+    avgDwellMinutes: 45,
+  });
+  const origin = await post(request, session, '/api/v1/terminals/point-radius', site('ORIG'));
+  const destination = await post(request, session, '/api/v1/terminals/point-radius', site('DEST'));
+  const order = await post(request, session, '/api/v1/orders', {
+    orgUnitId: org, customerPartnerId: customer.id, orderNo: `E2E-SO-${uuid()}`,
+    originTerminalId: origin.id,
+    requestedPickupAt: new Date(Date.now() + 4 * 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    source: 'API',
+  });
+  await post(request, session, `/api/v1/orders/${order.id}/lines`, {
+    lineNo: 1, materialCode: 'GOODS', materialDescription: 'General goods', materialClass: 'GENERAL',
+    quantity: 10, uom: 'CASE', deadWeightKg: 500, consigneePartnerId: consignee.id,
+    destinationTerminalId: destination.id,
+  });
+  await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
+  const consignments = await post(request, session, `/api/v1/orders/${order.id}/consignments`, {});
+  return consignments[0].id as string;
+}
+
+/** Raises a claim through the API and returns its id and number. */
+export async function newClaim(
+  request: APIRequestContext, session: Session, consignmentId: string, claimType = 'LOSS',
+): Promise<{ id: string; claimNo: string }> {
+  const made = await post(request, session, '/api/v1/claims', {
+    consignmentId, claimType, amount: 400.5, description: 'Raised by the browser suite',
+  });
+  const read = await request.get(`${API}/api/v1/claims/${made.id}`, {
+    headers: { Authorization: `Bearer ${session.token}` },
+  });
+  return { id: made.id, claimNo: (await read.json()).claimNo };
+}
+
+export async function openClaims(page: Page): Promise<void> {
+  await page.getByTestId('nav-claims').click();
+  await expect(page.getByRole('heading', { name: 'Claims', level: 1 })).toBeVisible();
+  await expect(page.getByText('Loading…')).toHaveCount(0);
+}
+
+/**
+ * Takes permissions out of the sign-in answer, before the page sees it, so a
+ * screen can be looked at as a person with fewer rights would see it. Only the
+ * console is told; the server still knows the real token, which is the point:
+ * this checks what the screen offers, and the backend's own tests check what it allows.
+ */
+export async function withoutPermissions(page: Page, dropped: string[]): Promise<void> {
+  await page.route('**/api/v1/auth/login', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.permissions = (body.permissions as string[]).filter((p) => !dropped.includes(p));
+    await route.fulfill({ response, json: body });
+  });
+}
+
+/** Replaces window.print with a counter, so a spec can press Print without a dialog. */
+export async function stubPrint(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    (window as unknown as { printed: number }).printed = 0;
+    window.print = () => { (window as unknown as { printed: number }).printed += 1; };
+  });
+}
+
+export async function printed(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { printed: number }).printed);
+}
