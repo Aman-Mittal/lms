@@ -19,13 +19,15 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import {
   AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
-  CustomFieldsService, CustomFieldType, DriversService, OrdersService, PartnersService,
+  ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, CustomFieldsService, CustomFieldType,
+  DeliveryAndClaimsService, DriversService, OrdersService, PartnersService,
   PlanningService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, TerminalsService,
   TripsService, VehiclesService,
 } from '../api';
 import {
-  ApiProblem, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues, FieldChanges,
-  FieldDefinition, FieldDraft, FieldType, LmsGateway, PartnerDraft, ResourceKey, Row, SignedIn,
+  ApiProblem, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
+  DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, LmsGateway, OtpIssued,
+  PartnerDraft, ProofDraft, ResourceKey, Row, SignedIn,
 } from './lms-gateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -67,6 +69,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly trips = inject(TripsService);
   private readonly freightBills = inject(SettlementService);
   private readonly customFields = inject(CustomFieldsService);
+  private readonly delivery = inject(DeliveryAndClaimsService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
@@ -97,6 +100,11 @@ export class GeneratedLmsGateway extends LmsGateway {
     exceptions: () => this.call(this.controlTower.listExceptions({ limit: 50 }), (s) => s.items.map((e) => ({
       id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
       category: text(e.category), description: text(e.description) }))),
+    claims: () => this.call(this.delivery.listClaims({ limit: 50 }), (s) => s.items.map((c) => ({
+      id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
+      status: text(c.status), consignmentId: text(c.consignmentId),
+      approvedAmount: text(c.approvedAmount), description: text(c.description),
+      resolutionNote: text(c.resolutionNote) }))),
   };
 
   signIn(credentials: Credentials): Promise<SignedIn> {
@@ -163,6 +171,55 @@ export class GeneratedLmsGateway extends LmsGateway {
       entityType: kind as unknown as CustomFieldEntityType, entityId: recordId,
       customFieldValues: { values },
     }), (v) => v.values as CustomValues);
+  }
+
+  raiseClaim(draft: ClaimDraft): Promise<string> {
+    return this.call(this.delivery.raiseClaim({
+      raiseClaimRequest: {
+        consignmentId: draft.consignmentId, claimType: draft.claimType as unknown as ApiClaimType,
+        amount: draft.amount, description: draft.description,
+      },
+    }), (made) => made.id ?? '');
+  }
+
+  transitionClaim(id: string, move: ClaimMove): Promise<void> {
+    return this.call(this.delivery.transitionClaim({
+      id,
+      transitionClaimRequest: {
+        target: move.target as unknown as ApiClaimStatus, approvedAmount: move.approvedAmount,
+        resolutionNote: move.resolutionNote,
+      },
+    }), () => undefined);
+  }
+
+  issueDeliveryOtp(consignmentId: string): Promise<OtpIssued> {
+    return this.call(this.delivery.issueDeliveryOtp({ consignmentId }),
+      (issued) => ({ expiresAt: text(issued.expiresAt), otp: issued.otp }));
+  }
+
+  recordDeliveryProof(consignmentId: string, draft: ProofDraft): Promise<void> {
+    return this.call(this.delivery.recordDeliveryProof({
+      consignmentId,
+      recordDeliveryProofRequest: {
+        otp: draft.otp, recipientName: draft.recipientName, photoRef: draft.photoRef || undefined,
+      },
+    }), () => undefined);
+  }
+
+  async deliveryProof(consignmentId: string): Promise<DeliveryProofView | null> {
+    try {
+      return await this.call(this.delivery.getDeliveryProof({ consignmentId }), (p) => ({
+        consignmentId: p.consignmentId ?? consignmentId,
+        status: (p.status as unknown as string) === 'CONFIRMED' ? 'CONFIRMED' as const : 'OTP_ISSUED' as const,
+        recipientName: text(p.recipientName), photoRef: text(p.photoRef),
+        deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
+      }));
+    } catch (e) {
+      if (e instanceof ApiProblem && e.status === 404) {
+        return null;
+      }
+      throw e;
+    }
   }
 
   /** Awaits a generated call, maps its result, and turns any failure into an ApiProblem. */

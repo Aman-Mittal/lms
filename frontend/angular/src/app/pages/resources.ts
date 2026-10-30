@@ -29,6 +29,8 @@ export interface Resource {
   group: string;
   /** The kind of custom field it carries, where it carries any. */
   customKind?: CustomFieldKind;
+  /** The permission that shows it in the sidebar; absent means everyone. */
+  permission?: string;
   columns: Column[];
 }
 
@@ -63,7 +65,11 @@ export const RESOURCES: Resource[] = [
     { header: 'Ticket', field: 'ticketNo' }, { header: 'Severity', field: 'severity' },
     { header: 'Status', field: 'status' }, { header: 'Category', field: 'category' },
     { header: 'Description', field: 'description' } ] },
+  { key: 'claims', title: 'Claims', group: 'Delivery', permission: 'CLAIM_READ', columns: [
+    { header: 'Claim', field: 'claimNo' }, { header: 'Type', field: 'claimType' },
+    { header: 'Amount', field: 'amount' }, { header: 'Status', field: 'status' },
+    { header: 'Consignment', field: 'consignmentId' } ] },
 ];
 
 /** The sidebar's sections, in order. */
-export const GROUPS = ['Master data', 'Operations', 'Finance', 'Control tower'];
+export const GROUPS = ['Master data', 'Operations', 'Finance', 'Control tower', 'Delivery'];
