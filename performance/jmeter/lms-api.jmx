@@ -408,8 +408,8 @@
               </collectionProp>
             </HeaderManager>
             <hashTree/>
-            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Succeeded (200 or 201)">
-              <collectionProp name="Asserion.test_strings"><stringProp name="1">^20[01]$</stringProp></collectionProp>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Validated (204)">
+              <collectionProp name="Asserion.test_strings"><stringProp name="1">^204$</stringProp></collectionProp>
               <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
               <boolProp name="Assertion.assume_success">false</boolProp>
               <intProp name="Assertion.test_type">1</intProp>
