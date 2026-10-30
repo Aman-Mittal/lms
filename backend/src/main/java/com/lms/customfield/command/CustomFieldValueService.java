@@ -20,9 +20,11 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -46,7 +48,9 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>A write <em>replaces</em> the record's values rather than merging into
  * them. A merge cannot express "this field is now empty" without a second
- * convention, and a replace is what a form that shows every field sends.
+ * convention, and a replace is what a form that shows every field sends. The
+ * one exception is a retired field: its stored value survives every write, so
+ * switching a field off never destroys what was recorded under it.
  */
 @Service
 public class CustomFieldValueService {
@@ -118,6 +122,19 @@ public class CustomFieldValueService {
         }
 
         Optional<CustomFieldValue> existing = values.forRecord(tenantId, entityType.name(), entityId);
+        // A retired field is no longer asked for, but what was recorded under it
+        // is not the form's to throw away: carry it over untouched.
+        Set<String> retired = new HashSet<>();
+        for (CustomFieldDefinition d : definitions.ofType(tenantId, entityType.name())) {
+            if (!d.active()) {
+                retired.add(d.fieldKey());
+            }
+        }
+        existing.map(e -> parse(e.fieldValues())).ifPresent(previous -> previous.forEach((k, v) -> {
+            if (retired.contains(k) && v != null) {
+                clean.putIfAbsent(k, v);
+            }
+        }));
         if (existing.isEmpty() && clean.isEmpty()) {
             return clean;
         }

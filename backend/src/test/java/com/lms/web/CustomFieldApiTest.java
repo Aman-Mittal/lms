@@ -199,6 +199,8 @@ class CustomFieldApiTest {
         accepted("retire", kit.put(callerA, DEFINITIONS + "/" + id,
                 "{\"label\":\"Credit note\",\"required\":true,\"active\":false}", everything));
         accepted("no longer required", setValues(callerA, "PARTNER", aPartner, "{\"tier\":\"SILVER\"}"));
+        assertThat(valuesOf(callerA, "PARTNER", aPartner).get("credit_note").asString())
+                .as("a write that does not mention a retired field keeps what it held").isEqualTo("net 45");
         refused("no longer a field", setValues(callerA, "PARTNER", aPartner,
                 "{\"credit_note\":\"x\"}"), 409);
     }

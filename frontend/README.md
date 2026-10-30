@@ -8,6 +8,7 @@ The same console built twice, against one API, plus the API reference.
 | `react/` | React 19 + Vite, hooks, React Router |
 | `swagger/`, `landing/` | Swagger UI and the landing page |
 | `build-site.sh` | Builds all of it into `site/`, laid out as it is published |
+| `e2e/` | Playwright browser tests, run against both consoles and a real backend |
 
 Published to GitHub Pages by `.github/workflows/pages.yml` at
 `/<repo>/angular/`, `/<repo>/react/` and `/<repo>/api/`.
@@ -22,7 +23,7 @@ regenerate them first.
 
 ```
 (cd backend && ./mvnw -q generate-sources)   # writes backend/target/openapi/openapi.yaml
-cd frontend && bash build-site.sh            # or: cd angular && npm install && npm start
+cd frontend && ./build-site.sh               # or: cd angular && npm install && npm start
 ```
 
 ## The adapter
@@ -36,8 +37,28 @@ change can only break the adapter, and a fake gateway is enough to test a screen
 
 ## Pointing at another backend
 
-Angular: `API_URL` in `angular/src/app/config.ts`. React: `VITE_API_URL` at
-build time. For the Pages build, `API_URL` when running `build-site.sh`.
+Angular reads `<meta name="lms-api-url">` from its `index.html` at run time
+(`angular/src/app/config.ts`), so one build serves any backend; React reads
+`VITE_API_URL` at build time. `build-site.sh` sets both from `API_URL`.
 The backend must list the Pages origin in `CORS_ALLOWED_ORIGINS`.
 
 Demo only: the access token is held in memory and is gone on reload.
+
+## Browser end-to-end tests
+
+`e2e/` runs one set of specs against each console in Chromium, against a real
+backend and database -- nothing is mocked. `.github/workflows/e2e.yml` does it
+in CI. Locally, start Postgres and the backend with the demo tenant seeded
+(`LMS_DEMO_SEED=true DEMO_ADMIN_PASSWORD=...`, and `CORS_ALLOWED_ORIGINS` set to
+`http://localhost:4300`), then:
+
+```
+cd frontend
+PAGES_BASE=/ API_URL=http://localhost:8080 bash build-site.sh
+cd e2e && npm install && npx playwright install chromium
+E2E_DEMO_PASSWORD=... npx playwright test
+```
+
+The demo tenant is shared by every spec, so a spec that defines a required
+custom field retires it in a `finally`; a field left behind would fail every
+later write to that kind of record.
