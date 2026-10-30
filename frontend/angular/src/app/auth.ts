@@ -25,12 +25,15 @@ export const bearerToken: HttpInterceptorFn = (req, next) => {
   const session = inject(Session);
   const router = inject(Router);
   const token = session.token();
-  const authorised = token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
+  // The public tracking read is made without credentials, whoever is signed in: a
+  // customer has none, and a token sent to a route that ignores it is only exposure.
+  const publicRoute = req.url.includes('/api/v1/public/');
+  const authorised = token && !publicRoute ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
   return next(authorised).pipe(
     tap({
       error: (e) => {
         // An expired token is the one error every screen would otherwise handle alike.
-        if (e instanceof HttpErrorResponse && e.status === 401 && token) {
+        if (e instanceof HttpErrorResponse && e.status === 401 && token && !publicRoute) {
           session.end();
           router.navigateByUrl('/login');
         }

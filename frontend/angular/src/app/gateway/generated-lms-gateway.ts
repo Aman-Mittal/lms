@@ -21,13 +21,13 @@ import {
   AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
   ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, CustomFieldsService, CustomFieldType,
   DeliveryAndClaimsService, DriversService, OrdersService, PartnersService,
-  PlanningService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, TerminalsService,
-  TripsService, VehiclesService,
+  PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService,
+  TerminalsService, TrackingLinksService, TripsService, VehiclesService,
 } from '../api';
 import {
   ApiProblem, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
-  DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, LmsGateway, OtpIssued,
-  PartnerDraft, ProofDraft, ResourceKey, Row, SignedIn,
+  DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, IssuedTrackingLink, LmsGateway,
+  OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, SignedIn, TrackingLinkView,
 } from './lms-gateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -70,6 +70,8 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly freightBills = inject(SettlementService);
   private readonly customFields = inject(CustomFieldsService);
   private readonly delivery = inject(DeliveryAndClaimsService);
+  private readonly links = inject(TrackingLinksService);
+  private readonly publicRead = inject(PublicTrackingService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
@@ -213,6 +215,41 @@ export class GeneratedLmsGateway extends LmsGateway {
         status: (p.status as unknown as string) === 'CONFIRMED' ? 'CONFIRMED' as const : 'OTP_ISSUED' as const,
         recipientName: text(p.recipientName), photoRef: text(p.photoRef),
         deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
+      }));
+    } catch (e) {
+      if (e instanceof ApiProblem && e.status === 404) {
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink> {
+    return this.call(this.links.issueTrackingLink({
+      consignmentId, issueTrackingLinkRequest: expiresInDays ? { expiresInDays } : undefined,
+    }), (issued) => ({ id: issued.id, token: issued.token, expiresAt: text(issued.expiresAt) }));
+  }
+
+  trackingLinks(consignmentId: string): Promise<TrackingLinkView[]> {
+    return this.call(this.links.listTrackingLinks({ consignmentId }), (list) => list.items.map((l) => ({
+      id: text(l.id), createdAt: text(l.createdAt), expiresAt: text(l.expiresAt),
+      revokedAt: text(l.revokedAt), status: ((l.status as unknown as string) ?? 'ACTIVE') as TrackingLinkView['status'],
+    })));
+  }
+
+  revokeTrackingLink(id: string): Promise<void> {
+    return this.call(this.links.revokeTrackingLink({ id }), () => undefined);
+  }
+
+  async publicTracking(token: string): Promise<PublicTrackingView | null> {
+    try {
+      return await this.call(this.publicRead.getPublicTracking({ token }), (t) => ({
+        reference: text(t.reference), status: text(t.status), originName: text(t.originName),
+        destinationName: text(t.destinationName), requestedDeliveryAt: text(t.requestedDeliveryAt),
+        deliveredAt: text(t.deliveredAt), proofRecorded: t.proofRecorded ?? false,
+        position: t.position
+          ? { lat: text(t.position.lat), lon: text(t.position.lon), recordedAt: text(t.position.recordedAt) }
+          : null,
       }));
     } catch (e) {
       if (e instanceof ApiProblem && e.status === 404) {
