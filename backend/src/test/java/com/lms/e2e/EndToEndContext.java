@@ -52,5 +52,7 @@ public class EndToEndContext {
         registry.add("lms.demo.admin-password", () -> DEMO_PASSWORD);
         // A demo deployment hands the delivery code back, which is what lets a scenario play the consignee.
         registry.add("lms.delivery.expose-otp", () -> "true");
+        // Customers' reads of a tracking link come from one address; the limit has its own test.
+        registry.add("lms.tracking.rate-limit.requests", () -> "100000");
     }
 }

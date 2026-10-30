@@ -1,0 +1,123 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/consignments/{consignmentId}/tracking-links:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Tracking links]
+    operationId: issueTrackingLink
+    summary: Issue a tracking link for a consignment
+    description: |
+      Requires `TRACKING_LINK_MANAGE`. The response carries the token **once**;
+      only its hash is kept, so a lost token cannot be recovered, only replaced.
+      A link lasts 30 days by default and at most 180. A consignment may have at
+      most ten active links (`code: tracking-link-limit`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/IssueTrackingLinkRequest" }
+    responses:
+      "201":
+        description: The link was issued. This is the only time the token is shown.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrackingLinkIssued" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  get:
+    tags: [Tracking links]
+    operationId: listTrackingLinks
+    summary: A consignment's tracking links
+    description: Requires `TRACKING_LINK_MANAGE`. Never includes a token.
+    responses:
+      "200":
+        description: The links, newest first.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrackingLinkList" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/tracking-links/{id}/revocations:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the tracking link.
+  post:
+    tags: [Tracking links]
+    operationId: revokeTrackingLink
+    summary: Revoke a tracking link
+    description: |
+      Requires `TRACKING_LINK_MANAGE`. From then on the link answers like one
+      that never existed. Revoking a link twice is not an error.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/public/tracking/{token}:
+  parameters:
+    - name: token
+      in: path
+      required: true
+      schema: { type: string }
+      description: The token returned when the link was issued.
+  get:
+    tags: [Public tracking]
+    operationId: getPublicTracking
+    summary: Follow a consignment from a tracking link
+    description: |
+      **No authentication**: the token is the credential. Returns a deliberately
+      small view and never an identifier, a partner, an amount, or a vehicle or
+      driver. While in transit it carries the carrying trip's last reported
+      position, rounded to two decimals (about a kilometre).
+
+      An unknown, expired and revoked token all answer the same 404. The route
+      is limited per client address (30 requests a minute by default) and answers
+      429 with `Retry-After` beyond that. Every answer is `Cache-Control:
+      no-store` and `X-Robots-Tag: noindex`.
+    security: []
+    responses:
+      "200":
+        description: The consignment's progress.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublicTracking" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "429":
+        description: Too many requests from this client address.
+        headers:
+          Retry-After:
+            description: Seconds until the client may try again.
+            schema: { type: integer }
+        content:
+          application/problem+json:
+            schema: { $ref: "#/components/schemas/Problem" }
