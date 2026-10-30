@@ -49,6 +49,12 @@ cp landing/index.html site/index.html
 echo "== Angular"
 (cd angular && npm install --no-audit --no-fund && npm run build -- --base-href "${PAGES_BASE}angular/")
 cp -r angular/dist/angular/browser site/angular
+# The Angular console reads its API address from a <meta> tag at run time, so
+# the same build serves any backend. The build minifies the tag, so match it
+# loosely and check that it was rewritten.
+sed -E -i "s#<meta name=\"?lms-api-url\"? content[^>]*>#<meta name=\"lms-api-url\" content=\"${API_URL}\">#" site/angular/index.html
+grep -q "content=\"${API_URL}\"" site/angular/index.html \
+    || { echo "build-site.sh: the Angular API address was not set" >&2; exit 1; }
 
 echo "== React"
 (cd react && npm install --no-audit --no-fund && BASE_PATH="${PAGES_BASE}react/" VITE_API_URL="$API_URL" npm run build)

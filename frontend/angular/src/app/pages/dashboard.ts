@@ -15,17 +15,18 @@
  */
 
 import { Component, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { ControlTowerSummary, LmsGateway } from '../gateway/lms-gateway';
-import { Session } from '../session';
+import { RESOURCES } from './resources';
 
 @Component({
   selector: 'app-dashboard',
+  imports: [RouterLink],
   template: `
     <h1>Control tower</h1>
-    <p class="muted">Signed in with {{ session.permissionCount() }} permissions.</p>
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (summary(); as s) {
-      <div class="tiles">
+      <div class="tiles" data-testid="tiles">
         <div class="tile"><span>{{ s.openP1 }}</span>Open P1</div>
         <div class="tile"><span>{{ s.openP2 }}</span>Open P2</div>
         <div class="tile"><span>{{ s.openP3 }}</span>Open P3</div>
@@ -36,10 +37,14 @@ import { Session } from '../session';
     } @else if (!error()) {
       <p>Loading…</p>
     }
+    <h2>Go to</h2>
+    <div class="links">
+      @for (r of resources; track r.key) { <a [routerLink]="['/', r.key]">{{ r.title }}</a> }
+    </div>
   `,
 })
 export class Dashboard {
-  protected readonly session = inject(Session);
+  readonly resources = RESOURCES;
   readonly summary = signal<ControlTowerSummary | null>(null);
   readonly error = signal('');
 

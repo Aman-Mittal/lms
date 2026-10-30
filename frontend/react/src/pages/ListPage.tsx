@@ -19,6 +19,7 @@ import { useParams } from 'react-router-dom';
 import { PARTNER_TYPES, type PartnerType } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { RecordPanel } from './RecordPanel';
 import { RESOURCES } from './resources';
 
 export function ListPage() {
@@ -28,6 +29,9 @@ export function ListPage() {
 
   // Bumping this number makes useLoad fetch again (e.g. after registering).
   const [reload, setReload] = useState(0);
+  const [query, setQuery] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   // The effect also re-runs when the route changes, because `key` is in here.
   const { data, error, loading } = useLoad(
     () => (resource ? gateway.list(resource.key) : Promise.resolve([])),
@@ -37,36 +41,70 @@ export function ListPage() {
   if (!resource) {
     return <p>Unknown screen.</p>;
   }
+
+  /*
+   * REACT CONCEPT: derived state.
+   * `visible` is computed from `data` and `query` on every render. It is not
+   * stored in state: a second copy of the same information can only drift
+   * away from the first.
+   */
   const rows = data ?? [];
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? rows.filter((row) => Object.values(row).some((cell) => cell.toLowerCase().includes(needle)))
+    : rows;
+  const selected = rows.find((row) => row.id === selectedId) ?? null;
 
   return (
-    <>
-      <h1>{resource.title}</h1>
-      {error && <p className="error" role="alert">{error}</p>}
-      {loading ? (
-        <p>Loading…</p>
-      ) : rows.length === 0 && !error ? (
-        <p className="muted">Nothing here yet.</p>
-      ) : (
-        rows.length > 0 && (
-          <table>
-            <thead>
-              <tr>{resource.columns.map((c) => <th key={c.field}>{c.header}</th>)}</tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={i}>
-                  {resource.columns.map((c) => <td key={c.field}>{row[c.field]}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )
+    <div className={selected ? 'with-panel' : undefined}>
+      <div className="list">
+        <h1>{resource.title}</h1>
+        <input
+          type="search" aria-label="Search" placeholder="Search" data-testid="search"
+          value={query} onChange={(e) => setQuery(e.target.value)}
+        />
+        {error && <p className="error" role="alert">{error}</p>}
+        {loading ? (
+          <p>Loading…</p>
+        ) : visible.length === 0 && !error ? (
+          <p className="muted">{rows.length === 0 ? 'Nothing here yet.' : 'No match.'}</p>
+        ) : (
+          visible.length > 0 && (
+            <table>
+              <thead>
+                <tr>{resource.columns.map((c) => <th key={c.field}>{c.header}</th>)}</tr>
+              </thead>
+              <tbody>
+                {visible.map((row) => (
+                  <tr
+                    key={row.id} data-testid="row" tabIndex={0}
+                    className={row.id === selectedId ? 'selected' : undefined}
+                    onClick={() => setSelectedId(row.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { setSelectedId(row.id); } }}
+                  >
+                    {resource.columns.map((c) => <td key={c.field}>{row[c.field]}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        )}
+        {resource.key === 'partners' && auth?.orgUnitId && (
+          <RegisterPartner orgUnitId={auth.orgUnitId} onDone={() => setReload((n) => n + 1)} />
+        )}
+      </div>
+      {/*
+        * REACT CONCEPT: key resets state.
+        * A component keeps its state while it stays at the same place in the
+        * tree. Giving the panel the record's id as its key makes React treat a
+        * different record as a different panel, so a half-typed form is never
+        * carried from one record to the next.
+        */}
+      {selected && (
+        <RecordPanel key={selected.id} resource={resource} row={selected}
+          onClose={() => setSelectedId(null)} />
       )}
-      {resource.key === 'partners' && auth?.orgUnitId && (
-        <RegisterPartner orgUnitId={auth.orgUnitId} onDone={() => setReload((n) => n + 1)} />
-      )}
-    </>
+    </div>
   );
 }
 
@@ -93,10 +131,10 @@ function RegisterPartner({ orgUnitId, onDone }: { orgUnitId: string; onDone: () 
   return (
     <>
       <h2>Register a partner</h2>
-      <form className="inline" onSubmit={submit}>
+      <form className="inline" onSubmit={submit} data-testid="register-partner">
         <input placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} required />
         <input placeholder="Legal name" value={legalName} onChange={(e) => setLegalName(e.target.value)} required />
-        <select value={partnerType} onChange={(e) => setPartnerType(e.target.value as PartnerType)}>
+        <select aria-label="Partner type" value={partnerType} onChange={(e) => setPartnerType(e.target.value as PartnerType)}>
           {PARTNER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
         <button type="submit">Register</button>

@@ -20,6 +20,7 @@ import { LoginPage } from './pages/login';
 import { Shell } from './pages/shell';
 import { Dashboard } from './pages/dashboard';
 import { ListPage } from './pages/list';
+import { FieldsSettings } from './pages/fields-settings';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
@@ -29,6 +30,7 @@ export const routes: Routes = [
     canActivate: [signedInOnly],
     children: [
       { path: '', pathMatch: 'full', component: Dashboard },
+      { path: 'settings/custom-fields', component: FieldsSettings },
       { path: ':resource', component: ListPage },
     ],
   },

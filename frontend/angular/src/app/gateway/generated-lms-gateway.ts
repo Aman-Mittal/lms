@@ -18,15 +18,40 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import {
-  AuthenticationService, ControlTowerService, OrdersService, PartnersService, PlanningService,
-  RegisterPartnerRequestPartnerTypeEnum, SettlementService, TripsService, VehiclesService,
+  AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
+  CustomFieldsService, CustomFieldType, DriversService, OrdersService, PartnersService,
+  PlanningService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, TerminalsService,
+  TripsService, VehiclesService,
 } from '../api';
 import {
-  ApiProblem, ControlTowerSummary, Credentials, LmsGateway, PartnerDraft, ResourceKey, Row, SignedIn,
+  ApiProblem, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues, FieldChanges,
+  FieldDefinition, FieldDraft, FieldType, LmsGateway, PartnerDraft, ResourceKey, Row, SignedIn,
 } from './lms-gateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
-const text = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
+function text(v: unknown): string {
+  if (v === null || v === undefined) {
+    return '';
+  }
+  if (v instanceof Date) {
+    const iso = v.toISOString();
+    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 16).replace('T', ' ');
+  }
+  return String(v);
+}
+
+function definitionOf(d: CustomFieldDefinition): FieldDefinition {
+  return {
+    id: d.id ?? '',
+    kind: d.entityType as unknown as CustomFieldKind,
+    key: d.key ?? '',
+    label: d.label ?? '',
+    type: d.fieldType as unknown as FieldType,
+    required: d.required ?? false,
+    options: d.options ?? [],
+    active: d.active ?? true,
+  };
+}
 
 /** The adapter: the only file in the Angular app (besides app config) that knows the generated client. */
 @Injectable()
@@ -35,34 +60,48 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly controlTower = inject(ControlTowerService);
   private readonly partners = inject(PartnersService);
   private readonly vehicles = inject(VehiclesService);
+  private readonly drivers = inject(DriversService);
+  private readonly terminals = inject(TerminalsService);
   private readonly orders = inject(OrdersService);
   private readonly loads = inject(PlanningService);
   private readonly trips = inject(TripsService);
   private readonly freightBills = inject(SettlementService);
+  private readonly customFields = inject(CustomFieldsService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
-      code: text(p.code), legalName: text(p.legalName), partnerType: text(p.partnerType), status: text(p.status) }))),
+      id: text(p.id), code: text(p.code), legalName: text(p.legalName),
+      partnerType: text(p.partnerType), status: text(p.status) }))),
     vehicles: () => this.call(this.vehicles.listVehicles({ limit: 50 }), (s) => s.items.map((v) => ({
-      registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType), status: text(v.status),
-      payloadCapacityKg: text(v.payloadCapacityKg) }))),
+      id: text(v.id), registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType),
+      status: text(v.status), payloadCapacityKg: text(v.payloadCapacityKg) }))),
+    drivers: () => this.call(this.drivers.listDrivers({ limit: 50 }), (s) => s.items.map((d) => ({
+      id: text(d.id), fullName: text(d.fullName), licenceNo: text(d.licenceNo),
+      licenceExpiresOn: text(d.licenceExpiresOn), status: text(d.status) }))),
+    terminals: () => this.call(this.terminals.listTerminals({ limit: 50 }), (s) => s.items.map((t) => ({
+      id: text(t.id), code: text(t.code), name: text(t.name),
+      functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount) }))),
     orders: () => this.call(this.orders.listOrders({ limit: 50 }), (s) => s.items.map((o) => ({
-      orderNo: text(o.orderNo), status: text(o.status), customerName: text(o.customerName),
-      originTerminalCode: text(o.originTerminalCode) }))),
+      id: text(o.id), orderNo: text(o.orderNo), status: text(o.status),
+      customerName: text(o.customerName), originTerminalCode: text(o.originTerminalCode) }))),
     loads: () => this.call(this.loads.listLoads({ limit: 50 }), (s) => s.items.map((l) => ({
-      loadNo: text(l.loadNo), status: text(l.status), vehicleRegistrationNo: text(l.vehicleRegistrationNo),
+      id: text(l.id), loadNo: text(l.loadNo), status: text(l.status),
+      vehicleRegistrationNo: text(l.vehicleRegistrationNo),
       weightUtilisationPct: text(l.weightUtilisationPct) }))),
     trips: () => this.call(this.trips.listTrips({ limit: 50 }), (s) => s.items.map((t) => ({
-      tripNo: text(t.tripNo), status: text(t.status), vendorName: text(t.vendorName),
+      id: text(t.id), tripNo: text(t.tripNo), status: text(t.status), vendorName: text(t.vendorName),
       driverName: text(t.driverName) }))),
     'freight-bills': () => this.call(this.freightBills.listFreightBills({ limit: 50 }), (s) => s.items.map((b) => ({
-      billNo: text(b.billNo), status: text(b.status), vendorName: text(b.vendorName),
+      id: text(b.id), billNo: text(b.billNo), status: text(b.status), vendorName: text(b.vendorName),
       claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount) }))),
+    exceptions: () => this.call(this.controlTower.listExceptions({ limit: 50 }), (s) => s.items.map((e) => ({
+      id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
+      category: text(e.category), description: text(e.description) }))),
   };
 
   signIn(credentials: Credentials): Promise<SignedIn> {
     return this.call(this.auth.login({ loginRequest: credentials }), (r) => ({
-      token: r.accessToken, orgUnitId: r.orgUnitId ?? '', permissionCount: r.permissions?.length ?? 0 }));
+      token: r.accessToken, orgUnitId: r.orgUnitId ?? '', permissions: r.permissions ?? [] }));
   }
 
   summary(): Promise<ControlTowerSummary> {
@@ -83,6 +122,47 @@ export class GeneratedLmsGateway extends LmsGateway {
         partnerType: draft.partnerType as RegisterPartnerRequestPartnerTypeEnum,
       },
     }), () => undefined);
+  }
+
+  listFields(kind?: CustomFieldKind): Promise<FieldDefinition[]> {
+    return this.call(
+      this.customFields.listCustomFieldDefinitions({
+        entityType: kind as unknown as CustomFieldEntityType | undefined,
+      }),
+      (slice) => slice.items.map(definitionOf));
+  }
+
+  defineField(draft: FieldDraft): Promise<void> {
+    return this.call(this.customFields.defineCustomField({
+      defineCustomFieldRequest: {
+        entityType: draft.kind as unknown as CustomFieldEntityType, key: draft.key,
+        label: draft.label, fieldType: draft.type as unknown as CustomFieldType,
+        required: draft.required, options: draft.options,
+      },
+    }), () => undefined);
+  }
+
+  reviseField(id: string, changes: FieldChanges): Promise<void> {
+    return this.call(this.customFields.reviseCustomField({
+      id,
+      reviseCustomFieldRequest: {
+        label: changes.label, required: changes.required, options: changes.options,
+        active: changes.active,
+      },
+    }), () => undefined);
+  }
+
+  customValues(kind: CustomFieldKind, recordId: string): Promise<CustomValues> {
+    return this.call(this.customFields.getCustomFieldValues({
+      entityType: kind as unknown as CustomFieldEntityType, entityId: recordId,
+    }), (v) => v.values as CustomValues);
+  }
+
+  saveCustomValues(kind: CustomFieldKind, recordId: string, values: CustomValues): Promise<CustomValues> {
+    return this.call(this.customFields.setCustomFieldValues({
+      entityType: kind as unknown as CustomFieldEntityType, entityId: recordId,
+      customFieldValues: { values },
+    }), (v) => v.values as CustomValues);
   }
 
   /** Awaits a generated call, maps its result, and turns any failure into an ApiProblem. */

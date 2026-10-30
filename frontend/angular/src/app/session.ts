@@ -28,7 +28,13 @@ export class Session {
   readonly signedIn = computed(() => this.auth() !== null);
   readonly token = computed(() => this.auth()?.token ?? null);
   readonly orgUnitId = computed(() => this.auth()?.orgUnitId ?? null);
-  readonly permissionCount = computed(() => this.auth()?.permissionCount ?? 0);
+  readonly permissions = computed(() => this.auth()?.permissions ?? []);
+  readonly permissionCount = computed(() => this.permissions().length);
+
+  /** Whether the signed-in caller holds a permission. */
+  can(permission: string): boolean {
+    return this.permissions().includes(permission);
+  }
 
   start(result: SignedIn): void {
     this.auth.set(result);

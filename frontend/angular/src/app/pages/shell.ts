@@ -17,29 +17,56 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Session } from '../session';
-import { RESOURCES } from './resources';
+import { GROUPS, RESOURCES } from './resources';
 
 @Component({
   selector: 'app-shell',
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    <header>
-      <strong>LMS demo</strong>
-      <nav>
-        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Control tower</a>
-        @for (r of resources; track r.key) {
-          <a [routerLink]="['/', r.key]" routerLinkActive="active">{{ r.title }}</a>
-        }
-      </nav>
-      <button class="link" (click)="signOut()">Sign out</button>
-    </header>
-    <main><router-outlet /></main>
+    <div class="app">
+      <aside class="sidebar" data-testid="sidebar">
+        <div class="brand">LMS</div>
+        <nav aria-label="Main">
+          <div class="group">
+            <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
+               data-testid="nav-overview">Control tower</a>
+          </div>
+          @for (group of groups; track group) {
+            <div class="group">
+              <h6>{{ group }}</h6>
+              @for (r of inGroup(group); track r.key) {
+                <a [routerLink]="['/', r.key]" routerLinkActive="active"
+                   [attr.data-testid]="'nav-' + r.key">{{ r.title }}</a>
+              }
+            </div>
+          }
+          @if (session.can('CUSTOM_FIELD_READ')) {
+            <div class="group">
+              <h6>Settings</h6>
+              <a routerLink="/settings/custom-fields" routerLinkActive="active"
+                 data-testid="nav-custom-fields">Custom fields</a>
+            </div>
+          }
+        </nav>
+      </aside>
+      <div class="main">
+        <header class="topbar">
+          <span class="muted" data-testid="who">{{ session.permissionCount() }} permissions</span>
+          <button class="link" (click)="signOut()" data-testid="sign-out">Sign out</button>
+        </header>
+        <main><router-outlet /></main>
+      </div>
+    </div>
   `,
 })
 export class Shell {
-  private readonly session = inject(Session);
+  protected readonly session = inject(Session);
   private readonly router = inject(Router);
-  readonly resources = RESOURCES;
+  readonly groups = GROUPS;
+
+  inGroup(group: string) {
+    return RESOURCES.filter((r) => r.group === group);
+  }
 
   signOut(): void {
     this.session.end();

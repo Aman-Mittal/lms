@@ -28,6 +28,8 @@ import type { LmsGateway, SignedIn } from './gateway/lmsGateway';
 interface SessionValue {
   auth: SignedIn | null;
   gateway: LmsGateway;
+  /** Whether the signed-in caller holds a permission. */
+  can: (permission: string) => boolean;
   start: (result: SignedIn) => void;
   end: () => void;
 }
@@ -48,7 +50,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // useMemo: compute once, reuse until the dependencies change (never, here).
   const gateway = useMemo(() => createGeneratedGateway(() => tokenRef.current), []);
 
-  const value: SessionValue = { auth, gateway, start: setAuth, end: () => setAuth(null) };
+  const value: SessionValue = {
+    auth,
+    gateway,
+    can: (permission) => auth?.permissions.includes(permission) ?? false,
+    start: setAuth,
+    end: () => setAuth(null),
+  };
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
