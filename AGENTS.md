@@ -505,7 +505,6 @@ request's metadata or a diff against the base branch:
 |---|---|
 | Applied migrations unchanged | Needs the base branch to know which migrations already existed |
 | Dependency review | Reports only what the PR *adds*, and reads the advisory database |
-| PR title is conventional | The title becomes the squash-merge commit subject |
 | Behaviour change carries a test | Needs the diff to see that domain code moved and tests did not |
 
 The migration check is the load-bearing one. Flyway validates a checksum per
