@@ -17,6 +17,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
+import { DemoDataService } from '../api';
+import type { DemoResetOutcome } from './lms-gateway';
 import {
   AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
   ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, CustomFieldsService, CustomFieldType,
@@ -60,6 +62,7 @@ function definitionOf(d: CustomFieldDefinition): FieldDefinition {
 export class GeneratedLmsGateway extends LmsGateway {
   private readonly auth = inject(AuthenticationService);
   private readonly controlTower = inject(ControlTowerService);
+  private readonly demo = inject(DemoDataService);
   private readonly partners = inject(PartnersService);
   private readonly vehicles = inject(VehiclesService);
   private readonly drivers = inject(DriversService);
@@ -119,6 +122,11 @@ export class GeneratedLmsGateway extends LmsGateway {
       openP1: s.openP1 ?? 0, openP2: s.openP2 ?? 0, openP3: s.openP3 ?? 0,
       unassigned: s.unassigned ?? 0, settlementHolds: s.settlementHolds ?? 0,
       openWithoutTrip: s.openWithoutTrip ?? 0 }));
+  }
+
+  resetDemoData(confirm: string): Promise<DemoResetOutcome> {
+    return this.call(this.demo.resetDemoData({ demoResetRequest: { confirm } }), (r) => ({
+      tenantCode: r.tenantCode, rowsDeleted: r.rowsDeleted, signInAgain: r.signInAgain }));
   }
 
   list(resource: ResourceKey): Promise<Row[]> {
