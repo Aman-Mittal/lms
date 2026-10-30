@@ -122,6 +122,8 @@ tags:
     description: Issuing, listing and revoking the links a customer follows a consignment with.
   - name: Public tracking
     description: The unauthenticated, token-keyed view behind a tracking link.
+  - name: Event dead-letter
+    description: Module events whose listener failed on every retry, parked per tenant to be replayed or discarded.
 
 components:
 

@@ -54,5 +54,10 @@ public class EndToEndContext {
         registry.add("lms.delivery.expose-otp", () -> "true");
         // Customers' reads of a tracking link come from one address; the limit has its own test.
         registry.add("lms.tracking.rate-limit.requests", () -> "100000");
+        // The dead-letter scenarios fail a probe event on purpose and park it in one pass:
+        // the probe listener exists here only, and the retrier is driven by the steps.
+        registry.add("lms.test.probe-listener", () -> "true");
+        registry.add("lms.events.retry.enabled", () -> "false");
+        registry.add("lms.events.retry.max-attempts", () -> "1");
     }
 }
