@@ -16,6 +16,7 @@
 
 import { Routes } from '@angular/router';
 import { signedInOnly } from './auth';
+import { AllocationRules } from './pages/allocation-rules';
 import { LoginPage } from './pages/login';
 import { Shell } from './pages/shell';
 import { Track } from './pages/track';
@@ -40,6 +41,7 @@ export const routes: Routes = [
       { path: 'claims', component: ClaimsPage },
       { path: 'delivery', component: DeliveryDesk },
       { path: 'tracking', component: TrackingLinks },
+      { path: 'allocation-rules', component: AllocationRules },
       { path: ':resource', component: ListPage },
     ],
   },

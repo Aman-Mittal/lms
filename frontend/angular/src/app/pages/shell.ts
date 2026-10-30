@@ -38,6 +38,9 @@ import { GROUPS, RESOURCES } from './resources';
                 <a [routerLink]="['/', r.key]" routerLinkActive="active"
                    [attr.data-testid]="'nav-' + r.key">{{ r.title }}</a>
               }
+              @if (group === 'Operations' && session.can('ALLOCATION_RULE_READ')) {
+                <a routerLink="/allocation-rules" routerLinkActive="active" data-testid="nav-allocation-rules">Allocation rules</a>
+              }
               @if (group === 'Delivery' && session.can('POD_READ')) {
                 <a routerLink="/delivery" routerLinkActive="active" data-testid="nav-delivery">Delivery desk</a>
               }
