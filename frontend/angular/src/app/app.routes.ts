@@ -18,7 +18,9 @@ import { Routes } from '@angular/router';
 import { signedInOnly } from './auth';
 import { LoginPage } from './pages/login';
 import { Shell } from './pages/shell';
+import { ClaimsPage } from './pages/claims';
 import { Dashboard } from './pages/dashboard';
+import { DeliveryDesk } from './pages/delivery-desk';
 import { ListPage } from './pages/list';
 import { FieldsSettings } from './pages/fields-settings';
 
@@ -31,6 +33,8 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', component: Dashboard },
       { path: 'settings/custom-fields', component: FieldsSettings },
+      { path: 'claims', component: ClaimsPage },
+      { path: 'delivery', component: DeliveryDesk },
       { path: ':resource', component: ListPage },
     ],
   },
