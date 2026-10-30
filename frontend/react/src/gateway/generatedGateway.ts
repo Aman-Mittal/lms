@@ -15,17 +15,42 @@
  */
 
 import {
-  AuthenticationApi, ControlTowerApi, Configuration, OrdersApi, PartnersApi, PlanningApi,
-  RegisterPartnerRequestPartnerTypeEnum, ResponseError, SettlementApi, TripsApi, VehiclesApi,
+  AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DriversApi, OrdersApi,
+  PartnersApi, PlanningApi, ResponseError, SettlementApi, TerminalsApi, TripsApi, VehiclesApi,
+  type CustomFieldDefinition, type CustomFieldEntityType, type CustomFieldType,
+  type RegisterPartnerRequestPartnerTypeEnum,
 } from '../api';
 import { API_URL } from '../config';
 import {
-  ApiProblem, type ControlTowerSummary, type Credentials, type LmsGateway, type PartnerDraft,
-  type ResourceKey, type Row, type SignedIn,
+  ApiProblem, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
+  type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
+  type PartnerDraft, type ResourceKey, type Row, type SignedIn,
 } from './lmsGateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
-const text = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
+function text(v: unknown): string {
+  if (v === null || v === undefined) {
+    return '';
+  }
+  if (v instanceof Date) {
+    const iso = v.toISOString();
+    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 16).replace('T', ' ');
+  }
+  return String(v);
+}
+
+function definitionOf(d: CustomFieldDefinition): FieldDefinition {
+  return {
+    id: d.id ?? '',
+    kind: d.entityType as CustomFieldKind,
+    key: d.key ?? '',
+    label: d.label ?? '',
+    type: d.fieldType as FieldType,
+    required: d.required ?? false,
+    options: d.options ?? [],
+    active: d.active ?? true,
+  };
+}
 
 /** The adapter: the only file in the React app that imports the generated client. */
 export function createGeneratedGateway(getToken: () => string | null): LmsGateway {
@@ -35,36 +60,50 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const controlTower = new ControlTowerApi(config);
   const partners = new PartnersApi(config);
   const vehicles = new VehiclesApi(config);
+  const drivers = new DriversApi(config);
+  const terminals = new TerminalsApi(config);
   const orders = new OrdersApi(config);
   const loads = new PlanningApi(config);
   const trips = new TripsApi(config);
   const freightBills = new SettlementApi(config);
+  const customFields = new CustomFieldsApi(config);
 
   const listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: async () => (await partners.listPartners({ limit: 50 })).items.map((p) => ({
-      code: text(p.code), legalName: text(p.legalName), partnerType: text(p.partnerType), status: text(p.status) })),
+      id: text(p.id), code: text(p.code), legalName: text(p.legalName),
+      partnerType: text(p.partnerType), status: text(p.status) })),
     vehicles: async () => (await vehicles.listVehicles({ limit: 50 })).items.map((v) => ({
-      registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType), status: text(v.status),
-      payloadCapacityKg: text(v.payloadCapacityKg) })),
+      id: text(v.id), registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType),
+      status: text(v.status), payloadCapacityKg: text(v.payloadCapacityKg) })),
+    drivers: async () => (await drivers.listDrivers({ limit: 50 })).items.map((d) => ({
+      id: text(d.id), fullName: text(d.fullName), licenceNo: text(d.licenceNo),
+      licenceExpiresOn: text(d.licenceExpiresOn), status: text(d.status) })),
+    terminals: async () => (await terminals.listTerminals({ limit: 50 })).items.map((t) => ({
+      id: text(t.id), code: text(t.code), name: text(t.name),
+      functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount) })),
     orders: async () => (await orders.listOrders({ limit: 50 })).items.map((o) => ({
-      orderNo: text(o.orderNo), status: text(o.status), customerName: text(o.customerName),
-      originTerminalCode: text(o.originTerminalCode) })),
+      id: text(o.id), orderNo: text(o.orderNo), status: text(o.status),
+      customerName: text(o.customerName), originTerminalCode: text(o.originTerminalCode) })),
     loads: async () => (await loads.listLoads({ limit: 50 })).items.map((l) => ({
-      loadNo: text(l.loadNo), status: text(l.status), vehicleRegistrationNo: text(l.vehicleRegistrationNo),
+      id: text(l.id), loadNo: text(l.loadNo), status: text(l.status),
+      vehicleRegistrationNo: text(l.vehicleRegistrationNo),
       weightUtilisationPct: text(l.weightUtilisationPct) })),
     trips: async () => (await trips.listTrips({ limit: 50 })).items.map((t) => ({
-      tripNo: text(t.tripNo), status: text(t.status), vendorName: text(t.vendorName),
+      id: text(t.id), tripNo: text(t.tripNo), status: text(t.status), vendorName: text(t.vendorName),
       driverName: text(t.driverName) })),
     'freight-bills': async () => (await freightBills.listFreightBills({ limit: 50 })).items.map((b) => ({
-      billNo: text(b.billNo), status: text(b.status), vendorName: text(b.vendorName),
+      id: text(b.id), billNo: text(b.billNo), status: text(b.status), vendorName: text(b.vendorName),
       claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount) })),
+    exceptions: async () => (await controlTower.listExceptions({ limit: 50 })).items.map((e) => ({
+      id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
+      category: text(e.category), description: text(e.description) })),
   };
 
   return {
     signIn: (credentials: Credentials): Promise<SignedIn> =>
       guard(async () => {
         const r = await auth.login({ loginRequest: credentials });
-        return { token: r.accessToken, orgUnitId: r.orgUnitId ?? '', permissionCount: r.permissions?.length ?? 0 };
+        return { token: r.accessToken, orgUnitId: r.orgUnitId ?? '', permissions: r.permissions ?? [] };
       }),
 
     summary: (): Promise<ControlTowerSummary> =>
@@ -87,6 +126,52 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
             partnerType: draft.partnerType as RegisterPartnerRequestPartnerTypeEnum,
           },
         });
+      }),
+
+    listFields: (kind?: CustomFieldKind) =>
+      guard(async () => {
+        const slice = await customFields.listCustomFieldDefinitions({
+          entityType: kind as CustomFieldEntityType | undefined,
+        });
+        return slice.items.map(definitionOf);
+      }),
+
+    defineField: (draft: FieldDraft) =>
+      guard(async () => {
+        await customFields.defineCustomField({
+          defineCustomFieldRequest: {
+            entityType: draft.kind as CustomFieldEntityType, key: draft.key, label: draft.label,
+            fieldType: draft.type as CustomFieldType, required: draft.required,
+            options: draft.options,
+          },
+        });
+      }),
+
+    reviseField: (id: string, changes: FieldChanges) =>
+      guard(async () => {
+        await customFields.reviseCustomField({
+          id,
+          reviseCustomFieldRequest: {
+            label: changes.label, required: changes.required, options: changes.options,
+            active: changes.active,
+          },
+        });
+      }),
+
+    customValues: (kind: CustomFieldKind, recordId: string) =>
+      guard(async () => {
+        const got = await customFields.getCustomFieldValues({
+          entityType: kind as CustomFieldEntityType, entityId: recordId,
+        });
+        return got.values as CustomValues;
+      }),
+
+    saveCustomValues: (kind: CustomFieldKind, recordId: string, values: CustomValues) =>
+      guard(async () => {
+        const saved = await customFields.setCustomFieldValues({
+          entityType: kind as CustomFieldEntityType, entityId: recordId, customFieldValues: { values },
+        });
+        return saved.values as CustomValues;
       }),
   };
 }

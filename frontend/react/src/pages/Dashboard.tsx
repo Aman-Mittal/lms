@@ -14,20 +14,21 @@
  * limitations under the License.
  */
 
+import { Link } from 'react-router-dom';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { RESOURCES } from './resources';
 
 export function Dashboard() {
-  const { auth, gateway } = useSession();
+  const { gateway } = useSession();
   const { data: s, error } = useLoad(() => gateway.summary(), 'summary');
 
   return (
     <>
       <h1>Control tower</h1>
-      <p className="muted">Signed in with {auth?.permissionCount ?? 0} permissions.</p>
       {error && <p className="error" role="alert">{error}</p>}
       {s ? (
-        <div className="tiles">
+        <div className="tiles" data-testid="tiles">
           <Tile n={s.openP1} label="Open P1" />
           <Tile n={s.openP2} label="Open P2" />
           <Tile n={s.openP3} label="Open P3" />
@@ -38,6 +39,10 @@ export function Dashboard() {
       ) : (
         !error && <p>Loading…</p>
       )}
+      <h2>Go to</h2>
+      <div className="links">
+        {RESOURCES.map((r) => <Link key={r.key} to={`/${r.key}`}>{r.title}</Link>)}
+      </div>
     </>
   );
 }

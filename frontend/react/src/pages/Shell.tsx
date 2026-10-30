@@ -16,10 +16,10 @@
 
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
-import { RESOURCES } from './resources';
+import { GROUPS, RESOURCES } from './resources';
 
 export function Shell() {
-  const { end } = useSession();
+  const { auth, can, end } = useSession();
   const navigate = useNavigate();
 
   function signOut() {
@@ -28,19 +28,37 @@ export function Shell() {
   }
 
   return (
-    <>
-      <header>
-        <strong>LMS demo</strong>
-        <nav>
-          <NavLink to="/" end>Control tower</NavLink>
+    <div className="app">
+      <aside className="sidebar" data-testid="sidebar">
+        <div className="brand">LMS</div>
+        <nav aria-label="Main">
+          <div className="group">
+            <NavLink to="/" end data-testid="nav-overview">Control tower</NavLink>
+          </div>
           {/* Rendering a list: map over data and give each item a stable key. */}
-          {RESOURCES.map((r) => (
-            <NavLink key={r.key} to={`/${r.key}`}>{r.title}</NavLink>
+          {GROUPS.map((group) => (
+            <div className="group" key={group}>
+              <h6>{group}</h6>
+              {RESOURCES.filter((r) => r.group === group).map((r) => (
+                <NavLink key={r.key} to={`/${r.key}`} data-testid={`nav-${r.key}`}>{r.title}</NavLink>
+              ))}
+            </div>
           ))}
+          {can('CUSTOM_FIELD_READ') && (
+            <div className="group">
+              <h6>Settings</h6>
+              <NavLink to="/settings/custom-fields" data-testid="nav-custom-fields">Custom fields</NavLink>
+            </div>
+          )}
         </nav>
-        <button className="link" onClick={signOut}>Sign out</button>
-      </header>
-      <main><Outlet /></main>
-    </>
+      </aside>
+      <div className="main">
+        <header className="topbar">
+          <span className="muted" data-testid="who">{auth?.permissions.length ?? 0} permissions</span>
+          <button className="link" onClick={signOut} data-testid="sign-out">Sign out</button>
+        </header>
+        <main><Outlet /></main>
+      </div>
+    </div>
   );
 }

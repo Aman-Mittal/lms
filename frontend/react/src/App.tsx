@@ -16,6 +16,7 @@
 
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { Dashboard } from './pages/Dashboard';
+import { FieldsSettings } from './pages/FieldsSettings';
 import { ListPage } from './pages/ListPage';
 import { Login } from './pages/Login';
 import { Shell } from './pages/Shell';
@@ -34,6 +35,7 @@ export function App() {
       <Route element={<RequireSignIn />}>
         <Route element={<Shell />}>
           <Route index element={<Dashboard />} />
+          <Route path="settings/custom-fields" element={<FieldsSettings />} />
           <Route path=":resource" element={<ListPage />} />
         </Route>
       </Route>

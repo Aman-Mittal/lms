@@ -34,7 +34,8 @@ export interface Credentials {
 export interface SignedIn {
   token: string;
   orgUnitId: string;
-  permissionCount: number;
+  /** What the caller may do; screens hide controls the caller could not use. */
+  permissions: string[];
 }
 
 /** Every count is a real number; the adapter has already defaulted the contract's optionals. */
@@ -47,10 +48,13 @@ export interface ControlTowerSummary {
   openWithoutTrip: number;
 }
 
-export const RESOURCE_KEYS = ['partners', 'vehicles', 'orders', 'loads', 'trips', 'freight-bills'] as const;
+export const RESOURCE_KEYS = [
+  'partners', 'vehicles', 'drivers', 'terminals', 'orders', 'loads', 'trips', 'freight-bills',
+  'exceptions',
+] as const;
 export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 
-/** One table row, every cell already formatted for display. */
+/** One table row, every cell already formatted for display. `id` is always present. */
 export type Row = Record<string, string>;
 
 export const PARTNER_TYPES = ['CUSTOMER', 'VENDOR', 'BROKER', 'CONSIGNEE'] as const;
@@ -61,6 +65,48 @@ export interface PartnerDraft {
   legalName: string;
   partnerType: PartnerType;
 }
+
+// ---------------------------------------------------------------- custom fields
+
+/** The kinds of record a tenant may add its own fields to. */
+export const CUSTOM_FIELD_KINDS = [
+  'PARTNER', 'VEHICLE', 'DRIVER', 'TERMINAL', 'ORDER', 'LOAD', 'TRIP',
+] as const;
+export type CustomFieldKind = (typeof CUSTOM_FIELD_KINDS)[number];
+
+export const FIELD_TYPES = ['TEXT', 'NUMBER', 'DATE', 'BOOLEAN', 'SELECT'] as const;
+export type FieldType = (typeof FIELD_TYPES)[number];
+
+export interface FieldDefinition {
+  id: string;
+  kind: CustomFieldKind;
+  key: string;
+  label: string;
+  type: FieldType;
+  required: boolean;
+  options: string[];
+  active: boolean;
+}
+
+export interface FieldDraft {
+  kind: CustomFieldKind;
+  key: string;
+  label: string;
+  type: FieldType;
+  required: boolean;
+  options: string[];
+}
+
+export interface FieldChanges {
+  label: string;
+  required: boolean;
+  options: string[];
+  active: boolean;
+}
+
+export type CustomValue = string | number | boolean;
+/** Field key to value. A field with no value is simply absent. */
+export type CustomValues = Record<string, CustomValue>;
 
 /** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
 export class ApiProblem extends Error {
@@ -75,4 +121,12 @@ export interface LmsGateway {
   summary(): Promise<ControlTowerSummary>;
   list(resource: ResourceKey): Promise<Row[]>;
   registerPartner(orgUnitId: string, draft: PartnerDraft): Promise<void>;
+
+  /** Every definition of a kind, retired ones included, or of every kind. */
+  listFields(kind?: CustomFieldKind): Promise<FieldDefinition[]>;
+  defineField(draft: FieldDraft): Promise<void>;
+  reviseField(id: string, changes: FieldChanges): Promise<void>;
+  customValues(kind: CustomFieldKind, recordId: string): Promise<CustomValues>;
+  /** Replaces the record's values; resolves to what was stored. */
+  saveCustomValues(kind: CustomFieldKind, recordId: string, values: CustomValues): Promise<CustomValues>;
 }
