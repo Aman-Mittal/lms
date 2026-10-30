@@ -51,6 +51,14 @@ test.describe('moving around', () => {
     await expect(page.getByTestId('consignment-id')).toBeVisible();
   });
 
+  test('tracking links are offered to someone who may manage them', async ({ page }) => {
+    await signIn(page);
+
+    await page.getByTestId('nav-tracking').click();
+    await expect(page.getByRole('heading', { name: 'Tracking links', level: 1 })).toBeVisible();
+    await expect(page.getByTestId('consignment-id')).toBeVisible();
+  });
+
   test('the layout fits a phone: nothing makes the page scroll sideways', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await signIn(page);
