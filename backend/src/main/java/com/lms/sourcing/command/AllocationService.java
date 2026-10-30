@@ -163,13 +163,17 @@ public class AllocationService {
         allocationRules.record(tenantId, allocation.id(), decision);
 
         makeOffer(tenantId, allocation, first, load.loadNo());
+        // One entry, as before rules existed, carrying the rule that decided (or
+        // none): the audit trail of an allocation reads the same with or without
+        // rules, and allocation_rule_firing holds the decision for the read model.
         audit.record("ALLOCATION_OPENED", AUDIT_TYPE, allocation.id(), null,
-                snapshot(allocation, first.vendorPartnerId(), null));
-        audit.record(decision.fired() ? "ALLOCATION_RULE_APPLIED" : "ALLOCATION_NO_RULE_APPLIED",
-                AUDIT_TYPE, allocation.id(), null,
-                Json.object("ruleId", decision.fired() ? decision.rule().id().toString() : null,
+                Json.object("status", allocation.status().name(),
+                        "rank", allocation.currentRank() == null ? null : allocation.currentRank().toString(),
+                        "vendorPartnerId", first.vendorPartnerId().toString(),
+                        "answeredByVendorPartnerId", null,
+                        "ruleId", decision.fired() ? decision.rule().id().toString() : null,
                         "ruleName", decision.fired() ? decision.rule().name() : null,
-                        "action", decision.fired() ? decision.rule().action().name() : null));
+                        "ruleAction", decision.fired() ? decision.rule().action().name() : null));
         return allocation.id();
     }
 
