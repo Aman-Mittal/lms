@@ -59,7 +59,7 @@ public class PublicTrackingController {
         }
         return tracking.view(token)
                 .<ResponseEntity<?>>map(view -> hardened(ResponseEntity.ok()).body(view))
-                .orElseGet(() -> problem(HttpStatus.NOT_FOUND, "tracking-link-not-found",
+                .orElseGet(() -> problem(HttpStatus.NOT_FOUND, "not-found",
                         "This tracking link is not valid").build());
     }
 
