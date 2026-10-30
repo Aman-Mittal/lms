@@ -50,5 +50,7 @@ public class EndToEndContext {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("lms.demo.enabled", () -> "true");
         registry.add("lms.demo.admin-password", () -> DEMO_PASSWORD);
+        // A demo deployment hands the delivery code back, which is what lets a scenario play the consignee.
+        registry.add("lms.delivery.expose-otp", () -> "true");
     }
 }
