@@ -56,6 +56,8 @@
     <mapstruct.version>1.6.3</mapstruct.version>
     <cucumber.version>8.0.4</cucumber.version>
     <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
+    <error-prone.version>2.51.0</error-prone.version>
+    <spotless.version>3.10.4</spotless.version>
     <!--
       Test scope only. The API tests drive the running application through a
       Feign client generated from api/openapi.yaml, so a contract that has
@@ -379,12 +381,54 @@
               <artifactId>mapstruct-processor</artifactId>
               <version>${mapstruct.version}</version>
             </path>
+            <path>
+              <groupId>com.google.errorprone</groupId>
+              <artifactId>error_prone_core</artifactId>
+              <version>${error-prone.version}</version>
+            </path>
           </annotationProcessorPaths>
           <compilerArgs>
+            <arg>-XDcompilePolicy=simple</arg>
+            <arg>--should-stop=ifError=FLOW</arg>
+            <!--
+              Error Prone runs inside javac. ERROR-level findings fail the
+              build; WARNING-level ones are printed. Generated sources (the
+              Feign client, MapStruct) are not ours to fix. The javac exports it
+              needs are in .mvn/jvm.config. NotJavadoc and MissingSummary are
+              off: they flag the explanatory comments on record components and
+              add noise, not bugs.
+            -->
+            <arg>-Xplugin:ErrorProne -XepExcludedPaths:.*/target/generated-.* -Xep:NotJavadoc:OFF -Xep:MissingSummary:OFF</arg>
             <arg>-parameters</arg>
             <arg>-Amapstruct.defaultComponentModel=spring</arg>
             <arg>-Amapstruct.unmappedTargetPolicy=ERROR</arg>
           </compilerArgs>
+        </configuration>
+      </plugin>
+
+      <!--
+        Formatting drift in new and changed code is caught by `spotless:check`,
+        which CI runs as its own job; `./mvnw spotless:apply` fixes it. It
+        ratchets from origin/main, so code nobody touches is not judged, and
+        a few old files with an unused import do not force a mass rewrite.
+        Deliberately not bound to a lifecycle phase: every other job checks out
+        shallowly, with no origin/main to ratchet from.
+      -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>${spotless.version}</version>
+        <configuration>
+          <ratchetFrom>origin/main</ratchetFrom>
+          <java>
+            <includes>
+              <include>src/main/java/**/*.java</include>
+              <include>src/test/java/**/*.java</include>
+            </includes>
+            <removeUnusedImports/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
+          </java>
         </configuration>
       </plugin>
 
