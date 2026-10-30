@@ -58,6 +58,17 @@ only thing on the printed page. The slip's QR code (`LMS:CLAIM:<claim number>`,
 package from text the page already holds. Nothing is rendered or stored by the
 backend, so printing adds no load to it.
 
+## Tracking links
+
+**Delivery > Tracking links** (permission `TRACKING_LINK_MANAGE`) issues, lists
+and revokes the links a customer follows a consignment by. A link's secret is
+shown once, when it is issued, with a Copy button and a printable slip whose QR
+code is the link itself (drawn in the browser, like the other slips). The link
+opens **Track your shipment** (`#/track/<token>`), a page that needs no
+sign-in and shows only what the public endpoint returns; an unknown, expired
+and revoked link all show the same message. The public read is made with no
+credentials, even from a console that is signed in.
+
 ## Browser end-to-end tests
 
 `e2e/` runs one set of specs against each console in Chromium, against a real

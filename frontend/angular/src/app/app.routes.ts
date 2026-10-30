@@ -18,6 +18,8 @@ import { Routes } from '@angular/router';
 import { signedInOnly } from './auth';
 import { LoginPage } from './pages/login';
 import { Shell } from './pages/shell';
+import { Track } from './pages/track';
+import { TrackingLinks } from './pages/tracking-links';
 import { ClaimsPage } from './pages/claims';
 import { Dashboard } from './pages/dashboard';
 import { DeliveryDesk } from './pages/delivery-desk';
@@ -26,6 +28,8 @@ import { FieldsSettings } from './pages/fields-settings';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
+  // Public: a customer follows a link with no account, so no sign-in is asked for.
+  { path: 'track/:token', component: Track },
   {
     path: '',
     component: Shell,
@@ -35,6 +39,7 @@ export const routes: Routes = [
       { path: 'settings/custom-fields', component: FieldsSettings },
       { path: 'claims', component: ClaimsPage },
       { path: 'delivery', component: DeliveryDesk },
+      { path: 'tracking', component: TrackingLinks },
       { path: ':resource', component: ListPage },
     ],
   },

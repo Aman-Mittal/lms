@@ -153,6 +153,37 @@ export interface DeliveryProofView {
   otpExpiresAt: string;
 }
 
+// ---------------------------------------------------------------- tracking links
+
+/** A link as it is issued: the token is shown here and nowhere else. */
+export interface IssuedTrackingLink {
+  id: string;
+  token: string;
+  expiresAt: string;
+}
+
+/** A link as it is listed. There is no token: only its hash was ever kept. */
+export interface TrackingLinkView {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string;
+  status: 'ACTIVE' | 'EXPIRED' | 'REVOKED';
+}
+
+/** What anyone holding a tracking link may see. */
+export interface PublicTrackingView {
+  reference: string;
+  status: string;
+  originName: string;
+  destinationName: string;
+  requestedDeliveryAt: string;
+  deliveredAt: string;
+  proofRecorded: boolean;
+  /** The last reported position while in transit, to two decimals; null otherwise. */
+  position: { lat: string; lon: string; recordedAt: string } | null;
+}
+
 /** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
 export class ApiProblem extends Error {
   constructor(message: string, readonly status?: number) {
@@ -182,4 +213,11 @@ export interface LmsGateway {
   recordDeliveryProof(consignmentId: string, draft: ProofDraft): Promise<void>;
   /** Null when no code has been issued for the consignment yet. */
   deliveryProof(consignmentId: string): Promise<DeliveryProofView | null>;
+
+  /** Shown once: the token in the result cannot be read again. */
+  issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink>;
+  trackingLinks(consignmentId: string): Promise<TrackingLinkView[]>;
+  revokeTrackingLink(id: string): Promise<void>;
+  /** Needs no sign-in. Null when the token is unknown, expired or revoked (they look alike). */
+  publicTracking(token: string): Promise<PublicTrackingView | null>;
 }

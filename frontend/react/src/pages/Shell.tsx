@@ -45,6 +45,9 @@ export function Shell() {
               {group === 'Delivery' && can('POD_READ') && (
                 <NavLink to="/delivery" data-testid="nav-delivery">Delivery desk</NavLink>
               )}
+              {group === 'Delivery' && can('TRACKING_LINK_MANAGE') && (
+                <NavLink to="/tracking" data-testid="nav-tracking">Tracking links</NavLink>
+              )}
             </div>
           ))}
           {can('CUSTOM_FIELD_READ') && (
