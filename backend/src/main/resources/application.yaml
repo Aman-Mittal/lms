@@ -86,6 +86,11 @@ spring:
 
 server:
   port: ${PORT:8080}
+  # Behind Render's proxy every request would otherwise appear to come from the
+  # proxy, and the public route's per-client limit would be one shared bucket.
+  # `native` lets Tomcat honour X-Forwarded-For from trusted (private-range)
+  # proxies only.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:native}
   shutdown: graceful
   tomcat:
     threads:
