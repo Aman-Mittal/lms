@@ -17,7 +17,7 @@
 import {
   AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   OrdersApi,
-  PartnersApi, PlanningApi, ResponseError, SettlementApi, TerminalsApi, TripsApi, VehiclesApi,
+  PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, TrackingLinksApi, TripsApi, VehiclesApi,
   type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
@@ -26,7 +26,8 @@ import { API_URL } from '../config';
 import {
   ApiProblem, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
-  type OtpIssued, type PartnerDraft, type ProofDraft, type ResourceKey, type Row, type SignedIn,
+  type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
+  type ResourceKey, type Row, type SignedIn, type TrackingLinkView,
 } from './lmsGateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -70,6 +71,10 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const freightBills = new SettlementApi(config);
   const customFields = new CustomFieldsApi(config);
   const delivery = new DeliveryAndClaimsApi(config);
+  const links = new TrackingLinksApi(config);
+  // The public read is made with no credentials at all: a customer has none, and
+  // a console left signed in must not send its token to a route that ignores it.
+  const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
 
   const listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: async () => (await partners.listPartners({ limit: 50 })).items.map((p) => ({
@@ -229,6 +234,45 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
             status: p.status === 'CONFIRMED' ? 'CONFIRMED' : 'OTP_ISSUED',
             recipientName: text(p.recipientName), photoRef: text(p.photoRef),
             deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
+          };
+        } catch (e) {
+          if (e instanceof ResponseError && e.response.status === 404) {
+            return null;
+          }
+          throw e;
+        }
+      }),
+
+    issueTrackingLink: (consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink> =>
+      guard(async () => {
+        const issued = await links.issueTrackingLink({
+          consignmentId, issueTrackingLinkRequest: expiresInDays ? { expiresInDays } : undefined,
+        });
+        return { id: issued.id, token: issued.token, expiresAt: text(issued.expiresAt) };
+      }),
+
+    trackingLinks: (consignmentId: string): Promise<TrackingLinkView[]> =>
+      guard(async () => (await links.listTrackingLinks({ consignmentId })).items.map((l) => ({
+        id: text(l.id), createdAt: text(l.createdAt), expiresAt: text(l.expiresAt),
+        revokedAt: text(l.revokedAt), status: (l.status ?? 'ACTIVE') as TrackingLinkView['status'],
+      }))),
+
+    revokeTrackingLink: (id: string) =>
+      guard(async () => {
+        await links.revokeTrackingLink({ id });
+      }),
+
+    publicTracking: (token: string): Promise<PublicTrackingView | null> =>
+      guard(async () => {
+        try {
+          const t = await publicTracking.getPublicTracking({ token });
+          return {
+            reference: text(t.reference), status: text(t.status), originName: text(t.originName),
+            destinationName: text(t.destinationName), requestedDeliveryAt: text(t.requestedDeliveryAt),
+            deliveredAt: text(t.deliveredAt), proofRecorded: t.proofRecorded ?? false,
+            position: t.position
+              ? { lat: text(t.position.lat), lon: text(t.position.lon), recordedAt: text(t.position.recordedAt) }
+              : null,
           };
         } catch (e) {
           if (e instanceof ResponseError && e.response.status === 404) {
