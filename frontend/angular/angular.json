@@ -44,8 +44,12 @@
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
             "assets": [],
+            "allowedCommonJsDependencies": [
+              "qrcode"
+            ],
             "styles": [
-              "src/styles.css"
+              "src/styles.css",
+              "src/print.css"
             ]
           },
           "configurations": {

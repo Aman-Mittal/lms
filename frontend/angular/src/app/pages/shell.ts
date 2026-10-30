@@ -38,6 +38,9 @@ import { GROUPS, RESOURCES } from './resources';
                 <a [routerLink]="['/', r.key]" routerLinkActive="active"
                    [attr.data-testid]="'nav-' + r.key">{{ r.title }}</a>
               }
+              @if (group === 'Delivery' && session.can('POD_READ')) {
+                <a routerLink="/delivery" routerLinkActive="active" data-testid="nav-delivery">Delivery desk</a>
+              }
             </div>
           }
           @if (session.can('CUSTOM_FIELD_READ')) {
@@ -65,7 +68,7 @@ export class Shell {
   readonly groups = GROUPS;
 
   inGroup(group: string) {
-    return RESOURCES.filter((r) => r.group === group);
+    return RESOURCES.filter((r) => r.group === group && (!r.permission || this.session.can(r.permission)));
   }
 
   signOut(): void {

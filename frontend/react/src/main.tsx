@@ -20,6 +20,7 @@ import { HashRouter } from 'react-router-dom';
 import { App } from './App';
 import { SessionProvider } from './session';
 import './styles.css';
+import './print.css';
 
 // HashRouter keeps the route after '#', because GitHub Pages cannot rewrite
 // unknown paths to index.html.

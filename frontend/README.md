@@ -44,6 +44,20 @@ The backend must list the Pages origin in `CORS_ALLOWED_ORIGINS`.
 
 Demo only: the access token is held in memory and is gone on reload.
 
+## Delivery, claims, print and QR codes
+
+The sidebar's **Delivery** section holds **Claims** (raise, review, approve or
+reject, settle) and the **Delivery desk** (issue the consignee's one-time code,
+record the proof). Controls appear only for callers who hold the permission:
+`CLAIM_READ`, `CLAIM_RAISE`, `CLAIM_DECIDE`, `POD_READ`, `POD_RECORD`.
+
+A claim and a proof of delivery each have a slip. **Print slip** shows it, and
+**Print** opens the browser's print dialog; `src/print.css` makes the slip the
+only thing on the printed page. The slip's QR code (`LMS:CLAIM:<claim number>`,
+`LMS:CONSIGNMENT:<consignment id>`) is drawn in the browser by the `qrcode`
+package from text the page already holds. Nothing is rendered or stored by the
+backend, so printing adds no load to it.
+
 ## Browser end-to-end tests
 
 `e2e/` runs one set of specs against each console in Chromium, against a real
@@ -62,3 +76,11 @@ E2E_DEMO_PASSWORD=... npx playwright test
 The demo tenant is shared by every spec, so a spec that defines a required
 custom field retires it in a `finally`; a field left behind would fail every
 later write to that kind of record.
+
+One spec answers the delivery desk's three calls itself instead of reaching the
+backend: recording a proof needs a consignment that a real trip has carried,
+which the backend's own end-to-end suite builds and proves over HTTP. That spec
+checks what the screen does with each answer; everything else here is real.
+Specs that need a consignment build one through the API (`newConsignment`), and
+the partners they create are coded to sort last so they never push another
+spec's partner off the first page of a list.

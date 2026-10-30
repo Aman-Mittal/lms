@@ -39,9 +39,12 @@ export function Shell() {
           {GROUPS.map((group) => (
             <div className="group" key={group}>
               <h6>{group}</h6>
-              {RESOURCES.filter((r) => r.group === group).map((r) => (
+              {RESOURCES.filter((r) => r.group === group && (!r.permission || can(r.permission))).map((r) => (
                 <NavLink key={r.key} to={`/${r.key}`} data-testid={`nav-${r.key}`}>{r.title}</NavLink>
               ))}
+              {group === 'Delivery' && can('POD_READ') && (
+                <NavLink to="/delivery" data-testid="nav-delivery">Delivery desk</NavLink>
+              )}
             </div>
           ))}
           {can('CUSTOM_FIELD_READ') && (
