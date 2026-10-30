@@ -119,6 +119,10 @@ public class SecurityConfig {
                         // The OpenAPI contract is public: the console on GitHub
                         // Pages generates its client from it.
                         .requestMatchers(HttpMethod.GET, "/openapi.yaml").permitAll()
+                        // A tracking link's token is its own credential: the
+                        // route is how a customer follows a consignment with
+                        // no account. See PublicTrackingController.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/public/tracking/*").permitAll()
                         .anyRequest().authenticated())
                 // A refusal by the filter chain is a problem document like any
                 // other, with the Bearer challenge kept; see ProblemSecurityHandlers.
