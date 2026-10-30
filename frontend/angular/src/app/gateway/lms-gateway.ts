@@ -184,6 +184,72 @@ export interface PublicTrackingView {
   position: { lat: string; lon: string; recordedAt: string } | null;
 }
 
+// ---------------------------------------------------------------- allocation rules
+
+export const RULE_ACTIONS = ['PREFER', 'EXCLUDE'] as const;
+export type RuleAction = (typeof RULE_ACTIONS)[number];
+
+/** The kinds of goods a rule can be limited to. */
+export const MATERIAL_CLASSES = [
+  'GENERAL', 'FOOD', 'PHARMA', 'CHEMICAL', 'TOXIC', 'FLAMMABLE', 'FRAGILE', 'TEMPERATURE_CONTROLLED',
+] as const;
+
+/** Something a picker offers: what is sent, and what is shown. */
+export interface Choice {
+  id: string;
+  label: string;
+}
+
+/** A rule as listed. Conditions left out are empty strings; weights are formatted for display. */
+export interface AllocationRuleView {
+  id: string;
+  name: string;
+  priority: number;
+  active: boolean;
+  originTerminalId: string;
+  destinationTerminalId: string;
+  minWeightKg: string;
+  maxWeightKg: string;
+  materialClass: string;
+  action: RuleAction;
+  /** In the order the rule names them, which for PREFER is the order they are asked. */
+  vendors: Choice[];
+}
+
+/** A whole rule, as written or revised. Every condition left out is not tested. */
+export interface RuleDraft {
+  name: string;
+  priority: number;
+  active: boolean;
+  originTerminalId?: string;
+  destinationTerminalId?: string;
+  minWeightKg?: number;
+  maxWeightKg?: number;
+  materialClass?: string;
+  action: RuleAction;
+  vendorIds: string[];
+}
+
+/** A dry run: which rule would fire for a load and who would be asked, changing nothing. */
+export interface RuleEvaluation {
+  loadNo: string;
+  /** Empty when no rule would fire. */
+  ruleName: string;
+  action: RuleAction | '';
+  nextVendor: string;
+  candidates: Choice[];
+}
+
+/** An allocation as the rules screen shows it: what decided who was asked. */
+export interface AllocationSummary {
+  id: string;
+  loadNo: string;
+  status: string;
+  /** Empty when no rule fired. */
+  appliedRuleName: string;
+  appliedRuleAction: RuleAction | '';
+}
+
 /** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
 export class ApiProblem extends Error {
   constructor(message: string, readonly status?: number) {
@@ -220,4 +286,16 @@ export abstract class LmsGateway {
   abstract revokeTrackingLink(id: string): Promise<void>;
   /** Needs no sign-in. Null when the token is unknown, expired or revoked (they look alike). */
   abstract publicTracking(token: string): Promise<PublicTrackingView | null>;
+
+  /** Every rule, active and retired, in the order they are tried. */
+  abstract allocationRules(): Promise<AllocationRuleView[]>;
+  /** Resolves to the new rule's id. */
+  abstract createAllocationRule(draft: RuleDraft): Promise<string>;
+  /** Replaces the whole rule; `active: false` retires it. */
+  abstract reviseAllocationRule(id: string, draft: RuleDraft): Promise<void>;
+  abstract evaluateAllocation(loadId: string): Promise<RuleEvaluation>;
+  abstract allocation(id: string): Promise<AllocationSummary>;
+  /** The vendors a rule may name: active vendors only. */
+  abstract activeVendors(): Promise<Choice[]>;
+  abstract terminalChoices(): Promise<Choice[]>;
 }
