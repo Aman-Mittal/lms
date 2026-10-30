@@ -86,11 +86,6 @@ spring:
 
 server:
   port: ${PORT:8080}
-  # Behind Render's proxy every request would otherwise appear to come from the
-  # proxy, and the public route's per-client limit would be one shared bucket.
-  # `native` lets Tomcat honour X-Forwarded-For from trusted (private-range)
-  # proxies only.
-  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:native}
   shutdown: graceful
   tomcat:
     threads:
@@ -166,6 +161,19 @@ lms:
     rate-limit:
       requests: ${LMS_TRACKING_RATE_LIMIT:30}
       window-seconds: ${LMS_TRACKING_RATE_WINDOW_SECONDS:60}
+  events:
+    retry:
+      # A listener that fails is retried on an exponential backoff, then its
+      # event is parked for an operator (the event dead-letter module).
+      enabled: ${EVENT_RETRY_ENABLED:true}
+      interval: ${EVENT_RETRY_INTERVAL:PT1M}
+      # A publication with no recorded failure may still be in flight; it is
+      # left alone this long.
+      grace-period: ${EVENT_RETRY_GRACE:PT5M}
+      initial-backoff: ${EVENT_RETRY_BACKOFF:PT1M}
+      max-backoff: ${EVENT_RETRY_MAX_BACKOFF:PT1H}
+      max-attempts: ${EVENT_RETRY_MAX_ATTEMPTS:5}
+      batch-size: ${EVENT_RETRY_BATCH:100}
   cors:
     # The Angular console is served from GitHub Pages, a different origin.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
