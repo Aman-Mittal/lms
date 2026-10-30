@@ -215,3 +215,127 @@ export async function stubPrint(page: Page): Promise<void> {
 export async function printed(page: Page): Promise<number> {
   return page.evaluate(() => (window as unknown as { printed: number }).printed);
 }
+
+// ------------------------------------------------------------ allocation rules
+
+export interface Lane {
+  loadId: string;
+  origin: { id: string; code: string };
+  destination: { id: string; code: string };
+  /** Active vendors on the lane's routing guide, in rank order 1, 2, 3. */
+  vendors: Array<{ id: string; code: string }>;
+}
+
+async function activeVendor(request: APIRequestContext, session: Session, code: string): Promise<string> {
+  const vendor = await post(request, session, '/api/v1/partners', {
+    orgUnitId: session.orgUnitId, code, legalName: `${code} Carriers`, partnerType: 'VENDOR', taxId: `TAX-${uuid()}`,
+  });
+  await post(request, session, `/api/v1/partners/${vendor.id}/transitions`, { target: 'PENDING_VERIFICATION' });
+  await post(request, session, `/api/v1/partners/${vendor.id}/transitions`, { target: 'ACTIVE' });
+  return vendor.id as string;
+}
+
+/**
+ * A lane with a routing guide of three active vendors and one load planned on it,
+ * built as a planner would: sites, a lorry with its insurance, the guide, an
+ * order split into a consignment, a load opened on the lorry and planned. Its
+ * codes start ZZ so they sort after every other spec's data.
+ */
+export async function newPlannedLoad(request: APIRequestContext, session: Session, salt: string): Promise<Lane> {
+  const org = session.orgUnitId;
+  const site = async (name: string) => {
+    const code = `ZZ-AR-${name}-${salt}`;
+    const made = await post(request, session, '/api/v1/terminals/point-radius', {
+      orgUnitId: org, code, name: `Rules ${name} ${salt}`, category: 'CUSTOMER_SITE',
+      centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 500, dockCount: 2, avgDwellMinutes: 45,
+    });
+    return { id: made.id as string, code };
+  };
+  const origin = await site('ORIG');
+  const destination = await site('DEST');
+
+  const vehicle = await post(request, session, '/api/v1/vehicles', {
+    orgUnitId: org, registrationNo: `MH-AR-${salt.toUpperCase()}`, category: 'TRUCK', vehicleType: 'RIGID',
+    axleConfig: '2-AXLE', grossWeightKg: 26000, tareWeightKg: 6000, maxVolumeM3: 60,
+    hazmatCertified: false, reeferCapable: false,
+  });
+  const day = (years: number) => new Date(Date.now() + years * 365 * 86_400_000).toISOString().slice(0, 10);
+  await post(request, session, `/api/v1/vehicles/${vehicle.id}/documents`, {
+    documentType: 'INSURANCE', documentNo: `INS-AR-${salt}`, issuingAuthority: 'IRDAI',
+    issuedOn: day(-1), expiresOn: day(1),
+  });
+
+  const guide = await post(request, session, '/api/v1/routing-guides', {
+    orgUnitId: org, originTerminalId: origin.id, destinationTerminalId: destination.id, vehicleType: 'RIGID',
+  });
+  const vendors: Array<{ id: string; code: string }> = [];
+  for (const [rank, label] of ['A', 'B', 'C'].entries()) {
+    const code = `ZZ-AR-V${label}-${salt}`;
+    const id = await activeVendor(request, session, code);
+    await post(request, session, `/api/v1/routing-guides/${guide.id}/vendors`, {
+      vendorPartnerId: id, rankNo: rank + 1, responseSlaMinutes: 60, agreedRate: 20000,
+    });
+    vendors.push({ id, code });
+  }
+
+  const customer = await post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-AR-C-${salt}`, legalName: 'Rules customer', partnerType: 'CUSTOMER', taxId: `TAX-${uuid()}`,
+  });
+  const consignee = await post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-AR-N-${salt}`, legalName: 'Rules consignee', partnerType: 'CONSIGNEE', taxId: `TAX-${uuid()}`,
+  });
+  const order = await post(request, session, '/api/v1/orders', {
+    orgUnitId: org, customerPartnerId: customer.id, orderNo: `ZZ-AR-SO-${salt}`, originTerminalId: origin.id,
+    requestedPickupAt: new Date(Date.now() + 4 * 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z'), source: 'API',
+  });
+  await post(request, session, `/api/v1/orders/${order.id}/lines`, {
+    lineNo: 1, materialCode: 'GOODS', materialDescription: 'General goods', materialClass: 'GENERAL',
+    quantity: 10, uom: 'CASE', deadWeightKg: 5000, consigneePartnerId: consignee.id,
+    destinationTerminalId: destination.id,
+  });
+  await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
+  const consignments = await post(request, session, `/api/v1/orders/${order.id}/consignments`, {});
+  const load = await post(request, session, '/api/v1/loads', {
+    orgUnitId: org, loadNo: `ZZ-AR-LD-${salt}`, originTerminalId: origin.id, vehicleId: vehicle.id,
+  });
+  await post(request, session, `/api/v1/loads/${load.id}/consignments`, { consignmentId: consignments[0].id });
+  await post(request, session, `/api/v1/loads/${load.id}/plan`, {});
+  return { loadId: load.id as string, origin, destination, vendors };
+}
+
+/** Offers a load for sourcing, which is when a rule fires; returns the allocation's id. */
+export async function offerLoad(request: APIRequestContext, session: Session, loadId: string): Promise<string> {
+  return (await post(request, session, '/api/v1/allocations', { loadId })).id as string;
+}
+
+/**
+ * Retires every active rule whose name contains `salt`. The demo tenant is
+ * shared, and a rule left active by a failed run would decide later offers.
+ */
+export async function retireRules(request: APIRequestContext, salt: string): Promise<void> {
+  const session = await apiSession(request);
+  const headers = { Authorization: `Bearer ${session.token}` };
+  const listed = await request.get(`${API}/api/v1/allocation-rules?active=true&limit=200`, { headers });
+  for (const r of (await listed.json()).items as Array<{
+    id: string; name: string; priority: number; originTerminalId?: string; destinationTerminalId?: string;
+    minWeightKg?: number; maxWeightKg?: number; materialClass?: string; action: string;
+    vendors: Array<{ vendorPartnerId: string }>;
+  }>) {
+    if (r.name.includes(salt)) {
+      await request.put(`${API}/api/v1/allocation-rules/${r.id}`, {
+        headers,
+        data: {
+          name: r.name, priority: r.priority, active: false, originTerminalId: r.originTerminalId,
+          destinationTerminalId: r.destinationTerminalId, minWeightKg: r.minWeightKg, maxWeightKg: r.maxWeightKg,
+          materialClass: r.materialClass, action: r.action, vendorPartnerIds: r.vendors.map((v) => v.vendorPartnerId),
+        },
+      });
+    }
+  }
+}
+
+export async function openAllocationRules(page: Page): Promise<void> {
+  await page.getByTestId('nav-allocation-rules').click();
+  await expect(page.getByRole('heading', { name: 'Allocation rules', level: 1 })).toBeVisible();
+  await expect(page.getByText('Loading…')).toHaveCount(0);
+}
