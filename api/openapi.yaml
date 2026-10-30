@@ -116,6 +116,8 @@ tags:
     description: Attributes a tenant defines for itself on partners, vehicles, drivers, terminals, orders, loads and trips, and the values it records.
   - name: Delivery and claims
     description: Proof of delivery with a one-time code, and claims against a consignment.
+  - name: Allocation rules
+    description: Tenant-written preferences for which vendors a load is offered to first, or never.
   - name: Tracking links
     description: Issuing, listing and revoking the links a customer follows a consignment with.
   - name: Public tracking

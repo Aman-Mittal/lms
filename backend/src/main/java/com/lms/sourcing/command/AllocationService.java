@@ -77,13 +77,14 @@ public class AllocationService {
     private final ApplicationEventPublisher events;
     private final AllocationCanceller canceller;
     private final TransitionAudit audit;
+    private final AllocationRules allocationRules;
 
     public AllocationService(LoadLifecyclePort loads, PartnerStandingPort partners,
                              RoutingGuideRepository guides, RoutingGuideEntryRepository entries,
                              AllocationRepository allocations, AllocationOfferRepository offers,
                              VendorAwardTally tally, List<SourcingStrategy> availableStrategies,
                              ApplicationEventPublisher events, AllocationCanceller canceller,
-                             TransitionAudit audit) {
+                             TransitionAudit audit, AllocationRules allocationRules) {
         this.loads = loads;
         this.partners = partners;
         this.guides = guides;
@@ -94,6 +95,7 @@ public class AllocationService {
         this.events = events;
         this.canceller = canceller;
         this.audit = audit;
+        this.allocationRules = allocationRules;
 
         // Injected as a list and indexed here, so adding a strategy is adding a
         // bean. A switch in this class would be the one place every new
@@ -145,17 +147,33 @@ public class AllocationService {
                     "Every vendor on the routing guide for this lane is inactive or blacklisted");
         }
 
-        RoutingGuideEntry first = strategyFor(guide)
-                .nextCandidate(eligible, List.of(), contextFor(tenantId, guide.id(), loadId))
+        // The tenant's rules, if any matches, shape who is asked; the guide's
+        // strategy still chooses among whoever the rule leaves.
+        AllocationRules.Decision decision = allocationRules.decide(tenantId, load);
+        RoutingGuideEntry first = allocationRules
+                .nominate(decision, strategyFor(guide), eligible, List.of(),
+                        contextFor(tenantId, guide.id(), loadId))
                 .orElseThrow(() -> new BusinessRuleViolationException("no-eligible-vendors",
-                        "The sourcing strategy nominated no vendor for this lane"));
+                        decision.fired()
+                                ? "Rule '" + decision.rule().name() + "' leaves no vendor to offer this load to"
+                                : "The sourcing strategy nominated no vendor for this lane"));
 
         Allocation allocation = allocations.save(Allocation.open(UUID.randomUUID(), tenantId,
                 loadId, guide.id(), guide.strategy(), first.rankNo()));
+        allocationRules.record(tenantId, allocation.id(), decision);
 
         makeOffer(tenantId, allocation, first, load.loadNo());
+        // One entry, as before rules existed, carrying the rule that decided (or
+        // none): the audit trail of an allocation reads the same with or without
+        // rules, and allocation_rule_firing holds the decision for the read model.
         audit.record("ALLOCATION_OPENED", AUDIT_TYPE, allocation.id(), null,
-                snapshot(allocation, first.vendorPartnerId(), null));
+                Json.object("status", allocation.status().name(),
+                        "rank", allocation.currentRank() == null ? null : allocation.currentRank().toString(),
+                        "vendorPartnerId", first.vendorPartnerId().toString(),
+                        "answeredByVendorPartnerId", null,
+                        "ruleId", decision.fired() ? decision.rule().id().toString() : null,
+                        "ruleName", decision.fired() ? decision.rule().name() : null,
+                        "ruleAction", decision.fired() ? decision.rule().action().name() : null));
         return allocation.id();
     }
 
@@ -277,9 +295,9 @@ public class AllocationService {
                 ? List.of()
                 : eligibleEntries(tenantId, allocation.guideId());
 
-        Optional<RoutingGuideEntry> next = strategyFor(allocation.strategy())
-                .nextCandidate(eligible, asked,
-                        contextFor(tenantId, allocation.guideId(), allocation.loadId()));
+        Optional<RoutingGuideEntry> next = allocationRules.nominate(
+                allocationRules.recordedFor(allocation.id()), strategyFor(allocation.strategy()),
+                eligible, asked, contextFor(tenantId, allocation.guideId(), allocation.loadId()));
 
         Json before = snapshot(allocation, answered.vendorPartnerId(), null);
 
