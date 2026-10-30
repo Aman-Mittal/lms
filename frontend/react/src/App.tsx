@@ -15,6 +15,7 @@
  */
 
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { AllocationRules } from './pages/AllocationRules';
 import { ClaimsPage } from './pages/ClaimsPage';
 import { Dashboard } from './pages/Dashboard';
 import { DeliveryDesk } from './pages/DeliveryDesk';
@@ -45,6 +46,7 @@ export function App() {
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="delivery" element={<DeliveryDesk />} />
           <Route path="tracking" element={<TrackingLinks />} />
+          <Route path="allocation-rules" element={<AllocationRules />} />
           <Route path=":resource" element={<ListPage />} />
         </Route>
       </Route>
