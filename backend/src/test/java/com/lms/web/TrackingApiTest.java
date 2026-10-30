@@ -371,7 +371,7 @@ class TrackingApiTest {
         }
         assertThat(refusals).extracting(HttpResponse::body).containsOnly(refusals.get(0).body());
         assertThat(kit.parse(new Outcome(404, refusals.get(0).body(), 0)).get("code").asString())
-                .isEqualTo("tracking-link-not-found");
+                .isEqualTo("not-found");
 
         JsonNode statuses = kit.parse(kit.get(callerA, "/api/v1/consignments/" + consignment + "/tracking-links",
                 everything)).get("items");

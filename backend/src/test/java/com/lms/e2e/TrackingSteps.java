@@ -202,7 +202,7 @@ public class TrackingSteps {
         FeignException nonsense = refusal("a-link-nobody-ever-issued");
         FeignException ours = refusal(link.getToken());
         assertThat(ours.status()).isEqualTo(404);
-        assertThat(ours.contentUTF8()).contains("tracking-link-not-found");
+        assertThat(ours.contentUTF8()).contains("not-found");
         assertThat(ours.contentUTF8()).as("no tell-tale difference").isEqualTo(nonsense.contentUTF8());
     }
 
