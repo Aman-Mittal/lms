@@ -24,7 +24,8 @@ import org.springframework.stereotype.Component;
  * How many events are parked, across tenants. Parked events do not make the
  * application unhealthy -- it is serving, and they wait for an operator -- so
  * this is UP with a {@code degraded} flag, never DOWN. A count only: no event
- * content leaves through the health endpoint.
+ * content leaves through the health endpoint, whose details are hidden from
+ * anonymous callers in any case (show-details: never).
  */
 @Component("eventDeadLetter")
 public class DeadLetterHealthIndicator implements HealthIndicator {
