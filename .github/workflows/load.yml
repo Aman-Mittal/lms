@@ -136,6 +136,9 @@ jobs:
         env:
           DATABASE_URL: jdbc:postgresql://localhost:5432/lms
           LMS_DEMO_SEED: "true"
+          # The public tracking route is limited per client address; the load
+          # comes from this one runner, so the limit would measure itself.
+          LMS_TRACKING_RATE_LIMIT: "1000000"
           DEMO_ADMIN_PASSWORD: ${{ env.LOAD_DEMO_PASSWORD }}
         run: |
           nohup java -Xmx512m -jar backend/target/lms-platform-*.jar > backend.log 2>&1 &
@@ -234,6 +237,9 @@ jobs:
         env:
           DATABASE_URL: jdbc:postgresql://localhost:5432/lms
           LMS_DEMO_SEED: "true"
+          # The public tracking route is limited per client address; the load
+          # comes from this one runner, so the limit would measure itself.
+          LMS_TRACKING_RATE_LIMIT: "1000000"
           DEMO_ADMIN_PASSWORD: ${{ env.LOAD_DEMO_PASSWORD }}
         run: |
           nohup java -Xmx512m -jar backend/target/lms-platform-*.jar > backend.log 2>&1 &
