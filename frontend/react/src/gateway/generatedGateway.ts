@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import { DemoDataApi } from '../api';
+import type { DemoResetOutcome } from './lmsGateway';
 import {
   AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   OrdersApi,
@@ -61,6 +63,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const config = new Configuration({ basePath: API_URL, accessToken: () => getToken() ?? '' });
   const auth = new AuthenticationApi(config);
   const controlTower = new ControlTowerApi(config);
+  const demo = new DemoDataApi(config);
   const partners = new PartnersApi(config);
   const vehicles = new VehiclesApi(config);
   const drivers = new DriversApi(config);
@@ -127,6 +130,12 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           unassigned: s.unassigned ?? 0, settlementHolds: s.settlementHolds ?? 0,
           openWithoutTrip: s.openWithoutTrip ?? 0,
         };
+      }),
+
+    resetDemoData: (confirm: string): Promise<DemoResetOutcome> =>
+      guard(async () => {
+        const r = await demo.resetDemoData({ demoResetRequest: { confirm } });
+        return { tenantCode: r.tenantCode, rowsDeleted: r.rowsDeleted, signInAgain: r.signInAgain };
       }),
 
     list: (resource) => guard(listers[resource]),
