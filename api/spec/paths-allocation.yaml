@@ -1,0 +1,129 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/allocation-rules:
+  get:
+    tags: [Allocation rules]
+    operationId: listAllocationRules
+    summary: A page of allocation rules, in the order they are tried
+    description: Requires `ALLOCATION_RULE_READ`. Lowest priority number first.
+    parameters:
+      - name: active
+        in: query
+        schema: { type: boolean }
+        description: Only active (or only retired) rules.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of rules.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AllocationRuleSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Allocation rules]
+    operationId: createAllocationRule
+    summary: Write an allocation rule
+    description: |
+      Requires `ALLOCATION_RULE_MANAGE`. Every condition stated must hold for a
+      load; one left out is not tested. The first matching rule by priority
+      decides, alone: PREFER puts its vendors first, in the order listed;
+      EXCLUDE never asks them. Vendors must be active; names are unique.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AllocationRuleRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/allocation-rules/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the rule.
+  get:
+    tags: [Allocation rules]
+    operationId: getAllocationRule
+    summary: One allocation rule
+    description: Requires `ALLOCATION_RULE_READ`.
+    responses:
+      "200":
+        description: The rule.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AllocationRule" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+  put:
+    tags: [Allocation rules]
+    operationId: reviseAllocationRule
+    summary: Replace a rule's conditions, action and vendors, or retire it
+    description: |
+      Requires `ALLOCATION_RULE_MANAGE`. Carries the whole rule. A rule is never
+      deleted: send `active: false` to retire it. Allocations already decided
+      under it keep the rule's name as it was.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AllocationRuleRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/allocation-rules/evaluations:
+  post:
+    tags: [Allocation rules]
+    operationId: evaluateAllocationRules
+    summary: Which rule would fire for a load, and who would be offered it first
+    description: |
+      Requires `ALLOCATION_RULE_READ`. A dry run: nothing is offered or
+      recorded. It uses the same routing guide, eligibility test and nomination
+      as allocating the load, so its `nextVendor` is who the first offer goes to.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AllocationEvaluationRequest" }
+    responses:
+      "200":
+        description: The outcome.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AllocationEvaluation" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

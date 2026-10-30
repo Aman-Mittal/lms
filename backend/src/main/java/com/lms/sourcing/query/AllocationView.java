@@ -31,5 +31,8 @@ public record AllocationView(
         String awardedVendorName,
         Instant awardedAt,
         int offersMade,
-        Instant createdAt) {
+        Instant createdAt,
+        UUID appliedRuleId,
+        String appliedRuleName,
+        String appliedRuleAction) {
 }

@@ -37,6 +37,12 @@ Allocation:
       type: integer
       description: How many offers the cascade has made so far, answered or not.
     createdAt: { type: string, format: date-time }
+    appliedRuleId:
+      type: string
+      format: uuid
+      description: The allocation rule that decided who was offered the load first. Absent when none did.
+    appliedRuleName: { type: string, description: The rule's name as it was when it fired. }
+    appliedRuleAction: { $ref: "#/components/schemas/AllocationRuleAction" }
 
 Offer:
   type: object
