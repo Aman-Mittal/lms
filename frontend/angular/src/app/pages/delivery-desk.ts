@@ -26,9 +26,10 @@ import { Qr } from './qr';
   template: `
     <h1>Delivery desk</h1>
     <p class="muted">Issue the consignee's one-time code, then record the proof when they give it back.</p>
+    <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
       <input name="consignmentId" placeholder="Consignment id" aria-label="Consignment id"
-             data-testid="consignment-id" [(ngModel)]="typed" required />
+             data-testid="consignment-id" [value]="typed()" (input)="typed.set($any($event.target).value)" required />
       <button type="submit">Look up</button>
     </form>
     @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
@@ -107,13 +108,13 @@ export class DeliveryDesk {
   readonly record = computed(() => this.session.can('POD_RECORD'));
   readonly confirmed = computed(() => this.proof()?.status === 'CONFIRMED');
 
-  typed = '';
+  readonly typed = signal('');
   otp = '';
   recipient = '';
   photo = '';
 
   async lookUp(): Promise<void> {
-    this.consignmentId.set(this.typed.trim());
+    this.consignmentId.set(this.typed().trim());
     this.issued.set(null);
     this.slip.set(false);
     await this.refresh();
