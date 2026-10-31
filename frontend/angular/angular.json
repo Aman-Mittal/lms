@@ -45,11 +45,14 @@
             "tsConfig": "tsconfig.app.json",
             "assets": [],
             "allowedCommonJsDependencies": [
+              "leaflet",
               "qrcode"
             ],
             "styles": [
+              "node_modules/leaflet/dist/leaflet.css",
               "src/styles.css",
-              "src/print.css"
+              "src/print.css",
+              "src/map.css"
             ]
           },
           "configurations": {

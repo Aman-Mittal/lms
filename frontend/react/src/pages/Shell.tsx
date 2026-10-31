@@ -42,6 +42,18 @@ export function Shell() {
               {RESOURCES.filter((r) => r.group === group && (!r.permission || can(r.permission))).map((r) => (
                 <NavLink key={r.key} to={`/${r.key}`} data-testid={`nav-${r.key}`}>{r.title}</NavLink>
               ))}
+              {group === 'Operations' && can('TERMINAL_READ') && (
+                <NavLink to="/map" data-testid="nav-map">Network map</NavLink>
+              )}
+              {group === 'Operations' && can('TRIP_READ') && (
+                <NavLink to="/trip-route" data-testid="nav-trip-route">Trip route</NavLink>
+              )}
+              {group === 'Multimodal' && can('MULTIMODAL_READ') && (
+                <NavLink to="/itineraries" data-testid="nav-itineraries">Itineraries</NavLink>
+              )}
+              {group === 'Multimodal' && can('MILKRUN_READ') && (
+                <NavLink to="/milk-runs" data-testid="nav-milk-runs">Milk runs</NavLink>
+              )}
               {group === 'Operations' && can('ALLOCATION_RULE_READ') && (
                 <NavLink to="/allocation-rules" data-testid="nav-allocation-rules">Allocation rules</NavLink>
               )}
