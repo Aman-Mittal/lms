@@ -29,12 +29,14 @@ import java.util.UUID;
 
 import com.lms.delivery.command.domain.DeliveryProof;
 import com.lms.delivery.command.domain.ProofStatus;
+import com.lms.delivery.events.DeliveryProofRecorded;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -60,17 +62,20 @@ public class DeliveryService {
     private final DeliveryProofRepository proofs;
     private final JdbcClient jdbc;
     private final TransitionAudit audit;
+    private final ApplicationEventPublisher events;
     private final Duration otpTtl;
     private final int maxAttempts;
     private final boolean exposeOtp;
 
     public DeliveryService(DeliveryProofRepository proofs, JdbcClient jdbc, TransitionAudit audit,
+                           ApplicationEventPublisher events,
                            @Value("${lms.delivery.otp-ttl-minutes:15}") long otpTtlMinutes,
                            @Value("${lms.delivery.otp-max-attempts:3}") int maxAttempts,
                            @Value("${lms.delivery.expose-otp:false}") boolean exposeOtp) {
         this.proofs = proofs;
         this.jdbc = jdbc;
         this.audit = audit;
+        this.events = events;
         this.otpTtl = Duration.ofMinutes(otpTtlMinutes);
         this.maxAttempts = maxAttempts;
         this.exposeOtp = exposeOtp;
@@ -163,6 +168,7 @@ public class DeliveryService {
         audit.record("DELIVERY_PROOF_RECORDED", "DELIVERY_PROOF", saved.id(), null,
                 Json.object("consignmentId", consignmentId.toString(), "recipient", name,
                         "deliveredAt", at.toString()));
+        events.publishEvent(new DeliveryProofRecorded(tenantId, consignmentId, at, Instant.now()));
     }
 
     private static BusinessRuleViolationException invalidCode() {

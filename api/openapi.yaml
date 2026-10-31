@@ -118,6 +118,8 @@ tags:
     description: Proof of delivery with a one-time code, and claims against a consignment.
   - name: Allocation rules
     description: Tenant-written preferences for which vendors a load is offered to first, or never.
+  - name: Webhooks
+    description: Signed outbound notifications of order, trip, delivery and claim events, with their delivery history.
   - name: Tracking links
     description: Issuing, listing and revoking the links a customer follows a consignment with.
   - name: Public tracking

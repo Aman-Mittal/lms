@@ -17,6 +17,7 @@ package com.lms.delivery.command;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -27,11 +28,14 @@ import com.lms.delivery.command.domain.Claim;
 import com.lms.delivery.command.domain.ClaimStatus;
 import com.lms.delivery.command.domain.ClaimType;
 import com.lms.delivery.command.domain.ProofStatus;
+import com.lms.delivery.events.ClaimRaised;
+import com.lms.delivery.events.ClaimStatusChanged;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -55,13 +59,15 @@ public class ClaimService {
     private final DeliveryProofRepository proofs;
     private final JdbcClient jdbc;
     private final TransitionAudit audit;
+    private final ApplicationEventPublisher events;
 
     public ClaimService(ClaimRepository claims, DeliveryProofRepository proofs, JdbcClient jdbc,
-                        TransitionAudit audit) {
+                        TransitionAudit audit, ApplicationEventPublisher events) {
         this.claims = claims;
         this.proofs = proofs;
         this.jdbc = jdbc;
         this.audit = audit;
+        this.events = events;
     }
 
     @Transactional
@@ -94,6 +100,8 @@ public class ClaimService {
         audit.record("CLAIM_RAISED", "CLAIM", saved.id(), null,
                 Json.object("claimNo", claimNo, "consignmentId", consignmentId.toString(),
                         "type", type.name(), "amount", amount.toPlainString()));
+        events.publishEvent(new ClaimRaised(tenantId, saved.id(), claimNo, consignmentId, type.name(),
+                amount, saved.currency(), Instant.now()));
         return saved.id();
     }
 
@@ -126,11 +134,13 @@ public class ClaimService {
             throw new BusinessRuleViolationException("claim-rejection-unexplained",
                     "A rejection needs a reason");
         }
-        claims.save(claim.moved(target, approvedAmount, note));
+        Claim moved = claims.save(claim.moved(target, approvedAmount, note));
         audit.record("CLAIM_" + target.name(), "CLAIM", id,
                 Json.object("status", claim.status().name()),
                 Json.object("status", target.name(),
                         "approvedAmount", target == ClaimStatus.APPROVED ? approvedAmount.toPlainString() : null));
+        events.publishEvent(new ClaimStatusChanged(claim.tenantId(), id, claim.claimNo(), claim.status().name(),
+                target.name(), moved.approvedAmount(), Instant.now()));
     }
 
     private static void requireMoney(BigDecimal value, String code, String what) {
