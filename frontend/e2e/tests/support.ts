@@ -339,3 +339,110 @@ export async function openAllocationRules(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Allocation rules', level: 1 })).toBeVisible();
   await expect(page.getByText('Loading…')).toHaveCount(0);
 }
+
+// ----------------------------------------------------------------------- maps
+
+/** A transparent 1x1 PNG, served in place of every map tile. */
+const BLANK_TILE = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/**
+ * Answers every map tile request from the test itself. The public tile servers
+ * allow light use only, and a test must not depend on them; the count says
+ * whether the map asked for tiles at all, which is how a spec knows it drew.
+ */
+export async function stubTiles(page: Page): Promise<{ count: () => number }> {
+  let count = 0;
+  await page.route('https://tile.openstreetmap.org/**', async (route) => {
+    count += 1;
+    await route.fulfill({ status: 200, contentType: 'image/png', body: BLANK_TILE });
+  });
+  return { count: () => count };
+}
+
+export async function openScreen(page: Page, nav: string, heading: string): Promise<void> {
+  await page.getByTestId(nav).click();
+  await expect(page.getByRole('heading', { name: heading, exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByText('Loading…')).toHaveCount(0);
+}
+
+export interface Site {
+  id: string;
+  code: string;
+  lat: number;
+  lon: number;
+}
+
+async function siteAt(
+  request: APIRequestContext, session: Session, code: string, category: string, lat: number, lon: number,
+): Promise<Site> {
+  const made = await post(request, session, '/api/v1/terminals/point-radius', {
+    orgUnitId: session.orgUnitId, code, name: `Map ${code}`, category,
+    centre: { lat, lon }, radiusMetres: 750, dockCount: 2, avgDwellMinutes: 45,
+  });
+  return { id: made.id as string, code, lat, lon };
+}
+
+/** A railhead-to-railhead itinerary of one rail leg, planned for tomorrow. Codes start ZZ to sort last. */
+export async function newRailItinerary(
+  request: APIRequestContext, session: Session, salt: string,
+): Promise<{ id: string; itineraryNo: string; shipmentRef: string; from: Site; to: Site }> {
+  const from = await siteAt(request, session, `ZZ-MP-RH1-${salt}`, 'RAILHEAD', between(20, 24), between(72, 76));
+  const to = await siteAt(request, session, `ZZ-MP-RH2-${salt}`, 'RAILHEAD', between(26, 30), between(77, 81));
+  const carrier = await activeVendor(request, session, `ZZ-MP-RAIL-${salt}`);
+  const at = (hours: number) => new Date(Date.now() + hours * 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const shipmentRef = `ZZ-MP-SHIP-${salt}`;
+  const made = await post(request, session, '/api/v1/itineraries', {
+    shipmentRef, currency: 'INR',
+    legs: [{
+      mode: 'RAIL', fromTerminalId: from.id, toTerminalId: to.id, plannedDepartureAt: at(24), plannedArrivalAt: at(48),
+      bookingRef: `BK-${salt}`, unitType: 'CONTAINER', unitCount: 2, carrierPartnerId: carrier, costAmount: 42000,
+    }],
+  });
+  const read = await request.get(`${API}/api/v1/itineraries/${made.id}`, {
+    headers: { Authorization: `Bearer ${session.token}` },
+  });
+  return { id: made.id as string, itineraryNo: (await read.json()).itineraryNo as string, shipmentRef, from, to };
+}
+
+/** A milk-run route from a plant round two suppliers, in force from tomorrow. */
+export async function newMilkRunRoute(
+  request: APIRequestContext, session: Session, salt: string,
+): Promise<{ id: string; code: string; plant: Site; stops: Site[] }> {
+  const plant = await siteAt(request, session, `ZZ-MP-PLANT-${salt}`, 'PLANT', between(18, 19), between(73, 74));
+  const stops = [
+    await siteAt(request, session, `ZZ-MP-S1-${salt}`, 'CUSTOMER_SITE', between(19, 19.5), between(73, 74)),
+    await siteAt(request, session, `ZZ-MP-S2-${salt}`, 'CUSTOMER_SITE', between(19.5, 20), between(73, 74)),
+  ];
+  const code = `ZZ-MP-MR-${salt}`;
+  const made = await post(request, session, '/api/v1/milk-run-routes', {
+    code, name: `Map circuit ${salt}`, plantTerminalId: plant.id,
+    effectiveFrom: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+    days: ['MON', 'WED', 'FRI'], departureTime: '06:00', timeZone: 'Asia/Kolkata', runRate: 9000, perStopFee: 500,
+    currency: 'INR',
+    stops: stops.map((s, i) => ({
+      terminalId: s.id, windowOpenMin: 30 + i * 60, windowCloseMin: 90 + i * 60, plannedDwellMin: 20,
+    })),
+  });
+  return { id: made.id as string, code, plant, stops };
+}
+
+/** A vehicle that has reported one position, which the network map should show. */
+export async function newReportingVehicle(
+  request: APIRequestContext, session: Session, salt: string,
+): Promise<{ id: string; registrationNo: string; lat: number; lon: number }> {
+  const registrationNo = `MH-MP-${salt.toUpperCase()}`;
+  const vehicle = await post(request, session, '/api/v1/vehicles', {
+    orgUnitId: session.orgUnitId, registrationNo, category: 'TRUCK', vehicleType: 'RIGID',
+    axleConfig: '2-AXLE', grossWeightKg: 26000, tareWeightKg: 6000, maxVolumeM3: 60,
+    hazmatCertified: false, reeferCapable: false,
+  });
+  const lat = between(12, 13);
+  const lon = between(77, 78);
+  await post(request, session, '/api/v1/telematics/pings', {
+    pings: [{ vehicleId: vehicle.id, recordedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), lat, lon, speedKph: 40 }],
+  });
+  return { id: vehicle.id as string, registrationNo, lat, lon };
+}
