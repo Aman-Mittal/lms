@@ -59,5 +59,13 @@ public class EndToEndContext {
         registry.add("lms.test.probe-listener", () -> "true");
         registry.add("lms.events.retry.enabled", () -> "false");
         registry.add("lms.events.retry.max-attempts", () -> "1");
+        // Webhook scenarios post to a receiver on this machine, over plain http, and
+        // wait for the platform's own timer: it ticks fast here and backs off briefly.
+        registry.add("lms.webhooks.allow-http", () -> "true");
+        registry.add("lms.webhooks.allow-private-targets", () -> "true");
+        registry.add("lms.webhooks.dispatcher.initial-delay-ms", () -> "1000");
+        registry.add("lms.webhooks.dispatcher.interval-ms", () -> "500");
+        registry.add("lms.webhooks.initial-backoff", () -> "PT1S");
+        registry.add("lms.webhooks.max-backoff", () -> "PT2S");
     }
 }
