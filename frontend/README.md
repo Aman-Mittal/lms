@@ -69,14 +69,16 @@ sign-in and shows only what the public endpoint returns; an unknown, expired
 and revoked link all show the same message. The public read is made with no
 credentials, even from a console that is signed in.
 
-## Demo data
+## Allocation rules
 
-**Settings > Demo data** (permission `DEMO_RESET`, on a deployment with the
-demo switched on) puts the demo tenant back to its seeded state: everything in
-it is deleted and its administrator is created again with the same password.
-It asks once before it does anything. The administrator's user is recreated,
-so the screen then offers to sign in again. The backend can also do this on a
-timer (`DEMO_RESET_CRON`).
+**Operations > Allocation rules** (read with `ALLOCATION_RULE_READ`, write with
+`ALLOCATION_RULE_MANAGE`) lists the rules in the order they are tried, writes
+and edits them (conditions: origin, destination, weight band, goods; action:
+PREFER its vendors in the order added, or EXCLUDE them) and retires or
+reinstates them -- a rule is never deleted. A **dry run** takes a load id and
+shows which rule would fire and who would be asked first, without offering
+anything; **What decided an allocation** takes an allocation id and names the
+rule that fired on it. Validation is the API's: its message is shown as given.
 
 ## Browser end-to-end tests
 
