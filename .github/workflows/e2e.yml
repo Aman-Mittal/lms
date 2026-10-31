@@ -164,14 +164,6 @@ jobs:
           SHARDS: ${{ strategy.job-total }}
         run: npx playwright test --shard="$SHARD/$SHARDS"
 
-      # Temporary (#144): the look-up specs repeated with no retries.
-      - name: Repeat the look-up specs
-        if: always() && matrix.shard == 1
-        working-directory: frontend/e2e
-        run: >-
-          npx playwright test tests/lookup.spec.ts tests/delivery.spec.ts tests/tracking.spec.ts
-          --repeat-each=10 --retries=0 --reporter=github
-
       - name: Keep this shard's report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
