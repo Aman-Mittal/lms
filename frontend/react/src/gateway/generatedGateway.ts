@@ -16,13 +16,14 @@
 import {
   AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   EventDeadLetterApi, LTLRatingApi, OrdersApi,
-  MilkRunsApi, MultimodalApi, PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TelematicsApi, TrackingLinksApi, TripsApi, VehiclesApi,
+  MilkRunsApi, MultimodalApi, PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TelematicsApi, TrackingLinksApi, TripsApi, VehiclesApi, WebhooksApi,
   type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
   type AllocationRule, type AllocationRuleAction, type AllocationRuleRequest,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
+  type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
 } from '../api';
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
@@ -34,6 +35,7 @@ import {
   type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn,
   type GeoPoint, type MapFeature, type Mapped, type MappedDetail, type TrackingLinkView, type TripRoute,
   type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
+  type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
 } from './lmsGateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -143,6 +145,22 @@ function parkedRow(e: ParkedEvent): Row {
   };
 }
 
+function webhookOf(w: WebhookSubscription): WebhookView {
+  return {
+    id: text(w.id), name: text(w.name), url: text(w.url), eventTypes: w.eventTypes ?? [],
+    active: w.active ?? false, pausedReason: text(w.pausedReason), consecutiveFailures: w.consecutiveFailures ?? 0,
+  };
+}
+
+/** A delivery as a list row. */
+function deliveryRow(d: WebhookDelivery): Row {
+  return {
+    id: text(d.id), eventType: text(d.eventType), status: text(d.status), attempts: text(d.attempts),
+    lastStatusCode: text(d.lastStatusCode), lastError: text(d.lastError), nextAttemptAt: text(d.nextAttemptAt),
+    deliveredAt: text(d.deliveredAt), createdAt: text(d.createdAt),
+  };
+}
+
 /** The adapter: the only file in the React app that imports the generated client. */
 export function createGeneratedGateway(getToken: () => string | null): LmsGateway {
   // The token is read per request (a function), so one gateway outlives sign-ins.
@@ -164,6 +182,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const milkRuns = new MilkRunsApi(config);
   const ltl = new LTLRatingApi(config);
   const deadLetters = new EventDeadLetterApi(config);
+  const webhooks = new WebhooksApi(config);
   const delivery = new DeliveryAndClaimsApi(config);
   const links = new TrackingLinksApi(config);
   const rules = new AllocationRulesApi(config);
@@ -628,6 +647,50 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     discardParkedEvent: (id: string, reason: string) =>
       guard(async () => {
         await deadLetters.discardParkedEvent({ id, discardParkedEventRequest: { reason } });
+      }),
+
+    webhooks: () =>
+      guard(async () => (await webhooks.listWebhookSubscriptions({ limit: 200 })).items.map(webhookOf)),
+
+    subscribeWebhook: (draft: WebhookDraft): Promise<WebhookSecret> =>
+      guard(async () => {
+        const r = await webhooks.subscribeWebhook({
+          webhookSubscriptionRequest: {
+            name: draft.name, url: draft.url, eventTypes: draft.eventTypes as ApiWebhookEventType[],
+          },
+        });
+        return { id: r.id, secret: r.secret };
+      }),
+
+    reviseWebhook: (id: string, changes: WebhookChanges) =>
+      guard(async () => {
+        await webhooks.reviseWebhookSubscription({
+          id,
+          webhookRevisionRequest: {
+            name: changes.name, url: changes.url, eventTypes: changes.eventTypes as ApiWebhookEventType[],
+            active: changes.active,
+          },
+        });
+      }),
+
+    rotateWebhookSecret: (id: string): Promise<WebhookSecret> =>
+      guard(async () => {
+        const r = await webhooks.rotateWebhookSecret({ id });
+        return { id: r.id, secret: r.secret };
+      }),
+
+    pingWebhook: (id: string) =>
+      guard(async () => (await webhooks.pingWebhook({ id })).deliveryId),
+
+    webhookDeliveries: (id: string, cursor?: string): Promise<WebhookDeliveryPage> =>
+      guard(async () => {
+        const page = await webhooks.listWebhookDeliveries({ id, cursor, limit: 20 });
+        return { rows: page.items.map(deliveryRow), nextCursor: page.nextCursor ?? null };
+      }),
+
+    redeliverWebhook: (deliveryId: string) =>
+      guard(async () => {
+        await webhooks.redeliverWebhook({ id: deliveryId });
       }),
   };
 }

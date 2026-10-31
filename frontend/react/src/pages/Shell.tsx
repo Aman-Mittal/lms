@@ -71,13 +71,14 @@ export function Shell() {
               )}
             </div>
           ))}
-          {(can('CUSTOM_FIELD_READ') || can('DEMO_RESET')) && (
+          {(can('CUSTOM_FIELD_READ') || can('DEMO_RESET') || can('WEBHOOK_READ')) && (
             <div className="group">
               <h6>Settings</h6>
               {can('CUSTOM_FIELD_READ') && (
                 <NavLink to="/settings/custom-fields" data-testid="nav-custom-fields">Custom fields</NavLink>
               )}
               {can('DEMO_RESET') && <NavLink to="/settings/demo" data-testid="nav-demo">Demo data</NavLink>}
+              {can('WEBHOOK_READ') && <NavLink to="/settings/webhooks" data-testid="nav-webhooks">Webhooks</NavLink>}
             </div>
           )}
         </nav>

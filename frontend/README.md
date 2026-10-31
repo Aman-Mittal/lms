@@ -123,6 +123,21 @@ discard it with a reason. A parked event cannot be made through the API, so
 the browser specs cover the list, its filters and its gating; the backend's
 own suites park, replay and discard real events.
 
+## Webhooks
+
+**Settings > Webhooks** (`WEBHOOK_READ`) lists the company's subscriptions and,
+for one, its deliveries with status, attempts and the receiver's last answer.
+`WEBHOOK_MANAGE` subscribes an address, edits or switches one off, rotates its
+signing secret, sends a test ping and redelivers. The secret is shown once, in
+the panel that issued it, and never again: the API does not return it. A help
+panel shows the headers and how a receiver checks the signature.
+
+The browser specs start a small HTTP receiver of their own, subscribe it and
+check what the backend's delivery timer sends, signature included. That needs a
+backend that accepts plain http to a private address, so start it with
+`LMS_WEBHOOKS_ALLOW_HTTP=true LMS_WEBHOOKS_ALLOW_PRIVATE_TARGETS=true` when
+running them locally; production keeps both off.
+
 ## Browser end-to-end tests
 
 `e2e/` runs one set of specs against each console in Chromium, against a real

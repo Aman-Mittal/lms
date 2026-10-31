@@ -27,6 +27,7 @@ import {
   PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, SourcingService,
   TelematicsService, Terminal, TerminalsService, TrackingLinksService, TripsService, VehiclesService,
   ParkedEvent, ParkedEventStatus, PublishLtlRateCardRequestRateBasisEnum,
+  WebhookDelivery, WebhookEventType as ApiWebhookEventType, WebhookSubscription, WebhooksService,
 } from '../api';
 import {
   AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
@@ -34,6 +35,7 @@ import {
   OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, RuleAction, RuleDraft, RuleEvaluation,
   GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, TrackingLinkView, TripRoute,
   ParkedEventDetail, ParkedFilter, RateCardDraft,
+  WebhookChanges, WebhookDeliveryPage, WebhookDraft, WebhookSecret, WebhookView,
 } from './lms-gateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -107,6 +109,22 @@ function parkedRow(e: ParkedEvent): Row {
   };
 }
 
+function webhookOf(w: WebhookSubscription): WebhookView {
+  return {
+    id: text(w.id), name: text(w.name), url: text(w.url), eventTypes: w.eventTypes ?? [],
+    active: w.active ?? false, pausedReason: text(w.pausedReason), consecutiveFailures: w.consecutiveFailures ?? 0,
+  };
+}
+
+/** A delivery as a list row. */
+function deliveryRow(d: WebhookDelivery): Row {
+  return {
+    id: text(d.id), eventType: text(d.eventType), status: text(d.status), attempts: text(d.attempts),
+    lastStatusCode: text(d.lastStatusCode), lastError: text(d.lastError), nextAttemptAt: text(d.nextAttemptAt),
+    deliveredAt: text(d.deliveredAt), createdAt: text(d.createdAt),
+  };
+}
+
 function definitionOf(d: CustomFieldDefinition): FieldDefinition {
   return {
     id: d.id ?? '',
@@ -168,6 +186,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly milkRuns = inject(MilkRunsService);
   private readonly ltl = inject(LTLRatingService);
   private readonly deadLetters = inject(EventDeadLetterService);
+  private readonly hooks = inject(WebhooksService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
@@ -599,6 +618,43 @@ export class GeneratedLmsGateway extends LmsGateway {
   discardParkedEvent(id: string, reason: string): Promise<void> {
     return this.call(this.deadLetters.discardParkedEvent({ id, discardParkedEventRequest: { reason } }),
       () => undefined);
+  }
+
+  webhooks(): Promise<WebhookView[]> {
+    return this.call(this.hooks.listWebhookSubscriptions({ limit: 200 }), (s) => s.items.map(webhookOf));
+  }
+
+  subscribeWebhook(draft: WebhookDraft): Promise<WebhookSecret> {
+    return this.call(this.hooks.subscribeWebhook({
+      webhookSubscriptionRequest: { name: draft.name, url: draft.url, eventTypes: draft.eventTypes as ApiWebhookEventType[] },
+    }), (r) => ({ id: r.id, secret: r.secret }));
+  }
+
+  reviseWebhook(id: string, changes: WebhookChanges): Promise<void> {
+    return this.call(this.hooks.reviseWebhookSubscription({
+      id,
+      webhookRevisionRequest: {
+        name: changes.name, url: changes.url, eventTypes: changes.eventTypes as ApiWebhookEventType[],
+        active: changes.active,
+      },
+    }), () => undefined);
+  }
+
+  rotateWebhookSecret(id: string): Promise<WebhookSecret> {
+    return this.call(this.hooks.rotateWebhookSecret({ id }), (r) => ({ id: r.id, secret: r.secret }));
+  }
+
+  pingWebhook(id: string): Promise<string> {
+    return this.call(this.hooks.pingWebhook({ id }), (r) => r.deliveryId);
+  }
+
+  webhookDeliveries(id: string, cursor?: string): Promise<WebhookDeliveryPage> {
+    return this.call(this.hooks.listWebhookDeliveries({ id, cursor, limit: 20 }),
+      (page) => ({ rows: page.items.map(deliveryRow), nextCursor: page.nextCursor ?? null }));
+  }
+
+  redeliverWebhook(deliveryId: string): Promise<void> {
+    return this.call(this.hooks.redeliverWebhook({ id: deliveryId }), () => undefined);
   }
 
   /** Each distinct terminal named, read once. */

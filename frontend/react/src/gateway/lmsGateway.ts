@@ -347,6 +347,50 @@ export interface ParkedEventDetail {
   payload: string;
 }
 
+// ---------------------------------------------------------------- webhooks
+
+/** What a subscription can ask for. `PING` is what a test ping sends and cannot be subscribed to. */
+export const WEBHOOK_EVENT_TYPES = [
+  'ORDER_VALIDATED', 'CONSIGNMENTS_GENERATED', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
+  'DELIVERY_PROOF_RECORDED', 'CLAIM_RAISED', 'CLAIM_STATUS_CHANGED',
+] as const;
+export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
+
+/** A subscription as a screen shows it. It never carries the secret. */
+export interface WebhookView {
+  id: string;
+  name: string;
+  url: string;
+  eventTypes: string[];
+  active: boolean;
+  /** Why the platform paused it after deliveries kept failing; empty when it did not. */
+  pausedReason: string;
+  consecutiveFailures: number;
+}
+
+export interface WebhookDraft {
+  name: string;
+  url: string;
+  eventTypes: WebhookEventType[];
+}
+
+export interface WebhookChanges extends WebhookDraft {
+  active: boolean;
+}
+
+/** The signing secret, readable only in the response that issued it. */
+export interface WebhookSecret {
+  id: string;
+  secret: string;
+}
+
+/** One page of deliveries, newest first. */
+export interface WebhookDeliveryPage {
+  rows: Row[];
+  /** Pass to read the next page; null on the last. */
+  nextCursor: string | null;
+}
+
 /** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
 export class ApiProblem extends Error {
   constructor(message: string, readonly status?: number) {
@@ -427,4 +471,17 @@ export interface LmsGateway {
   replayParkedEvent(id: string): Promise<{ outcome: string; attempts: number }>;
   /** A reason is required; the event is kept, marked discarded. */
   discardParkedEvent(id: string, reason: string): Promise<void>;
+
+  webhooks(): Promise<WebhookView[]>;
+  /** Shown once: the secret in the result cannot be read again. */
+  subscribeWebhook(draft: WebhookDraft): Promise<WebhookSecret>;
+  /** Replaces name, address, types and active; reactivating clears a pause. */
+  reviseWebhook(id: string, changes: WebhookChanges): Promise<void>;
+  /** A new secret, shown once; the old one stops signing at once. */
+  rotateWebhookSecret(id: string): Promise<WebhookSecret>;
+  /** Queues a test delivery; resolves to its id. */
+  pingWebhook(id: string): Promise<string>;
+  /** Newest first; pass the previous page's cursor for the next one. */
+  webhookDeliveries(id: string, cursor?: string): Promise<WebhookDeliveryPage>;
+  redeliverWebhook(deliveryId: string): Promise<void>;
 }
