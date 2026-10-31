@@ -21,3 +21,22 @@ export const API_URL: string =
 
 /** The demo tenant the seeder creates; prefilled on the sign-in form. */
 export const DEMO_TENANT = 'demo';
+
+/**
+ * Where map tiles come from, read at run time like the Angular console's API
+ * address: `<meta name="lms-tile-url" content="...">` wins, then VITE_TILE_URL
+ * at build time, then the public OpenStreetMap servers. Those allow light use
+ * only; a deployment with real traffic points this at its own tile server.
+ */
+function fromMeta(name: string): string | null {
+  return typeof document === 'undefined'
+    ? null
+    : document.querySelector(`meta[name="${name}"]`)?.getAttribute('content') || null;
+}
+
+export const TILE_URL: string =
+  fromMeta('lms-tile-url') ?? import.meta.env.VITE_TILE_URL ?? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+/** Credit for the tiles, shown on every map. Change it with the tile URL. */
+export const TILE_ATTRIBUTION: string =
+  fromMeta('lms-tile-attribution') ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
