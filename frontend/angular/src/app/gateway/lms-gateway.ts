@@ -302,6 +302,43 @@ export interface MappedDetail {
   features: MapFeature[];
 }
 
+// ---------------------------------------------------------------- LTL rating
+
+export const RATE_BASES = ['PER_KG', 'PER_CFT'] as const;
+export type RateBasis = (typeof RATE_BASES)[number];
+
+/** A zone-to-zone rate card as written. Optional charges left out are not charged. */
+export interface RateCardDraft {
+  code: string;
+  originZone: string;
+  destinationZone: string;
+  /** `yyyy-mm-dd`. */
+  effectiveFrom: string;
+  rateBasis: RateBasis;
+  rateAmount: number;
+  kgPerCft: number;
+  minimumChargeableWeightKg?: number;
+  docketCharge?: number;
+}
+
+// ---------------------------------------------------------------- event dead-letter
+
+export const PARKED_STATUSES = ['PARKED', 'REPLAYED', 'DISCARDED'] as const;
+export type ParkedStatus = (typeof PARKED_STATUSES)[number];
+
+/** What narrows the parked-event list. Anything left out is not filtered on. */
+export interface ParkedFilter {
+  status?: ParkedStatus;
+  eventType?: string;
+  listenerId?: string;
+}
+
+/** A parked event in full: its row, and the event as it was published. */
+export interface ParkedEventDetail {
+  summary: Row;
+  payload: string;
+}
+
 /** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
 export class ApiProblem extends Error {
   constructor(message: string, readonly status?: number) {
@@ -363,4 +400,18 @@ export abstract class LmsGateway {
   abstract milkRunRoute(id: string): Promise<MappedDetail>;
   /** The runs generated from a route, newest first. */
   abstract circuitRuns(routeCode: string): Promise<Row[]>;
+
+  /** Docket receivables, one page in docket-number order. */
+  abstract ltlReceivables(): Promise<Row[]>;
+  /** Puts a terminal in an LTL zone, replacing any earlier placement. */
+  abstract assignLtlZone(terminalId: string, zoneCode: string, outOfDeliveryArea: boolean): Promise<void>;
+  /** Resolves to the new rate card's id. */
+  abstract publishLtlRateCard(draft: RateCardDraft): Promise<string>;
+
+  abstract parkedEvents(filter: ParkedFilter): Promise<Row[]>;
+  abstract parkedEvent(id: string): Promise<ParkedEventDetail>;
+  /** `REPLAYED` when the listener completed, `PARKED_AGAIN` when it failed once more. */
+  abstract replayParkedEvent(id: string): Promise<{ outcome: string; attempts: number }>;
+  /** A reason is required; the event is kept, marked discarded. */
+  abstract discardParkedEvent(id: string, reason: string): Promise<void>;
 }
