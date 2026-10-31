@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AllocationRules } from './pages/AllocationRules';
 import { ClaimsPage } from './pages/ClaimsPage';
@@ -27,6 +28,21 @@ import { Shell } from './pages/Shell';
 import { TrackingLinks } from './pages/TrackingLinks';
 import { TrackPage } from './pages/TrackPage';
 import { useSession } from './session';
+
+/*
+ * REACT CONCEPT: lazy and Suspense.
+ * The map screens are loaded on first visit: Leaflet is the console's largest
+ * dependency and most sessions never open a map. `lazy` turns a dynamic import
+ * into a component; `Suspense` shows something while its code arrives.
+ */
+const NetworkMap = lazy(() => import('./pages/NetworkMap').then((m) => ({ default: m.NetworkMap })));
+const TripRoute = lazy(() => import('./pages/TripRoute').then((m) => ({ default: m.TripRoute })));
+const Itineraries = lazy(() => import('./pages/Itineraries').then((m) => ({ default: m.Itineraries })));
+const MilkRuns = lazy(() => import('./pages/MilkRuns').then((m) => ({ default: m.MilkRuns })));
+
+function Deferred({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<p className="muted">Loading…</p>}>{children}</Suspense>;
+}
 
 /** Wraps the screens that need a signed-in user; others are sent to /login. */
 function RequireSignIn() {
@@ -49,6 +65,10 @@ export function App() {
           <Route path="delivery" element={<DeliveryDesk />} />
           <Route path="tracking" element={<TrackingLinks />} />
           <Route path="allocation-rules" element={<AllocationRules />} />
+          <Route path="map" element={<Deferred><NetworkMap /></Deferred>} />
+          <Route path="trip-route" element={<Deferred><TripRoute /></Deferred>} />
+          <Route path="itineraries" element={<Deferred><Itineraries /></Deferred>} />
+          <Route path="milk-runs" element={<Deferred><MilkRuns /></Deferred>} />
           <Route path=":resource" element={<ListPage />} />
         </Route>
       </Route>

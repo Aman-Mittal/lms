@@ -38,6 +38,18 @@ import { GROUPS, RESOURCES } from './resources';
                 <a [routerLink]="['/', r.key]" routerLinkActive="active"
                    [attr.data-testid]="'nav-' + r.key">{{ r.title }}</a>
               }
+              @if (group === 'Operations' && session.can('TERMINAL_READ')) {
+                <a routerLink="/map" routerLinkActive="active" data-testid="nav-map">Network map</a>
+              }
+              @if (group === 'Operations' && session.can('TRIP_READ')) {
+                <a routerLink="/trip-route" routerLinkActive="active" data-testid="nav-trip-route">Trip route</a>
+              }
+              @if (group === 'Multimodal' && session.can('MULTIMODAL_READ')) {
+                <a routerLink="/itineraries" routerLinkActive="active" data-testid="nav-itineraries">Itineraries</a>
+              }
+              @if (group === 'Multimodal' && session.can('MILKRUN_READ')) {
+                <a routerLink="/milk-runs" routerLinkActive="active" data-testid="nav-milk-runs">Milk runs</a>
+              }
               @if (group === 'Operations' && session.can('ALLOCATION_RULE_READ')) {
                 <a routerLink="/allocation-rules" routerLinkActive="active" data-testid="nav-allocation-rules">Allocation rules</a>
               }

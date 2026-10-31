@@ -21,6 +21,7 @@ import { App } from './App';
 import { SessionProvider } from './session';
 import './styles.css';
 import './print.css';
+import './map.css';
 
 // HashRouter keeps the route after '#', because GitHub Pages cannot rewrite
 // unknown paths to index.html.

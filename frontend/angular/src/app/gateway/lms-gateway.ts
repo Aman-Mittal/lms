@@ -258,6 +258,58 @@ export interface AllocationSummary {
   appliedRuleAction: RuleAction | '';
 }
 
+// ---------------------------------------------------------------- maps
+
+/** A point on the map, in degrees. */
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+}
+
+/**
+ * The kinds of thing a map draws. A `site` is a point with a geofence radius, an
+ * `area` a polygon geofence; legs, tracks and stops are lines and points along a
+ * movement.
+ */
+export type MapFeatureKind =
+  | 'site' | 'area' | 'vehicle' | 'track' | 'position' | 'leg-ROAD' | 'leg-RAIL' | 'stop' | 'plant';
+
+/** One thing drawn on a map, already in map coordinates. */
+export interface MapFeature {
+  id: string;
+  kind: MapFeatureKind;
+  label: string;
+  /** One point for a marker, two or more for a line or polygon. */
+  points: GeoPoint[];
+  /** For a site: its geofence radius in metres. */
+  radiusM?: number;
+}
+
+/** A list and the map of the same rows. */
+export interface Mapped {
+  rows: Row[];
+  features: MapFeature[];
+}
+
+/** A trip's route: its track so far and its last known position. */
+export interface TripRoute {
+  tripNo: string;
+  status: string;
+  originCode: string;
+  destinationCode: string;
+  /** Empty until positions have been reported. */
+  lastFixAt: string;
+  completionPct: string;
+  features: MapFeature[];
+}
+
+/** One record with its parts and their map, as the multimodal and milk-run screens show it. */
+export interface MappedDetail {
+  header: Row;
+  parts: Row[];
+  features: MapFeature[];
+}
+
 /** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
 export class ApiProblem extends Error {
   constructor(message: string, readonly status?: number) {
@@ -311,4 +363,17 @@ export abstract class LmsGateway {
   /** The vendors a rule may name: active vendors only. */
   abstract activeVendors(): Promise<Choice[]>;
   abstract terminalChoices(): Promise<Choice[]>;
+
+  /** Sites and their geofences, and every vehicle's last reported position. */
+  abstract networkMap(): Promise<Mapped>;
+  /** A trip's track and last position. Rejects with a 404 problem for a trip that does not exist. */
+  abstract tripRoute(tripId: string): Promise<TripRoute>;
+  abstract itineraries(): Promise<Row[]>;
+  /** The itinerary, its legs in order, and the legs drawn between their terminals. */
+  abstract itinerary(id: string): Promise<MappedDetail>;
+  abstract milkRunRoutes(): Promise<Row[]>;
+  /** The route, its stops in order from the plant, and the circuit drawn on the map. */
+  abstract milkRunRoute(id: string): Promise<MappedDetail>;
+  /** The runs generated from a route, newest first. */
+  abstract circuitRuns(routeCode: string): Promise<Row[]>;
 }
