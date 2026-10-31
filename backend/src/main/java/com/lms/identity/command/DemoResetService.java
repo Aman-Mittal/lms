@@ -52,7 +52,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>the caller must be inside the configured demo tenant, and any other
  *       tenant gets the same 404 rather than a hint that the action exists;
  *   <li>the database refuses to clear a tenant the seeder did not mark as the
- *       demo ({@code demo_reset_wipe_table}, V41).
+ *       demo ({@code demo_reset_wipe}, V41). The append-only tables step aside
+ *       only for that tenant and only inside the reset's own transaction,
+ *       through a transaction-local setting; nothing is switched off globally.
  * </ul>
  *
  * <p>The caller confirms by naming the demo tenant's code, and two resets at
@@ -195,16 +197,13 @@ public class DemoResetService {
                 .query((rs, row) -> new DemoResetPlan.Reference(rs.getString("child"), rs.getString("parent")))
                 .list();
 
-        long deleted = 0;
-        for (String table : DemoResetPlan.deletionOrder(tenantTables, references)) {
-            Long rows = jdbc.sql("SELECT demo_reset_wipe_table(:tenantId, :table)")
-                    .param("tenantId", tenantId)
-                    .param("table", table)
-                    .query(Long.class)
-                    .single();
-            deleted += rows == null ? 0 : rows;
-        }
-        return deleted;
+        List<String> order = DemoResetPlan.deletionOrder(tenantTables, references);
+        Long deleted = jdbc.sql("SELECT demo_reset_wipe(:tenantId, CAST(:tables AS text[]))")
+                .param("tenantId", tenantId)
+                .param("tables", order.toArray(String[]::new))
+                .query(Long.class)
+                .single();
+        return deleted == null ? 0 : deleted;
     }
 
     private Optional<Demo> configured() {

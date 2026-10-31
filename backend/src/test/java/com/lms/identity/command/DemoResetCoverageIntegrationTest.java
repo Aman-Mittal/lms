@@ -141,8 +141,47 @@ class DemoResetCoverageIntegrationTest {
         Map<String, Long> before = rowsOf(real.tenantId());
 
         assertThatThrownBy(() -> wipe(real)).isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("not the demo tenant");
+                .rootCause().hasMessageContaining("not the demo tenant");
         assertThat(rowsOf(real.tenantId())).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("outside a reset the append-only tables still refuse deletes, and the reset setting cannot reach a real tenant")
+    void protectionsHoldOutsideAReset() {
+        Seeded demo = seeds.seed(3.0);
+        Seeded real = seeds.seed(4.0);
+        jdbc.sql("UPDATE tenant SET is_demo = true WHERE id = :t").param("t", demo.tenantId()).update();
+        long demoAudit = count("audit_log", demo.tenantId());
+        long realAudit = count("audit_log", real.tenantId());
+        assertThat(demoAudit).as("the seed wrote an audit trail").isPositive();
+        TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+
+        // No reset in progress: the audit log stays append-only, even for the demo.
+        transactions.executeWithoutResult(status -> jdbc.sql("DELETE FROM audit_log WHERE tenant_id = :t")
+                .param("t", demo.tenantId()).update());
+        // The setting names a tenant that is not the demo: still refused.
+        transactions.executeWithoutResult(status -> {
+            jdbc.sql("SELECT set_config('lms.demo_reset', :t, true)").param("t", real.tenantId().toString())
+                    .query(String.class).single();
+            jdbc.sql("DELETE FROM audit_log WHERE tenant_id = :t").param("t", real.tenantId()).update();
+        });
+        assertThat(count("audit_log", demo.tenantId())).as("the demo's trail outside a reset").isEqualTo(demoAudit);
+        assertThat(count("audit_log", real.tenantId())).as("a real tenant's trail").isEqualTo(realAudit);
+
+        // A reset in one transaction leaves nothing behind for the next.
+        wipe(demo);
+        transactions.executeWithoutResult(status -> jdbc.sql("DELETE FROM audit_log WHERE tenant_id = :t")
+                .param("t", real.tenantId()).update());
+
+        assertThat(count("audit_log", real.tenantId())).isEqualTo(realAudit);
+        assertThat(count("audit_log", demo.tenantId())).as("cleared by the reset itself").isZero();
+        assertThat(jdbc.sql("SELECT current_setting('lms.demo_reset', true)").query(String.class).optional()
+                .map(String::isEmpty).orElse(true)).as("the setting does not outlive the reset").isTrue();
+    }
+
+    private long count(String table, UUID tenantId) {
+        return jdbc.sql("SELECT count(*) FROM " + table + " WHERE tenant_id = :t")
+                .param("t", tenantId).query(Long.class).single();
     }
 
     @Test
