@@ -126,6 +126,8 @@ tags:
     description: The unauthenticated, token-keyed view behind a tracking link.
   - name: Event dead-letter
     description: Module events whose listener failed on every retry, parked per tenant to be replayed or discarded.
+  - name: Demo data
+    description: Putting the public demo back to its seeded state.
 
 components:
 
