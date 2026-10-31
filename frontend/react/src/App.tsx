@@ -29,6 +29,7 @@ import { ParkedEvents } from './pages/ParkedEvents';
 import { Shell } from './pages/Shell';
 import { TrackingLinks } from './pages/TrackingLinks';
 import { TrackPage } from './pages/TrackPage';
+import { Webhooks } from './pages/Webhooks';
 import { useSession } from './session';
 
 /*
@@ -63,6 +64,7 @@ export function App() {
           <Route index element={<Dashboard />} />
           <Route path="settings/custom-fields" element={<FieldsSettings />} />
           <Route path="settings/demo" element={<DemoSettings />} />
+          <Route path="settings/webhooks" element={<Webhooks />} />
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="delivery" element={<DeliveryDesk />} />
           <Route path="tracking" element={<TrackingLinks />} />

@@ -67,7 +67,7 @@ import { GROUPS, RESOURCES } from './resources';
               }
             </div>
           }
-          @if (session.can('CUSTOM_FIELD_READ') || session.can('DEMO_RESET')) {
+          @if (session.can('CUSTOM_FIELD_READ') || session.can('DEMO_RESET') || session.can('WEBHOOK_READ')) {
             <div class="group">
               <h6>Settings</h6>
               @if (session.can('CUSTOM_FIELD_READ')) {
@@ -76,6 +76,9 @@ import { GROUPS, RESOURCES } from './resources';
               }
               @if (session.can('DEMO_RESET')) {
                 <a routerLink="/settings/demo" routerLinkActive="active" data-testid="nav-demo">Demo data</a>
+              }
+              @if (session.can('WEBHOOK_READ')) {
+                <a routerLink="/settings/webhooks" routerLinkActive="active" data-testid="nav-webhooks">Webhooks</a>
               }
             </div>
           }

@@ -29,6 +29,7 @@ import { ListPage } from './pages/list';
 import { LtlRating } from './pages/ltl-rating';
 import { ParkedEvents } from './pages/parked-events';
 import { FieldsSettings } from './pages/fields-settings';
+import { Webhooks } from './pages/webhooks';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
@@ -42,6 +43,7 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', component: Dashboard },
       { path: 'settings/custom-fields', component: FieldsSettings },
       { path: 'settings/demo', component: DemoSettings },
+      { path: 'settings/webhooks', component: Webhooks },
       { path: 'claims', component: ClaimsPage },
       { path: 'delivery', component: DeliveryDesk },
       { path: 'tracking', component: TrackingLinks },
