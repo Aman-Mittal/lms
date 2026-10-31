@@ -15,7 +15,7 @@
  */
 
 import { expect, test } from '@playwright/test';
-import { signIn } from './support';
+import { signIn, stubTiles } from './support';
 
 const SCREENS: Array<[string, string]> = [
   ['partners', 'Partners'], ['vehicles', 'Vehicles'], ['drivers', 'Drivers'],
@@ -67,6 +67,19 @@ test.describe('moving around', () => {
     await expect(page.getByText('Loading…')).toHaveCount(0);
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByTestId('dry-run')).toBeVisible();
+  });
+
+  test('the map and multimodal screens load from the real API without an error', async ({ page }) => {
+    await stubTiles(page);
+    await signIn(page);
+
+    for (const [key, title] of [['map', 'Network map'], ['trip-route', 'Trip route'], ['itineraries', 'Itineraries'],
+      ['milk-runs', 'Milk runs']]) {
+      await page.getByTestId(`nav-${key}`).click();
+      await expect(page.getByRole('heading', { name: title, exact: true, level: 1 })).toBeVisible();
+      await expect(page.getByText('Loading…')).toHaveCount(0);
+      await expect(page.getByRole('alert'), `${title} showed an error`).toHaveCount(0);
+    }
   });
 
   test('the layout fits a phone: nothing makes the page scroll sideways', async ({ page }) => {

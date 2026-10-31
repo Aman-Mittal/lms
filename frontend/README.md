@@ -80,6 +80,26 @@ shows which rule would fire and who would be asked first, without offering
 anything; **What decided an allocation** takes an allocation id and names the
 rule that fired on it. Validation is the API's: its message is shown as given.
 
+## Maps
+
+**Operations > Network map** draws every site with its geofence and every
+vehicle at its last reported position; **Operations > Trip route** draws a
+trip's reported track and where it is now; **Multimodal > Itineraries** draws
+an itinerary's legs between their terminals (rail dashed, road solid) and
+**Multimodal > Milk runs** a route's circuit from the plant round its stops and
+back. Everything drawn comes from the existing read APIs; nothing is computed
+on a server for the map.
+
+Maps use [Leaflet](https://leafletjs.com) (BSD-2-Clause), loaded only when a map
+screen is first opened. Tiles come from the public OpenStreetMap servers by
+default, which allow light use only. Point a deployment at its own tiles with
+`<meta name="lms-tile-url" content="https://.../{z}/{x}/{y}.png">` (and
+`lms-tile-attribution` for the credit) in either console's `index.html`;
+React also reads `VITE_TILE_URL` at build time. Under each map the same
+features are listed as text, with their kind and coordinates on `data-`
+attributes, for screen readers and for the browser tests, which answer tile
+requests themselves and never call the tile servers.
+
 ## Browser end-to-end tests
 
 `e2e/` runs one set of specs against each console in Chromium, against a real
@@ -102,7 +122,10 @@ later write to that kind of record.
 One spec answers the delivery desk's three calls itself instead of reaching the
 backend: recording a proof needs a consignment that a real trip has carried,
 which the backend's own end-to-end suite builds and proves over HTTP. That spec
-checks what the screen does with each answer; everything else here is real.
+checks what the screen does with each answer. Likewise one maps spec answers a
+trip's track and progress itself: a real reported track needs a dispatched trip
+and a stream of positions. Everything else here is real, and map tiles are
+always answered by the test.
 Specs that need a consignment build one through the API (`newConsignment`), and
 the partners they create are coded to sort last so they never push another
 spec's partner off the first page of a list.
