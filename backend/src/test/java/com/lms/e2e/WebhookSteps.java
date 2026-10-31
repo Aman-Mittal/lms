@@ -145,7 +145,8 @@ public class WebhookSteps {
         long timestamp = Long.parseLong(r.headers().get("x-lms-timestamp"));
         assertThat(Math.abs(Instant.now().getEpochSecond() - timestamp)).isLessThan(120);
         assertThat(r.headers().get("x-lms-signature")).isEqualTo(WebhookSigner.sign(secret, timestamp, r.body()));
-        assertThat(r.body()).contains("\"type\":\"" + type + "\"");
+        // The body is the stored JSON as the database renders it, so match on the value, not the spacing.
+        assertThat(r.body()).containsPattern("\"type\":\\s*\"" + type + "\"");
     }
 
     @Then("that delivery names the dispatched trip and no tenant")
