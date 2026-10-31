@@ -21,15 +21,15 @@ import {
   AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
   AllocationRulesService, AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
   ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, CustomFieldsService, CustomFieldType,
-  DeliveryAndClaimsService, DriversService, OrdersService, PartnersService,
+  DeliveryAndClaimsService, DriversService, MilkRunsService, MultimodalService, OrdersService, PartnersService,
   PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, SourcingService,
-  TerminalsService, TrackingLinksService, TripsService, VehiclesService,
+  TelematicsService, Terminal, TerminalsService, TrackingLinksService, TripsService, VehiclesService,
 } from '../api';
 import {
   AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
   DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, IssuedTrackingLink, LmsGateway,
   OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, RuleAction, RuleDraft, RuleEvaluation,
-  SignedIn, TrackingLinkView,
+  GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, TrackingLinkView, TripRoute,
 } from './lms-gateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -42,6 +42,55 @@ function text(v: unknown): string {
     return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 16).replace('T', ' ');
   }
   return String(v);
+}
+
+/** A terminal as the map draws it: its polygon when it has one, else its centre and radius. */
+function terminalFeature(t: Terminal, kind: 'site' | 'stop' | 'plant' = 'site'): MapFeature | null {
+  const label = `${text(t.code)} · ${text(t.name)}`;
+  const ring = polygonRing(t.polygon);
+  if (ring && kind === 'site') {
+    return { id: text(t.id), kind: 'area', label, points: ring };
+  }
+  if (t.centreLat === undefined || t.centreLat === null || t.centreLon === undefined || t.centreLon === null) {
+    const centre = ring ? centroid(ring) : null;
+    return centre ? { id: text(t.id), kind, label, points: [centre] } : null;
+  }
+  return {
+    id: text(t.id), kind, label, points: [{ lat: t.centreLat, lon: t.centreLon }],
+    radiusM: kind === 'site' && t.radiusM ? t.radiusM : undefined,
+  };
+}
+
+/** The outer ring of a GeoJSON polygon, as map points; null when there is none. */
+function polygonRing(geoJson: string | null | undefined): GeoPoint[] | null {
+  if (!geoJson) {
+    return null;
+  }
+  try {
+    const shape = JSON.parse(geoJson) as { coordinates?: number[][][] };
+    const ring = shape.coordinates?.[0];
+    return ring && ring.length >= 3 ? ring.map(([lon, lat]) => ({ lat, lon })) : null;
+  } catch {
+    return null;
+  }
+}
+
+function centroid(points: GeoPoint[]): GeoPoint {
+  const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
+  const lon = points.reduce((sum, p) => sum + p.lon, 0) / points.length;
+  return { lat, lon };
+}
+
+/** A point on a terminal for drawing a line to it: its centre, or the middle of its polygon. */
+function anchorOf(t: Terminal | undefined): GeoPoint | null {
+  if (!t) {
+    return null;
+  }
+  if (t.centreLat !== undefined && t.centreLat !== null && t.centreLon !== undefined && t.centreLon !== null) {
+    return { lat: t.centreLat, lon: t.centreLon };
+  }
+  const ring = polygonRing(t.polygon);
+  return ring ? centroid(ring) : null;
 }
 
 function definitionOf(d: CustomFieldDefinition): FieldDefinition {
@@ -99,6 +148,9 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly publicRead = inject(PublicTrackingService);
   private readonly rules = inject(AllocationRulesService);
   private readonly sourcing = inject(SourcingService);
+  private readonly telematics = inject(TelematicsService);
+  private readonly multimodal = inject(MultimodalService);
+  private readonly milkRuns = inject(MilkRunsService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
@@ -323,6 +375,168 @@ export class GeneratedLmsGateway extends LmsGateway {
   terminalChoices(): Promise<Choice[]> {
     return this.call(this.terminals.listTerminals({ limit: 200 }),
       (s) => s.items.map((t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` })));
+  }
+
+  async networkMap(): Promise<Mapped> {
+    const [sites, positions] = await Promise.all([
+      this.call(this.terminals.listTerminals({ limit: 200 }), (x) => x),
+      this.call(this.telematics.listPositions(), (x) => x),
+    ]);
+    const rows = sites.items.map((t) => ({
+      id: text(t.id), code: text(t.code), name: text(t.name), functionalCategory: text(t.functionalCategory),
+      geofenceType: text(t.geofenceType),
+    }));
+    const features: MapFeature[] = sites.items.map((t) => terminalFeature(t)).filter((f): f is MapFeature => f !== null);
+    for (const v of positions) {
+      if (v.lat !== undefined && v.lon !== undefined) {
+        features.push({
+          id: text(v.vehicleId), kind: 'vehicle', label: `${text(v.registrationNo)}${v.tripNo ? ` · ${v.tripNo}` : ''}`,
+          points: [{ lat: v.lat, lon: v.lon }],
+        });
+      }
+    }
+    return { rows, features };
+  }
+
+  async tripRoute(tripId: string): Promise<TripRoute> {
+    const trip = await this.call(this.trips.getTrip({ id: tripId }), (x) => x);
+    const [track, progress] = await Promise.all([
+      this.call(this.telematics.getTrack({ tripId }), (x) => x),
+      this.call(this.telematics.getProgress({ tripId }), (x) => x).catch(() => null),
+    ]);
+    const features: MapFeature[] = [];
+    if (track.length >= 2) {
+      features.push({
+        id: `${tripId}-track`, kind: 'track', label: `Track of ${text(trip.tripNo)}`,
+        points: track.map(([lon, lat]) => ({ lat, lon })),
+      });
+    }
+    if (progress && progress.lat !== undefined && progress.lon !== undefined) {
+      features.push({
+        id: `${tripId}-position`, kind: 'position', label: `${text(trip.tripNo)} now`,
+        points: [{ lat: progress.lat, lon: progress.lon }],
+      });
+    }
+    return {
+      tripNo: text(trip.tripNo), status: text(trip.status), originCode: text(trip.originTerminalCode),
+      destinationCode: text(trip.destinationTerminalCode), lastFixAt: text(progress?.lastFixAt),
+      completionPct: text(progress?.completionPct), features,
+    };
+  }
+
+  itineraries(): Promise<Row[]> {
+    return this.call(this.multimodal.listItineraries({ limit: 50 }), (s) => s.items.map((i) => ({
+      id: text(i.id), itineraryNo: text(i.itineraryNo), shipmentRef: text(i.shipmentRef), status: text(i.status),
+      legCount: text(i.legCount), totalCost: text(i.totalCost), connectionMissed: i.connectionMissed ? 'Missed' : '',
+    })));
+  }
+
+  async itinerary(id: string): Promise<MappedDetail> {
+    const i = await this.call(this.multimodal.getItinerary({ id }), (x) => x);
+    const legs = [...(i.legs ?? [])].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+    const sites = await this.terminalsById(legs.flatMap((l) => [l.fromTerminalId, l.toTerminalId]));
+    const features: MapFeature[] = [];
+    for (const l of legs) {
+      const from = anchorOf(sites.get(l.fromTerminalId ?? ''));
+      const to = anchorOf(sites.get(l.toTerminalId ?? ''));
+      if (from && to) {
+        features.push({
+          id: text(l.id), kind: text(l.mode) === 'RAIL' ? 'leg-RAIL' : 'leg-ROAD',
+          label: `Leg ${text(l.seq)}: ${text(l.fromTerminalCode)} → ${text(l.toTerminalCode)} (${text(l.mode)})`,
+          points: [from, to],
+        });
+      }
+    }
+    for (const t of sites.values()) {
+      const f = terminalFeature(t, 'stop');
+      if (f) {
+        features.push(f);
+      }
+    }
+    return {
+      header: {
+        id: text(i.id), itineraryNo: text(i.itineraryNo), shipmentRef: text(i.shipmentRef), status: text(i.status),
+        currency: text(i.currency), totalCost: text(i.totalCost), connectionMissed: i.connectionMissed ? 'Missed' : '',
+      },
+      parts: legs.map((l) => ({
+        id: text(l.id), seq: text(l.seq), mode: text(l.mode), status: text(l.status),
+        from: text(l.fromTerminalCode), to: text(l.toTerminalCode),
+        plannedDepartureAt: text(l.plannedDepartureAt), plannedArrivalAt: text(l.plannedArrivalAt),
+        carrier: text(l.carrierCode), reference: text(l.trainNo || l.bookingRef || l.tripNo),
+        departedAt: text(l.departedAt), arrivedAt: text(l.arrivedAt),
+      })),
+      features,
+    };
+  }
+
+  milkRunRoutes(): Promise<Row[]> {
+    return this.call(this.milkRuns.listMilkRunRoutes({ limit: 50 }), (s) => s.items.map((r) => ({
+      id: text(r.id), code: text(r.code), name: text(r.name), plantCode: text(r.plantCode),
+      daysOfWeek: text(r.daysOfWeek), departureTime: text(r.departureTime), effectiveFrom: text(r.effectiveFrom),
+    })));
+  }
+
+  async milkRunRoute(id: string): Promise<MappedDetail> {
+    const [route, stops] = await Promise.all([
+      this.call(this.milkRuns.getMilkRunRoute({ id }), (x) => x),
+      this.call(this.milkRuns.getMilkRunRouteStops({ id }), (x) => x),
+    ]);
+    const ordered = [...stops].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+    const sites = await this.terminalsById([route.plantTerminalId, ...ordered.map((s) => s.terminalId)]);
+    const features: MapFeature[] = [];
+    const plant = sites.get(route.plantTerminalId ?? '');
+    const plantFeature = plant ? terminalFeature(plant, 'plant') : null;
+    if (plantFeature) {
+      features.push(plantFeature);
+    }
+    const circuit: GeoPoint[] = [];
+    const plantAnchor = anchorOf(plant);
+    if (plantAnchor) {
+      circuit.push(plantAnchor);
+    }
+    for (const s of ordered) {
+      const at = anchorOf(sites.get(s.terminalId ?? ''));
+      if (at) {
+        circuit.push(at);
+        features.push({
+          id: `${text(s.terminalId)}-${text(s.sequence)}`, kind: 'stop',
+          label: `Stop ${text(s.sequence)}: ${text(s.terminalCode)}`, points: [at],
+        });
+      }
+    }
+    if (plantAnchor && circuit.length > 1) {
+      circuit.push(plantAnchor);
+    }
+    if (circuit.length >= 2) {
+      features.push({ id: `${id}-circuit`, kind: 'leg-ROAD', label: `Circuit ${text(route.code)}`, points: circuit });
+    }
+    return {
+      header: {
+        id: text(route.id), code: text(route.code), name: text(route.name), plantCode: text(route.plantCode),
+        daysOfWeek: text(route.daysOfWeek), departureTime: text(route.departureTime), timeZone: text(route.timeZone),
+        runRate: text(route.runRate), perStopFee: text(route.perStopFee), currency: text(route.currency),
+      },
+      parts: ordered.map((s) => ({
+        id: `${text(s.terminalId)}-${text(s.sequence)}`, sequence: text(s.sequence), terminalCode: text(s.terminalCode),
+        terminalName: text(s.terminalName), windowOpenMin: text(s.windowOpenMin), windowCloseMin: text(s.windowCloseMin),
+        plannedDwellMin: text(s.plannedDwellMin),
+      })),
+      features,
+    };
+  }
+
+  circuitRuns(routeCode: string): Promise<Row[]> {
+    return this.call(this.milkRuns.listCircuitRuns({ routeCode, limit: 50 }), (s) => s.items.map((r) => ({
+      id: text(r.id), runDate: text(r.runDate), status: text(r.status), tripNo: text(r.tripNo),
+      stopsVisited: text(r.stopsVisited), stopsSkipped: text(r.stopsSkipped), chargeAmount: text(r.chargeAmount),
+    })));
+  }
+
+  /** Each distinct terminal named, read once. */
+  private async terminalsById(ids: Array<string | null | undefined>): Promise<Map<string, Terminal>> {
+    const distinct = [...new Set(ids.filter((id): id is string => !!id))];
+    const read = await Promise.all(distinct.map((id) => this.call(this.terminals.getTerminal({ id }), (t) => t)));
+    return new Map(read.map((t) => [text(t.id), t]));
   }
 
   /** Awaits a generated call, maps its result, and turns any failure into an ApiProblem. */
