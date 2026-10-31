@@ -1,0 +1,146 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+WebhookEventType:
+  type: string
+  description: |
+    What a subscription can ask for. `PING` cannot be subscribed to; it is what
+    the ping action sends.
+  enum: [ORDER_VALIDATED, CONSIGNMENTS_GENERATED, TRIP_DISPATCHED, TRIP_COMPLETED, TRIP_CANCELLED,
+         DELIVERY_PROOF_RECORDED, CLAIM_RAISED, CLAIM_STATUS_CHANGED, PING]
+
+WebhookSubscriptionRequest:
+  type: object
+  properties:
+    name: { type: string, maxLength: 120, description: Unique per company, ignoring case. }
+    url: { type: string, maxLength: 2000, description: An https address on the public internet. }
+    eventTypes:
+      type: array
+      minItems: 1
+      items: { $ref: "#/components/schemas/WebhookEventType" }
+  required: [name, url, eventTypes]
+
+WebhookRevisionRequest:
+  type: object
+  properties:
+    name: { type: string, maxLength: 120 }
+    url: { type: string, maxLength: 2000 }
+    eventTypes:
+      type: array
+      minItems: 1
+      items: { $ref: "#/components/schemas/WebhookEventType" }
+    active: { type: boolean }
+  required: [name, url, eventTypes, active]
+
+WebhookSecretIssued:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    secret:
+      type: string
+      description: Signs every delivery. Shown here once; keep it like a password.
+  required: [id, secret]
+
+WebhookDeliveryQueued:
+  type: object
+  properties:
+    deliveryId: { type: string, format: uuid }
+  required: [deliveryId]
+
+WebhookSubscription:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    name: { type: string }
+    url: { type: string }
+    eventTypes:
+      type: array
+      items: { $ref: "#/components/schemas/WebhookEventType" }
+    active: { type: boolean }
+    pausedReason:
+      type: string
+      description: Set when the platform paused the subscription after deliveries kept failing.
+    consecutiveFailures: { type: integer }
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+
+WebhookSubscriptionSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/WebhookSubscription" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+WebhookDelivery:
+  type: object
+  properties:
+    id: { type: string, format: uuid, description: Also sent as X-Lms-Delivery. }
+    subscriptionId: { type: string, format: uuid }
+    eventId: { type: string, format: uuid, description: The envelope's id. }
+    eventType: { $ref: "#/components/schemas/WebhookEventType" }
+    status: { type: string, enum: [PENDING, DELIVERED, FAILED] }
+    attempts: { type: integer }
+    lastStatusCode: { type: integer }
+    lastError: { type: string }
+    nextAttemptAt: { type: string, format: date-time }
+    deliveredAt: { type: string, format: date-time }
+    createdAt: { type: string, format: date-time }
+
+WebhookDeliverySlice:
+  type: object
+  description: One page, newest first.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/WebhookDelivery" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+WebhookEnvelope:
+  type: object
+  description: |
+    The body of every delivery. It names no tenant. `data` depends on `type`:
+
+    - `ORDER_VALIDATED`: orderId, orderNo, lineCount, totalChargeableWeightKg, containsHazmat, freightMode
+    - `CONSIGNMENTS_GENERATED`: orderId, consignmentIds, trackingRefs, freightMode
+    - `TRIP_DISPATCHED`: tripId, tripNo, loadId, originTerminalId, destinationTerminalId, payloadWeightKg, dispatchedAt
+    - `TRIP_COMPLETED`: tripId, tripNo, loadId, dispatchedAt, completedAt, payloadWeightKg
+    - `TRIP_CANCELLED`: tripId, tripNo, loadId, reason, cancelledAt
+    - `DELIVERY_PROOF_RECORDED`: consignmentId, deliveredAt
+    - `CLAIM_RAISED`: claimId, claimNo, consignmentId, claimType, amount, currency
+    - `CLAIM_STATUS_CHANGED`: claimId, claimNo, fromStatus, toStatus, approvedAmount
+    - `PING`: subscriptionId, message
+
+    Ids and times are strings (UUIDs and ISO-8601 instants); amounts and weights are numbers.
+  properties:
+    id:
+      type: string
+      format: uuid
+      description: The event's id. The same event is never delivered under two ids.
+    type: { $ref: "#/components/schemas/WebhookEventType" }
+    occurredAt: { type: string, format: date-time }
+    data:
+      type: object
+      additionalProperties: true
+  required: [id, type, occurredAt, data]
