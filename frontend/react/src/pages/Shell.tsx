@@ -65,10 +65,13 @@ export function Shell() {
               )}
             </div>
           ))}
-          {can('CUSTOM_FIELD_READ') && (
+          {(can('CUSTOM_FIELD_READ') || can('DEMO_RESET')) && (
             <div className="group">
               <h6>Settings</h6>
-              <NavLink to="/settings/custom-fields" data-testid="nav-custom-fields">Custom fields</NavLink>
+              {can('CUSTOM_FIELD_READ') && (
+                <NavLink to="/settings/custom-fields" data-testid="nav-custom-fields">Custom fields</NavLink>
+              )}
+              {can('DEMO_RESET') && <NavLink to="/settings/demo" data-testid="nav-demo">Demo data</NavLink>}
             </div>
           )}
         </nav>
