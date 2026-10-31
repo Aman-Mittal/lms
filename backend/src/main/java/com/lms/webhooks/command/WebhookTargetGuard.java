@@ -24,6 +24,7 @@ import java.net.UnknownHostException;
 import java.util.Locale;
 
 import com.lms.shared.error.BusinessRuleViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -37,31 +38,72 @@ import org.springframework.stereotype.Component;
  * when a subscription is saved and again, after a fresh DNS lookup, before
  * every delivery, because a name can be re-pointed after it was accepted.
  *
- * <p>What remains: the HTTP client resolves the name once more when it
- * connects, so a name re-pointed in the milliseconds between the check and the
- * connection is not caught. Closing that needs connecting to the checked
- * address directly, which plain HTTPS with certificate checks does not allow
- * without a custom resolver; it is noted rather than pretended away.
+ * <p>A delivery connects to the very address that was checked: the name is
+ * resolved once, every address it resolves to is judged, and
+ * {@link #requireDeliverable} hands back one of them for the connection
+ * ({@link PinnedHttpPoster}). Nothing resolves the name again between the check
+ * and the connection, so re-pointing the name in that gap (DNS rebinding)
+ * cannot redirect a delivery to an internal address.
  */
 @Component
 public class WebhookTargetGuard {
 
     private static final int MAX_URL_LENGTH = 2000;
 
+    /** Turns a host name into its addresses. The JDK's resolver, except in tests. */
+    @FunctionalInterface
+    interface HostResolver {
+        InetAddress[] resolve(String host) throws UnknownHostException;
+    }
+
+    /**
+     * Where a delivery goes.
+     *
+     * @param uri     the address as the subscriber wrote it; its host is what the
+     *                {@code Host} header, TLS server name and certificate check use
+     * @param address the checked address to connect to, so the name is not looked up again
+     */
+    public record Target(URI uri, InetAddress address) {
+    }
+
     private final boolean allowHttp;
     private final boolean allowPrivateTargets;
+    private final HostResolver resolver;
 
+    @Autowired
     public WebhookTargetGuard(@Value("${lms.webhooks.allow-http:false}") boolean allowHttp,
                               @Value("${lms.webhooks.allow-private-targets:false}") boolean allowPrivateTargets) {
+        this(allowHttp, allowPrivateTargets, InetAddress::getAllByName);
+    }
+
+    WebhookTargetGuard(boolean allowHttp, boolean allowPrivateTargets, HostResolver resolver) {
         this.allowHttp = allowHttp;
         this.allowPrivateTargets = allowPrivateTargets;
+        this.resolver = resolver;
     }
 
     /** Checks an address being saved: scheme, shape and where it resolves to. */
     public URI requireAcceptable(String url) {
+        return requireDeliverable(url).uri();
+    }
+
+    /**
+     * Checks an address about to be called and pins the connection to it: the
+     * name is resolved here, once, and the returned address is the one to
+     * connect to.
+     */
+    public Target requireDeliverable(String url) {
         URI uri = parse(url);
-        requirePublic(uri.getHost());
-        return uri;
+        InetAddress[] addresses = resolve(uri.getHost());
+        if (!allowPrivateTargets) {
+            for (InetAddress address : addresses) {
+                if (!isPublic(address)) {
+                    throw new BusinessRuleViolationException("webhook-target-not-allowed",
+                            "The webhook host resolves to an address that is not on the public internet");
+                }
+            }
+        }
+        return new Target(uri, addresses[0]);
     }
 
     /**
@@ -105,23 +147,22 @@ public class WebhookTargetGuard {
         return uri;
     }
 
-    private void requirePublic(String host) {
-        if (allowPrivateTargets) {
-            return;
-        }
+    private InetAddress[] resolve(String host) {
         InetAddress[] addresses;
         try {
-            addresses = InetAddress.getAllByName(host);
+            addresses = resolver.resolve(host);
         } catch (UnknownHostException e) {
-            throw new BusinessRuleViolationException("webhook-url-unresolvable",
-                    "The webhook host " + host + " does not resolve");
+            throw unresolvable(host);
         }
-        for (InetAddress address : addresses) {
-            if (!isPublic(address)) {
-                throw new BusinessRuleViolationException("webhook-target-not-allowed",
-                        "The webhook host resolves to an address that is not on the public internet");
-            }
+        if (addresses == null || addresses.length == 0) {
+            throw unresolvable(host);
         }
+        return addresses;
+    }
+
+    private static BusinessRuleViolationException unresolvable(String host) {
+        return new BusinessRuleViolationException("webhook-url-unresolvable",
+                "The webhook host " + host + " does not resolve");
     }
 
     /** Whether an address is on the public internet, as far as a webhook is concerned. */
