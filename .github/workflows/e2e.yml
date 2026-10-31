@@ -164,13 +164,13 @@ jobs:
           SHARDS: ${{ strategy.job-total }}
         run: npx playwright test --shard="$SHARD/$SHARDS"
 
-      # Temporary (#144): the Angular look-up specs repeated with no retries.
-      - name: Repeat the Angular look-up specs
+      # Temporary (#144): the look-up specs repeated with no retries.
+      - name: Repeat the look-up specs
         if: always() && matrix.shard == 1
         working-directory: frontend/e2e
         run: >-
-          npx playwright test tests/delivery.spec.ts tests/tracking.spec.ts
-          --project=angular --repeat-each=15 --retries=0 --reporter=line
+          npx playwright test tests/lookup.spec.ts tests/delivery.spec.ts tests/tracking.spec.ts
+          --repeat-each=10 --retries=0 --reporter=line
 
       - name: Keep this shard's report
         if: always()
