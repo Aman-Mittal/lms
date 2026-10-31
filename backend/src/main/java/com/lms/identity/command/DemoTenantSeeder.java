@@ -125,6 +125,11 @@ public class DemoTenantSeeder implements ApplicationRunner {
                     .param("name", "Demo Logistics")
                     .update();
 
+            // The mark the demo reset requires before it will clear anything (V41).
+            jdbc.sql("UPDATE tenant SET is_demo = true WHERE id = :id AND NOT is_demo")
+                    .param("id", tenantId)
+                    .update();
+
             UUID orgUnitId = ensureRootOrgUnit(tenantId, tenantCode, rootPath);
             UUID roleId = ensureAdminRole(tenantId);
             grantEveryPermission(tenantId, roleId);

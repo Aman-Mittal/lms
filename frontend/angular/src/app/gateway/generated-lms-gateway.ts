@@ -17,6 +17,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
+import { DemoDataService } from '../api';
+import type { DemoResetOutcome } from './lms-gateway';
 import {
   AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
   AllocationRulesService, AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
@@ -146,6 +148,7 @@ function ruleRequest(draft: RuleDraft): AllocationRuleRequest {
 export class GeneratedLmsGateway extends LmsGateway {
   private readonly auth = inject(AuthenticationService);
   private readonly controlTower = inject(ControlTowerService);
+  private readonly demo = inject(DemoDataService);
   private readonly partners = inject(PartnersService);
   private readonly vehicles = inject(VehiclesService);
   private readonly drivers = inject(DriversService);
@@ -212,6 +215,11 @@ export class GeneratedLmsGateway extends LmsGateway {
       openP1: s.openP1 ?? 0, openP2: s.openP2 ?? 0, openP3: s.openP3 ?? 0,
       unassigned: s.unassigned ?? 0, settlementHolds: s.settlementHolds ?? 0,
       openWithoutTrip: s.openWithoutTrip ?? 0 }));
+  }
+
+  resetDemoData(confirm: string): Promise<DemoResetOutcome> {
+    return this.call(this.demo.resetDemoData({ demoResetRequest: { confirm } }), (r) => ({
+      tenantCode: r.tenantCode, rowsDeleted: r.rowsDeleted, signInAgain: r.signInAgain }));
   }
 
   list(resource: ResourceKey): Promise<Row[]> {

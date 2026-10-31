@@ -220,3 +220,7 @@ lms:
     tenant-code: ${DEMO_TENANT_CODE:demo}
     admin-email: ${DEMO_ADMIN_EMAIL:admin@demo.local}
     admin-password: ${DEMO_ADMIN_PASSWORD:}
+    # A timed reset of the demo tenant to its seeded state (DemoResetSchedule),
+    # as a Spring cron expression, e.g. "0 0 3 * * *" for 03:00 daily. The
+    # default "-" is Spring's "never".
+    reset-cron: ${DEMO_RESET_CRON:-}

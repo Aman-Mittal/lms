@@ -67,11 +67,16 @@ import { GROUPS, RESOURCES } from './resources';
               }
             </div>
           }
-          @if (session.can('CUSTOM_FIELD_READ')) {
+          @if (session.can('CUSTOM_FIELD_READ') || session.can('DEMO_RESET')) {
             <div class="group">
               <h6>Settings</h6>
-              <a routerLink="/settings/custom-fields" routerLinkActive="active"
-                 data-testid="nav-custom-fields">Custom fields</a>
+              @if (session.can('CUSTOM_FIELD_READ')) {
+                <a routerLink="/settings/custom-fields" routerLinkActive="active"
+                   data-testid="nav-custom-fields">Custom fields</a>
+              }
+              @if (session.can('DEMO_RESET')) {
+                <a routerLink="/settings/demo" routerLinkActive="active" data-testid="nav-demo">Demo data</a>
+              }
             </div>
           }
         </nav>

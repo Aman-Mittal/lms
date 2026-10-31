@@ -25,6 +25,8 @@ import {
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
 } from '../api';
 import { API_URL } from '../config';
+import { DemoDataApi } from '../api';
+import type { DemoResetOutcome } from './lmsGateway';
 import {
   ApiProblem, type AllocationRuleView, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
@@ -147,6 +149,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const config = new Configuration({ basePath: API_URL, accessToken: () => getToken() ?? '' });
   const auth = new AuthenticationApi(config);
   const controlTower = new ControlTowerApi(config);
+  const demo = new DemoDataApi(config);
   const partners = new PartnersApi(config);
   const vehicles = new VehiclesApi(config);
   const drivers = new DriversApi(config);
@@ -220,6 +223,12 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           unassigned: s.unassigned ?? 0, settlementHolds: s.settlementHolds ?? 0,
           openWithoutTrip: s.openWithoutTrip ?? 0,
         };
+      }),
+
+    resetDemoData: (confirm: string): Promise<DemoResetOutcome> =>
+      guard(async () => {
+        const r = await demo.resetDemoData({ demoResetRequest: { confirm } });
+        return { tenantCode: r.tenantCode, rowsDeleted: r.rowsDeleted, signInAgain: r.signInAgain };
       }),
 
     list: (resource) => guard(listers[resource]),
