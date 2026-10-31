@@ -22,7 +22,9 @@ import { Dashboard } from './pages/Dashboard';
 import { DeliveryDesk } from './pages/DeliveryDesk';
 import { FieldsSettings } from './pages/FieldsSettings';
 import { ListPage } from './pages/ListPage';
+import { LtlRating } from './pages/LtlRating';
 import { Login } from './pages/Login';
+import { ParkedEvents } from './pages/ParkedEvents';
 import { Shell } from './pages/Shell';
 import { TrackingLinks } from './pages/TrackingLinks';
 import { TrackPage } from './pages/TrackPage';
@@ -67,6 +69,8 @@ export function App() {
           <Route path="trip-route" element={<Deferred><TripRoute /></Deferred>} />
           <Route path="itineraries" element={<Deferred><Itineraries /></Deferred>} />
           <Route path="milk-runs" element={<Deferred><MilkRuns /></Deferred>} />
+          <Route path="ltl" element={<LtlRating />} />
+          <Route path="parked-events" element={<ParkedEvents />} />
           <Route path=":resource" element={<ListPage />} />
         </Route>
       </Route>
