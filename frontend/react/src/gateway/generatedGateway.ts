@@ -15,13 +15,14 @@
  */
 import {
   AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
-  OrdersApi,
+  EventDeadLetterApi, LTLRatingApi, OrdersApi,
   MilkRunsApi, MultimodalApi, PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TelematicsApi, TrackingLinksApi, TripsApi, VehiclesApi,
   type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
   type AllocationRule, type AllocationRuleAction, type AllocationRuleRequest,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
+  type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
 } from '../api';
 import { API_URL } from '../config';
 import {
@@ -30,6 +31,7 @@ import {
   type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
   type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn,
   type GeoPoint, type MapFeature, type Mapped, type MappedDetail, type TrackingLinkView, type TripRoute,
+  type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
 } from './lmsGateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -129,6 +131,16 @@ function anchorOf(t: Terminal | undefined): GeoPoint | null {
   return ring ? centroid(ring) : null;
 }
 
+/** A parked event as a list row. */
+function parkedRow(e: ParkedEvent): Row {
+  return {
+    id: text(e.id), parkedNo: text(e.parkedNo), eventType: text(e.eventType), listenerId: text(e.listenerId),
+    status: text(e.status), attempts: text(e.attempts), lastFailedAt: text(e.lastFailedAt),
+    lastError: text(e.lastError), parkedAt: text(e.parkedAt), resolvedAt: text(e.resolvedAt),
+    resolutionNote: text(e.resolutionNote),
+  };
+}
+
 /** The adapter: the only file in the React app that imports the generated client. */
 export function createGeneratedGateway(getToken: () => string | null): LmsGateway {
   // The token is read per request (a function), so one gateway outlives sign-ins.
@@ -147,6 +159,8 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const telematics = new TelematicsApi(config);
   const multimodal = new MultimodalApi(config);
   const milkRuns = new MilkRunsApi(config);
+  const ltl = new LTLRatingApi(config);
+  const deadLetters = new EventDeadLetterApi(config);
   const delivery = new DeliveryAndClaimsApi(config);
   const links = new TrackingLinksApi(config);
   const rules = new AllocationRulesApi(config);
@@ -560,6 +574,52 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
         id: text(r.id), runDate: text(r.runDate), status: text(r.status), tripNo: text(r.tripNo),
         stopsVisited: text(r.stopsVisited), stopsSkipped: text(r.stopsSkipped), chargeAmount: text(r.chargeAmount),
       }))),
+
+    ltlReceivables: () =>
+      guard(async () => (await ltl.listDocketReceivables({ limit: 50 })).items.map((r) => ({
+        id: text(r.id), docketNo: text(r.docketNo), status: text(r.status), customerName: text(r.customerName),
+        lane: `${text(r.originZone)} → ${text(r.destinationZone)}`, rateCardCode: text(r.rateCardCode),
+        chargeableWeightKg: text(r.chargeableWeightKg), totalAmount: text(r.totalAmount), currency: text(r.currency),
+      }))),
+
+    assignLtlZone: (terminalId: string, zoneCode: string, outOfDeliveryArea: boolean) =>
+      guard(async () => {
+        await ltl.assignLtlZone({ terminalId, assignLtlZoneRequest: { zoneCode, outOfDeliveryArea } });
+      }),
+
+    publishLtlRateCard: (draft: RateCardDraft) =>
+      guard(async () => (await ltl.publishLtlRateCard({
+        publishLtlRateCardRequest: {
+          code: draft.code, originZone: draft.originZone, destinationZone: draft.destinationZone,
+          effectiveFrom: new Date(`${draft.effectiveFrom}T00:00:00Z`),
+          rateBasis: draft.rateBasis as PublishLtlRateCardRequestRateBasisEnum, rateAmount: draft.rateAmount,
+          kgPerCft: draft.kgPerCft, minimumChargeableWeightKg: draft.minimumChargeableWeightKg,
+          docketCharge: draft.docketCharge,
+        },
+      })).id ?? ''),
+
+    parkedEvents: (filter: ParkedFilter) =>
+      guard(async () => (await deadLetters.listParkedEvents({
+        status: filter.status as ParkedEventStatus | undefined, eventType: filter.eventType || undefined,
+        listenerId: filter.listenerId || undefined, limit: 50,
+      })).items.map(parkedRow)),
+
+    parkedEvent: (id: string): Promise<ParkedEventDetail> =>
+      guard(async () => {
+        const d = await deadLetters.getParkedEvent({ id });
+        return { summary: parkedRow(d.summary), payload: text(d.payload) };
+      }),
+
+    replayParkedEvent: (id: string) =>
+      guard(async () => {
+        const r = await deadLetters.replayParkedEvent({ id });
+        return { outcome: text(r.outcome), attempts: r.attempts ?? 0 };
+      }),
+
+    discardParkedEvent: (id: string, reason: string) =>
+      guard(async () => {
+        await deadLetters.discardParkedEvent({ id, discardParkedEventRequest: { reason } });
+      }),
   };
 }
 
