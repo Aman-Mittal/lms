@@ -13,26 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-import { DemoDataApi } from '../api';
-import type { DemoResetOutcome } from './lmsGateway';
 import {
   AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   OrdersApi,
-  PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TrackingLinksApi, TripsApi, VehiclesApi,
+  MilkRunsApi, MultimodalApi, PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TelematicsApi, TrackingLinksApi, TripsApi, VehiclesApi,
   type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
   type AllocationRule, type AllocationRuleAction, type AllocationRuleRequest,
-  type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum,
+  type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
 } from '../api';
 import { API_URL } from '../config';
+import { DemoDataApi } from '../api';
+import type { DemoResetOutcome } from './lmsGateway';
 import {
   ApiProblem, type AllocationRuleView, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
   type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
   type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn,
-  type TrackingLinkView,
+  type GeoPoint, type MapFeature, type Mapped, type MappedDetail, type TrackingLinkView, type TripRoute,
 } from './lmsGateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -83,6 +82,55 @@ function ruleRequest(draft: RuleDraft): AllocationRuleRequest {
   };
 }
 
+/** A terminal as the map draws it: its polygon when it has one, else its centre and radius. */
+function terminalFeature(t: Terminal, kind: 'site' | 'stop' | 'plant' = 'site'): MapFeature | null {
+  const label = `${text(t.code)} · ${text(t.name)}`;
+  const ring = polygonRing(t.polygon);
+  if (ring && kind === 'site') {
+    return { id: text(t.id), kind: 'area', label, points: ring };
+  }
+  if (t.centreLat === undefined || t.centreLat === null || t.centreLon === undefined || t.centreLon === null) {
+    const centre = ring ? centroid(ring) : null;
+    return centre ? { id: text(t.id), kind, label, points: [centre] } : null;
+  }
+  return {
+    id: text(t.id), kind, label, points: [{ lat: t.centreLat, lon: t.centreLon }],
+    radiusM: kind === 'site' && t.radiusM ? t.radiusM : undefined,
+  };
+}
+
+/** The outer ring of a GeoJSON polygon, as map points; null when there is none. */
+function polygonRing(geoJson: string | null | undefined): GeoPoint[] | null {
+  if (!geoJson) {
+    return null;
+  }
+  try {
+    const shape = JSON.parse(geoJson) as { coordinates?: number[][][] };
+    const ring = shape.coordinates?.[0];
+    return ring && ring.length >= 3 ? ring.map(([lon, lat]) => ({ lat, lon })) : null;
+  } catch {
+    return null;
+  }
+}
+
+function centroid(points: GeoPoint[]): GeoPoint {
+  const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
+  const lon = points.reduce((sum, p) => sum + p.lon, 0) / points.length;
+  return { lat, lon };
+}
+
+/** A point on a terminal for drawing a line to it: its centre, or the middle of its polygon. */
+function anchorOf(t: Terminal | undefined): GeoPoint | null {
+  if (!t) {
+    return null;
+  }
+  if (t.centreLat !== undefined && t.centreLat !== null && t.centreLon !== undefined && t.centreLon !== null) {
+    return { lat: t.centreLat, lon: t.centreLon };
+  }
+  const ring = polygonRing(t.polygon);
+  return ring ? centroid(ring) : null;
+}
+
 /** The adapter: the only file in the React app that imports the generated client. */
 export function createGeneratedGateway(getToken: () => string | null): LmsGateway {
   // The token is read per request (a function), so one gateway outlives sign-ins.
@@ -99,6 +147,9 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const trips = new TripsApi(config);
   const freightBills = new SettlementApi(config);
   const customFields = new CustomFieldsApi(config);
+  const telematics = new TelematicsApi(config);
+  const multimodal = new MultimodalApi(config);
+  const milkRuns = new MilkRunsApi(config);
   const delivery = new DeliveryAndClaimsApi(config);
   const links = new TrackingLinksApi(config);
   const rules = new AllocationRulesApi(config);
@@ -359,6 +410,164 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     terminalChoices: (): Promise<Choice[]> =>
       guard(async () => (await terminals.listTerminals({ limit: 200 })).items.map((t) => ({
         id: text(t.id), label: `${text(t.code)} · ${text(t.name)}`,
+      }))),
+
+    networkMap: (): Promise<Mapped> =>
+      guard(async () => {
+        const [sites, positions] = await Promise.all([
+          terminals.listTerminals({ limit: 200 }), telematics.listPositions(),
+        ]);
+        const rows = sites.items.map((t) => ({
+          id: text(t.id), code: text(t.code), name: text(t.name), functionalCategory: text(t.functionalCategory),
+          geofenceType: text(t.geofenceType),
+        }));
+        const features: MapFeature[] = sites.items.map((t) => terminalFeature(t)).filter((f): f is MapFeature => f !== null);
+        for (const v of positions) {
+          if (v.lat !== undefined && v.lon !== undefined) {
+            features.push({
+              id: text(v.vehicleId), kind: 'vehicle', label: `${text(v.registrationNo)}${v.tripNo ? ` · ${v.tripNo}` : ''}`,
+              points: [{ lat: v.lat, lon: v.lon }],
+            });
+          }
+        }
+        return { rows, features };
+      }),
+
+    tripRoute: (tripId: string): Promise<TripRoute> =>
+      guard(async () => {
+        const trip = await trips.getTrip({ id: tripId });
+        const [track, progress] = await Promise.all([
+          telematics.getTrack({ tripId }),
+          telematics.getProgress({ tripId }).catch(() => null),
+        ]);
+        const features: MapFeature[] = [];
+        if (track.length >= 2) {
+          features.push({
+            id: `${tripId}-track`, kind: 'track', label: `Track of ${text(trip.tripNo)}`,
+            points: track.map(([lon, lat]) => ({ lat, lon })),
+          });
+        }
+        if (progress && progress.lat !== undefined && progress.lon !== undefined) {
+          features.push({
+            id: `${tripId}-position`, kind: 'position', label: `${text(trip.tripNo)} now`,
+            points: [{ lat: progress.lat, lon: progress.lon }],
+          });
+        }
+        return {
+          tripNo: text(trip.tripNo), status: text(trip.status), originCode: text(trip.originTerminalCode),
+          destinationCode: text(trip.destinationTerminalCode), lastFixAt: text(progress?.lastFixAt),
+          completionPct: text(progress?.completionPct), features,
+        };
+      }),
+
+    itineraries: () =>
+      guard(async () => (await multimodal.listItineraries({ limit: 50 })).items.map((i) => ({
+        id: text(i.id), itineraryNo: text(i.itineraryNo), shipmentRef: text(i.shipmentRef), status: text(i.status),
+        legCount: text(i.legCount), totalCost: text(i.totalCost),
+        connectionMissed: i.connectionMissed ? 'Missed' : '',
+      }))),
+
+    itinerary: (id: string): Promise<MappedDetail> =>
+      guard(async () => {
+        const i = await multimodal.getItinerary({ id });
+        const legs = [...(i.legs ?? [])].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+        const ids = [...new Set(legs.flatMap((l) => [l.fromTerminalId, l.toTerminalId]).filter(Boolean) as string[])];
+        const sites = new Map((await Promise.all(ids.map((t) => terminals.getTerminal({ id: t })))).map((t) => [t.id, t]));
+        const features: MapFeature[] = [];
+        for (const l of legs) {
+          const from = anchorOf(sites.get(l.fromTerminalId ?? ''));
+          const to = anchorOf(sites.get(l.toTerminalId ?? ''));
+          if (from && to) {
+            features.push({
+              id: text(l.id), kind: l.mode === 'RAIL' ? 'leg-RAIL' : 'leg-ROAD',
+              label: `Leg ${text(l.seq)}: ${text(l.fromTerminalCode)} → ${text(l.toTerminalCode)} (${text(l.mode)})`,
+              points: [from, to],
+            });
+          }
+        }
+        for (const t of sites.values()) {
+          const f = terminalFeature(t, 'stop');
+          if (f) {
+            features.push(f);
+          }
+        }
+        return {
+          header: {
+            id: text(i.id), itineraryNo: text(i.itineraryNo), shipmentRef: text(i.shipmentRef), status: text(i.status),
+            currency: text(i.currency), totalCost: text(i.totalCost), connectionMissed: i.connectionMissed ? 'Missed' : '',
+          },
+          parts: legs.map((l) => ({
+            id: text(l.id), seq: text(l.seq), mode: text(l.mode), status: text(l.status),
+            from: text(l.fromTerminalCode), to: text(l.toTerminalCode),
+            plannedDepartureAt: text(l.plannedDepartureAt), plannedArrivalAt: text(l.plannedArrivalAt),
+            carrier: text(l.carrierCode), reference: text(l.trainNo || l.bookingRef || l.tripNo),
+            departedAt: text(l.departedAt), arrivedAt: text(l.arrivedAt),
+          })),
+          features,
+        };
+      }),
+
+    milkRunRoutes: () =>
+      guard(async () => (await milkRuns.listMilkRunRoutes({ limit: 50 })).items.map((r) => ({
+        id: text(r.id), code: text(r.code), name: text(r.name), plantCode: text(r.plantCode),
+        daysOfWeek: text(r.daysOfWeek), departureTime: text(r.departureTime), effectiveFrom: text(r.effectiveFrom),
+      }))),
+
+    milkRunRoute: (id: string): Promise<MappedDetail> =>
+      guard(async () => {
+        const [route, stops] = await Promise.all([
+          milkRuns.getMilkRunRoute({ id }), milkRuns.getMilkRunRouteStops({ id }),
+        ]);
+        const ordered = [...stops].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+        const ids = [...new Set([route.plantTerminalId, ...ordered.map((s) => s.terminalId)].filter(Boolean) as string[])];
+        const sites = new Map((await Promise.all(ids.map((t) => terminals.getTerminal({ id: t })))).map((t) => [t.id, t]));
+        const features: MapFeature[] = [];
+        const plant = sites.get(route.plantTerminalId ?? '');
+        const plantFeature = plant ? terminalFeature(plant, 'plant') : null;
+        if (plantFeature) {
+          features.push(plantFeature);
+        }
+        const circuit: GeoPoint[] = [];
+        const plantAnchor = anchorOf(plant);
+        if (plantAnchor) {
+          circuit.push(plantAnchor);
+        }
+        for (const s of ordered) {
+          const t = sites.get(s.terminalId ?? '');
+          const at = anchorOf(t);
+          if (at) {
+            circuit.push(at);
+            features.push({
+              id: `${text(s.terminalId)}-${text(s.sequence)}`, kind: 'stop',
+              label: `Stop ${text(s.sequence)}: ${text(s.terminalCode)}`, points: [at],
+            });
+          }
+        }
+        if (plantAnchor && circuit.length > 1) {
+          circuit.push(plantAnchor);
+        }
+        if (circuit.length >= 2) {
+          features.push({ id: `${id}-circuit`, kind: 'leg-ROAD', label: `Circuit ${text(route.code)}`, points: circuit });
+        }
+        return {
+          header: {
+            id: text(route.id), code: text(route.code), name: text(route.name), plantCode: text(route.plantCode),
+            daysOfWeek: text(route.daysOfWeek), departureTime: text(route.departureTime), timeZone: text(route.timeZone),
+            runRate: text(route.runRate), perStopFee: text(route.perStopFee), currency: text(route.currency),
+          },
+          parts: ordered.map((s) => ({
+            id: `${text(s.terminalId)}-${text(s.sequence)}`, sequence: text(s.sequence), terminalCode: text(s.terminalCode),
+            terminalName: text(s.terminalName), windowOpenMin: text(s.windowOpenMin), windowCloseMin: text(s.windowCloseMin),
+            plannedDwellMin: text(s.plannedDwellMin),
+          })),
+          features,
+        };
+      }),
+
+    circuitRuns: (routeCode: string) =>
+      guard(async () => (await milkRuns.listCircuitRuns({ routeCode, limit: 50 })).items.map((r) => ({
+        id: text(r.id), runDate: text(r.runDate), status: text(r.status), tripNo: text(r.tripNo),
+        stopsVisited: text(r.stopsVisited), stopsSkipped: text(r.stopsSkipped), chargeAmount: text(r.chargeAmount),
       }))),
   };
 }
