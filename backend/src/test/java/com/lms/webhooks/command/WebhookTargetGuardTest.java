@@ -17,6 +17,7 @@ package com.lms.webhooks.command;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.lms.shared.error.BusinessRuleViolationException;
 import org.junit.jupiter.api.DisplayName;
@@ -85,5 +86,42 @@ class WebhookTargetGuardTest {
         assertThat(production.refusalFor("http://127.0.0.1:8099/hook")).isNotNull();
         assertThatThrownBy(() -> local.requireAcceptable(withUserInfo("127.0.0.1")))
                 .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    @DisplayName("a delivery is pinned to the address that was checked, so a name re-pointed afterwards is not followed")
+    void rebindingIsNotFollowed() throws UnknownHostException {
+        InetAddress publicAddress = ip("203.0.113.10");
+        InetAddress internal = ip("127.0.0.1");
+        AtomicInteger lookups = new AtomicInteger();
+        // First answer public, every later answer internal: a name re-pointed after the check.
+        WebhookTargetGuard guard = new WebhookTargetGuard(false, false,
+                host -> new InetAddress[] {lookups.getAndIncrement() == 0 ? publicAddress : internal});
+
+        WebhookTargetGuard.Target target = guard.requireDeliverable("https://hooks.example.test/hook");
+
+        assertThat(target.address()).isEqualTo(publicAddress);
+        assertThat(target.uri().getHost()).isEqualTo("hooks.example.test");
+        assertThat(lookups.get()).as("resolved exactly once").isEqualTo(1);
+        // A later check sees the internal address and refuses it.
+        assertThatThrownBy(() -> guard.requireDeliverable("https://hooks.example.test/hook"))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.code()).isEqualTo("webhook-target-not-allowed"));
+    }
+
+    @Test
+    @DisplayName("one internal address among several refuses the whole name, and a name with none is unresolvable")
+    void everyAddressIsJudged() throws UnknownHostException {
+        InetAddress publicAddress = ip("203.0.113.10");
+        InetAddress internal = ip("10.0.0.7");
+        WebhookTargetGuard mixed = new WebhookTargetGuard(false, false,
+                host -> new InetAddress[] {publicAddress, internal});
+        assertThatThrownBy(() -> mixed.requireDeliverable("https://hooks.example.test/hook"))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.code()).isEqualTo("webhook-target-not-allowed"));
+        WebhookTargetGuard none = new WebhookTargetGuard(false, false, host -> new InetAddress[0]);
+        assertThatThrownBy(() -> none.requireDeliverable("https://hooks.example.test/hook"))
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.code()).isEqualTo("webhook-url-unresolvable"));
     }
 }
