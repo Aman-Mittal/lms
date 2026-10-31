@@ -42,6 +42,12 @@ export const routes: Routes = [
       { path: 'delivery', component: DeliveryDesk },
       { path: 'tracking', component: TrackingLinks },
       { path: 'allocation-rules', component: AllocationRules },
+      // The map screens load on first visit: Leaflet is the console's largest
+      // dependency and most sessions never open a map.
+      { path: 'map', loadComponent: () => import('./pages/network-map').then((m) => m.NetworkMap) },
+      { path: 'trip-route', loadComponent: () => import('./pages/trip-route').then((m) => m.TripRoute) },
+      { path: 'itineraries', loadComponent: () => import('./pages/itineraries').then((m) => m.Itineraries) },
+      { path: 'milk-runs', loadComponent: () => import('./pages/milk-runs').then((m) => m.MilkRuns) },
       { path: ':resource', component: ListPage },
     ],
   },

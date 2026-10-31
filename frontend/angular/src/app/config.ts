@@ -27,5 +27,23 @@ const fromPage = typeof document === 'undefined'
 
 export const API_URL = fromPage || 'https://lms-platform-du75.onrender.com';
 
+/**
+ * Where map tiles come from, read at run time from
+ * {@code <meta name="lms-tile-url" content="...">}, else the public
+ * OpenStreetMap servers. Those allow light use only; a deployment with real
+ * traffic points this at its own tile server.
+ */
+function fromMeta(name: string): string | null {
+  return typeof document === 'undefined'
+    ? null
+    : document.querySelector(`meta[name="${name}"]`)?.getAttribute('content') || null;
+}
+
+export const TILE_URL = fromMeta('lms-tile-url') ?? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+/** Credit for the tiles, shown on every map. Change it with the tile URL. */
+export const TILE_ATTRIBUTION = fromMeta('lms-tile-attribution')
+  ?? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
 /** The demo tenant the seeder creates; prefilled on the sign-in form. */
 export const DEMO_TENANT = 'demo';
