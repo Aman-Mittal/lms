@@ -33,9 +33,10 @@ import { trackingUrl } from './tracking-url';
     @if (!manage()) {
       <p class="muted" data-testid="no-rights">You do not have the right to manage tracking links.</p>
     } @else {
+      <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
       <form class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
         <input name="consignmentId" placeholder="Consignment id" aria-label="Consignment id"
-               data-testid="consignment-id" [(ngModel)]="typed" required />
+               data-testid="consignment-id" [value]="typed()" (input)="typed.set($any($event.target).value)" required />
         <button type="submit">Look up</button>
       </form>
       @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
@@ -122,11 +123,11 @@ export class TrackingLinks {
     return i ? trackingUrl(i.token) : '';
   });
 
-  typed = '';
+  readonly typed = signal('');
   days = 30;
 
   async lookUp(): Promise<void> {
-    this.consignmentId.set(this.typed.trim());
+    this.consignmentId.set(this.typed().trim());
     this.issued.set(null);
     this.slip.set(false);
     await this.refresh();

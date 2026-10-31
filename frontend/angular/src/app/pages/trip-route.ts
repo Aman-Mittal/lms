@@ -26,8 +26,10 @@ import { MapView } from './map-view';
   template: `
     <h1>Trip route</h1>
     <p class="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
+    <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="lookUp()" data-testid="trip-lookup">
-      <input name="tripId" placeholder="Trip id" aria-label="Trip id" data-testid="trip-id" [(ngModel)]="typed" required />
+      <input name="tripId" placeholder="Trip id" aria-label="Trip id" data-testid="trip-id"
+             [value]="typed()" (input)="typed.set($any($event.target).value)" required />
       <button type="submit">Show route</button>
     </form>
     @if (loading()) { <p class="muted">Loading…</p> }
@@ -55,14 +57,14 @@ export class TripRoute {
   readonly route = signal<Route | null>(null);
   readonly loading = signal(false);
   readonly error = signal('');
-  typed = '';
+  readonly typed = signal('');
 
   async lookUp(): Promise<void> {
     this.route.set(null);
     this.error.set('');
     this.loading.set(true);
     try {
-      this.route.set(await this.gateway.tripRoute(this.typed.trim()));
+      this.route.set(await this.gateway.tripRoute(this.typed().trim()));
     } catch (e) {
       this.error.set((e as Error).message);
     } finally {
