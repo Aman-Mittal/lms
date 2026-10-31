@@ -22,7 +22,9 @@ import java.io.OutputStream;
 import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -37,6 +39,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import javax.net.ssl.ExtendedSSLSession;
 import javax.net.ssl.KeyManagerFactory;
@@ -47,8 +50,10 @@ import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 
+import com.lms.shared.error.BusinessRuleViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -63,6 +68,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PinnedHttpPosterTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration SHORT = Duration.ofSeconds(1);
 
     /** Records where it was asked to connect and refuses, so nothing leaves the machine. */
     private static final class Recording extends PinnedHttpPoster {
@@ -181,7 +187,128 @@ class PinnedHttpPosterTest {
             assertThatThrownBy(() -> poster.post(new WebhookTargetGuard.Target(
                     URI.create("https://other.test:" + port + "/hook"), loopback), Map.of(), new byte[0]))
                     .isInstanceOf(SSLHandshakeException.class);
+
+            // The production client trusts the JDK's default store and nothing else: an unknown certificate fails.
+            PinnedHttpPoster production = new PinnedHttpPoster((SSLSocketFactory) SSLSocketFactory.getDefault(),
+                    TIMEOUT, TIMEOUT);
+            assertThatThrownBy(() -> production.post(new WebhookTargetGuard.Target(
+                    URI.create("https://hooks.test:" + port + "/hook"), loopback), Map.of(), new byte[0]))
+                    .isInstanceOf(SSLHandshakeException.class);
         }
+    }
+
+    @Test
+    @DisplayName("a line break in a header value is refused before anything is sent, and as a failed attempt")
+    void headerInjectionIsRefusedBeforeConnecting() throws Exception {
+        Recording poster = new Recording();
+        WebhookTargetGuard.Target target = new WebhookTargetGuard.Target(URI.create("https://hooks.example.test/hook"),
+                InetAddress.getByName("203.0.113.10"));
+        assertThatThrownBy(() -> poster.post(target, Map.of("X-Lms-Event", "PING\r\nX-Injected: yes"), new byte[0]))
+                .isInstanceOf(IOException.class)
+                .isNotInstanceOf(ConnectException.class);
+        assertThat(poster.connections).as("nothing was connected to").isEmpty();
+    }
+
+    @Test
+    @DisplayName("a target with a line break in its host, path or query is not a valid address")
+    void targetWithLineBreaksIsRefused() {
+        WebhookTargetGuard guard = new WebhookTargetGuard(false, false,
+                host -> new InetAddress[] {InetAddress.getByName("203.0.113.10")});
+        for (String url : List.of("https://hooks.example.test/a\r\nX-Injected: yes", "https://hooks.example.test/a?b=\r\nc",
+                "https://hooks.example.test\r\n/a")) {
+            assertThatThrownBy(() -> guard.requireDeliverable(url)).as(url)
+                    .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                            e -> assertThat(e.code()).isEqualTo("webhook-url-invalid"));
+        }
+    }
+
+    @Test
+    @DisplayName("a garbled or missing answer is an IOException, which the dispatcher records as a failed attempt")
+    void malformedAnswers() throws Exception {
+        PinnedHttpPoster poster = new PinnedHttpPoster(null, TIMEOUT, TIMEOUT);
+        try (ServerSocket garbled = listen(socket -> answer(socket, "garbage\r\n"));
+             ServerSocket silent = listen(socket -> answer(socket, ""))) {
+            assertThatThrownBy(() -> poster.post(plain(garbled), Map.of(), new byte[0])).isInstanceOf(IOException.class);
+            assertThatThrownBy(() -> poster.post(plain(silent), Map.of(), new byte[0])).isInstanceOf(IOException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("an answer dripped one byte at a time is cut at the read timeout as a whole, not per read")
+    void slowAnswerIsCutAtTheDeadline() throws Exception {
+        PinnedHttpPoster poster = new PinnedHttpPoster(null, TIMEOUT, SHORT);
+        try (ServerSocket drip = listen(socket -> {
+            try {
+                readHead(socket.getInputStream());
+                OutputStream out = socket.getOutputStream();
+                out.write("HTTP/1.1 2".getBytes(StandardCharsets.US_ASCII));
+                while (true) {
+                    out.write('0');
+                    out.flush();
+                    Thread.sleep(200);
+                }
+            } catch (IOException | InterruptedException e) {
+                // The client hung up.
+            }
+        })) {
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> poster.post(plain(drip), Map.of(), "{}".getBytes(StandardCharsets.UTF_8)))
+                    .isInstanceOf(SocketTimeoutException.class);
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(4));
+        }
+    }
+
+    @Test
+    @DisplayName("a receiver that never completes the TLS handshake is cut at the read timeout")
+    void stalledHandshakeIsCutAtTheDeadline() throws Exception {
+        PinnedHttpPoster poster = new PinnedHttpPoster((SSLSocketFactory) SSLSocketFactory.getDefault(), TIMEOUT,
+                SHORT);
+        try (ServerSocket mute = listen(socket -> {
+            try {
+                socket.getInputStream().readAllBytes();
+            } catch (IOException e) {
+                // The client hung up.
+            }
+        })) {
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> poster.post(new WebhookTargetGuard.Target(
+                    URI.create("https://hooks.test:" + mute.getLocalPort() + "/hook"), mute.getInetAddress()),
+                    Map.of(), new byte[0]))
+                    .isInstanceOf(SocketTimeoutException.class);
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(4));
+        }
+    }
+
+    /** A plain loopback listener that hands each connection to {@code handler} and then closes it. */
+    private static ServerSocket listen(Consumer<Socket> handler) throws IOException {
+        ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"));
+        Thread acceptor = new Thread(() -> {
+            while (!listener.isClosed()) {
+                try (Socket socket = listener.accept()) {
+                    handler.accept(socket);
+                } catch (IOException e) {
+                    // Closed by the test.
+                }
+            }
+        }, "plain-receiver");
+        acceptor.setDaemon(true);
+        acceptor.start();
+        return listener;
+    }
+
+    private static void answer(Socket socket, String text) {
+        try {
+            readHead(socket.getInputStream());
+            socket.getOutputStream().write(text.getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+        } catch (IOException e) {
+            // The client hung up.
+        }
+    }
+
+    private static WebhookTargetGuard.Target plain(ServerSocket listener) {
+        return new WebhookTargetGuard.Target(URI.create("http://127.0.0.1:" + listener.getLocalPort() + "/hook"),
+                listener.getInetAddress());
     }
 
     private static void serve(SSLServerSocket listener, List<String> serverNames, List<String> hostHeaders) {

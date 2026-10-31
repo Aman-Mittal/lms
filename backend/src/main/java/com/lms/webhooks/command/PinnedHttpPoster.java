@@ -23,12 +23,17 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLParameters;
@@ -47,10 +52,16 @@ import javax.net.ssl.SSLSocketFactory;
  * certificate check, which is the JDK's standard HTTPS hostname verification
  * against that name.
  *
- * <p>Deliberately small: one HTTP/1.1 POST with {@code Connection: close}, no
- * redirects, no keep-alive, and only the status line of the answer is read.
- * The connect timeout bounds the connection and the read timeout bounds each
- * read of the answer.
+ * <p>Deliberately small: one HTTP/1.1 POST framed by {@code Content-Length}
+ * with {@code Connection: close}, no redirects, no keep-alive, and only the
+ * status line of the answer is read (at most {@value #MAX_STATUS_LINE} bytes).
+ * The request line and {@code Host} come from the parsed URI and every header
+ * is checked for line breaks before anything is sent. The connect timeout
+ * bounds the connection; the read timeout bounds everything after it -- TLS
+ * handshake, sending and the answer -- as a whole, so a receiver that stalls
+ * or answers one byte at a time cannot hold the dispatcher longer. Anything
+ * that goes wrong is an {@link IOException}, which the dispatcher records as a
+ * failed attempt.
  */
 class PinnedHttpPoster {
 
@@ -59,6 +70,11 @@ class PinnedHttpPoster {
     private final SSLSocketFactory tls;
     private final int connectTimeoutMs;
     private final int readTimeoutMs;
+    private final ScheduledExecutorService deadlines = Executors.newSingleThreadScheduledExecutor(task -> {
+        Thread thread = new Thread(task, "webhook-deadline");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     PinnedHttpPoster(SSLSocketFactory tls, Duration connectTimeout, Duration readTimeout) {
         this.tls = tls;
@@ -70,37 +86,58 @@ class PinnedHttpPoster {
      * Posts the body with the given headers.
      *
      * @return the status code the receiver answered with
+     * @throws IOException for anything short of a status code, including a
+     *                     request that is refused before it is sent
      */
     int post(WebhookTargetGuard.Target target, Map<String, String> headers, byte[] body) throws IOException {
         URI uri = target.uri();
         boolean https = "https".equals(uri.getScheme().toLowerCase(Locale.ROOT));
         int port = uri.getPort() != -1 ? uri.getPort() : (https ? 443 : 80);
         String host = bare(uri.getHost());
-        try (Socket socket = open(target.address(), host, port, https)) {
-            socket.setSoTimeout(readTimeoutMs);
+        byte[] head;
+        try {
+            head = requestHead(uri, port, https, headers, body.length).getBytes(StandardCharsets.US_ASCII);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("The request was not sent: " + e.getMessage(), e);
+        }
+        Socket raw = connect(new InetSocketAddress(target.address(), port), connectTimeoutMs);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(readTimeoutMs);
+        // Closing the socket at the deadline ends whatever is waiting on it: the
+        // handshake, a write the receiver does not take, or a slow answer.
+        ScheduledFuture<?> expiry = deadlines.schedule(() -> closeQuietly(raw), readTimeoutMs, TimeUnit.MILLISECONDS);
+        try (raw) {
+            raw.setSoTimeout(readTimeoutMs);
+            Socket socket = https ? secure(raw, host, port) : raw;
             OutputStream out = new BufferedOutputStream(socket.getOutputStream());
-            out.write(requestHead(uri, port, https, headers, body.length).getBytes(StandardCharsets.US_ASCII));
+            out.write(head);
             out.write(body);
             out.flush();
             return readStatus(socket.getInputStream());
+        } catch (IOException e) {
+            if (System.nanoTime() - deadline >= 0) {
+                throw new SocketTimeoutException("The receiver did not answer within " + readTimeoutMs + " ms");
+            }
+            throw e;
+        } catch (IllegalArgumentException e) {
+            throw new IOException(e.getMessage(), e);
+        } finally {
+            expiry.cancel(false);
         }
     }
 
-    private Socket open(InetAddress address, String host, int port, boolean https) throws IOException {
-        Socket raw = connect(new InetSocketAddress(address, port), connectTimeoutMs);
-        if (!https) {
-            return raw;
-        }
+    /** TLS over the socket already connected to the checked address; the host is only the peer name, never looked up. */
+    private Socket secure(Socket raw, String host, int port) throws IOException {
+        SSLSocket ssl = (SSLSocket) tls.createSocket(raw, host, port, true);
+        ssl.setSSLParameters(tlsParameters(ssl.getSSLParameters(), host));
+        ssl.startHandshake();
+        return ssl;
+    }
+
+    private static void closeQuietly(Socket socket) {
         try {
-            // Layered on the socket already connected to the checked address; the
-            // host given here is only the TLS peer name, never looked up.
-            SSLSocket ssl = (SSLSocket) tls.createSocket(raw, host, port, true);
-            ssl.setSSLParameters(tlsParameters(ssl.getSSLParameters(), host));
-            ssl.startHandshake();
-            return ssl;
-        } catch (IOException | RuntimeException e) {
-            raw.close();
-            throw e;
+            socket.close();
+        } catch (IOException e) {
+            // Closing is how the deadline is enforced; there is nothing more to do.
         }
     }
 
