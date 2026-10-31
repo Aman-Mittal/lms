@@ -21,7 +21,7 @@ const SCREENS: Array<[string, string]> = [
   ['partners', 'Partners'], ['vehicles', 'Vehicles'], ['drivers', 'Drivers'],
   ['terminals', 'Terminals'], ['orders', 'Orders'], ['loads', 'Loads'], ['trips', 'Trips'],
   ['freight-bills', 'Freight bills'], ['exceptions', 'Exceptions'], ['claims', 'Claims'],
-  ['ltl', 'LTL rating'], ['parked-events', 'Parked events'],
+  ['ltl', 'LTL rating'], ['parked-events', 'Parked events'], ['webhooks', 'Webhooks'],
 ];
 
 test.describe('moving around', () => {

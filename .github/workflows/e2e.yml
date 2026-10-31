@@ -138,6 +138,11 @@ jobs:
           LMS_DEMO_SEED: "true"
           DEMO_ADMIN_PASSWORD: ${{ env.E2E_DEMO_PASSWORD }}
           CORS_ALLOWED_ORIGINS: http://localhost:4300
+          # The webhook specs subscribe a receiver they start on this machine,
+          # over plain http. Production refuses both (https only, public
+          # addresses only); these two switches exist for exactly this.
+          LMS_WEBHOOKS_ALLOW_HTTP: "true"
+          LMS_WEBHOOKS_ALLOW_PRIVATE_TARGETS: "true"
         run: |
           nohup java -jar backend/target/lms-platform-*.jar > backend.log 2>&1 &
           for i in $(seq 1 90); do
