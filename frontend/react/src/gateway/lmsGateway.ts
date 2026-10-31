@@ -184,6 +184,14 @@ export interface PublicTrackingView {
   position: { lat: string; lon: string; recordedAt: string } | null;
 }
 
+/** What a demo reset did. */
+export interface DemoResetOutcome {
+  tenantCode: string;
+  rowsDeleted: number;
+  /** True when the caller's own user was recreated: the session in hand should end. */
+  signInAgain: boolean;
+}
+
 // ---------------------------------------------------------------- allocation rules
 
 export const RULE_ACTIONS = ['PREFER', 'EXCLUDE'] as const;
@@ -261,6 +269,11 @@ export class ApiProblem extends Error {
 export interface LmsGateway {
   signIn(credentials: Credentials): Promise<SignedIn>;
   summary(): Promise<ControlTowerSummary>;
+  /**
+   * Puts the demo tenant back to its seeded state (holders of DEMO_RESET, demo deployments only).
+   * `confirm` is the demo tenant's code, typed by the person resetting it.
+   */
+  resetDemoData(confirm: string): Promise<DemoResetOutcome>;
   list(resource: ResourceKey): Promise<Row[]>;
   registerPartner(orgUnitId: string, draft: PartnerDraft): Promise<void>;
 
