@@ -100,6 +100,20 @@ features are listed as text, with their kind and coordinates on `data-`
 attributes, for screen readers and for the browser tests, which answer tile
 requests themselves and never call the tile servers.
 
+## LTL rating and parked events
+
+**Finance > LTL rating** lists the receivable each part-load docket earned
+(`INVOICE_READ`) and, for `TARIFF_MANAGE`, puts a site in a zone and publishes a
+zone-to-zone rate card. Zones and rate cards have no list endpoint yet, so they
+are written here and seen through the receivables they price.
+
+**Control tower > Parked events** (`EVENT_DEAD_LETTER_READ`) lists events whose
+listener failed on every retry, filtered by status, event type and listener,
+and shows one with its payload; `EVENT_DEAD_LETTER_MANAGE` can replay it or
+discard it with a reason. A parked event cannot be made through the API, so
+the browser specs cover the list, its filters and its gating; the backend's
+own suites park, replay and discard real events.
+
 ## Browser end-to-end tests
 
 `e2e/` runs one set of specs against each console in Chromium, against a real
