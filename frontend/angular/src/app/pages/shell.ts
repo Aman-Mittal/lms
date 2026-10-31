@@ -53,6 +53,12 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Operations' && session.can('ALLOCATION_RULE_READ')) {
                 <a routerLink="/allocation-rules" routerLinkActive="active" data-testid="nav-allocation-rules">Allocation rules</a>
               }
+              @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE'))) {
+                <a routerLink="/ltl" routerLinkActive="active" data-testid="nav-ltl">LTL rating</a>
+              }
+              @if (group === 'Control tower' && session.can('EVENT_DEAD_LETTER_READ')) {
+                <a routerLink="/parked-events" routerLinkActive="active" data-testid="nav-parked-events">Parked events</a>
+              }
               @if (group === 'Delivery' && session.can('POD_READ')) {
                 <a routerLink="/delivery" routerLinkActive="active" data-testid="nav-delivery">Delivery desk</a>
               }

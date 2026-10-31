@@ -57,6 +57,12 @@ export function Shell() {
               {group === 'Operations' && can('ALLOCATION_RULE_READ') && (
                 <NavLink to="/allocation-rules" data-testid="nav-allocation-rules">Allocation rules</NavLink>
               )}
+              {group === 'Finance' && (can('INVOICE_READ') || can('TARIFF_MANAGE')) && (
+                <NavLink to="/ltl" data-testid="nav-ltl">LTL rating</NavLink>
+              )}
+              {group === 'Control tower' && can('EVENT_DEAD_LETTER_READ') && (
+                <NavLink to="/parked-events" data-testid="nav-parked-events">Parked events</NavLink>
+              )}
               {group === 'Delivery' && can('POD_READ') && (
                 <NavLink to="/delivery" data-testid="nav-delivery">Delivery desk</NavLink>
               )}

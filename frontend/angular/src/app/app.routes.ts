@@ -26,6 +26,8 @@ import { Dashboard } from './pages/dashboard';
 import { DeliveryDesk } from './pages/delivery-desk';
 import { DemoSettings } from './pages/demo-settings';
 import { ListPage } from './pages/list';
+import { LtlRating } from './pages/ltl-rating';
+import { ParkedEvents } from './pages/parked-events';
 import { FieldsSettings } from './pages/fields-settings';
 
 export const routes: Routes = [
@@ -50,6 +52,8 @@ export const routes: Routes = [
       { path: 'trip-route', loadComponent: () => import('./pages/trip-route').then((m) => m.TripRoute) },
       { path: 'itineraries', loadComponent: () => import('./pages/itineraries').then((m) => m.Itineraries) },
       { path: 'milk-runs', loadComponent: () => import('./pages/milk-runs').then((m) => m.MilkRuns) },
+      { path: 'ltl', component: LtlRating },
+      { path: 'parked-events', component: ParkedEvents },
       { path: ':resource', component: ListPage },
     ],
   },

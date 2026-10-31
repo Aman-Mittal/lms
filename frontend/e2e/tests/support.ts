@@ -446,3 +446,12 @@ export async function newReportingVehicle(
   });
   return { id: vehicle.id as string, registrationNo, lat, lon };
 }
+
+// ------------------------------------------------------------- LTL rating
+
+/** A site of the given kind at a random point, coded to sort last. */
+export async function newSite(
+  request: APIRequestContext, session: Session, code: string, category = 'HUB',
+): Promise<Site> {
+  return siteAt(request, session, code, category, between(10, 30), between(70, 90));
+}

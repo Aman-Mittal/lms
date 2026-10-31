@@ -23,15 +23,17 @@ import {
   AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
   AllocationRulesService, AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
   ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, CustomFieldsService, CustomFieldType,
-  DeliveryAndClaimsService, DriversService, MilkRunsService, MultimodalService, OrdersService, PartnersService,
+  DeliveryAndClaimsService, DriversService, EventDeadLetterService, LTLRatingService, MilkRunsService, MultimodalService, OrdersService, PartnersService,
   PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, SourcingService,
   TelematicsService, Terminal, TerminalsService, TrackingLinksService, TripsService, VehiclesService,
+  ParkedEvent, ParkedEventStatus, PublishLtlRateCardRequestRateBasisEnum,
 } from '../api';
 import {
   AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
   DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, IssuedTrackingLink, LmsGateway,
   OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, RuleAction, RuleDraft, RuleEvaluation,
   GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, TrackingLinkView, TripRoute,
+  ParkedEventDetail, ParkedFilter, RateCardDraft,
 } from './lms-gateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -95,6 +97,16 @@ function anchorOf(t: Terminal | undefined): GeoPoint | null {
   return ring ? centroid(ring) : null;
 }
 
+/** A parked event as a list row. */
+function parkedRow(e: ParkedEvent): Row {
+  return {
+    id: text(e.id), parkedNo: text(e.parkedNo), eventType: text(e.eventType), listenerId: text(e.listenerId),
+    status: text(e.status), attempts: text(e.attempts), lastFailedAt: text(e.lastFailedAt),
+    lastError: text(e.lastError), parkedAt: text(e.parkedAt), resolvedAt: text(e.resolvedAt),
+    resolutionNote: text(e.resolutionNote),
+  };
+}
+
 function definitionOf(d: CustomFieldDefinition): FieldDefinition {
   return {
     id: d.id ?? '',
@@ -154,6 +166,8 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly telematics = inject(TelematicsService);
   private readonly multimodal = inject(MultimodalService);
   private readonly milkRuns = inject(MilkRunsService);
+  private readonly ltl = inject(LTLRatingService);
+  private readonly deadLetters = inject(EventDeadLetterService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
@@ -538,6 +552,53 @@ export class GeneratedLmsGateway extends LmsGateway {
       id: text(r.id), runDate: text(r.runDate), status: text(r.status), tripNo: text(r.tripNo),
       stopsVisited: text(r.stopsVisited), stopsSkipped: text(r.stopsSkipped), chargeAmount: text(r.chargeAmount),
     })));
+  }
+
+  ltlReceivables(): Promise<Row[]> {
+    return this.call(this.ltl.listDocketReceivables({ limit: 50 }), (s) => s.items.map((r) => ({
+      id: text(r.id), docketNo: text(r.docketNo), status: text(r.status), customerName: text(r.customerName),
+      lane: `${text(r.originZone)} → ${text(r.destinationZone)}`, rateCardCode: text(r.rateCardCode),
+      chargeableWeightKg: text(r.chargeableWeightKg), totalAmount: text(r.totalAmount), currency: text(r.currency),
+    })));
+  }
+
+  assignLtlZone(terminalId: string, zoneCode: string, outOfDeliveryArea: boolean): Promise<void> {
+    return this.call(this.ltl.assignLtlZone({ terminalId, assignLtlZoneRequest: { zoneCode, outOfDeliveryArea } }),
+      () => undefined);
+  }
+
+  publishLtlRateCard(draft: RateCardDraft): Promise<string> {
+    return this.call(this.ltl.publishLtlRateCard({
+      publishLtlRateCardRequest: {
+        code: draft.code, originZone: draft.originZone, destinationZone: draft.destinationZone,
+        effectiveFrom: draft.effectiveFrom,
+        rateBasis: draft.rateBasis as unknown as PublishLtlRateCardRequestRateBasisEnum, rateAmount: draft.rateAmount,
+        kgPerCft: draft.kgPerCft, minimumChargeableWeightKg: draft.minimumChargeableWeightKg,
+        docketCharge: draft.docketCharge,
+      },
+    }), (made) => made.id ?? '');
+  }
+
+  parkedEvents(filter: ParkedFilter): Promise<Row[]> {
+    return this.call(this.deadLetters.listParkedEvents({
+      status: filter.status as unknown as ParkedEventStatus | undefined, eventType: filter.eventType || undefined,
+      listenerId: filter.listenerId || undefined, limit: 50,
+    }), (s) => s.items.map(parkedRow));
+  }
+
+  parkedEvent(id: string): Promise<ParkedEventDetail> {
+    return this.call(this.deadLetters.getParkedEvent({ id }),
+      (d) => ({ summary: parkedRow(d.summary), payload: text(d.payload) }));
+  }
+
+  replayParkedEvent(id: string): Promise<{ outcome: string; attempts: number }> {
+    return this.call(this.deadLetters.replayParkedEvent({ id }),
+      (r) => ({ outcome: text(r.outcome), attempts: r.attempts ?? 0 }));
+  }
+
+  discardParkedEvent(id: string, reason: string): Promise<void> {
+    return this.call(this.deadLetters.discardParkedEvent({ id, discardParkedEventRequest: { reason } }),
+      () => undefined);
   }
 
   /** Each distinct terminal named, read once. */
