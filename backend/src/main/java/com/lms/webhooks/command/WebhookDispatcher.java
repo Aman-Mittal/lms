@@ -16,17 +16,18 @@
 package com.lms.webhooks.command;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import javax.net.ssl.SSLSocketFactory;
+
+import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.tenant.TenantContext;
 import com.lms.shared.tenant.TenantSweep;
 import org.slf4j.Logger;
@@ -64,13 +65,12 @@ public class WebhookDispatcher {
     private final TenantSweep tenantSweep;
     private final TransactionTemplate transactions;
     private final WebhookTargetGuard guard;
-    private final HttpClient http;
+    private final PinnedHttpPoster http;
     private final RetryBackoff backoff;
     private final boolean enabled;
     private final int batchSize;
     private final int maxAttempts;
     private final int pauseAfterFailures;
-    private final Duration readTimeout;
 
     public WebhookDispatcher(JdbcClient jdbc, TenantSweep tenantSweep, PlatformTransactionManager transactionManager,
                              WebhookTargetGuard guard,
@@ -91,11 +91,8 @@ public class WebhookDispatcher {
         this.backoff = new RetryBackoff(initialBackoff, maxBackoff);
         this.maxAttempts = maxAttempts;
         this.pauseAfterFailures = pauseAfterFailures;
-        this.readTimeout = readTimeout;
-        this.http = HttpClient.newBuilder()
-                .connectTimeout(connectTimeout)
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .build();
+        this.http = new PinnedHttpPoster((SSLSocketFactory) SSLSocketFactory.getDefault(), connectTimeout,
+                readTimeout);
     }
 
     @Scheduled(initialDelayString = "${lms.webhooks.dispatcher.initial-delay-ms:20000}",
@@ -170,30 +167,26 @@ public class WebhookDispatcher {
     }
 
     private Outcome post(Claimed delivery) {
-        String refusal = guard.refusalFor(delivery.url());
-        if (refusal != null) {
-            return new Outcome(null, refusal);
+        // Resolved and checked here, once; the connection goes to this address.
+        WebhookTargetGuard.Target target;
+        try {
+            target = guard.requireDeliverable(delivery.url());
+        } catch (BusinessRuleViolationException e) {
+            return new Outcome(null, e.getMessage());
         }
         long timestamp = Instant.now().getEpochSecond();
-        HttpRequest request = HttpRequest.newBuilder(URI.create(delivery.url()))
-                .timeout(readTimeout)
-                .header("Content-Type", "application/json")
-                .header("User-Agent", "lms-webhooks/1")
-                .header("X-Lms-Event", delivery.eventType())
-                .header("X-Lms-Delivery", delivery.id().toString())
-                .header("X-Lms-Timestamp", Long.toString(timestamp))
-                .header("X-Lms-Signature", WebhookSigner.sign(delivery.secret(), timestamp, delivery.payload()))
-                .POST(HttpRequest.BodyPublishers.ofString(delivery.payload(), StandardCharsets.UTF_8))
-                .build();
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Content-Type", "application/json");
+        headers.put("User-Agent", "lms-webhooks/1");
+        headers.put("X-Lms-Event", delivery.eventType());
+        headers.put("X-Lms-Delivery", delivery.id().toString());
+        headers.put("X-Lms-Timestamp", Long.toString(timestamp));
+        headers.put("X-Lms-Signature", WebhookSigner.sign(delivery.secret(), timestamp, delivery.payload()));
         try {
-            HttpResponse<Void> response = http.send(request, HttpResponse.BodyHandlers.discarding());
-            int code = response.statusCode();
+            int code = http.post(target, headers, delivery.payload().getBytes(StandardCharsets.UTF_8));
             return new Outcome(code, code >= 200 && code < 300 ? null : "The receiver answered " + code);
         } catch (IOException e) {
             return new Outcome(null, e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return new Outcome(null, "Interrupted");
         }
     }
 
