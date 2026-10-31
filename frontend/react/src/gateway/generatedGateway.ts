@@ -17,19 +17,22 @@
 import { DemoDataApi } from '../api';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
-  AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
+  AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   OrdersApi,
-  PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, TrackingLinksApi, TripsApi, VehiclesApi,
+  PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TrackingLinksApi, TripsApi, VehiclesApi,
   type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
+  type AllocationRule, type AllocationRuleAction, type AllocationRuleRequest,
+  type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum,
 } from '../api';
 import { API_URL } from '../config';
 import {
-  ApiProblem, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
+  ApiProblem, type AllocationRuleView, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
   type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
-  type ResourceKey, type Row, type SignedIn, type TrackingLinkView,
+  type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn,
+  type TrackingLinkView,
 } from './lmsGateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -57,6 +60,29 @@ function definitionOf(d: CustomFieldDefinition): FieldDefinition {
   };
 }
 
+function ruleOf(r: AllocationRule): AllocationRuleView {
+  return {
+    id: text(r.id), name: text(r.name), priority: r.priority ?? 0, active: r.active ?? true,
+    originTerminalId: text(r.originTerminalId), destinationTerminalId: text(r.destinationTerminalId),
+    minWeightKg: text(r.minWeightKg), maxWeightKg: text(r.maxWeightKg),
+    materialClass: text(r.materialClass), action: (r.action ?? 'PREFER') as RuleAction,
+    vendors: (r.vendors ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+  };
+}
+
+/** The contract's request: a condition left out is sent as absent, not as an empty string. */
+function ruleRequest(draft: RuleDraft): AllocationRuleRequest {
+  return {
+    name: draft.name, priority: draft.priority, active: draft.active,
+    originTerminalId: draft.originTerminalId || undefined,
+    destinationTerminalId: draft.destinationTerminalId || undefined,
+    minWeightKg: draft.minWeightKg, maxWeightKg: draft.maxWeightKg,
+    materialClass: (draft.materialClass || undefined) as AllocationRuleRequestMaterialClassEnum | undefined,
+    action: draft.action as unknown as AllocationRuleAction,
+    vendorPartnerIds: draft.vendorIds,
+  };
+}
+
 /** The adapter: the only file in the React app that imports the generated client. */
 export function createGeneratedGateway(getToken: () => string | null): LmsGateway {
   // The token is read per request (a function), so one gateway outlives sign-ins.
@@ -75,6 +101,8 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const customFields = new CustomFieldsApi(config);
   const delivery = new DeliveryAndClaimsApi(config);
   const links = new TrackingLinksApi(config);
+  const rules = new AllocationRulesApi(config);
+  const sourcing = new SourcingApi(config);
   // The public read is made with no credentials at all: a customer has none, and
   // a console left signed in must not send its token to a route that ignores it.
   const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
@@ -290,6 +318,48 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           throw e;
         }
       }),
+
+    allocationRules: (): Promise<AllocationRuleView[]> =>
+      guard(async () => (await rules.listAllocationRules({ limit: 200 })).items.map(ruleOf)),
+
+    createAllocationRule: (draft: RuleDraft) =>
+      guard(async () => (await rules.createAllocationRule({ allocationRuleRequest: ruleRequest(draft) })).id ?? ''),
+
+    reviseAllocationRule: (id: string, draft: RuleDraft) =>
+      guard(async () => {
+        await rules.reviseAllocationRule({ id, allocationRuleRequest: ruleRequest(draft) });
+      }),
+
+    evaluateAllocation: (loadId: string): Promise<RuleEvaluation> =>
+      guard(async () => {
+        const e = await rules.evaluateAllocationRules({ allocationEvaluationRequest: { loadId } });
+        return {
+          loadNo: text(e.loadNo), ruleName: text(e.matchedRuleName),
+          action: (e.matchedRuleId ? text(e.action) : '') as RuleAction | '',
+          nextVendor: text(e.nextVendor?.vendorName),
+          candidates: (e.candidateOrder ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+        };
+      }),
+
+    allocation: (id: string): Promise<AllocationSummary> =>
+      guard(async () => {
+        const a = await sourcing.getAllocation({ id });
+        return {
+          id: text(a.id), loadNo: text(a.loadNo), status: text(a.status),
+          appliedRuleName: text(a.appliedRuleName),
+          appliedRuleAction: (a.appliedRuleId ? text(a.appliedRuleAction) : '') as RuleAction | '',
+        };
+      }),
+
+    activeVendors: (): Promise<Choice[]> =>
+      guard(async () => (await partners.listPartners({
+        partnerType: 'VENDOR' as unknown as ListPartnersPartnerTypeEnum, status: 'ACTIVE', limit: 200,
+      })).items.map((p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` }))),
+
+    terminalChoices: (): Promise<Choice[]> =>
+      guard(async () => (await terminals.listTerminals({ limit: 200 })).items.map((t) => ({
+        id: text(t.id), label: `${text(t.code)} · ${text(t.name)}`,
+      }))),
   };
 }
 

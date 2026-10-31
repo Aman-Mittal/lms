@@ -59,6 +59,16 @@ test.describe('moving around', () => {
     await expect(page.getByTestId('consignment-id')).toBeVisible();
   });
 
+  test('allocation rules are offered to someone who may read them', async ({ page }) => {
+    await signIn(page);
+
+    await page.getByTestId('nav-allocation-rules').click();
+    await expect(page.getByRole('heading', { name: 'Allocation rules', level: 1 })).toBeVisible();
+    await expect(page.getByText('Loading…')).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByTestId('dry-run')).toBeVisible();
+  });
+
   test('the layout fits a phone: nothing makes the page scroll sideways', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await signIn(page);

@@ -20,16 +20,18 @@ import { firstValueFrom, Observable } from 'rxjs';
 import { DemoDataService } from '../api';
 import type { DemoResetOutcome } from './lms-gateway';
 import {
-  AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
+  AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
+  AllocationRulesService, AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
   ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, CustomFieldsService, CustomFieldType,
   DeliveryAndClaimsService, DriversService, OrdersService, PartnersService,
-  PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService,
+  PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, SourcingService,
   TerminalsService, TrackingLinksService, TripsService, VehiclesService,
 } from '../api';
 import {
-  ApiProblem, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
+  AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
   DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, IssuedTrackingLink, LmsGateway,
-  OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, SignedIn, TrackingLinkView,
+  OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, RuleAction, RuleDraft, RuleEvaluation,
+  SignedIn, TrackingLinkView,
 } from './lms-gateway';
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -57,6 +59,29 @@ function definitionOf(d: CustomFieldDefinition): FieldDefinition {
   };
 }
 
+function ruleOf(r: AllocationRule): AllocationRuleView {
+  return {
+    id: text(r.id), name: text(r.name), priority: r.priority ?? 0, active: r.active ?? true,
+    originTerminalId: text(r.originTerminalId), destinationTerminalId: text(r.destinationTerminalId),
+    minWeightKg: text(r.minWeightKg), maxWeightKg: text(r.maxWeightKg),
+    materialClass: text(r.materialClass), action: (text(r.action) || 'PREFER') as RuleAction,
+    vendors: (r.vendors ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+  };
+}
+
+/** The contract's request: a condition left out is sent as absent, not as an empty string. */
+function ruleRequest(draft: RuleDraft): AllocationRuleRequest {
+  return {
+    name: draft.name, priority: draft.priority, active: draft.active,
+    originTerminalId: draft.originTerminalId || undefined,
+    destinationTerminalId: draft.destinationTerminalId || undefined,
+    minWeightKg: draft.minWeightKg, maxWeightKg: draft.maxWeightKg,
+    materialClass: (draft.materialClass || undefined) as unknown as AllocationRuleRequestMaterialClassEnum | undefined,
+    action: draft.action as unknown as AllocationRuleAction,
+    vendorPartnerIds: draft.vendorIds,
+  };
+}
+
 /** The adapter: the only file in the Angular app (besides app config) that knows the generated client. */
 @Injectable()
 export class GeneratedLmsGateway extends LmsGateway {
@@ -75,6 +100,8 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly delivery = inject(DeliveryAndClaimsService);
   private readonly links = inject(TrackingLinksService);
   private readonly publicRead = inject(PublicTrackingService);
+  private readonly rules = inject(AllocationRulesService);
+  private readonly sourcing = inject(SourcingService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
@@ -265,6 +292,45 @@ export class GeneratedLmsGateway extends LmsGateway {
       }
       throw e;
     }
+  }
+
+  allocationRules(): Promise<AllocationRuleView[]> {
+    return this.call(this.rules.listAllocationRules({ limit: 200 }), (s) => s.items.map(ruleOf));
+  }
+
+  createAllocationRule(draft: RuleDraft): Promise<string> {
+    return this.call(this.rules.createAllocationRule({ allocationRuleRequest: ruleRequest(draft) }), (made) => made.id ?? '');
+  }
+
+  reviseAllocationRule(id: string, draft: RuleDraft): Promise<void> {
+    return this.call(this.rules.reviseAllocationRule({ id, allocationRuleRequest: ruleRequest(draft) }), () => undefined);
+  }
+
+  evaluateAllocation(loadId: string): Promise<RuleEvaluation> {
+    return this.call(this.rules.evaluateAllocationRules({ allocationEvaluationRequest: { loadId } }), (e) => ({
+      loadNo: text(e.loadNo), ruleName: text(e.matchedRuleName),
+      action: (e.matchedRuleId ? text(e.action) : '') as RuleAction | '',
+      nextVendor: text(e.nextVendor?.vendorName),
+      candidates: (e.candidateOrder ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+    }));
+  }
+
+  allocation(id: string): Promise<AllocationSummary> {
+    return this.call(this.sourcing.getAllocation({ id }), (a) => ({
+      id: text(a.id), loadNo: text(a.loadNo), status: text(a.status),
+      appliedRuleName: text(a.appliedRuleName),
+      appliedRuleAction: (a.appliedRuleId ? text(a.appliedRuleAction) : '') as RuleAction | '',
+    }));
+  }
+
+  activeVendors(): Promise<Choice[]> {
+    return this.call(this.partners.listPartners({ partnerType: 'VENDOR', status: 'ACTIVE', limit: 200 }),
+      (s) => s.items.map((p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` })));
+  }
+
+  terminalChoices(): Promise<Choice[]> {
+    return this.call(this.terminals.listTerminals({ limit: 200 }),
+      (s) => s.items.map((t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` })));
   }
 
   /** Awaits a generated call, maps its result, and turns any failure into an ApiProblem. */
