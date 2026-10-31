@@ -72,4 +72,4 @@ export const RESOURCES: Resource[] = [
 ];
 
 /** The sidebar's sections, in order. */
-export const GROUPS = ['Master data', 'Operations', 'Finance', 'Control tower', 'Delivery'];
+export const GROUPS = ['Master data', 'Operations', 'Multimodal', 'Finance', 'Control tower', 'Delivery'];
