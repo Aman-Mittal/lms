@@ -16,12 +16,13 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import {
-  apiSession, newClaim, newConsignment, openClaims, printed, signIn, stubPrint, tag,
+  apiSession, filterClaims, newClaim, newConsignment, openClaims, printed, signIn, stubPrint, tag,
   withoutPermissions,
 } from './support';
 
-/** Opens a claim's panel by its number. */
-async function openClaim(page: Page, claimNo: string) {
+/** Opens a claim's panel by its number, found among its consignment's claims. */
+async function openClaim(page: Page, { claimNo, consignmentId }: { claimNo: string; consignmentId: string }) {
+  await filterClaims(page, consignmentId);
   const row = page.getByTestId('row').filter({ hasText: claimNo });
   await expect(row).toBeVisible();
   await row.click();
@@ -44,7 +45,9 @@ test.describe('claims', () => {
       await form.getByLabel('Amount').fill('1250.50');
       await form.getByLabel('Description').fill(`Lost in transit ${id}`);
       await form.getByRole('button', { name: 'Raise claim' }).click();
+      await expect(form.getByLabel('Description')).toHaveValue('');
 
+      await filterClaims(page, consignment);
       const row = page.getByTestId('row').filter({ hasText: consignment });
       await expect(row).toContainText('OPEN');
       await expect(row).toContainText('CLM-');
@@ -88,7 +91,7 @@ test.describe('claims', () => {
     await signIn(page);
     await openClaims(page);
 
-    const panel = await openClaim(page, claim.claimNo);
+    const panel = await openClaim(page, claim);
     await panel.getByTestId('act-review').click();
     await expect(panel.getByTestId('claim-status')).toHaveText('UNDER_REVIEW');
 
@@ -116,7 +119,9 @@ test.describe('claims', () => {
     await form.getByRole('button', { name: 'Raise claim' }).click();
 
     await expect(page.getByRole('alert')).toContainText('proof of delivery');
+    await filterClaims(page, consignment);
     await expect(page.getByTestId('row').filter({ hasText: consignment })).toHaveCount(0);
+    await expect(page.getByText('No claims against that consignment.')).toBeVisible();
   });
 });
 
@@ -129,7 +134,7 @@ test.describe('what each person is offered', () => {
     await openClaims(page);
 
     await expect(page.getByTestId('raise-claim')).toHaveCount(0);
-    const panel = await openClaim(page, claim.claimNo);
+    const panel = await openClaim(page, claim);
     await expect(panel.getByTestId('claim-status')).toHaveText('OPEN');
     await expect(panel.getByTestId('act-review')).toHaveCount(0);
     await expect(panel.getByTestId('print-claim')).toBeVisible();
@@ -154,7 +159,7 @@ test.describe('print and QR codes', () => {
     await signIn(page);
     await openClaims(page);
 
-    const panel = await openClaim(page, claim.claimNo);
+    const panel = await openClaim(page, claim);
     await expect(panel.getByTestId('claim-slip')).toHaveCount(0);
     await panel.getByTestId('print-claim').click();
 

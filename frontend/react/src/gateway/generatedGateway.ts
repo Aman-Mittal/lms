@@ -191,6 +191,13 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   // a console left signed in must not send its token to a route that ignores it.
   const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
 
+  const listClaims = async (consignmentId?: string) =>
+    (await delivery.listClaims({ consignmentId: consignmentId || undefined, limit: 50 })).items.map((c) => ({
+      id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
+      status: text(c.status), consignmentId: text(c.consignmentId),
+      approvedAmount: text(c.approvedAmount), description: text(c.description),
+      resolutionNote: text(c.resolutionNote) }));
+
   const listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: async () => (await partners.listPartners({ limit: 50 })).items.map((p) => ({
       id: text(p.id), code: text(p.code), legalName: text(p.legalName),
@@ -220,11 +227,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     exceptions: async () => (await controlTower.listExceptions({ limit: 50 })).items.map((e) => ({
       id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
       category: text(e.category), description: text(e.description) })),
-    claims: async () => (await delivery.listClaims({ limit: 50 })).items.map((c) => ({
-      id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
-      status: text(c.status), consignmentId: text(c.consignmentId),
-      approvedAmount: text(c.approvedAmount), description: text(c.description),
-      resolutionNote: text(c.resolutionNote) })),
+    claims: () => listClaims(),
   };
 
   return {
@@ -251,6 +254,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       }),
 
     list: (resource) => guard(listers[resource]),
+    claims: (consignmentId?: string) => guard(() => listClaims(consignmentId)),
 
     registerPartner: (orgUnitId: string, draft: PartnerDraft) =>
       guard(async () => {

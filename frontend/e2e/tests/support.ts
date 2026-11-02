@@ -170,23 +170,34 @@ export async function newConsignment(request: APIRequestContext, session: Sessio
   return consignments[0].id as string;
 }
 
-/** Raises a claim through the API and returns its id and number. */
+/** Raises a claim through the API and returns its id and number, and the consignment it is against. */
 export async function newClaim(
   request: APIRequestContext, session: Session, consignmentId: string, claimType = 'LOSS',
-): Promise<{ id: string; claimNo: string }> {
+): Promise<{ id: string; claimNo: string; consignmentId: string }> {
   const made = await post(request, session, '/api/v1/claims', {
     consignmentId, claimType, amount: 400.5, description: 'Raised by the browser suite',
   });
   const read = await request.get(`${API}/api/v1/claims/${made.id}`, {
     headers: { Authorization: `Bearer ${session.token}` },
   });
-  return { id: made.id, claimNo: (await read.json()).claimNo };
+  return { id: made.id, claimNo: (await read.json()).claimNo, consignmentId };
 }
 
 export async function openClaims(page: Page): Promise<void> {
   await page.getByTestId('nav-claims').click();
   await expect(page.getByRole('heading', { name: 'Claims', level: 1 })).toBeVisible();
   await expect(page.getByText('Loading…')).toHaveCount(0);
+}
+
+/**
+ * Narrows the claims list to one consignment's claims. The list is one page, so
+ * on a backend that has seen many claims a new one is not on it unfiltered.
+ */
+export async function filterClaims(page: Page, consignmentId: string): Promise<void> {
+  await page.getByTestId('claims-filter-consignment').fill(consignmentId);
+  await page.getByTestId('claims-filter').getByRole('button', { name: 'Filter' }).click();
+  await expect(page.getByText('Loading…')).toHaveCount(0);
+  await expect(page.getByTestId('row').filter({ hasNotText: consignmentId })).toHaveCount(0);
 }
 
 /**

@@ -217,11 +217,7 @@ export class GeneratedLmsGateway extends LmsGateway {
     exceptions: () => this.call(this.controlTower.listExceptions({ limit: 50 }), (s) => s.items.map((e) => ({
       id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
       category: text(e.category), description: text(e.description) }))),
-    claims: () => this.call(this.delivery.listClaims({ limit: 50 }), (s) => s.items.map((c) => ({
-      id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
-      status: text(c.status), consignmentId: text(c.consignmentId),
-      approvedAmount: text(c.approvedAmount), description: text(c.description),
-      resolutionNote: text(c.resolutionNote) }))),
+    claims: () => this.claims(),
   };
 
   signIn(credentials: Credentials): Promise<SignedIn> {
@@ -243,6 +239,15 @@ export class GeneratedLmsGateway extends LmsGateway {
 
   list(resource: ResourceKey): Promise<Row[]> {
     return this.listers[resource]();
+  }
+
+  claims(consignmentId?: string): Promise<Row[]> {
+    return this.call(this.delivery.listClaims({ consignmentId: consignmentId || undefined, limit: 50 }),
+      (s) => s.items.map((c) => ({
+        id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
+        status: text(c.status), consignmentId: text(c.consignmentId),
+        approvedAmount: text(c.approvedAmount), description: text(c.description),
+        resolutionNote: text(c.resolutionNote) })));
   }
 
   registerPartner(orgUnitId: string, draft: PartnerDraft): Promise<void> {

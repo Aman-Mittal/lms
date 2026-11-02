@@ -28,7 +28,16 @@ export function ClaimsPage() {
   const { gateway, can } = useSession();
   const [reload, setReload] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { data, error, loading } = useLoad(() => gateway.list('claims'), reload);
+  const [typed, setTyped] = useState('');
+  const [consignmentId, setConsignmentId] = useState('');
+  const { data, error, loading } = useLoad(
+    () => gateway.claims(consignmentId || undefined), `${consignmentId}:${reload}`);
+
+  function filter(event: FormEvent) {
+    event.preventDefault();
+    setSelectedId(null);
+    setConsignmentId(typed.trim());
+  }
 
   const rows = data ?? [];
   const selected = rows.find((row) => row.id === selectedId) ?? null;
@@ -37,11 +46,16 @@ export function ClaimsPage() {
     <div className={selected ? 'with-panel' : undefined}>
       <div className="list">
         <h1>Claims</h1>
+        <form className="inline" onSubmit={filter} data-testid="claims-filter">
+          <input placeholder="Consignment id" aria-label="Filter by consignment"
+            data-testid="claims-filter-consignment" value={typed} onChange={(e) => setTyped(e.target.value)} />
+          <button type="submit">Filter</button>
+        </form>
         {error && <p className="error" role="alert">{error}</p>}
         {loading ? (
           <p>Loading…</p>
         ) : rows.length === 0 && !error ? (
-          <p className="muted">Nothing here yet.</p>
+          <p className="muted">{consignmentId ? 'No claims against that consignment.' : 'Nothing here yet.'}</p>
         ) : (
           rows.length > 0 && (
             <table>
