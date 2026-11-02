@@ -153,7 +153,7 @@ public class PublicTrackingQueryService {
                                count(*) FILTER (WHERE x.state = 'IN_TRANSIT')::int AS moving,
                                count(*) FILTER (WHERE x.proof_at IS NOT NULL
                                                   AND x.state <> 'CANCELLED')::int AS proved,
-                               max(coalesce(x.proof_at, x.trip_completed_at))
+                               max(coalesce(x.proof_at, x.trip_completed_at, x.recorded_at))
                                    FILTER (WHERE x.state = 'DELIVERED') AS last_delivered_at
                           FROM (SELECT CASE
                                            WHEN p.status = 'CANCELLED' THEN 'CANCELLED'
@@ -163,7 +163,10 @@ public class PublicTrackingQueryService {
                                            ELSE 'PLANNED'
                                        END AS state,
                                        pr.delivered_at AS proof_at,
-                                       tc.completed_at AS trip_completed_at
+                                       tc.completed_at AS trip_completed_at,
+                                       -- A part recorded delivered without a trip or a proof
+                                       -- still says when; its last change is that moment.
+                                       CASE WHEN p.status = 'DELIVERED' THEN p.updated_at END AS recorded_at
                                   FROM consignment p
                                   LEFT JOIN delivery_proof pr
                                          ON pr.consignment_id = p.id AND pr.status = 'CONFIRMED'

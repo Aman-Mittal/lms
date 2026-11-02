@@ -173,7 +173,7 @@ class ConsignmentSplitIntegrationTest {
         })).as("no lorry carries the whole").isInstanceOfSatisfying(BusinessRuleViolationException.class,
                 e -> assertThat(e.code()).isEqualTo("load-capacity-exceeded"));
 
-        List<ConsignmentSplitService.SplitPart> parts = split(whole, 100, "20000", "0.6");
+        List<ConsignmentSplitService.SplitPart> parts = split(whole, 100, "20000", "0");
         assertThat(parts).hasSize(100);
         assertThat(parts.get(0).trackingRef()).endsWith("-001");
         assertThat(parts.get(99).trackingRef()).endsWith("-100");
@@ -224,8 +224,8 @@ class ConsignmentSplitIntegrationTest {
     void billingFollowsTheParts() {
         UUID whole = theConsignmentOf(bulkOrder("SO-BILL", "30000"));
         List<ConsignmentSplitService.SplitPart> parts = inTenant(() -> splits.split(whole, List.of(
-                new PartSpec(new BigDecimal("20000"), BigDecimal.ONE),
-                new PartSpec(new BigDecimal("10000"), BigDecimal.ONE))));
+                new PartSpec(new BigDecimal("20000"), BigDecimal.ZERO),
+                new PartSpec(new BigDecimal("10000"), BigDecimal.ZERO))));
         UUID first = loadWith("LD-B1-" + salt, parts.get(0).id());
         UUID second = loadWith("LD-B2-" + salt, parts.get(1).id());
 
@@ -243,7 +243,7 @@ class ConsignmentSplitIntegrationTest {
     @DisplayName("the split consignment is never loaded, by the service or straight into the table")
     void theWholeIsNeverLoaded() {
         UUID whole = theConsignmentOf(bulkOrder("SO-NOLOAD", "30000"));
-        split(whole, 2, "15000", "0.5");
+        split(whole, 2, "15000", "0");
 
         assertThatThrownBy(() -> inTenant(() -> {
             planning.assignConsignment(planning.openLoad(orgUnitId, "LD-N-" + salt, origin, lorry), whole);
@@ -266,7 +266,7 @@ class ConsignmentSplitIntegrationTest {
     void cancellationReachesTheParts() {
         UUID orderId = bulkOrder("SO-CANCEL", "40000");
         UUID whole = theConsignmentOf(orderId);
-        List<ConsignmentSplitService.SplitPart> parts = split(whole, 2, "20000", "1");
+        List<ConsignmentSplitService.SplitPart> parts = split(whole, 2, "20000", "0");
         UUID load = loadWith("LD-C-" + salt, parts.get(0).id());
 
         inTenant(() -> {
@@ -288,7 +288,7 @@ class ConsignmentSplitIntegrationTest {
     @DisplayName("a dispatched part refuses the order's cancellation")
     void aDispatchedPartRefusesCancellation() {
         UUID orderId = bulkOrder("SO-LEFT", "40000");
-        List<ConsignmentSplitService.SplitPart> parts = split(theConsignmentOf(orderId), 2, "20000", "1");
+        List<ConsignmentSplitService.SplitPart> parts = split(theConsignmentOf(orderId), 2, "20000", "0");
         UUID load = loadWith("LD-L-" + salt, parts.get(0).id());
         inTenant(() -> {
             loadPort.recordAwarded(load, customer);
@@ -307,7 +307,7 @@ class ConsignmentSplitIntegrationTest {
     @DisplayName("a customer's link on the split consignment counts the parts delivered")
     void trackingLinkFollowsTheParts() {
         UUID whole = theConsignmentOf(bulkOrder("SO-TRACK", "60000"));
-        List<ConsignmentSplitService.SplitPart> parts = split(whole, 3, "20000", "1");
+        List<ConsignmentSplitService.SplitPart> parts = split(whole, 3, "20000", "0");
         List<UUID> loads = new ArrayList<>();
         for (int i = 0; i < parts.size(); i++) {
             loads.add(loadWith("LD-T" + i + "-" + salt, parts.get(i).id()));
@@ -338,7 +338,7 @@ class ConsignmentSplitIntegrationTest {
     @DisplayName("a claim goes against the part that was lost, not the split consignment")
     void claimsGoAgainstParts() {
         UUID whole = theConsignmentOf(bulkOrder("SO-CLAIM", "40000"));
-        List<ConsignmentSplitService.SplitPart> parts = split(whole, 2, "20000", "1");
+        List<ConsignmentSplitService.SplitPart> parts = split(whole, 2, "20000", "0");
 
         assertThatThrownBy(() -> inTenant(() -> claims.raise(whole, ClaimType.LOSS,
                 new BigDecimal("1000"), "a whole lorry went missing")))
@@ -352,9 +352,9 @@ class ConsignmentSplitIntegrationTest {
     @DisplayName("a split is audited, announced once, and a second split of the same consignment is refused")
     void auditedAndNotRepeatable() {
         UUID whole = theConsignmentOf(bulkOrder("SO-AUDIT", "40000"));
-        split(whole, 2, "20000", "1");
+        split(whole, 2, "20000", "0");
 
-        assertThatThrownBy(() -> split(whole, 2, "20000", "1"))
+        assertThatThrownBy(() -> split(whole, 2, "20000", "0"))
                 .isInstanceOfSatisfying(BusinessRuleViolationException.class,
                         e -> assertThat(e.code()).isEqualTo("consignment-not-splittable"));
         assertThat(jdbc.sql("""
@@ -371,8 +371,8 @@ class ConsignmentSplitIntegrationTest {
         UUID whole = theConsignmentOf(bulkOrder("SO-SUM", "40000"));
 
         assertThatThrownBy(() -> inTenant(() -> splits.split(whole, List.of(
-                new PartSpec(new BigDecimal("20000"), BigDecimal.ONE),
-                new PartSpec(new BigDecimal("19999.999"), BigDecimal.ONE)))))
+                new PartSpec(new BigDecimal("20000"), BigDecimal.ZERO),
+                new PartSpec(new BigDecimal("19999.999"), BigDecimal.ZERO)))))
                 .isInstanceOfSatisfying(BusinessRuleViolationException.class,
                         e -> assertThat(e.code()).isEqualTo("split-weights-do-not-add-up"));
         assertThat(jdbc.sql("SELECT status FROM consignment WHERE id = :w").param("w", whole)
