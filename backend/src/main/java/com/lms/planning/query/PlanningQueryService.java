@@ -179,18 +179,40 @@ public class PlanningQueryService {
 
     /** Consignments not yet on a load: the planner's work queue. */
     public Slice<ConsignmentView> listUnassigned(String cursor, Integer limit) {
+        return listUnassigned(null, cursor, limit);
+    }
+
+    /**
+     * The planner's work queue, or the part of it cut from one order.
+     *
+     * <p>Narrowed by order because that is how a large order is planned: its
+     * hundred-odd consignments are put on one vehicle together, and in a
+     * tenant-wide queue sorted by tracking reference they are scattered among
+     * everybody else's. Served by {@code consignment_order_idx} when narrowed.
+     *
+     * @param orderId null for the whole queue
+     */
+    public Slice<ConsignmentView> listUnassigned(UUID orderId, String cursor, Integer limit) {
         int pageSize = Slice.clampLimit(limit);
 
-        List<ConsignmentView> rows = jdbc.sql(CONSIGNMENT_SELECT + """
+        String ofOrder = orderId == null ? "" : """
+                           AND c.order_id = :orderId
+                        """;
+        var statement = jdbc.sql(CONSIGNMENT_SELECT + """
                          WHERE c.status = 'PLANNED'
                            AND lc.consignment_id IS NULL
+                        """ + ofOrder + """
                            AND (CAST(:cursor AS text) IS NULL
                                 OR c.tracking_ref > CAST(:cursor AS text))
                          ORDER BY c.tracking_ref
                          LIMIT :limit
                         """)
                 .param("cursor", cursor)
-                .param("limit", pageSize + 1)
+                .param("limit", pageSize + 1);
+        if (orderId != null) {
+            statement = statement.param("orderId", orderId);
+        }
+        List<ConsignmentView> rows = statement
                 .query(ConsignmentView.class)
                 .list();
 

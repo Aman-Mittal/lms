@@ -191,6 +191,28 @@ public record LoadUnit(
         }
     }
 
+    /**
+     * Refuses unless the load can still be built.
+     *
+     * <p>The same refusal {@link #addConsignment} makes, available before any
+     * freight is weighed up: when many consignments are put on at once, a
+     * closed load is the one answer that makes every other check moot.
+     */
+    public void requireBuildable() {
+        if (status != LoadStatus.DRAFT && status != LoadStatus.PLANNED) {
+            throw new BusinessRuleViolationException("load-not-open",
+                    "Load " + loadNo + " is " + status + " and can no longer be built");
+        }
+    }
+
+    /**
+     * Whether dangerous goods may board: the vehicle is certified, or none has
+     * been chosen yet. The rule {@link #addConsignment} enforces, as a question.
+     */
+    public boolean takesDangerousGoods() {
+        return vehicleId == null || vehicleHazmatCertified;
+    }
+
     /** Whether this load carries dockets from a destination hub to their consignees. */
     public boolean isDelivery() {
         return ltlLeg == LtlLeg.DELIVERY;
