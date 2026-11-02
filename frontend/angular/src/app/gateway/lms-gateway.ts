@@ -391,9 +391,31 @@ export interface WebhookDeliveryPage {
   nextCursor: string | null;
 }
 
-/** The one error screens handle: a message fit to show, and the HTTP status if there was one. */
+// ---------------------------------------------------------------- load building
+
+/** A load as the building screen shows it, and what is aboard in drop order. */
+export interface LoadBuild {
+  load: Row;
+  aboard: Row[];
+}
+
+/** One page of consignments waiting for a load. */
+export interface ConsignmentPage {
+  rows: Row[];
+  /** Pass to read the next page; null on the last. */
+  nextCursor: string | null;
+}
+
+/** The most consignments one request may put on a load. */
+export const MAX_BULK_ASSIGNMENT = 500;
+
+/**
+ * The one error screens handle: a message fit to show, and the HTTP status if there was one.
+ * `errors` names each item a refusal of many was about -- a field, or a consignment's
+ * tracking reference -- with its reasons; it is empty otherwise.
+ */
 export class ApiProblem extends Error {
-  constructor(message: string, readonly status?: number) {
+  constructor(message: string, readonly status?: number, readonly errors: Record<string, string> = {}) {
     super(message);
     this.name = 'ApiProblem';
   }
@@ -484,4 +506,14 @@ export abstract class LmsGateway {
   /** Newest first; pass the previous page's cursor for the next one. */
   abstract webhookDeliveries(id: string, cursor?: string): Promise<WebhookDeliveryPage>;
   abstract redeliverWebhook(deliveryId: string): Promise<void>;
+
+  /** Rejects with a 404 problem for a load that does not exist. */
+  abstract loadBuild(loadId: string): Promise<LoadBuild>;
+  /** Consignments not yet on a load, narrowed to one order when one is given. */
+  abstract unassignedConsignments(orderId?: string, cursor?: string): Promise<ConsignmentPage>;
+  /**
+   * Puts the consignments on the load in the order given, all or none. A refusal is an
+   * ApiProblem whose `errors` name each consignment that cannot board, by tracking reference.
+   */
+  abstract assignConsignments(loadId: string, consignmentIds: string[]): Promise<void>;
 }
