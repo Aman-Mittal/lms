@@ -40,6 +40,9 @@ import { LmsGateway, PublicTrackingView } from '../gateway/lms-gateway';
           <dl>
             <div><dt>Reference</dt><dd data-testid="track-reference">{{ v.reference }}</dd></div>
             <div><dt>Status</dt><dd data-testid="track-status">{{ v.status }}</dd></div>
+            @if (v.partsTotal !== null) {
+              <div><dt>Vehicles</dt><dd data-testid="track-parts">{{ v.partsDelivered }} of {{ v.partsTotal }} delivered</dd></div>
+            }
             <div><dt>From</dt><dd data-testid="track-origin">{{ v.originName || '—' }}</dd></div>
             <div><dt>To</dt><dd data-testid="track-destination">{{ v.destinationName || '—' }}</dd></div>
             <div><dt>Requested delivery</dt><dd>{{ v.requestedDeliveryAt || '—' }}</dd></div>

@@ -38,6 +38,9 @@ import { GROUPS, RESOURCES } from './resources';
                 <a [routerLink]="['/', r.key]" routerLinkActive="active"
                    [attr.data-testid]="'nav-' + r.key">{{ r.title }}</a>
               }
+              @if (group === 'Operations' && session.can('LOAD_READ')) {
+                <a routerLink="/consignments" routerLinkActive="active" data-testid="nav-consignments">Consignments</a>
+              }
               @if (group === 'Operations' && session.can('TERMINAL_READ')) {
                 <a routerLink="/map" routerLinkActive="active" data-testid="nav-map">Network map</a>
               }

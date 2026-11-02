@@ -27,6 +27,7 @@ import com.lms.execution.events.TripCancelled;
 import com.lms.execution.events.TripCompleted;
 import com.lms.execution.events.TripDispatched;
 import com.lms.order.events.OrderValidated;
+import com.lms.planning.events.ConsignmentSplit;
 import com.lms.planning.events.ConsignmentsGenerated;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Component;
@@ -72,6 +73,15 @@ public class WebhookEventListener {
         record(e.tenantId(), WebhookEventType.CONSIGNMENTS_GENERATED, e.orderId().toString(), e.occurredAt(),
                 fields("orderId", e.orderId(), "consignmentIds", e.consignmentIds().stream().map(UUID::toString).toList(),
                         "trackingRefs", e.trackingRefs(), "freightMode", e.freightMode()));
+    }
+
+    @TransactionalEventListener
+    public void on(ConsignmentSplit e) {
+        record(e.tenantId(), WebhookEventType.CONSIGNMENT_SPLIT, e.consignmentId().toString(), e.occurredAt(),
+                fields("consignmentId", e.consignmentId(), "trackingRef", e.trackingRef(),
+                        "orderId", e.orderId(),
+                        "partIds", e.partIds().stream().map(UUID::toString).toList(),
+                        "partTrackingRefs", e.partTrackingRefs()));
     }
 
     @TransactionalEventListener

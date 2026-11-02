@@ -47,12 +47,14 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
     List<Consignment> findByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
 
     /**
-     * How many of the order's consignments are not cancelled. Served by
+     * How many of the order's consignments are live: not cancelled, and not
+     * split -- a split one lives on in its parts, which are counted. Served by
      * {@code consignment_order_idx}.
      */
     @Query("""
             SELECT count(*) FROM consignment
-             WHERE tenant_id = :tenantId AND order_id = :orderId AND status <> 'CANCELLED'
+             WHERE tenant_id = :tenantId AND order_id = :orderId
+               AND status NOT IN ('CANCELLED', 'SPLIT')
             """)
     long countLiveByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
 
@@ -70,4 +72,12 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
              ORDER BY lc.drop_sequence
             """)
     List<Consignment> findOnLoad(@Param("tenantId") UUID tenantId, @Param("loadId") UUID loadId);
+
+    /** A split consignment's parts, in receipt order. Served by {@code consignment_parent_idx}. */
+    @Query("""
+            SELECT * FROM consignment
+             WHERE tenant_id = :tenantId AND parent_consignment_id = :parentId
+             ORDER BY tracking_ref
+            """)
+    List<Consignment> findParts(@Param("tenantId") UUID tenantId, @Param("parentId") UUID parentId);
 }
