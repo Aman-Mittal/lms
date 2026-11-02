@@ -7,6 +7,13 @@ readiness probe, and a write in one iteration of ten (registering partners, and
 concurrent writes to one record's custom values, where losing a race must be a
 clean 409 and never a 500).
 
+After the mixed traffic, a single user builds whole loads (`Bulk load building`):
+each round raises an order of one line per consignee (150 by default), finds its
+consignments by order, puts every one of them on one load in a single
+`POST /loads/{id}/consignments/bulk`, reads the load back to check it carries
+them all, and plans it. `-JbulkLines` sets the lines per order and
+`-JbulkRounds` the rounds (2).
+
 Setup also cuts one 2,000-tonne consignment and splits it into 100 parts in a
 single request, so that write is timed at its largest realistic size. The
 readers then fetch that consignment with its progress, page through its 100
