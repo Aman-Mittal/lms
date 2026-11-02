@@ -20,7 +20,7 @@ import {
   type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type Consignment, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
-  type AllocationRule, type AllocationRuleAction, type AllocationRuleRequest,
+  type AllocationRule, type AllocationRuleAction, type Consignment, type Load, type AllocationRuleRequest,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
   type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
@@ -29,7 +29,7 @@ import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
-  ApiProblem, type AllocationRuleView, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
+  ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
   type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
   type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn, type SplitPart, type SplitPartDraft,
@@ -37,6 +37,26 @@ import {
   type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
   type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
 } from './lmsGateway';
+
+/** A load as the building screen shows it. */
+function loadRow(l: Load): Row {
+  return {
+    id: text(l.id), loadNo: text(l.loadNo), status: text(l.status), freightMode: text(l.freightMode),
+    vehicleRegistrationNo: text(l.vehicleRegistrationNo), plannedWeightKg: text(l.plannedWeightKg),
+    capacityWeightKg: text(l.capacityWeightKg), weightUtilisationPct: text(l.weightUtilisationPct),
+    consignmentCount: text(l.consignmentCount),
+  };
+}
+
+/** A consignment as a load list or a work queue shows it. */
+function consignmentRow(c: Consignment): Row {
+  return {
+    id: text(c.id), trackingRef: text(c.trackingRef), status: text(c.status),
+    consigneeName: text(c.consigneeName), destinationTerminalCode: text(c.destinationTerminalCode),
+    totalDeadWeightKg: text(c.totalDeadWeightKg), materialClasses: text(c.materialClasses),
+    containsHazmat: c.containsHazmat ? 'Yes' : '',
+  };
+}
 
 /** A display cell: the contract's optional fields become an empty string. */
 function text(v: unknown): string {
@@ -202,6 +222,13 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   // a console left signed in must not send its token to a route that ignores it.
   const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
 
+  const listClaims = async (consignmentId?: string) =>
+    (await delivery.listClaims({ consignmentId: consignmentId || undefined, limit: 50 })).items.map((c) => ({
+      id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
+      status: text(c.status), consignmentId: text(c.consignmentId),
+      approvedAmount: text(c.approvedAmount), description: text(c.description),
+      resolutionNote: text(c.resolutionNote) }));
+
   const listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: async () => (await partners.listPartners({ limit: 50 })).items.map((p) => ({
       id: text(p.id), code: text(p.code), legalName: text(p.legalName),
@@ -231,11 +258,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     exceptions: async () => (await controlTower.listExceptions({ limit: 50 })).items.map((e) => ({
       id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
       category: text(e.category), description: text(e.description) })),
-    claims: async () => (await delivery.listClaims({ limit: 50 })).items.map((c) => ({
-      id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
-      status: text(c.status), consignmentId: text(c.consignmentId),
-      approvedAmount: text(c.approvedAmount), description: text(c.description),
-      resolutionNote: text(c.resolutionNote) })),
+    claims: () => listClaims(),
   };
 
   return {
@@ -262,6 +285,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       }),
 
     list: (resource) => guard(listers[resource]),
+    claims: (consignmentId?: string) => guard(() => listClaims(consignmentId)),
 
     registerPartner: (orgUnitId: string, draft: PartnerDraft) =>
       guard(async () => {
@@ -731,6 +755,22 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         await webhooks.redeliverWebhook({ id: deliveryId });
       }),
+
+    loadBuild: (loadId: string): Promise<LoadBuild> =>
+      guard(async () => {
+        const [load, aboard] = await Promise.all([
+          loads.getLoad({ id: loadId }), loads.listLoadConsignments({ id: loadId })]);
+        return { load: loadRow(load), aboard: aboard.map(consignmentRow) };
+      }),
+    unassignedConsignments: (orderId?: string, cursor?: string): Promise<ConsignmentPage> =>
+      guard(async () => {
+        const page = await loads.listUnassignedConsignments({ orderId: orderId || undefined, cursor, limit: 200 });
+        return { rows: page.items.map(consignmentRow), nextCursor: page.nextCursor ?? null };
+      }),
+    assignConsignments: (loadId: string, consignmentIds: string[]) =>
+      guard(async () => {
+        await loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } });
+      }),
   };
 }
 
@@ -743,10 +783,10 @@ async function guard<T>(call: () => Promise<T>): Promise<T> {
       const status = e.response.status;
       try {
         const body = (await e.response.clone().json()) as { detail?: string; errors?: Record<string, string> };
-        if (body.errors) {
-          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status);
+        if (body.errors && status !== 409) {
+          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status, body.errors);
         }
-        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status);
+        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status, body.errors ?? {});
       } catch (inner) {
         if (inner instanceof ApiProblem) {
           throw inner;
