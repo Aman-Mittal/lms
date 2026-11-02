@@ -1006,6 +1006,23 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a split consignment's parts page by reference from the index, without a sort")
+    void consignmentParts() {
+        // Read by the parts listing and by every split consignment's view and
+        // public tracking. The partial index holds parts only.
+        String sql = """
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND parent_consignment_id = '00000000-0000-0000-0000-000000000002'
+                   AND tracking_ref > 'LR-0000000000-050'
+                 ORDER BY tracking_ref
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "consignment");
+        assertNoSort(sql);
+    }
+
+    @Test
     @DisplayName("the consignment made from a handling unit is found by index")
     void consignmentByHandlingUnit() {
         // Runs on every delivery of a warehouse hand-off.
