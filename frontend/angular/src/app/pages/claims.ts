@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CLAIM_TYPES, ClaimTarget, ClaimType, LmsGateway, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
@@ -122,9 +122,15 @@ export class ClaimPanel {
     <div [class.with-panel]="selected()">
       <div class="list">
         <h1>Claims</h1>
+        <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
+        <form class="inline" (ngSubmit)="filter()" data-testid="claims-filter">
+          <input name="filterConsignment" placeholder="Consignment id" aria-label="Filter by consignment"
+                 data-testid="claims-filter-consignment" [value]="typed()" (input)="typed.set($any($event.target).value)" />
+          <button type="submit">Filter</button>
+        </form>
         @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
         @if (loading() && rows().length === 0) { <p>Loading…</p> }
-        @else if (rows().length === 0 && !error()) { <p class="muted">Nothing here yet.</p> }
+        @else if (rows().length === 0 && !error()) { <p class="muted">{{ filteredBy() ? 'No claims against that consignment.' : 'Nothing here yet.' }}</p> }
         @else if (rows().length > 0) {
           <table>
             <thead><tr>@for (c of columns; track c.field) { <th>{{ c.header }}</th> }</tr></thead>
@@ -176,6 +182,8 @@ export class ClaimsPage {
   readonly loading = signal(false);
   readonly error = signal('');
   readonly selected = computed(() => this.rows().find((row) => row['id'] === this.selectedId()) ?? null);
+  readonly typed = signal('');
+  readonly filteredBy = signal('');
 
   consignmentId = '';
   claimType: ClaimType = 'LOSS';
@@ -203,11 +211,18 @@ export class ClaimsPage {
     }
   }
 
+  filter(): void {
+    this.selectedId.set(null);
+    this.filteredBy.set(this.typed().trim());
+    void this.load();
+  }
+
   async load(): Promise<void> {
     this.loading.set(true);
     this.error.set('');
     try {
-      this.rows.set(await this.gateway.list('claims'));
+      // Untracked, so the effect that first loads the list does not also re-run on every filter.
+      this.rows.set(await this.gateway.claims(untracked(this.filteredBy) || undefined));
     } catch (e) {
       this.error.set((e as Error).message);
     } finally {
