@@ -85,7 +85,9 @@ test.describe('load building', () => {
     await page.getByTestId('add-selected').click();
 
     await expect(page.getByTestId('bulk-error')).toContainText('cannot take');
-    const refusal = page.getByTestId('bulk-refusals').getByTestId('refusal').filter({ hasText: poison.trackingRef });
+    // Each row leads with the consignment it refuses; the other party to a clash is named in its text too.
+    const refusal = page.getByTestId('bulk-refusals').getByTestId('refusal')
+      .filter({ has: page.locator('strong', { hasText: poison.trackingRef }) });
     await expect(refusal).toContainText('load-not-hazmat-certified');
     // The lorry is not certified for dangerous goods, and food will not ride with poison;
     // the general cargo is not named, and nothing at all went on.
