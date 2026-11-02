@@ -15,6 +15,10 @@
  */
 package com.lms.shared.error;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * A domain rule refused the operation: an expired vehicle document blocking
  * dispatch, a load exceeding vehicle capacity, an overlapping terminal polygon,
@@ -27,13 +31,33 @@ package com.lms.shared.error;
 public class BusinessRuleViolationException extends RuntimeException {
 
     private final String code;
+    private final Map<String, String> errors;
 
     public BusinessRuleViolationException(String code, String message) {
+        this(code, message, Map.of());
+    }
+
+    /**
+     * A refusal of several things at once, each named with its own reason.
+     *
+     * <p>For a request that acts on many items together: the caller is told
+     * about every item the rule refused, not only the first, and gets them
+     * keyed so that a screen can mark each one.
+     *
+     * @param errors what was refused, in the order it was asked for, to why
+     */
+    public BusinessRuleViolationException(String code, String message, Map<String, String> errors) {
         super(message);
         this.code = code;
+        this.errors = Collections.unmodifiableMap(new LinkedHashMap<>(errors));
     }
 
     public String code() {
         return code;
+    }
+
+    /** Empty unless several items were refused together. */
+    public Map<String, String> errors() {
+        return errors;
     }
 }

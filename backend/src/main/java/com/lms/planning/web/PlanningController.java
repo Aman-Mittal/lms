@@ -28,8 +28,11 @@ import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -92,9 +95,10 @@ public class PlanningController {
     }
 
     @GetMapping("/consignments/unassigned")
-    public Slice<ConsignmentView> unassigned(@RequestParam(required = false) String cursor,
+    public Slice<ConsignmentView> unassigned(@RequestParam(required = false) UUID orderId,
+                                             @RequestParam(required = false) String cursor,
                                              @RequestParam(required = false) Integer limit) {
-        return planningQueries.listUnassigned(cursor, limit);
+        return planningQueries.listUnassigned(orderId, cursor, limit);
     }
 
     /**
@@ -146,6 +150,20 @@ public class PlanningController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Puts many consignments on a load in one request, all or none.
+     *
+     * <p>A sub-resource of the load's contents rather than a list body on the
+     * single-assignment path, so that the one-consignment request keeps its
+     * shape for every client already sending it.
+     */
+    @PostMapping("/loads/{id}/consignments/bulk")
+    public ResponseEntity<Void> assignBulk(@PathVariable UUID id,
+                                           @Valid @RequestBody BulkAssignConsignmentsRequest request) {
+        planning.assignConsignments(id, request.consignmentIds());
+        return ResponseEntity.noContent().build();
+    }
+
     /** Closes the load to further building, making it sourceable. */
     @PostMapping("/loads/{id}/plan")
     public ResponseEntity<Void> plan(@PathVariable UUID id) {
@@ -172,5 +190,17 @@ public class PlanningController {
     }
 
     public record AssignConsignmentRequest(@NotNull UUID consignmentId) {
+    }
+
+    public record BulkAssignConsignmentsRequest(
+            @NotEmpty @Size(max = PlanningCommandService.MAX_BULK_ASSIGNMENT)
+            List<@NotNull UUID> consignmentIds) {
+
+        /** A consignment named twice is a client defect, not a request to board it twice. */
+        @AssertTrue(message = "must not name a consignment more than once")
+        public boolean isEachConsignmentNamedOnce() {
+            return consignmentIds == null
+                    || consignmentIds.stream().distinct().count() == consignmentIds.size();
+        }
     }
 }
