@@ -20,7 +20,7 @@ import {
   type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type Consignment, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
-  type AllocationRule, type AllocationRuleAction, type Consignment, type Load, type AllocationRuleRequest,
+  type AllocationRule, type AllocationRuleAction, type Load, type AllocationRuleRequest,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
   type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
