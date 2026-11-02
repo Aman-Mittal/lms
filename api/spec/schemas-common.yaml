@@ -30,7 +30,10 @@ Problem:
     errors:
       type: object
       additionalProperties: { type: string }
-      description: Present on validation failures; field name to message.
+      description: |
+        Present on validation failures, field name to message; and on a
+        refusal of many items at once (`load-bulk-assignment-refused`), each
+        refused item to its reasons.
   required: [status, code]
 
 IdResponse:

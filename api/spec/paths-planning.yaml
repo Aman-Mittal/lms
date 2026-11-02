@@ -97,6 +97,14 @@
     parameters:
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
+      - name: orderId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: |
+          Only the consignments cut from this order: how a large order's
+          consignments are found together to be put on one load. An unknown
+          order, or another tenant's, is an empty page.
     responses:
       "200":
         description: One page of unassigned consignments.
@@ -240,6 +248,52 @@
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/loads/{id}/consignments/bulk:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Planning]
+    operationId: assignConsignmentsInBulk
+    summary: Put many consignments on a load at once, all or none
+    description: |
+      The rules of `assignConsignment`, applied to every consignment named:
+      the load's freight mode, the status each must be in for the load's leg,
+      the hub rules of a part load, dangerous-goods certification, and
+      material compatibility against what is aboard and among the batch.
+      Capacity is checked on the batch's total.
+
+      All or none. When any consignment cannot board, nothing does, and the
+      409 names every one of them at once: `code` is
+      `load-bulk-assignment-refused`, and `errors` maps each refused
+      consignment's tracking reference to its reasons, each written as
+      `<code>: <reason>` and separated by `; `. A load that is not open
+      (`load-not-open`) or a batch that would overload it
+      (`load-capacity-exceeded`) is refused with the code a single
+      assignment uses.
+
+      Between 1 and 500 consignment ids, none repeated; anything else is 400
+      `validation-failed`. An id that does not exist, or belongs to another
+      tenant, is 404 `not-found`, as is an unknown load. Consignments board in
+      the order given, after anything already aboard.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/BulkAssignConsignmentsRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "404": { $ref: "#/components/responses/NotFound" }
       "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/loads/{id}/plan:
