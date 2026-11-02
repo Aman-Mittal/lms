@@ -31,6 +31,10 @@ public record OrderView(
         UUID customerPartnerId,
         String customerName,
         String originTerminalCode,
+        /** What an edit of the header restates, with the hubs of a part-load order. */
+        UUID originTerminalId,
+        UUID originHubTerminalId,
+        UUID destinationHubTerminalId,
         Instant requestedPickupAt,
         Instant requestedDeliveryAt,
         int lineCount,
