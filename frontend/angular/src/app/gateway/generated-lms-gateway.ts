@@ -28,6 +28,7 @@ import {
   TelematicsService, Terminal, TerminalsService, TrackingLinksService, TripsService, VehiclesService,
   ParkedEvent, ParkedEventStatus, PublishLtlRateCardRequestRateBasisEnum,
   WebhookDelivery, WebhookEventType as ApiWebhookEventType, WebhookSubscription, WebhooksService,
+  AddOrderLineRequest, Order, OrderLine, UpdateOrderRequest,
 } from '../api';
 import {
   AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ConsignmentPage, LoadBuild, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
@@ -36,6 +37,7 @@ import {
   GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, TrackingLinkView, TripRoute,
   ParkedEventDetail, ParkedFilter, RateCardDraft,
   WebhookChanges, WebhookDeliveryPage, WebhookDraft, WebhookSecret, WebhookView,
+  OrderDesk, OrderHeaderDraft, OrderLineDraft, OrderRaiseDraft,
 } from './lms-gateway';
 
 /** A load as the building screen shows it. */
@@ -178,6 +180,66 @@ function ruleRequest(draft: RuleDraft): AllocationRuleRequest {
     materialClass: (draft.materialClass || undefined) as unknown as AllocationRuleRequestMaterialClassEnum | undefined,
     action: draft.action as unknown as AllocationRuleAction,
     vendorPartnerIds: draft.vendorIds,
+  };
+}
+
+/** A draft's optional value, left out of the request when blank. */
+function blankAsAbsent(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function numberOrAbsent(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+function headerRequest(h: OrderHeaderDraft): UpdateOrderRequest {
+  return {
+    customerPartnerId: h.customerPartnerId.trim(), originTerminalId: h.originTerminalId.trim(),
+    requestedPickupAt: blankAsAbsent(h.requestedPickupAt), requestedDeliveryAt: blankAsAbsent(h.requestedDeliveryAt),
+    originHubTerminalId: blankAsAbsent(h.originHubTerminalId),
+    destinationHubTerminalId: blankAsAbsent(h.destinationHubTerminalId),
+  };
+}
+
+function lineRequest(l: OrderLineDraft): AddOrderLineRequest {
+  return {
+    lineNo: l.lineNo, materialCode: l.materialCode.trim(), materialDescription: l.materialDescription.trim(),
+    materialClass: l.materialClass, hazmatUnCode: blankAsAbsent(l.hazmatUnCode), quantity: Number(l.quantity),
+    uom: l.uom.trim(), deadWeightKg: Number(l.deadWeightKg), lengthM: numberOrAbsent(l.lengthM),
+    widthM: numberOrAbsent(l.widthM), heightM: numberOrAbsent(l.heightM),
+    volumetricDivisor: numberOrAbsent(l.volumetricDivisor), consigneePartnerId: blankAsAbsent(l.consigneePartnerId),
+    destinationTerminalId: l.destinationTerminalId.trim(),
+  };
+}
+
+/** An order and its lines as the desk shows them, each line ready to be restated by an edit. */
+function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
+  return {
+    order: {
+      id: text(o.id), orderNo: text(o.orderNo), status: text(o.status), customerName: text(o.customerName),
+      originTerminalCode: text(o.originTerminalCode), freightMode: text(o.freightMode),
+      lineCount: text(o.lineCount), plannedLineCount: text(o.plannedLineCount),
+      totalDeadWeightKg: text(o.totalDeadWeightKg), containsHazmat: o.containsHazmat ? 'Yes' : '',
+      requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
+    },
+    version: text(o.version),
+    header: {
+      customerPartnerId: text(o.customerPartnerId), originTerminalId: text(o.originTerminalId),
+      requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
+      originHubTerminalId: text(o.originHubTerminalId), destinationHubTerminalId: text(o.destinationHubTerminalId),
+    },
+    lines: lines.map((l) => ({
+      id: text(l.id), lineNo: l.lineNo ?? 0, materialCode: text(l.materialCode),
+      materialDescription: text(l.materialDescription), materialClass: text(l.materialClass),
+      hazmatUnCode: text(l.hazmatUnCode), quantity: text(l.quantity), uom: text(l.uom),
+      deadWeightKg: text(l.deadWeightKg), lengthM: text(l.lengthM), widthM: text(l.widthM),
+      heightM: text(l.heightM), volumetricDivisor: text(l.volumetricDivisor),
+      consigneePartnerId: text(l.consigneePartnerId), destinationTerminalId: text(l.destinationTerminalId),
+      consigneeName: text(l.consigneeName), destinationTerminalCode: text(l.destinationTerminalCode),
+      planned: l.planned ?? false,
+    })),
   };
 }
 
@@ -700,6 +762,62 @@ export class GeneratedLmsGateway extends LmsGateway {
       () => undefined);
   }
 
+  async orderDesk(orderId: string): Promise<OrderDesk> {
+    const [order, lines] = await Promise.all([
+      this.call(this.orders.getOrder({ id: orderId }), (o) => o),
+      this.call(this.orders.listOrderLines({ id: orderId }), (l) => l),
+    ]);
+    return orderDeskOf(order, lines);
+  }
+
+  raiseOrder(orgUnitId: string, draft: OrderRaiseDraft): Promise<string> {
+    return this.call(this.orders.raiseOrder({
+      raiseOrderRequest: {
+        orgUnitId, orderNo: draft.orderNo.trim(), customerPartnerId: draft.customerPartnerId.trim(),
+        originTerminalId: draft.originTerminalId.trim(), requestedPickupAt: blankAsAbsent(draft.requestedPickupAt),
+        requestedDeliveryAt: blankAsAbsent(draft.requestedDeliveryAt),
+      },
+    }), (r) => text(r.id));
+  }
+
+  reviseOrderHeader(orderId: string, version: string, header: OrderHeaderDraft): Promise<void> {
+    return this.call(this.orders.updateOrder({ id: orderId, ifMatch: version, updateOrderRequest: headerRequest(header) }),
+      () => undefined);
+  }
+
+  replaceOrderLines(orderId: string, version: string, lines: OrderLineDraft[]): Promise<void> {
+    return this.call(this.orders.replaceOrderLines({
+      id: orderId, ifMatch: version, replaceOrderLinesRequest: { lines: lines.map(lineRequest) },
+    }), () => undefined);
+  }
+
+  removeOrderLine(orderId: string, version: string, lineId: string): Promise<void> {
+    return this.call(this.orders.removeOrderLine({ id: orderId, ifMatch: version, lineId }), () => undefined);
+  }
+
+  amendOrder(orderId: string, version: string, header: OrderHeaderDraft | null,
+    lines: OrderLineDraft[] | null): Promise<void> {
+    return this.call(this.orders.amendOrder({
+      id: orderId, ifMatch: version,
+      amendOrderRequest: {
+        header: header ? headerRequest(header) : undefined, lines: lines ? lines.map(lineRequest) : undefined,
+      },
+    }), () => undefined);
+  }
+
+  validateOrder(orderId: string): Promise<void> {
+    return this.call(this.orders.validateOrder({ id: orderId }), () => undefined);
+  }
+
+  cancelOrder(orderId: string, reason: string): Promise<void> {
+    return this.call(this.orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } }),
+      () => undefined);
+  }
+
+  generateConsignments(orderId: string): Promise<number> {
+    return this.call(this.loads.generateConsignments({ id: orderId }), (made) => made.length);
+  }
+
   /** Each distinct terminal named, read once. */
   private async terminalsById(ids: Array<string | null | undefined>): Promise<Map<string, Terminal>> {
     const distinct = [...new Set(ids.filter((id): id is string => !!id))];
@@ -713,12 +831,13 @@ export class GeneratedLmsGateway extends LmsGateway {
       return map(await firstValueFrom(request));
     } catch (e) {
       if (e instanceof HttpErrorResponse) {
-        const body = e.error as { detail?: string; errors?: Record<string, string> } | null;
+        const body = e.error as { detail?: string; code?: string; errors?: Record<string, string> } | null;
         if (body?.errors && e.status !== 409) {
-          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), e.status, body.errors);
+          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), e.status, body.errors,
+            body.code ?? '');
         }
         throw new ApiProblem(body?.detail ?? (e.status ? `${e.status} ${e.statusText}` : 'Could not reach the API. Try again.'),
-          e.status, body?.errors ?? {});
+          e.status, body?.errors ?? {}, body?.code ?? '');
       }
       throw e;
     }
