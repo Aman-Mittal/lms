@@ -115,6 +115,21 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("one order's consignments waiting for a load are index-served")
+    void unassignedConsignmentsOfAnOrder() {
+        // How a large order is put on one vehicle: its consignments are found
+        // together, whatever else waits in the tenant's queue.
+        assertIndexed("""
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND order_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PLANNED'
+                 ORDER BY tracking_ref
+                 LIMIT 201
+                """, "consignment");
+    }
+
+    @Test
     @DisplayName("a vendor-portal user's trip listing is index-served")
     void partnerScopedTripListing() {
         assertIndexed("""
