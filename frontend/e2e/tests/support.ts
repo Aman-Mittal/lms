@@ -192,23 +192,34 @@ export async function splitEvenly(
   });
 }
 
-/** Raises a claim through the API and returns its id and number. */
+/** Raises a claim through the API and returns its id and number, and the consignment it is against. */
 export async function newClaim(
   request: APIRequestContext, session: Session, consignmentId: string, claimType = 'LOSS',
-): Promise<{ id: string; claimNo: string }> {
+): Promise<{ id: string; claimNo: string; consignmentId: string }> {
   const made = await post(request, session, '/api/v1/claims', {
     consignmentId, claimType, amount: 400.5, description: 'Raised by the browser suite',
   });
   const read = await request.get(`${API}/api/v1/claims/${made.id}`, {
     headers: { Authorization: `Bearer ${session.token}` },
   });
-  return { id: made.id, claimNo: (await read.json()).claimNo };
+  return { id: made.id, claimNo: (await read.json()).claimNo, consignmentId };
 }
 
 export async function openClaims(page: Page): Promise<void> {
   await page.getByTestId('nav-claims').click();
   await expect(page.getByRole('heading', { name: 'Claims', level: 1 })).toBeVisible();
   await expect(page.getByText('Loading…')).toHaveCount(0);
+}
+
+/**
+ * Narrows the claims list to one consignment's claims. The list is one page, so
+ * on a backend that has seen many claims a new one is not on it unfiltered.
+ */
+export async function filterClaims(page: Page, consignmentId: string): Promise<void> {
+  await page.getByTestId('claims-filter-consignment').fill(consignmentId);
+  await page.getByTestId('claims-filter').getByRole('button', { name: 'Filter' }).click();
+  await expect(page.getByText('Loading…')).toHaveCount(0);
+  await expect(page.getByTestId('row').filter({ hasNotText: consignmentId })).toHaveCount(0);
 }
 
 /**
@@ -323,6 +334,85 @@ export async function newPlannedLoad(request: APIRequestContext, session: Sessio
   await post(request, session, `/api/v1/loads/${load.id}/consignments`, { consignmentId: consignments[0].id });
   await post(request, session, `/api/v1/loads/${load.id}/plan`, {});
   return { loadId: load.id as string, origin, destination, vendors };
+}
+
+// ------------------------------------------------------------ load building
+
+export interface BulkOrder {
+  orderId: string;
+  /** An empty load on a lorry that can carry every consignment of the order. */
+  loadId: string;
+  /** The order's consignments, one per line, in line order. */
+  consignments: Array<{ id: string; trackingRef: string; materialClasses: string }>;
+}
+
+/**
+ * An order of one line per class given, each to its own consignee and so a
+ * consignment of its own, split into consignments; and beside it an empty load
+ * on a 20 t lorry with no dangerous-goods certificate. Every line is 100 kg; a
+ * dangerous class is given a UN number. Codes start ZZ so they sort last.
+ */
+export async function newBulkOrder(
+  request: APIRequestContext, session: Session, salt: string, classes: string[],
+): Promise<BulkOrder> {
+  const org = session.orgUnitId;
+  const site = (name: string) => post(request, session, '/api/v1/terminals/point-radius', {
+    orgUnitId: org, code: `ZZ-BL-${name}-${salt}`, name: `Bulk ${name} ${salt}`, category: 'CUSTOMER_SITE',
+    centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 500, dockCount: 2, avgDwellMinutes: 45,
+  });
+  const origin = await site('ORIG');
+  const destination = await site('DEST');
+  const vehicle = await post(request, session, '/api/v1/vehicles', {
+    orgUnitId: org, registrationNo: `MH-BL-${salt.toUpperCase()}`, category: 'TRUCK', vehicleType: 'RIGID',
+    axleConfig: '2-AXLE', grossWeightKg: 26000, tareWeightKg: 6000, maxVolumeM3: 60,
+    hazmatCertified: false, reeferCapable: false,
+  });
+  const customer = await post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-BL-C-${salt}`, legalName: 'Bulk customer', partnerType: 'CUSTOMER', taxId: `TAX-${uuid()}`,
+  });
+  const order = await post(request, session, '/api/v1/orders', {
+    orgUnitId: org, customerPartnerId: customer.id, orderNo: `ZZ-BL-SO-${salt}`, originTerminalId: origin.id,
+    requestedPickupAt: new Date(Date.now() + 4 * 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z'), source: 'API',
+  });
+  const dangerous = ['CHEMICAL', 'TOXIC', 'FLAMMABLE'];
+  for (const [i, materialClass] of classes.entries()) {
+    const consignee = await post(request, session, '/api/v1/partners', {
+      orgUnitId: org, code: `ZZ-BL-N${i + 1}-${salt}`, legalName: `Bulk consignee ${i + 1}`, partnerType: 'CONSIGNEE',
+      taxId: `TAX-${uuid()}`,
+    });
+    await post(request, session, `/api/v1/orders/${order.id}/lines`, {
+      lineNo: i + 1, materialCode: `CASE-${i + 1}`, materialDescription: `${materialClass} cases`, materialClass,
+      hazmatUnCode: dangerous.includes(materialClass) ? '2810' : undefined,
+      quantity: 1, uom: 'CASE', deadWeightKg: 100, consigneePartnerId: consignee.id,
+      destinationTerminalId: destination.id,
+    });
+  }
+  await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
+  const made: Array<{ id: string }> = await post(request, session, `/api/v1/orders/${order.id}/consignments`, {});
+  const queue = await request.get(`${API}/api/v1/consignments/unassigned?orderId=${order.id}&limit=200`, {
+    headers: { Authorization: `Bearer ${session.token}` },
+  });
+  expect(queue.ok(), 'the order\'s waiting consignments').toBeTruthy();
+  const byId = new Map<string, { id: string; trackingRef: string; materialClasses: string }>(
+    (await queue.json()).items.map((c: { id: string; trackingRef: string; materialClasses: string }) => [c.id, c]));
+  const load = await post(request, session, '/api/v1/loads', {
+    orgUnitId: org, loadNo: `ZZ-BL-LD-${salt}`, originTerminalId: origin.id, vehicleId: vehicle.id,
+  });
+  return {
+    orderId: order.id as string,
+    loadId: load.id as string,
+    consignments: made.map((c) => {
+      const read = byId.get(c.id);
+      return { id: c.id, trackingRef: read?.trackingRef ?? '', materialClasses: read?.materialClasses ?? '' };
+    }),
+  };
+}
+
+/** Puts one consignment on a load through the API, as another planner would. */
+export async function assignToLoad(
+  request: APIRequestContext, session: Session, loadId: string, consignmentId: string,
+): Promise<void> {
+  await post(request, session, `/api/v1/loads/${loadId}/consignments`, { consignmentId });
 }
 
 /** Offers a load for sourcing, which is when a rule fires; returns the allocation's id. */
