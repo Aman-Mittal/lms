@@ -155,7 +155,7 @@ public class TenantIsolationFlowSteps {
         assertThat(second(PlanningApi.class).listLoads(null, null, 200).getItems()).isEmpty();
         assertThat(second(TripsApi.class).listTrips(null, null, 200).getItems()).isEmpty();
         assertThat(second(SourcingApi.class).listAllocations(null, null, 200).getItems()).isEmpty();
-        assertThat(second(PlanningApi.class).listUnassignedConsignments(null, 200).getItems())
+        assertThat(second(PlanningApi.class).listUnassignedConsignments(null, 200, null).getItems())
                 .isEmpty();
     }
 
