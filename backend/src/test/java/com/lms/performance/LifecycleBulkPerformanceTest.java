@@ -56,7 +56,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Completing a load and cancelling an order must cost in proportion to the
+ * Completing a load, cancelling an order and putting a whole order's
+ * consignments on a load in one request must cost in proportion to the
  * consignments they touch.
  *
  * <p>A bulk operation that issues a query per consignment on top of the work
@@ -149,6 +150,8 @@ class LifecycleBulkPerformanceTest {
         measure(warm, () -> loadPort.recordTripCompleted(warm.loadId()));
         Built warmCancel = build(10);
         measure(warmCancel, () -> orders.cancel(warmCancel.orderId(), null));
+        Built warmBoard = build(10, false);
+        measure(warmBoard, () -> planning.assignConsignments(warmBoard.loadId(), planned(warmBoard)));
     }
 
     @AfterEach
@@ -187,6 +190,25 @@ class LifecycleBulkPerformanceTest {
         assertThat(statuses(large)).containsOnly("CANCELLED").hasSize(LARGE);
         assertThat(loadStatus(large)).isEqualTo("CANCELLED");
         report("cancel order", atSmall, atLarge);
+        assertLinear(atSmall, atLarge);
+    }
+
+    @Test
+    @DisplayName("putting an order's consignments on a load in one request costs in proportion to them")
+    void boardingInBulkIsLinear() {
+        Built small = build(SMALL, false);
+        Built large = build(LARGE, false);
+        List<UUID> smallBatch = planned(small);
+        List<UUID> largeBatch = planned(large);
+
+        // What is aboard is read once, not once per consignment boarding: the
+        // extra statements per extra consignment are its own update.
+        Measured atSmall = measure(small, () -> planning.assignConsignments(small.loadId(), smallBatch));
+        Measured atLarge = measure(large, () -> planning.assignConsignments(large.loadId(), largeBatch));
+
+        assertThat(statuses(small)).containsOnly("ASSIGNED_TO_LOAD").hasSize(SMALL);
+        assertThat(statuses(large)).containsOnly("ASSIGNED_TO_LOAD").hasSize(LARGE);
+        report("board in bulk", atSmall, atLarge);
         assertLinear(atSmall, atLarge);
     }
 
@@ -250,6 +272,14 @@ class LifecycleBulkPerformanceTest {
     // --------------------------------------------------------------- set-up
 
     private Built build(int size) {
+        return build(size, true);
+    }
+
+    /**
+     * @param onLoad true to put every consignment on the load and plan it;
+     *               false to leave them waiting beside an empty load
+     */
+    private Built build(int size, boolean onLoad) {
         String salt = UUID.randomUUID().toString().substring(0, 8);
         String orgPath = "/bulk-" + salt + "/";
         UUID tenantId = fixtures.createTenant("bulk-" + salt, "Bulk " + salt);
@@ -283,8 +313,10 @@ class LifecycleBulkPerformanceTest {
             assertThat(consignments).hasSize(size);
 
             UUID loadId = planning.openLoad(orgUnitId, "LD-" + salt, origin, lorry);
-            consignments.forEach(id -> planning.assignConsignment(loadId, id));
-            planning.planLoad(loadId);
+            if (onLoad) {
+                consignments.forEach(id -> planning.assignConsignment(loadId, id));
+                planning.planLoad(loadId);
+            }
             ids[0] = orderId;
             ids[1] = loadId;
             ids[2] = customer;
@@ -304,6 +336,16 @@ class LifecycleBulkPerformanceTest {
     private List<String> statuses(Built built) {
         return jdbc.sql("SELECT status FROM consignment WHERE order_id = :o")
                 .param("o", built.orderId()).query(String.class).list();
+    }
+
+    /** The order's consignments still waiting for a load, in tracking-reference order. */
+    private List<UUID> planned(Built built) {
+        return jdbc.sql("""
+                        SELECT id FROM consignment
+                         WHERE order_id = :o AND status = 'PLANNED'
+                         ORDER BY tracking_ref
+                        """)
+                .param("o", built.orderId()).query(UUID.class).list();
     }
 
     private String orderStatus(Built built) {
