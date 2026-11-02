@@ -27,6 +27,7 @@ import { DeliveryDesk } from './pages/delivery-desk';
 import { DemoSettings } from './pages/demo-settings';
 import { ListPage } from './pages/list';
 import { LoadBuilding } from './pages/load-building';
+import { OrderDeskPage } from './pages/order-desk';
 import { LtlRating } from './pages/ltl-rating';
 import { ParkedEvents } from './pages/parked-events';
 import { FieldsSettings } from './pages/fields-settings';
@@ -50,6 +51,7 @@ export const routes: Routes = [
       { path: 'tracking', component: TrackingLinks },
       { path: 'allocation-rules', component: AllocationRules },
       { path: 'load-building', component: LoadBuilding },
+      { path: 'order-desk', component: OrderDeskPage },
       // The map screens load on first visit: Leaflet is the console's largest
       // dependency and most sessions never open a map.
       { path: 'map', loadComponent: () => import('./pages/network-map').then((m) => m.NetworkMap) },

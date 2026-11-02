@@ -25,6 +25,7 @@ import { FieldsSettings } from './pages/FieldsSettings';
 import { ListPage } from './pages/ListPage';
 import { LtlRating } from './pages/LtlRating';
 import { LoadBuilding } from './pages/LoadBuilding';
+import { OrderDesk } from './pages/OrderDesk';
 import { Login } from './pages/Login';
 import { ParkedEvents } from './pages/ParkedEvents';
 import { Shell } from './pages/Shell';
@@ -71,6 +72,7 @@ export function App() {
           <Route path="tracking" element={<TrackingLinks />} />
           <Route path="allocation-rules" element={<AllocationRules />} />
           <Route path="load-building" element={<LoadBuilding />} />
+          <Route path="order-desk" element={<OrderDesk />} />
           <Route path="map" element={<Deferred><NetworkMap /></Deferred>} />
           <Route path="trip-route" element={<Deferred><TripRoute /></Deferred>} />
           <Route path="itineraries" element={<Deferred><Itineraries /></Deferred>} />
