@@ -14,6 +14,12 @@ consignments by order, puts every one of them on one load in a single
 them all, and plans it. `-JbulkLines` sets the lines per order and
 `-JbulkRounds` the rounds (2).
 
+Setup also cuts one 2,000-tonne consignment and splits it into 100 parts in a
+single request, so that write is timed at its largest realistic size. The
+readers then fetch that consignment with its progress, page through its 100
+parts, and follow a public tracking link on it, which counts the parts in one
+statement however many there are.
+
 | Script | What it does |
 |---|---|
 | `run.sh` | One JMeter JVM against `BASE_URL`; fails on the error-rate or 95th-percentile limit |

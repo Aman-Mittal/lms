@@ -30,10 +30,10 @@ import {
   WebhookDelivery, WebhookEventType as ApiWebhookEventType, WebhookSubscription, WebhooksService,
 } from '../api';
 import {
-  AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ConsignmentPage, LoadBuild, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
+  AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ConsignmentPage, LoadBuild, ClaimMove, ConsignmentCard, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
   DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, IssuedTrackingLink, LmsGateway,
   OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, RuleAction, RuleDraft, RuleEvaluation,
-  GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, TrackingLinkView, TripRoute,
+  GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, SplitPart, SplitPartDraft, TrackingLinkView, TripRoute,
   ParkedEventDetail, ParkedFilter, RateCardDraft,
   WebhookChanges, WebhookDeliveryPage, WebhookDraft, WebhookSecret, WebhookView,
 } from './lms-gateway';
@@ -178,6 +178,17 @@ function ruleRequest(draft: RuleDraft): AllocationRuleRequest {
     materialClass: (draft.materialClass || undefined) as unknown as AllocationRuleRequestMaterialClassEnum | undefined,
     action: draft.action as unknown as AllocationRuleAction,
     vendorPartnerIds: draft.vendorIds,
+  };
+}
+
+function consignmentCard(c: Consignment): ConsignmentCard {
+  return {
+    id: text(c.id), trackingRef: text(c.trackingRef), status: text(c.status), orderNo: text(c.orderNo),
+    consigneeName: text(c.consigneeName), destinationTerminalCode: text(c.destinationTerminalCode),
+    deadWeightKg: text(c.totalDeadWeightKg), volumeM3: text(c.totalVolumeM3),
+    chargeableWeightKg: text(c.chargeableWeightKg), loadNo: text(c.loadNo), freightMode: text(c.freightMode),
+    parentId: text(c.parentConsignmentId), parentTrackingRef: text(c.parentTrackingRef),
+    partCount: c.partCount ?? null, partsDelivered: c.partsDelivered ?? null, partsCancelled: c.partsCancelled ?? null,
   };
 }
 
@@ -369,6 +380,35 @@ export class GeneratedLmsGateway extends LmsGateway {
     }
   }
 
+  consignmentByRef(trackingRef: string): Promise<ConsignmentCard> {
+    return this.call(this.loads.trackConsignment({ trackingRef }), consignmentCard);
+  }
+
+  consignment(id: string): Promise<ConsignmentCard> {
+    return this.call(this.loads.getConsignment({ id }), consignmentCard);
+  }
+
+  async consignmentParts(id: string): Promise<ConsignmentCard[]> {
+    // At most 500 parts, so at most three pages: read them all.
+    const parts: ConsignmentCard[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.call(this.loads.listConsignmentParts({ id, cursor, limit: 200 }), (p) => p);
+      parts.push(...page.items.map(consignmentCard));
+      cursor = page.hasMore ? page.nextCursor ?? undefined : undefined;
+    } while (cursor);
+    return parts;
+  }
+
+  splitConsignment(id: string, parts: SplitPartDraft[]): Promise<SplitPart[]> {
+    return this.call(this.loads.splitConsignment({
+      id,
+      splitConsignmentRequest: {
+        parts: parts.map((p) => ({ deadWeightKg: Number(p.deadWeightKg), volumeM3: Number(p.volumeM3) })),
+      },
+    }), (made) => made.map((p) => ({ id: p.id, trackingRef: p.trackingRef })));
+  }
+
   issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink> {
     return this.call(this.links.issueTrackingLink({
       consignmentId, issueTrackingLinkRequest: expiresInDays ? { expiresInDays } : undefined,
@@ -395,6 +435,7 @@ export class GeneratedLmsGateway extends LmsGateway {
         position: t.position
           ? { lat: text(t.position.lat), lon: text(t.position.lon), recordedAt: text(t.position.recordedAt) }
           : null,
+        partsTotal: t.partsTotal ?? null, partsDelivered: t.partsDelivered ?? null,
       }));
     } catch (e) {
       if (e instanceof ApiProblem && e.status === 404) {
