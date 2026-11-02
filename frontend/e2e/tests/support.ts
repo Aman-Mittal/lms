@@ -137,9 +137,7 @@ function between(low: number, high: number): number {
  * the same against CI and a local stack. The consignment has not left, which
  * is exactly what the delivery desk should refuse to prove.
  */
-export async function newConsignment(
-  request: APIRequestContext, session: Session, deadWeightKg = 500,
-): Promise<string> {
+export async function newConsignment(request: APIRequestContext, session: Session): Promise<string> {
   const org = session.orgUnitId;
   const customer = await post(request, session, '/api/v1/partners', {
     orgUnitId: org, code: `ZZ-E2E-C-${uuid()}`, legalName: 'E2E customer', partnerType: 'CUSTOMER',
@@ -164,32 +162,12 @@ export async function newConsignment(
   });
   await post(request, session, `/api/v1/orders/${order.id}/lines`, {
     lineNo: 1, materialCode: 'GOODS', materialDescription: 'General goods', materialClass: 'GENERAL',
-    quantity: 10, uom: 'CASE', deadWeightKg, consigneePartnerId: consignee.id,
+    quantity: 10, uom: 'CASE', deadWeightKg: 500, consigneePartnerId: consignee.id,
     destinationTerminalId: destination.id,
   });
   await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
   const consignments = await post(request, session, `/api/v1/orders/${order.id}/consignments`, {});
   return consignments[0].id as string;
-}
-
-/** A consignment's reference, the number a desk looks it up by. */
-export async function trackingRefOf(
-  request: APIRequestContext, session: Session, consignmentId: string,
-): Promise<string> {
-  const read = await request.get(`${API}/api/v1/consignments/${consignmentId}`, {
-    headers: { Authorization: `Bearer ${session.token}` },
-  });
-  expect(read.ok(), `GET consignment: ${read.status()}`).toBeTruthy();
-  return (await read.json()).trackingRef as string;
-}
-
-/** Splits a consignment through the API into equal parts and returns the parts. */
-export async function splitEvenly(
-  request: APIRequestContext, session: Session, consignmentId: string, count: number, eachKg: number,
-): Promise<{ id: string; trackingRef: string }[]> {
-  return post(request, session, `/api/v1/consignments/${consignmentId}/split`, {
-    parts: Array.from({ length: count }, () => ({ deadWeightKg: eachKg, volumeM3: 0 })),
-  });
 }
 
 /** Raises a claim through the API and returns its id and number, and the consignment it is against. */
