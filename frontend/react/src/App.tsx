@@ -18,6 +18,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { AllocationRules } from './pages/AllocationRules';
 import { ClaimsPage } from './pages/ClaimsPage';
+import { ConsignmentDesk } from './pages/ConsignmentDesk';
 import { Dashboard } from './pages/Dashboard';
 import { DeliveryDesk } from './pages/DeliveryDesk';
 import { DemoSettings } from './pages/DemoSettings';
@@ -67,6 +68,7 @@ export function App() {
           <Route path="settings/webhooks" element={<Webhooks />} />
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="delivery" element={<DeliveryDesk />} />
+          <Route path="consignments" element={<ConsignmentDesk />} />
           <Route path="tracking" element={<TrackingLinks />} />
           <Route path="allocation-rules" element={<AllocationRules />} />
           <Route path="map" element={<Deferred><NetworkMap /></Deferred>} />
