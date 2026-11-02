@@ -90,7 +90,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(BusinessRuleViolationException.class)
     public ProblemDetail onBusinessRuleViolation(BusinessRuleViolationException e) {
         log.info("Business rule refused the operation: {} -- {}", e.code(), e.getMessage());
-        return problem(HttpStatus.CONFLICT, e.code(), e.getMessage());
+        ProblemDetail problem = problem(HttpStatus.CONFLICT, e.code(), e.getMessage());
+        if (!e.errors().isEmpty()) {
+            problem.setProperty("errors", e.errors());
+        }
+        return problem;
     }
 
     /**
