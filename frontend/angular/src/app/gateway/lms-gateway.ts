@@ -409,13 +409,75 @@ export interface ConsignmentPage {
 /** The most consignments one request may put on a load. */
 export const MAX_BULK_ASSIGNMENT = 500;
 
+// ---------------------------------------------------------------- order desk
+
+/** An order's header as an edit restates it, whole. Blank strings are values left unset. */
+export interface OrderHeaderDraft {
+  customerPartnerId: string;
+  originTerminalId: string;
+  /** ISO instants, or blank. */
+  requestedPickupAt: string;
+  requestedDeliveryAt: string;
+  /** Both for a part-load order, neither for a full truckload. */
+  originHubTerminalId: string;
+  destinationHubTerminalId: string;
+}
+
+/** What raising an order needs; it starts as a draft. */
+export interface OrderRaiseDraft {
+  orderNo: string;
+  customerPartnerId: string;
+  originTerminalId: string;
+  requestedPickupAt: string;
+  requestedDeliveryAt: string;
+}
+
+/**
+ * A line as entered or restated. Numbers stay as typed, and blank optional fields are left
+ * out of the request. The measurements travel with it, or an edit would clear them.
+ */
+export interface OrderLineDraft {
+  lineNo: number;
+  materialCode: string;
+  materialDescription: string;
+  materialClass: string;
+  hazmatUnCode: string;
+  quantity: string;
+  uom: string;
+  deadWeightKg: string;
+  lengthM: string;
+  widthM: string;
+  heightM: string;
+  volumetricDivisor: string;
+  consigneePartnerId: string;
+  destinationTerminalId: string;
+}
+
+/** A stored line: the draft it restates as, and what is shown beside it. */
+export interface OrderLineView extends OrderLineDraft {
+  id: string;
+  consigneeName: string;
+  destinationTerminalCode: string;
+  planned: boolean;
+}
+
+/** An order as the desk shows it, with the version every edit must send back. */
+export interface OrderDesk {
+  order: Row;
+  version: string;
+  header: OrderHeaderDraft;
+  lines: OrderLineView[];
+}
+
 /**
  * The one error screens handle: a message fit to show, and the HTTP status if there was one.
  * `errors` names each item a refusal of many was about -- a field, or a consignment's
- * tracking reference -- with its reasons; it is empty otherwise.
+ * tracking reference -- with its reasons; it is empty otherwise. `code` is the problem's
+ * stable name, such as `order-has-consignments`, or empty when there was none.
  */
 export class ApiProblem extends Error {
-  constructor(message: string, readonly status?: number, readonly errors: Record<string, string> = {}) {
+  constructor(message: string, readonly status?: number, readonly errors: Record<string, string> = {},
+    readonly code = '') {
     super(message);
     this.name = 'ApiProblem';
   }
@@ -518,4 +580,23 @@ export abstract class LmsGateway {
    * ApiProblem whose `errors` name each consignment that cannot board, by tracking reference.
    */
   abstract assignConsignments(loadId: string, consignmentIds: string[]): Promise<void>;
+
+  /** Rejects with a 404 problem for an order that does not exist. */
+  abstract orderDesk(orderId: string): Promise<OrderDesk>;
+  /** Resolves to the new order's id. */
+  abstract raiseOrder(orgUnitId: string, draft: OrderRaiseDraft): Promise<string>;
+  /**
+   * The edits below send `version` as If-Match: the version the desk was read at. A stale one
+   * is refused with the problem code `concurrent-modification`, and nothing changes.
+   */
+  abstract reviseOrderHeader(orderId: string, version: string, header: OrderHeaderDraft): Promise<void>;
+  abstract replaceOrderLines(orderId: string, version: string, lines: OrderLineDraft[]): Promise<void>;
+  abstract removeOrderLine(orderId: string, version: string, lineId: string): Promise<void>;
+  /** A validated order with no consignments yet; a null part is kept as it is. */
+  abstract amendOrder(orderId: string, version: string, header: OrderHeaderDraft | null,
+    lines: OrderLineDraft[] | null): Promise<void>;
+  abstract validateOrder(orderId: string): Promise<void>;
+  abstract cancelOrder(orderId: string, reason: string): Promise<void>;
+  /** Resolves to how many consignments were cut. */
+  abstract generateConsignments(orderId: string): Promise<number>;
 }
