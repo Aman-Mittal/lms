@@ -153,8 +153,33 @@ public class PlanningLinks {
     }
 
     /**
+     * Links every part of a split consignment to the order lines the whole was
+     * cut from, in one statement: a part may hold some of any of them.
+     *
+     * <p>Served by the primary key on {@code consignment_line} and
+     * {@code consignment_parent_idx}.
+     */
+    public void linkPartsToLinesOf(UUID tenantId, UUID parentId) {
+        jdbc.sql("""
+                        INSERT INTO consignment_line (tenant_id, consignment_id, order_line_id)
+                        SELECT :tenantId, part.id, line.order_line_id
+                          FROM consignment part
+                          JOIN consignment_line line
+                            ON line.tenant_id = :tenantId AND line.consignment_id = :parentId
+                         WHERE part.tenant_id = :tenantId AND part.parent_consignment_id = :parentId
+                        ON CONFLICT DO NOTHING
+                        """)
+                .param("tenantId", tenantId)
+                .param("parentId", parentId)
+                .update();
+    }
+
+    /**
      * Of these orders, the ones whose consignments have all been delivered or
      * cancelled and at least one delivered: nothing is left to carry.
+     *
+     * <p>A split consignment is neither: it carries nothing itself, and is
+     * left out, so its order closes when its parts have been delivered.
      *
      * <p>Served by {@code consignment_order_idx}.
      */
@@ -166,7 +191,7 @@ public class PlanningLinks {
                         SELECT order_id FROM consignment
                          WHERE tenant_id = :tenantId AND order_id IN (:orderIds)
                          GROUP BY order_id
-                        HAVING count(*) FILTER (WHERE status NOT IN ('DELIVERED', 'CANCELLED')) = 0
+                        HAVING count(*) FILTER (WHERE status NOT IN ('DELIVERED', 'CANCELLED', 'SPLIT')) = 0
                            AND count(*) FILTER (WHERE status = 'DELIVERED') > 0
                         """)
                 .param("tenantId", tenantId)
