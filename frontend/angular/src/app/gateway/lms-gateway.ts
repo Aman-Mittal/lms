@@ -418,6 +418,8 @@ export abstract class LmsGateway {
   /** Replaces the record's values; resolves to what was stored. */
   abstract saveCustomValues(kind: CustomFieldKind, recordId: string, values: CustomValues): Promise<CustomValues>;
 
+  /** One page of claims, only those against the consignment when one is given. */
+  abstract claims(consignmentId?: string): Promise<Row[]>;
   /** Resolves to the new claim's id. */
   abstract raiseClaim(draft: ClaimDraft): Promise<string>;
   abstract transitionClaim(id: string, move: ClaimMove): Promise<void>;
