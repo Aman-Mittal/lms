@@ -153,6 +153,42 @@ export interface DeliveryProofView {
   otpExpiresAt: string;
 }
 
+// ---------------------------------------------------------------- consignments
+
+/** A consignment as the consignment desk shows it, every cell formatted for display. */
+export interface ConsignmentCard {
+  id: string;
+  trackingRef: string;
+  status: string;
+  orderNo: string;
+  consigneeName: string;
+  destinationTerminalCode: string;
+  deadWeightKg: string;
+  volumeM3: string;
+  chargeableWeightKg: string;
+  loadNo: string;
+  freightMode: string;
+  /** For a part of a split consignment: the consignment it is a part of; empty otherwise. */
+  parentId: string;
+  parentTrackingRef: string;
+  /** For a SPLIT consignment: how many parts, and how many delivered or cancelled; null otherwise. */
+  partCount: number | null;
+  partsDelivered: number | null;
+  partsCancelled: number | null;
+}
+
+/** One part of a split as the planner states it, in kilograms and cubic metres. */
+export interface SplitPartDraft {
+  deadWeightKg: string;
+  volumeM3: string;
+}
+
+/** A part as the split made it. */
+export interface SplitPart {
+  id: string;
+  trackingRef: string;
+}
+
 // ---------------------------------------------------------------- tracking links
 
 /** A link as it is issued: the token is shown here and nowhere else. */
@@ -182,6 +218,9 @@ export interface PublicTrackingView {
   proofRecorded: boolean;
   /** The last reported position while in transit, to two decimals; null otherwise. */
   position: { lat: string; lon: string; recordedAt: string } | null;
+  /** For a consignment split across vehicles: parts being carried, and how many delivered; null otherwise. */
+  partsTotal: number | null;
+  partsDelivered: number | null;
 }
 
 /** What a demo reset did. */
@@ -351,7 +390,7 @@ export interface ParkedEventDetail {
 
 /** What a subscription can ask for. `PING` is what a test ping sends and cannot be subscribed to. */
 export const WEBHOOK_EVENT_TYPES = [
-  'ORDER_VALIDATED', 'CONSIGNMENTS_GENERATED', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
+  'ORDER_VALIDATED', 'CONSIGNMENTS_GENERATED', 'CONSIGNMENT_SPLIT', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
   'DELIVERY_PROOF_RECORDED', 'CLAIM_RAISED', 'CLAIM_STATUS_CHANGED',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
@@ -425,6 +464,12 @@ export interface LmsGateway {
   recordDeliveryProof(consignmentId: string, draft: ProofDraft): Promise<void>;
   /** Null when no code has been issued for the consignment yet. */
   deliveryProof(consignmentId: string): Promise<DeliveryProofView | null>;
+  /** A consignment by the reference a customer quotes. */
+  consignmentByRef(trackingRef: string): Promise<ConsignmentCard>;
+  consignment(id: string): Promise<ConsignmentCard>;
+  /** Every part of a split consignment, in reference order (at most 500). */
+  consignmentParts(id: string): Promise<ConsignmentCard[]>;
+  splitConsignment(id: string, parts: SplitPartDraft[]): Promise<SplitPart[]>;
 
   /** Shown once: the token in the result cannot be read again. */
   issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink>;
