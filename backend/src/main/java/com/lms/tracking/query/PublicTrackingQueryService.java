@@ -106,6 +106,9 @@ public class PublicTrackingQueryService {
 
     private PublicTrackingView assemble(ResultSet rs, UUID consignmentId) throws SQLException {
         String stored = rs.getString("status");
+        if ("SPLIT".equals(stored)) {
+            return splitView(rs, consignmentId);
+        }
         Instant proofAt = instant(rs, "proof_at");
         Instant tripCompletedAt = instant(rs, "trip_completed_at");
         boolean departed = rs.getBoolean("departed");
@@ -125,7 +128,78 @@ public class PublicTrackingQueryService {
         return new PublicTrackingView(rs.getString("tracking_ref"), status,
                 rs.getString("origin_name"), rs.getString("destination_name"),
                 instant(rs, "requested_delivery_at"), deliveredAt, proofAt != null,
-                "IN_TRANSIT".equals(status) ? lastPosition(consignmentId) : null);
+                "IN_TRANSIT".equals(status) ? lastPosition(consignmentId) : null, null, null);
+    }
+
+    /** One part's progress, decided as {@link #assemble} decides a whole consignment's. */
+    private record PartsProgress(int live, int delivered, int moving, int proved, Instant lastDeliveredAt) {
+    }
+
+    /**
+     * A consignment split across several vehicles, as its parts say.
+     *
+     * <p>Each part is judged by the rule a whole consignment is judged by, in
+     * one statement however many parts there are. Then: every part cancelled
+     * is CANCELLED; every live part delivered is DELIVERED, at the last
+     * delivery; any part moving or delivered is IN_TRANSIT; otherwise
+     * PLANNED. Proof counts as recorded only when every live part has one. No
+     * position is shown -- the parts are on different vehicles -- but the
+     * counts are, so "delivered 40 of 100" reads straight off the view.
+     */
+    private PublicTrackingView splitView(ResultSet rs, UUID consignmentId) throws SQLException {
+        PartsProgress progress = jdbc.sql("""
+                        SELECT count(*) FILTER (WHERE x.state <> 'CANCELLED')::int AS live,
+                               count(*) FILTER (WHERE x.state = 'DELIVERED')::int AS delivered,
+                               count(*) FILTER (WHERE x.state = 'IN_TRANSIT')::int AS moving,
+                               count(*) FILTER (WHERE x.proof_at IS NOT NULL
+                                                  AND x.state <> 'CANCELLED')::int AS proved,
+                               max(coalesce(x.proof_at, x.trip_completed_at))
+                                   FILTER (WHERE x.state = 'DELIVERED') AS last_delivered_at
+                          FROM (SELECT CASE
+                                           WHEN p.status = 'CANCELLED' THEN 'CANCELLED'
+                                           WHEN p.status = 'DELIVERED' OR pr.delivered_at IS NOT NULL
+                                                OR tc.completed_at IS NOT NULL THEN 'DELIVERED'
+                                           WHEN p.status = 'IN_TRANSIT' OR tc.departed THEN 'IN_TRANSIT'
+                                           ELSE 'PLANNED'
+                                       END AS state,
+                                       pr.delivered_at AS proof_at,
+                                       tc.completed_at AS trip_completed_at
+                                  FROM consignment p
+                                  LEFT JOIN delivery_proof pr
+                                         ON pr.consignment_id = p.id AND pr.status = 'CONFIRMED'
+                                  LEFT JOIN LATERAL (
+                                        SELECT bool_or(t.status IN ('DISPATCHED', 'IN_TRANSIT',
+                                                                    'AT_DESTINATION', 'COMPLETED')) AS departed,
+                                               max(t.completed_at) FILTER (WHERE t.status = 'COMPLETED')
+                                                   AS completed_at
+                                          FROM load_consignment lc
+                                          JOIN trip t ON t.load_id = lc.load_id
+                                         WHERE lc.consignment_id = p.id
+                                       ) tc ON true
+                                 WHERE p.tenant_id = app_current_tenant()
+                                   AND p.parent_consignment_id = :id) x
+                        """)
+                .param("id", consignmentId)
+                .query((r, row) -> new PartsProgress(r.getInt("live"), r.getInt("delivered"),
+                        r.getInt("moving"), r.getInt("proved"), instant(r, "last_delivered_at")))
+                .single();
+
+        String status;
+        if (progress.live() == 0) {
+            status = "CANCELLED";
+        } else if (progress.delivered() == progress.live()) {
+            status = "DELIVERED";
+        } else if (progress.delivered() > 0 || progress.moving() > 0) {
+            status = "IN_TRANSIT";
+        } else {
+            status = "PLANNED";
+        }
+        return new PublicTrackingView(rs.getString("tracking_ref"), status,
+                rs.getString("origin_name"), rs.getString("destination_name"),
+                instant(rs, "requested_delivery_at"),
+                "DELIVERED".equals(status) ? progress.lastDeliveredAt() : null,
+                progress.live() > 0 && progress.proved() == progress.live(), null,
+                progress.live(), progress.delivered());
     }
 
     private PublicTrackingView.Position lastPosition(UUID consignmentId) {
