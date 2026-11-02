@@ -59,6 +59,9 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE'))) {
                 <a routerLink="/ltl" routerLinkActive="active" data-testid="nav-ltl">LTL rating</a>
               }
+              @if (group === 'Finance' && session.can('CLIENT_BILLING_READ')) {
+                <a routerLink="/client-billing" routerLinkActive="active" data-testid="nav-client-billing">Client billing</a>
+              }
               @if (group === 'Control tower' && session.can('EVENT_DEAD_LETTER_READ')) {
                 <a routerLink="/parked-events" routerLinkActive="active" data-testid="nav-parked-events">Parked events</a>
               }
