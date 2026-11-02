@@ -27,6 +27,11 @@ import {
 } from '../api';
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
+import {
+  ClientBillingApi, type ClientCharge, type ClientContract, type ClientInvoice, type ClientInvoiceLine,
+  type ClientStatementEntry,
+} from '../api';
+import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lmsGateway';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
   ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
@@ -56,6 +61,55 @@ function consignmentRow(c: Consignment): Row {
     totalDeadWeightKg: text(c.totalDeadWeightKg), materialClasses: text(c.materialClasses),
     containsHazmat: c.containsHazmat ? 'Yes' : '',
   };
+}
+
+/** A client contract version as the billing desk lists it. */
+function contractRow(c: ClientContract): Row {
+  return {
+    id: text(c.id), code: text(c.code), currency: text(c.currency), effectiveFrom: text(c.effectiveFrom),
+    effectiveTo: text(c.effectiveTo), transportRatePerKg: text(c.transportRatePerKg),
+    handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
+    storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+  };
+}
+
+/** A charge as the billing desk lists it; `invoiced` and `late` read Yes or nothing. */
+function chargeRow(c: ClientCharge): Row {
+  return {
+    id: text(c.id), occurredOn: text(c.occurredOn), serviceType: text(c.serviceType), serviceCode: text(c.serviceCode),
+    quantity: text(c.quantity), unit: text(c.unit), reference: text(c.reference),
+    invoiced: c.invoiceId ? 'Yes' : '', late: c.late ? 'Yes' : '',
+  };
+}
+
+function invoiceRow(i: ClientInvoice): Row {
+  return {
+    id: text(i.id), invoiceNo: text(i.invoiceNo), periodStart: text(i.periodStart), periodEnd: text(i.periodEnd),
+    status: text(i.status), currency: text(i.currency), taxableAmount: text(i.taxableAmount),
+    taxAmount: text(i.taxAmount), totalAmount: text(i.totalAmount), creditedAmount: text(i.creditedAmount),
+    lineCount: text(i.lineCount), issuedAt: text(i.issuedAt), clientName: text(i.clientName),
+  };
+}
+
+function invoiceLineRow(l: ClientInvoiceLine): Row {
+  return {
+    lineNo: text(l.lineNo), serviceType: text(l.serviceType), narrative: text(l.narrative),
+    quantity: text(l.quantity), unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+    taxAmount: text(l.taxAmount), lineTotal: text(l.lineTotal), creditedAmount: text(l.creditedAmount),
+  };
+}
+
+function statementRow(e: ClientStatementEntry): Row {
+  return {
+    id: text(e.documentId), entryType: text(e.entryType), documentNo: text(e.documentNo), issuedAt: text(e.issuedAt),
+    invoiceNo: text(e.invoiceNo), reason: text(e.reason), debit: text(e.debit), credit: text(e.credit),
+    balance: text(e.balance),
+  };
+}
+
+/** A `YYYY-MM-DD` day as the generated client sends a date. */
+function day(value: string): Date {
+  return new Date(`${value}T00:00:00Z`);
 }
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -207,6 +261,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const links = new TrackingLinksApi(config);
   const rules = new AllocationRulesApi(config);
   const sourcing = new SourcingApi(config);
+  const clientBilling = new ClientBillingApi(config);
   // The public read is made with no credentials at all: a customer has none, and
   // a console left signed in must not send its token to a route that ignores it.
   const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
@@ -731,6 +786,60 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     assignConsignments: (loadId: string, consignmentIds: string[]) =>
       guard(async () => {
         await loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } });
+      }),
+
+    clientChoices: (): Promise<Choice[]> =>
+      guard(async () => (await partners.listPartners({
+        partnerType: 'CUSTOMER' as unknown as ListPartnersPartnerTypeEnum, limit: 200,
+      })).items.map((p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` }))),
+    clientContracts: (clientId: string) =>
+      guard(async () => (await clientBilling.listClientContracts({ clientId })).map(contractRow)),
+    clientCharges: (clientId: string, period: string) =>
+      guard(async () => (await clientBilling.listClientCharges({ clientId, period: day(period), limit: 200 }))
+        .items.map(chargeRow)),
+    runClientBilling: (clientId: string, period: string) =>
+      guard(async () => (await clientBilling.runClientBilling({
+        clientId, clientBillingRunRequest: { period: day(period) },
+      })).id),
+    clientInvoices: (clientId: string) =>
+      guard(async () => (await clientBilling.listClientInvoices({ clientId, limit: 100 })).items.map(invoiceRow)),
+    clientInvoice: (invoiceId: string): Promise<ClientInvoiceDetail> =>
+      guard(async () => {
+        const [invoice, lines] = await Promise.all([
+          clientBilling.getClientInvoice({ id: invoiceId }), clientBilling.getClientInvoiceLines({ id: invoiceId })]);
+        return { invoice: invoiceRow(invoice), lines: lines.map(invoiceLineRow) };
+      }),
+    recordClientPayment: (clientId: string, draft: PaymentDraft) =>
+      guard(async () => {
+        await clientBilling.recordClientPayment({
+          clientId,
+          clientPaymentRequest: { amount: draft.amount, receivedOn: day(draft.receivedOn), reference: draft.reference },
+        });
+      }),
+    issueClientCreditNote: (invoiceId: string, draft: CreditNoteDraft) =>
+      guard(async () => {
+        const issued = await clientBilling.issueClientCreditNote({
+          id: invoiceId, clientCreditNoteRequest: { reason: draft.reason, amount: draft.amount },
+        });
+        return text((await clientBilling.getClientCreditNote({ id: issued.id })).creditNoteNo);
+      }),
+    clientStatement: (clientId: string) =>
+      guard(async () => (await clientBilling.getClientStatement({ clientId, limit: 200 })).items.map(statementRow)),
+    clientAgeing: (clientId: string): Promise<ClientAgeingView> =>
+      guard(async () => {
+        const a = await clientBilling.getClientAgeing({ clientId });
+        return {
+          currency: text(a.currency), outstanding: text(a.outstanding), unappliedCredit: text(a.unappliedCredit),
+          buckets: {
+            '0-30': text(a.buckets?.days0to30), '31-60': text(a.buckets?.days31to60),
+            '61-90': text(a.buckets?.days61to90), '90+': text(a.buckets?.over90),
+          },
+          invoices: (a.invoices ?? []).map((i) => ({
+            id: text(i.invoiceId), invoiceNo: text(i.invoiceNo), issuedOn: text(i.issuedOn), total: text(i.total),
+            credited: text(i.credited), paid: text(i.paid), outstanding: text(i.outstanding),
+            ageDays: text(i.ageDays), bucket: text(i.bucket),
+          })),
+        };
       }),
   };
 }
