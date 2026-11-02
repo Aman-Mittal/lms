@@ -59,3 +59,8 @@ form.inline input, form.inline select { width:auto; margin:0; }
   .panel { position:static; }
   table { display:block; overflow-x:auto; }
 }
+
+/* A long list -- a load of a hundred-odd consignments -- scrolls in its own box, its header in view. */
+.table-scroll { max-height:60vh; overflow-y:auto; border-radius:12px; margin:.5rem 0 1rem; }
+.table-scroll table { border-radius:0; }
+.table-scroll thead th { position:sticky; top:0; background:var(--card); z-index:1; }

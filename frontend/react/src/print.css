@@ -30,6 +30,10 @@
   .slip, .slip * { visibility:visible; }
   .slip { position:absolute; left:0; top:0; width:100%; margin:0; border:0; border-radius:0; }
   .slip .no-print, .no-print { display:none !important; }
+  /* A manifest runs to several pages: each repeats the column headings, and no row is split. */
+  .manifest table { display:table; border:0; border-radius:0; }
+  .manifest thead { display:table-header-group; }
+  .manifest tr { break-inside:avoid; }
 }
 
 /* The page a customer sees from a tracking link: no sidebar, a narrow column. */
