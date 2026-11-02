@@ -7,6 +7,13 @@ readiness probe, and a write in one iteration of ten (registering partners, and
 concurrent writes to one record's custom values, where losing a race must be a
 clean 409 and never a 500).
 
+After the mixed traffic, a single user builds whole loads (`Bulk load building`):
+each round raises an order of one line per consignee (150 by default), finds its
+consignments by order, puts every one of them on one load in a single
+`POST /loads/{id}/consignments/bulk`, reads the load back to check it carries
+them all, and plans it. `-JbulkLines` sets the lines per order and
+`-JbulkRounds` the rounds (2).
+
 | Script | What it does |
 |---|---|
 | `run.sh` | One JMeter JVM against `BASE_URL`; fails on the error-rate or 95th-percentile limit |
