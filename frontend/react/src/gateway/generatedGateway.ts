@@ -17,7 +17,7 @@ import {
   AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   EventDeadLetterApi, LTLRatingApi, OrdersApi,
   MilkRunsApi, MultimodalApi, PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TelematicsApi, TrackingLinksApi, TripsApi, VehiclesApi, WebhooksApi,
-  type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
+  type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type Consignment, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
   type AllocationRule, type AllocationRuleAction, type AllocationRuleRequest,
@@ -29,10 +29,10 @@ import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
-  ApiProblem, type AllocationRuleView, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
+  ApiProblem, type AllocationRuleView, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
   type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
-  type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn,
+  type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn, type SplitPart, type SplitPartDraft,
   type GeoPoint, type MapFeature, type Mapped, type MappedDetail, type TrackingLinkView, type TripRoute,
   type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
   type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
@@ -70,6 +70,17 @@ function ruleOf(r: AllocationRule): AllocationRuleView {
     minWeightKg: text(r.minWeightKg), maxWeightKg: text(r.maxWeightKg),
     materialClass: text(r.materialClass), action: (r.action ?? 'PREFER') as RuleAction,
     vendors: (r.vendors ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+  };
+}
+
+function consignmentCard(c: Consignment): ConsignmentCard {
+  return {
+    id: text(c.id), trackingRef: text(c.trackingRef), status: text(c.status), orderNo: text(c.orderNo),
+    consigneeName: text(c.consigneeName), destinationTerminalCode: text(c.destinationTerminalCode),
+    deadWeightKg: text(c.totalDeadWeightKg), volumeM3: text(c.totalVolumeM3),
+    chargeableWeightKg: text(c.chargeableWeightKg), loadNo: text(c.loadNo), freightMode: text(c.freightMode),
+    parentId: text(c.parentConsignmentId), parentTrackingRef: text(c.parentTrackingRef),
+    partCount: c.partCount ?? null, partsDelivered: c.partsDelivered ?? null, partsCancelled: c.partsCancelled ?? null,
   };
 }
 
@@ -364,6 +375,33 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
         }
       }),
 
+    consignmentByRef: (trackingRef: string): Promise<ConsignmentCard> =>
+      guard(async () => consignmentCard(await loads.trackConsignment({ trackingRef }))),
+
+    consignment: (id: string): Promise<ConsignmentCard> =>
+      guard(async () => consignmentCard(await loads.getConsignment({ id }))),
+
+    consignmentParts: (id: string): Promise<ConsignmentCard[]> =>
+      guard(async () => {
+        // At most 500 parts, so at most three pages: read them all.
+        const parts: ConsignmentCard[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await loads.listConsignmentParts({ id, cursor, limit: 200 });
+          parts.push(...page.items.map(consignmentCard));
+          cursor = page.hasMore ? page.nextCursor ?? undefined : undefined;
+        } while (cursor);
+        return parts;
+      }),
+
+    splitConsignment: (id: string, parts: SplitPartDraft[]): Promise<SplitPart[]> =>
+      guard(async () => (await loads.splitConsignment({
+        id,
+        splitConsignmentRequest: {
+          parts: parts.map((p) => ({ deadWeightKg: Number(p.deadWeightKg), volumeM3: Number(p.volumeM3) })),
+        },
+      })).map((p) => ({ id: p.id, trackingRef: p.trackingRef }))),
+
     issueTrackingLink: (consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink> =>
       guard(async () => {
         const issued = await links.issueTrackingLink({
@@ -394,6 +432,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
             position: t.position
               ? { lat: text(t.position.lat), lon: text(t.position.lon), recordedAt: text(t.position.recordedAt) }
               : null,
+            partsTotal: t.partsTotal ?? null, partsDelivered: t.partsDelivered ?? null,
           };
         } catch (e) {
           if (e instanceof ResponseError && e.response.status === 404) {
