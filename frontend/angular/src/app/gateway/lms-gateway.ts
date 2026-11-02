@@ -409,6 +409,37 @@ export interface ConsignmentPage {
 /** The most consignments one request may put on a load. */
 export const MAX_BULK_ASSIGNMENT = 500;
 
+// ---------------------------------------------------------------- client billing
+
+/** An invoice and its lines, in line order. */
+export interface ClientInvoiceDetail {
+  invoice: Row;
+  lines: Row[];
+}
+
+/** What a client owes as of today, in age buckets, and the invoices it is made of. */
+export interface ClientAgeingView {
+  currency: string;
+  outstanding: string;
+  unappliedCredit: string;
+  /** Keyed `0-30`, `31-60`, `61-90` and `90+`. */
+  buckets: Record<string, string>;
+  invoices: Row[];
+}
+
+/** Money received from a client; `receivedOn` is a `YYYY-MM-DD` day. */
+export interface PaymentDraft {
+  amount: number;
+  receivedOn: string;
+  reference: string;
+}
+
+/** A credit against a whole invoice, before tax, spread over its lines. */
+export interface CreditNoteDraft {
+  reason: string;
+  amount: number;
+}
+
 /**
  * The one error screens handle: a message fit to show, and the HTTP status if there was one.
  * `errors` names each item a refusal of many was about -- a field, or a consignment's
@@ -518,4 +549,25 @@ export abstract class LmsGateway {
    * ApiProblem whose `errors` name each consignment that cannot board, by tracking reference.
    */
   abstract assignConsignments(loadId: string, consignmentIds: string[]): Promise<void>;
+
+  /** Customer partners a 3PL contract may be held by. */
+  abstract clientChoices(): Promise<Choice[]>;
+  /** Every contract version of the client, newest first. */
+  abstract clientContracts(clientId: string): Promise<Row[]>;
+  /** The client's charges in the month holding `period` (a `YYYY-MM-DD` day). */
+  abstract clientCharges(clientId: string, period: string): Promise<Row[]>;
+  /**
+   * Bills the month holding `period`; resolves to the invoice's id. Running a month
+   * again answers the same invoice.
+   */
+  abstract runClientBilling(clientId: string, period: string): Promise<string>;
+  /** Newest period first. */
+  abstract clientInvoices(clientId: string): Promise<Row[]>;
+  abstract clientInvoice(invoiceId: string): Promise<ClientInvoiceDetail>;
+  abstract recordClientPayment(clientId: string, draft: PaymentDraft): Promise<void>;
+  /** Resolves to the credit note's number. */
+  abstract issueClientCreditNote(invoiceId: string, draft: CreditNoteDraft): Promise<string>;
+  /** Invoices, credit notes and payments in the order they happened, with the running balance. */
+  abstract clientStatement(clientId: string): Promise<Row[]>;
+  abstract clientAgeing(clientId: string): Promise<ClientAgeingView>;
 }
