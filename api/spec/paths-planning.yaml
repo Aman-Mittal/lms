@@ -89,6 +89,82 @@
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
 
+/api/v1/consignments/{id}/split:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Planning]
+    operationId: splitConsignment
+    summary: Split a consignment across several vehicles
+    description: |
+      Replaces a planned full truckload too big for one vehicle with parts,
+      each an ordinary full-truckload consignment with its own reference, to go
+      on its own load. Every part goes to the same consignee and destination
+      under the same order, with the same material classes and dangerous-goods
+      flag. The chargeable weight is shared in proportion to dead weight. The
+      consignment becomes SPLIT and is never loaded, delivered, billed or
+      cancelled again; its order is fulfilled when its parts are delivered.
+
+      Refused with 409 and a code: `docket-cannot-be-split` for an LTL docket;
+      `consignment-not-splittable` for anything not a PLANNED full truckload,
+      for a part, and for a warehouse handling unit;
+      `split-part-count-invalid` for fewer than 2 or more than 500 parts;
+      `split-part-invalid` for a part without weight, with negative volume or
+      with more than three decimals; `split-weights-do-not-add-up` and
+      `split-volumes-do-not-add-up`, naming the difference.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SplitConsignmentRequest" }
+    responses:
+      "201":
+        description: The parts, in reference order.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ConsignmentPart" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/{id}/parts:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Planning]
+    operationId: listConsignmentParts
+    summary: The parts a consignment was split into
+    description: |
+      In reference order, keyed on the reference. Empty for a consignment
+      that was never split.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of parts.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
 /api/v1/consignments/unassigned:
   get:
     tags: [Planning]

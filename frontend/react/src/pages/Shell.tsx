@@ -42,6 +42,9 @@ export function Shell() {
               {RESOURCES.filter((r) => r.group === group && (!r.permission || can(r.permission))).map((r) => (
                 <NavLink key={r.key} to={`/${r.key}`} data-testid={`nav-${r.key}`}>{r.title}</NavLink>
               ))}
+              {group === 'Operations' && can('LOAD_READ') && (
+                <NavLink to="/consignments" data-testid="nav-consignments">Consignments</NavLink>
+              )}
               {group === 'Operations' && can('TERMINAL_READ') && (
                 <NavLink to="/map" data-testid="nav-map">Network map</NavLink>
               )}

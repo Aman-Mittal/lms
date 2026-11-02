@@ -24,6 +24,7 @@ package com.lms.webhooks.command;
 public enum WebhookEventType {
     ORDER_VALIDATED,
     CONSIGNMENTS_GENERATED,
+    CONSIGNMENT_SPLIT,
     TRIP_DISPATCHED,
     TRIP_COMPLETED,
     TRIP_CANCELLED,

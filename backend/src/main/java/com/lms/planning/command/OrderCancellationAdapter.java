@@ -117,9 +117,12 @@ public class OrderCancellationAdapter implements OrderCancellationHook {
 
         refuseIfLeft(orderId, all, placements);
 
-        // CANCELLED ones are skipped, which is what makes a repeat harmless.
+        // CANCELLED ones are skipped, which is what makes a repeat harmless. A
+        // SPLIT one is skipped too: it carries nothing, and its parts -- cut
+        // from the same order -- are in this list and cancelled in its place.
         List<Consignment> toCancel = all.stream()
-                .filter(c -> c.status() != ConsignmentStatus.CANCELLED).toList();
+                .filter(c -> c.status() != ConsignmentStatus.CANCELLED
+                        && c.status() != ConsignmentStatus.SPLIT).toList();
         Set<UUID> cancelling = toCancel.stream().map(Consignment::id)
                 .collect(Collectors.toSet());
         Set<UUID> touchedLoads = placements.stream()

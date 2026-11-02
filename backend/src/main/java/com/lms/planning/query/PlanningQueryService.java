@@ -68,6 +68,8 @@ public class PlanningQueryService {
                    l.load_no, c.freight_mode,
                    oh.code AS origin_hub_code, dh.code AS destination_hub_code,
                    c.handling_unit_id, hu.hu_no AS handling_unit_no,
+                   c.parent_consignment_id, pc.tracking_ref AS parent_tracking_ref,
+                   sp.part_count, sp.parts_delivered, sp.parts_cancelled,
                    c.created_at
               FROM consignment c
               LEFT JOIN sales_order o ON o.id = c.order_id
@@ -76,6 +78,14 @@ public class PlanningQueryService {
               JOIN terminal t ON t.id = c.destination_terminal_id
               LEFT JOIN terminal oh ON oh.id = c.origin_hub_terminal_id
               LEFT JOIN terminal dh ON dh.id = c.destination_hub_terminal_id
+              LEFT JOIN consignment pc ON pc.id = c.parent_consignment_id
+              LEFT JOIN LATERAL (
+                    SELECT count(*)::int AS part_count,
+                           count(*) FILTER (WHERE px.status = 'DELIVERED')::int AS parts_delivered,
+                           count(*) FILTER (WHERE px.status = 'CANCELLED')::int AS parts_cancelled
+                      FROM consignment px
+                     WHERE px.tenant_id = c.tenant_id AND px.parent_consignment_id = c.id
+                   ) sp ON c.status = 'SPLIT'
             """;
 
     /**
@@ -175,6 +185,35 @@ public class PlanningQueryService {
                 .param("loadId", loadId)
                 .query(ConsignmentView.class)
                 .list();
+    }
+
+    /**
+     * A page of a split consignment's parts, in receipt order, keyed on the
+     * part's tracking reference. Empty for a consignment that was never split;
+     * absent -- so the caller answers 404 -- for one that does not exist.
+     *
+     * <p>Served by {@code consignment_parent_idx}.
+     */
+    public Optional<Slice<ConsignmentView>> listParts(UUID parentId, String cursor, Integer limit) {
+        if (jdbc.sql("SELECT 1 FROM consignment WHERE id = :id").param("id", parentId)
+                .query(Integer.class).optional().isEmpty()) {
+            return Optional.empty();
+        }
+        int pageSize = Slice.clampLimit(limit);
+        List<ConsignmentView> rows = jdbc.sql(CONSIGNMENT_SELECT + """
+                         WHERE c.tenant_id = app_current_tenant()
+                           AND c.parent_consignment_id = :parent
+                           AND (CAST(:cursor AS text) IS NULL
+                                OR c.tracking_ref > CAST(:cursor AS text))
+                         ORDER BY c.tracking_ref
+                         LIMIT :limit
+                        """)
+                .param("parent", parentId)
+                .param("cursor", cursor)
+                .param("limit", pageSize + 1)
+                .query(ConsignmentView.class)
+                .list();
+        return Optional.of(Slice.of(rows, pageSize, ConsignmentView::trackingRef));
     }
 
     /** Consignments not yet on a load: the planner's work queue. */

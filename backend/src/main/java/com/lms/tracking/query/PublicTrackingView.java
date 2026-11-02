@@ -25,6 +25,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * amount, vehicle or driver, and the position is rounded to about a kilometre.
  *
  * @param status one of PLANNED, IN_TRANSIT, DELIVERED, CANCELLED
+ * @param partsTotal     for a consignment split across vehicles, its parts
+ *                       still to be carried (cancelled ones are not); null
+ *                       otherwise
+ * @param partsDelivered for a split consignment, how many of those have been
+ *                       delivered; null otherwise
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PublicTrackingView(
@@ -35,7 +40,9 @@ public record PublicTrackingView(
         Instant requestedDeliveryAt,
         Instant deliveredAt,
         boolean proofRecorded,
-        Position position) {
+        Position position,
+        Integer partsTotal,
+        Integer partsDelivered) {
 
     /** The last reported position of the carrying trip, to two decimals. */
     @JsonInclude(JsonInclude.Include.NON_NULL)

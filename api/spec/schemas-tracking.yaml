@@ -63,6 +63,16 @@ PublicTracking:
       description: Whether the recipient has confirmed the delivery.
     position:
       $ref: "#/components/schemas/PublicTrackingPosition"
+    partsTotal:
+      type: integer
+      description: For a consignment split across several vehicles, how many
+        parts are being carried (cancelled ones are not counted). Its status is
+        then read from them, it has no single position, and proof counts as
+        recorded only once every part has one.
+    partsDelivered:
+      type: integer
+      description: For a consignment split across several vehicles, how many
+        of its parts have been delivered.
   required: [reference, status, proofRecorded]
 
 PublicTrackingPosition:

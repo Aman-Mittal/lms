@@ -16,11 +16,14 @@
 package com.lms.planning.command.domain;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -87,6 +90,11 @@ public record Consignment(
          * consignment however often its dispatch is announced.
          */
         UUID handlingUnitId,
+        /**
+         * The consignment this is a part of, when a consignment too big for one
+         * vehicle was split; null otherwise. See {@link #split}.
+         */
+        UUID parentConsignmentId,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -120,11 +128,30 @@ public record Consignment(
      *
      * <p>The three hub states are part-load only; the database refuses them
      * on a full-truckload row.
+     *
+     * <p>A full truckload too big for one vehicle can be split while PLANNED:
+     * <pre>
+     *   PLANNED -> SPLIT             replaced by parts, each PLANNED on its own
+     * </pre>
+     * SPLIT is terminal. The consignment stays as the reference the customer
+     * quoted, and its progress is its parts'.
      */
     public enum ConsignmentStatus {
         PLANNED, ASSIGNED_TO_LOAD, IN_TRANSIT, ARRIVED_AT_HUB, ASSIGNED_TO_DELIVERY,
-        OUT_FOR_DELIVERY, DELIVERED, CANCELLED
+        OUT_FOR_DELIVERY, DELIVERED, CANCELLED, SPLIT
     }
+
+    /** The fewest parts a split makes; one part would be the same consignment renamed. */
+    public static final int MIN_PARTS = 2;
+
+    /**
+     * The most parts one split makes. Enough for a few thousand tonnes on
+     * ordinary lorries, and a bound on what one request writes.
+     */
+    public static final int MAX_PARTS = 500;
+
+    /** The scale of the weight and volume columns. */
+    private static final int SCALE = 3;
 
     private static final Set<ConsignmentStatus> HUB_STATES = EnumSet.of(
             ConsignmentStatus.ARRIVED_AT_HUB, ConsignmentStatus.ASSIGNED_TO_DELIVERY,
@@ -135,7 +162,8 @@ public record Consignment(
 
     static {
         TRANSITIONS.put(ConsignmentStatus.PLANNED,
-                EnumSet.of(ConsignmentStatus.ASSIGNED_TO_LOAD, ConsignmentStatus.CANCELLED));
+                EnumSet.of(ConsignmentStatus.ASSIGNED_TO_LOAD, ConsignmentStatus.CANCELLED,
+                        ConsignmentStatus.SPLIT));
         // Back to PLANNED when a load is broken up before it leaves: the goods
         // still need moving, they just need a different lorry.
         TRANSITIONS.put(ConsignmentStatus.ASSIGNED_TO_LOAD,
@@ -153,6 +181,7 @@ public record Consignment(
                 EnumSet.of(ConsignmentStatus.DELIVERED));
         TRANSITIONS.put(ConsignmentStatus.DELIVERED, EnumSet.noneOf(ConsignmentStatus.class));
         TRANSITIONS.put(ConsignmentStatus.CANCELLED, EnumSet.noneOf(ConsignmentStatus.class));
+        TRANSITIONS.put(ConsignmentStatus.SPLIT, EnumSet.noneOf(ConsignmentStatus.class));
     }
 
     /**
@@ -181,7 +210,7 @@ public record Consignment(
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
                 containsHazmat, ConsignmentStatus.PLANNED, encodeClasses(materialClasses),
                 mode, customerPartnerId, originHubTerminalId, destinationHubTerminalId,
-                null, null, Instant.now(), Instant.now());
+                null, null, null, Instant.now(), Instant.now());
     }
 
     /**
@@ -208,7 +237,7 @@ public record Consignment(
         return new Consignment(id, tenantId, null, trackingRef, consigneePartnerId,
                 destinationTerminalId, grossWeightKg, volumeM3, chargeableWeightKg, false,
                 ConsignmentStatus.PLANNED, "", FreightMode.FTL, null, null, null,
-                handlingUnitId, null, Instant.now(), Instant.now());
+                handlingUnitId, null, null, Instant.now(), Instant.now());
     }
 
     /** Whether this is an LTL docket rather than a full-truckload consignment. */
@@ -254,7 +283,152 @@ public record Consignment(
         return new Consignment(id, tenantId, orderId, trackingRef, consigneePartnerId,
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
                 containsHazmat, target, materialClasses, freightMode, customerPartnerId,
-                originHubTerminalId, destinationHubTerminalId, handlingUnitId, version, createdAt,
-                Instant.now());
+                originHubTerminalId, destinationHubTerminalId, handlingUnitId, parentConsignmentId,
+                version, createdAt, Instant.now());
+    }
+
+    /** Whether this consignment is one part of a split one. */
+    public boolean isPart() {
+        return parentConsignmentId != null;
+    }
+
+    /** What one part carries, as the planner states it. */
+    public record PartSpec(BigDecimal deadWeightKg, BigDecimal volumeM3) {
+    }
+
+    /** The outcome of a split: this consignment, now SPLIT, and its parts in order. */
+    public record Split(Consignment parent, List<Consignment> parts) {
+    }
+
+    /**
+     * Replaces this consignment with parts, each its own full truckload.
+     *
+     * <p>Every part goes to the same consignee and destination, for the same
+     * customer, under the same order, and carries the same material classes and
+     * the same dangerous-goods flag as the whole: what is in a part was never
+     * declared line by line, so each is treated as possibly holding any of it.
+     * The planner states each part's dead weight and volume, and they must add
+     * up exactly to the whole -- a split moves freight between vehicles, it
+     * does not create or lose any.
+     *
+     * <p>The chargeable weight is shared out in proportion to dead weight, each
+     * share rounded down to the gram, and the last part takes what rounding left
+     * over. Rounding down is what keeps that remainder from going negative,
+     * however many parts and however small the last.
+     *
+     * <p>Refused, each by its own code, for a docket (consolidated and billed
+     * as one with other customers'), for anything but a PLANNED full
+     * truckload, for a part (one level only), and for a warehouse unit (one
+     * packed unit, weighed at the door).
+     *
+     * @param partIds one fresh id per part
+     * @param refs    one fresh tracking reference per part
+     */
+    public Split split(List<PartSpec> specs, List<UUID> partIds, List<String> refs) {
+        if (isDocket()) {
+            throw new BusinessRuleViolationException("docket-cannot-be-split",
+                    "Docket " + trackingRef + " is consolidated with other customers' dockets "
+                            + "and billed as one; only a full truckload can be split");
+        }
+        if (status != ConsignmentStatus.PLANNED || freightMode != FreightMode.FTL) {
+            throw new BusinessRuleViolationException("consignment-not-splittable",
+                    "Consignment " + trackingRef + " is " + status + " " + freightMode
+                            + "; only a planned full truckload not yet on a load can be split");
+        }
+        if (isPart()) {
+            throw new BusinessRuleViolationException("consignment-not-splittable",
+                    "Consignment " + trackingRef + " is already one part of a split "
+                            + "consignment, and parts are not split again");
+        }
+        if (handlingUnitId != null) {
+            throw new BusinessRuleViolationException("consignment-not-splittable",
+                    "Consignment " + trackingRef + " carries one warehouse handling unit, "
+                            + "which travels whole");
+        }
+        int count = specs == null ? 0 : specs.size();
+        if (count < MIN_PARTS || count > MAX_PARTS) {
+            throw new BusinessRuleViolationException("split-part-count-invalid",
+                    "A split makes " + MIN_PARTS + " to " + MAX_PARTS + " parts, not " + count);
+        }
+        if (partIds.size() != count || refs.size() != count) {
+            throw new IllegalArgumentException("One id and one reference per part");
+        }
+
+        BigDecimal weight = BigDecimal.ZERO;
+        BigDecimal volume = BigDecimal.ZERO;
+        for (int i = 0; i < count; i++) {
+            PartSpec spec = specs.get(i);
+            if (spec == null || spec.deadWeightKg() == null || spec.deadWeightKg().signum() <= 0
+                    || spec.volumeM3() == null || spec.volumeM3().signum() < 0
+                    || spec.deadWeightKg().stripTrailingZeros().scale() > SCALE
+                    || spec.volumeM3().stripTrailingZeros().scale() > SCALE) {
+                throw new BusinessRuleViolationException("split-part-invalid",
+                        "Part " + (i + 1) + " needs a weight above zero and a volume of zero or "
+                                + "more, each to at most " + SCALE + " decimal places");
+            }
+            weight = weight.add(spec.deadWeightKg());
+            volume = volume.add(spec.volumeM3());
+        }
+        BigDecimal wholeVolume = totalVolumeM3 == null ? BigDecimal.ZERO : totalVolumeM3;
+        if (weight.compareTo(totalDeadWeightKg) != 0) {
+            throw new BusinessRuleViolationException("split-weights-do-not-add-up",
+                    "The parts weigh " + plain(weight) + " kg but consignment " + trackingRef
+                            + " weighs " + plain(totalDeadWeightKg) + " kg, a difference of "
+                            + plain(weight.subtract(totalDeadWeightKg)) + " kg");
+        }
+        if (volume.compareTo(wholeVolume) != 0) {
+            throw new BusinessRuleViolationException("split-volumes-do-not-add-up",
+                    "The parts measure " + plain(volume) + " m3 but consignment " + trackingRef
+                            + " measures " + plain(wholeVolume) + " m3, a difference of "
+                            + plain(volume.subtract(wholeVolume)) + " m3");
+        }
+
+        List<BigDecimal> chargeable = apportion(chargeableWeightKg, specs, totalDeadWeightKg);
+        List<Consignment> parts = new ArrayList<>(count);
+        Instant now = Instant.now();
+        for (int i = 0; i < count; i++) {
+            PartSpec spec = specs.get(i);
+            parts.add(new Consignment(partIds.get(i), tenantId, orderId, refs.get(i),
+                    consigneePartnerId, destinationTerminalId, spec.deadWeightKg(),
+                    spec.volumeM3(), chargeable.get(i), containsHazmat, ConsignmentStatus.PLANNED,
+                    materialClasses, freightMode, customerPartnerId, null, null, null, id,
+                    null, now, now));
+        }
+        return new Split(transitionTo(ConsignmentStatus.SPLIT), List.copyOf(parts));
+    }
+
+    /** A quantity as a person writes it: no trailing zeros, no exponent. */
+    private static String plain(BigDecimal value) {
+        return value.signum() == 0 ? "0" : value.stripTrailingZeros().toPlainString();
+    }
+
+    /**
+     * Shares a total out in proportion to each part's weight: every share but
+     * the last rounded down, the last taking the remainder.
+     */
+    static List<BigDecimal> apportion(BigDecimal total, List<PartSpec> specs, BigDecimal byWeight) {
+        BigDecimal whole = total == null ? BigDecimal.ZERO : total;
+        List<BigDecimal> shares = new ArrayList<>(specs.size());
+        BigDecimal given = BigDecimal.ZERO;
+        for (int i = 0; i < specs.size() - 1; i++) {
+            BigDecimal share = whole.multiply(specs.get(i).deadWeightKg())
+                    .divide(byWeight, SCALE, RoundingMode.DOWN);
+            shares.add(share);
+            given = given.add(share);
+        }
+        shares.add(whole.subtract(given).setScale(SCALE, RoundingMode.UNNECESSARY));
+        return shares;
+    }
+
+    /**
+     * The tracking reference of part {@code index} (from 1) of {@code count}:
+     * the whole's, then a dash and the part number zero-padded to the width of
+     * the count, never under two digits -- {@code LR-AB12-01} to
+     * {@code LR-AB12-12}, {@code LR-AB12-001} to {@code LR-AB12-120}. The
+     * customer's reference stays readable inside every part's.
+     */
+    public static String partRef(String wholeRef, int index, int count) {
+        int width = Math.max(2, String.valueOf(count).length());
+        return wholeRef + "-" + String.format(java.util.Locale.ROOT, "%0" + width + "d", index);
     }
 }

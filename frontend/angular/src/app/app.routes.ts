@@ -23,6 +23,7 @@ import { Track } from './pages/track';
 import { TrackingLinks } from './pages/tracking-links';
 import { ClaimsPage } from './pages/claims';
 import { Dashboard } from './pages/dashboard';
+import { ConsignmentDesk } from './pages/consignment-desk';
 import { DeliveryDesk } from './pages/delivery-desk';
 import { DemoSettings } from './pages/demo-settings';
 import { ListPage } from './pages/list';
@@ -48,6 +49,7 @@ export const routes: Routes = [
       { path: 'settings/webhooks', component: Webhooks },
       { path: 'claims', component: ClaimsPage },
       { path: 'delivery', component: DeliveryDesk },
+      { path: 'consignments', component: ConsignmentDesk },
       { path: 'tracking', component: TrackingLinks },
       { path: 'allocation-rules', component: AllocationRules },
       { path: 'load-building', component: LoadBuilding },
