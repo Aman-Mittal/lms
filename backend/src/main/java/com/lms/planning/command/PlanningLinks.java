@@ -84,6 +84,35 @@ public class PlanningLinks {
                 .update();
     }
 
+    /**
+     * Puts several consignments on a load in one statement, at consecutive
+     * drop positions from {@code firstDropSequence} in the order given.
+     *
+     * <p>The same unique constraint as {@link #linkToLoad} guards it, and a
+     * violation by any one of them aborts the whole insert: the batch boards
+     * together or not at all.
+     */
+    public void linkAllToLoad(UUID tenantId, UUID loadId, List<UUID> consignmentIds,
+                              int firstDropSequence, LoadUnit.LtlLeg leg) {
+        if (consignmentIds.isEmpty()) {
+            return;
+        }
+        jdbc.sql("""
+                        INSERT INTO load_consignment
+                               (tenant_id, load_id, consignment_id, drop_sequence, leg)
+                        SELECT :tenantId, :loadId, boarding.id,
+                               CAST(:first + boarding.position - 1 AS integer), :leg
+                          FROM unnest(CAST(ARRAY[:ids] AS uuid[]))
+                               WITH ORDINALITY AS boarding (id, position)
+                        """)
+                .param("tenantId", tenantId)
+                .param("loadId", loadId)
+                .param("ids", consignmentIds)
+                .param("first", firstDropSequence)
+                .param("leg", leg.name())
+                .update();
+    }
+
     /** Served by {@code load_consignment_load_idx}. */
     public int nextDropSequence(UUID tenantId, UUID loadId) {
         Integer highest = jdbc.sql("""

@@ -104,6 +104,17 @@ AssignConsignmentRequest:
     consignmentId: { type: string, format: uuid }
   required: [consignmentId]
 
+BulkAssignConsignmentsRequest:
+  type: object
+  properties:
+    consignmentIds:
+      type: array
+      minItems: 1
+      maxItems: 500
+      description: In the order they are to board, none repeated.
+      items: { type: string, format: uuid }
+  required: [consignmentIds]
+
 LoadSlice:
   type: object
   description: One page. No total and no page number -- both need the scan

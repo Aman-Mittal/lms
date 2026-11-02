@@ -22,21 +22,41 @@ import type { DemoResetOutcome } from './lms-gateway';
 import {
   AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
   AllocationRulesService, AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
-  ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, CustomFieldsService, CustomFieldType,
+  ClaimStatus as ApiClaimStatus, ClaimType as ApiClaimType, Consignment, CustomFieldsService, CustomFieldType,
   DeliveryAndClaimsService, DriversService, EventDeadLetterService, LTLRatingService, MilkRunsService, MultimodalService, OrdersService, PartnersService,
-  PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, SourcingService,
+  Load, PlanningService, PublicTrackingService, RegisterPartnerRequestPartnerTypeEnum, SettlementService, SourcingService,
   TelematicsService, Terminal, TerminalsService, TrackingLinksService, TripsService, VehiclesService,
   ParkedEvent, ParkedEventStatus, PublishLtlRateCardRequestRateBasisEnum,
   WebhookDelivery, WebhookEventType as ApiWebhookEventType, WebhookSubscription, WebhooksService,
 } from '../api';
 import {
-  AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
+  AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ConsignmentPage, LoadBuild, ClaimMove, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
   DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, IssuedTrackingLink, LmsGateway,
   OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, RuleAction, RuleDraft, RuleEvaluation,
   GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, TrackingLinkView, TripRoute,
   ParkedEventDetail, ParkedFilter, RateCardDraft,
   WebhookChanges, WebhookDeliveryPage, WebhookDraft, WebhookSecret, WebhookView,
 } from './lms-gateway';
+
+/** A load as the building screen shows it. */
+function loadRow(l: Load): Row {
+  return {
+    id: text(l.id), loadNo: text(l.loadNo), status: text(l.status), freightMode: text(l.freightMode),
+    vehicleRegistrationNo: text(l.vehicleRegistrationNo), plannedWeightKg: text(l.plannedWeightKg),
+    capacityWeightKg: text(l.capacityWeightKg), weightUtilisationPct: text(l.weightUtilisationPct),
+    consignmentCount: text(l.consignmentCount),
+  };
+}
+
+/** A consignment as a load list or a work queue shows it. */
+function consignmentRow(c: Consignment): Row {
+  return {
+    id: text(c.id), trackingRef: text(c.trackingRef), status: text(c.status),
+    consigneeName: text(c.consigneeName), destinationTerminalCode: text(c.destinationTerminalCode),
+    totalDeadWeightKg: text(c.totalDeadWeightKg), materialClasses: text(c.materialClasses),
+    containsHazmat: c.containsHazmat ? 'Yes' : '',
+  };
+}
 
 /** A display cell: the contract's optional fields become an empty string. */
 function text(v: unknown): string {
@@ -662,6 +682,24 @@ export class GeneratedLmsGateway extends LmsGateway {
     return this.call(this.hooks.redeliverWebhook({ id: deliveryId }), () => undefined);
   }
 
+  async loadBuild(loadId: string): Promise<LoadBuild> {
+    const [load, aboard] = await Promise.all([
+      this.call(this.loads.getLoad({ id: loadId }), loadRow),
+      this.call(this.loads.listLoadConsignments({ id: loadId }), (rows) => rows.map(consignmentRow)),
+    ]);
+    return { load, aboard };
+  }
+
+  unassignedConsignments(orderId?: string, cursor?: string): Promise<ConsignmentPage> {
+    return this.call(this.loads.listUnassignedConsignments({ orderId: orderId || undefined, cursor, limit: 200 }),
+      (page) => ({ rows: page.items.map(consignmentRow), nextCursor: page.nextCursor ?? null }));
+  }
+
+  assignConsignments(loadId: string, consignmentIds: string[]): Promise<void> {
+    return this.call(this.loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } }),
+      () => undefined);
+  }
+
   /** Each distinct terminal named, read once. */
   private async terminalsById(ids: Array<string | null | undefined>): Promise<Map<string, Terminal>> {
     const distinct = [...new Set(ids.filter((id): id is string => !!id))];
@@ -676,10 +714,11 @@ export class GeneratedLmsGateway extends LmsGateway {
     } catch (e) {
       if (e instanceof HttpErrorResponse) {
         const body = e.error as { detail?: string; errors?: Record<string, string> } | null;
-        if (body?.errors) {
-          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), e.status);
+        if (body?.errors && e.status !== 409) {
+          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), e.status, body.errors);
         }
-        throw new ApiProblem(body?.detail ?? (e.status ? `${e.status} ${e.statusText}` : 'Could not reach the API. Try again.'), e.status);
+        throw new ApiProblem(body?.detail ?? (e.status ? `${e.status} ${e.statusText}` : 'Could not reach the API. Try again.'),
+          e.status, body?.errors ?? {});
       }
       throw e;
     }

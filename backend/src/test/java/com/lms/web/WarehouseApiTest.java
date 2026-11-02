@@ -332,7 +332,7 @@ class WarehouseApiTest {
         assertThat(dispatched.getVolumeM3()).isEqualByComparingTo("2");
 
         PlanningApi planning = planningClient();
-        ConsignmentSlice waiting = planning.listUnassignedConsignments(null, null);
+        ConsignmentSlice waiting = planning.listUnassignedConsignments(null, null, null);
         Consignment consignment = waiting.getItems().stream()
                 .filter(c -> unitId.equals(c.getHandlingUnitId()))
                 .findFirst()
