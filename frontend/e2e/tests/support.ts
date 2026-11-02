@@ -545,3 +545,109 @@ export async function newSite(
 ): Promise<Site> {
   return siteAt(request, session, code, category, between(10, 30), between(70, 90));
 }
+
+// ---------------------------------------------------------------- client billing
+
+/** A `YYYY-MM-DD` day, UTC, offset from today by whole months, on the given day of that month. */
+export function dayOfMonth(monthsAgo: number, day: number): string {
+  const d = new Date();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - monthsAgo);
+  d.setUTCDate(day);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * A fresh 3PL client: a customer holding a contract in force since 90 days ago, untaxed
+ * so the sums stay readable -- handling 25 a pallet in and 30 out, transport 5 a kilo.
+ */
+export async function newBillingClient(
+  request: APIRequestContext, session: Session,
+): Promise<{ id: string; code: string }> {
+  const code = `ZZ-E2E-3PL-${uuid()}`;
+  const client = await post(request, session, '/api/v1/partners', {
+    orgUnitId: session.orgUnitId, code, legalName: 'E2E 3PL client', partnerType: 'CUSTOMER',
+    taxId: `TAX-${uuid()}`,
+  });
+  const started = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
+  await post(request, session, '/api/v1/client-billing/contracts', {
+    orgUnitId: session.orgUnitId, code: `E2E-3PL-${uuid()}`, clientPartnerId: client.id, currency: 'INR',
+    effectiveFrom: started, transportRatePerKg: 5, transportMinimumCharge: 0, storageRatePerPalletDay: 0,
+    handlingInRatePerPallet: 25, handlingOutRatePerPallet: 30, transportTaxRatePct: 0, warehouseTaxRatePct: 0,
+  });
+  return { id: client.id as string, code };
+}
+
+/** Records pallets handled in for the client on the 10th of last month, a month that can be billed. */
+export async function handledInLastMonth(
+  request: APIRequestContext, session: Session, clientId: string, pallets: number,
+): Promise<void> {
+  await post(request, session, `/api/v1/client-billing/clients/${clientId}/service-usage`, {
+    serviceType: 'HANDLING_IN', quantity: pallets, occurredOn: dayOfMonth(1, 10),
+    reference: `E2E-IN-${uuid()}`, sourceKey: `e2e-${uuid()}`,
+  });
+}
+
+/**
+ * Hands one unit of the client's goods from a warehouse to transport, through the
+ * warehouse's own API: received, put away, ordered out, picked, packed and dispatched at
+ * 420 kg. Client billing charges it on the client's contract as it happens -- today.
+ */
+export async function handOffFor(
+  request: APIRequestContext, session: Session, clientId: string,
+): Promise<string> {
+  const org = session.orgUnitId;
+  const place = (category: string, name: string) => post(request, session, '/api/v1/terminals/point-radius', {
+    orgUnitId: org, code: `E2E-${name}-${uuid()}`, name: `E2E ${name}`, category,
+    centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 500, dockCount: 2,
+    avgDwellMinutes: 45,
+  });
+  const warehouse = await place('WAREHOUSE', 'WH');
+  const destination = await place('CUSTOMER_SITE', 'DEST');
+  const consignee = await post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-E2E-N-${uuid()}`, legalName: 'E2E consignee', partnerType: 'CONSIGNEE',
+    taxId: `TAX-${uuid()}`,
+  });
+  const bin = await post(request, session, `/api/v1/warehouses/${warehouse.id}/bins`, {
+    code: `E2E-BIN-${uuid()}`, capacityUnits: 50,
+  });
+  const sku = await post(request, session, '/api/v1/skus', {
+    code: `E2E-SKU-${uuid()}`, description: 'E2E widget', ownerPartnerId: clientId, uom: 'EA',
+  });
+  const asn = await post(request, session, '/api/v1/asns', {
+    warehouseId: warehouse.id, asnNo: `E2E-ASN-${uuid()}`, lines: [{ skuId: sku.id, quantity: 30 }],
+  });
+  await post(request, session, `/api/v1/asns/${asn.id}/receipt`, {
+    lines: [{ lineNo: 1, receivedQty: 30, damagedQty: 0 }], crossDock: false,
+  });
+  await post(request, session, '/api/v1/putaways', { binId: bin.id, skuId: sku.id, quantity: 30 });
+  const order = await post(request, session, '/api/v1/outbound-orders', {
+    warehouseId: warehouse.id, orderNo: `E2E-OUT-${uuid()}`, lines: [{ skuId: sku.id, quantity: 30 }],
+  });
+  await post(request, session, `/api/v1/outbound-orders/${order.id}/pick`, {});
+  const unit = await post(request, session, `/api/v1/outbound-orders/${order.id}/pack`, {});
+  await post(request, session, `/api/v1/handling-units/${unit.id}/dispatch`, {
+    reference: `E2E-HO-${uuid()}`, destinationTerminalId: destination.id, consigneePartnerId: consignee.id,
+    grossWeightKg: 420,
+  });
+  return unit.id as string;
+}
+
+/** The service types charged to a client in the month holding `day`, as the API lists them. */
+export async function chargedServices(
+  request: APIRequestContext, session: Session, clientId: string, day: string,
+): Promise<string[]> {
+  const read = await request.get(
+    `${API}/api/v1/client-billing/clients/${clientId}/charges?period=${day}&limit=50`,
+    { headers: { Authorization: `Bearer ${session.token}` } },
+  );
+  expect(read.ok(), `GET charges: ${read.status()}`).toBeTruthy();
+  return ((await read.json()).items as Array<{ serviceType: string }>).map((c) => c.serviceType).sort();
+}
+
+/** Bills last month for the client through the API; resolves to the invoice id. */
+export async function billLastMonth(request: APIRequestContext, session: Session, clientId: string): Promise<string> {
+  return (await post(request, session, `/api/v1/client-billing/clients/${clientId}/billing-runs`, {
+    period: dayOfMonth(1, 1),
+  })).id as string;
+}
