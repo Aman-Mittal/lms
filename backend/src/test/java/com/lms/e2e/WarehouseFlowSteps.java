@@ -179,7 +179,7 @@ public class WarehouseFlowSteps {
     @Then("the dispatched handling unit became a consignment for the consignee carrying {int} kg, waiting to be loaded")
     public void consignment(int kilos) {
         Consignment consignment = HttpWorld.eventually("the hand-off consignment",
-                () -> world.api(PlanningApi.class).listUnassignedConsignments(null, 200).getItems()
+                () -> world.api(PlanningApi.class).listUnassignedConsignments(null, 200, null).getItems()
                         .stream()
                         .filter(c -> handlingUnitId.equals(c.getHandlingUnitId()))
                         .findFirst()
