@@ -220,7 +220,7 @@ public class FleetSteps {
 
     @Then("the fleet listing shows {int} vehicles")
     public void fleetListingCount(int expected) {
-        assertThat(inTransaction(() -> masterData.listVehicles(null, null, null)).items())
+        assertThat(inTransaction(() -> masterData.listVehicles(null, null, null, null)).items())
                 .as("vehicles visible to this tenant")
                 .hasSize(expected);
     }
@@ -280,7 +280,7 @@ public class FleetSteps {
 
     @Then("the partner listing shows {string} as {string}")
     public void partnerListingStatus(String code, String status) {
-        assertThat(inTransaction(() -> masterData.listPartners(null, null, null, null)).items())
+        assertThat(inTransaction(() -> masterData.listPartners(null, null, null, null, null)).items())
                 .filteredOn(partner -> partner.code().equals(code))
                 .singleElement()
                 .extracting(com.lms.masterdata.query.PartnerView::status)
@@ -290,7 +290,7 @@ public class FleetSteps {
     @Then("the partner listing filtered to {string} shows {int} partner(s)")
     public void partnerListingFiltered(String partnerType, int expected) {
         assertThat(inTransaction(() ->
-                masterData.listPartners(partnerType, null, null, null)).items())
+                masterData.listPartners(partnerType, null, null, null, null)).items())
                 .hasSize(expected);
     }
 

@@ -21,6 +21,7 @@ import {
   OrderRaiseDraft,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { EntityPicker } from './entity-picker';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -77,7 +78,7 @@ interface Refusal {
  */
 @Component({
   selector: 'app-order-desk',
-  imports: [FormsModule],
+  imports: [FormsModule, EntityPicker],
   template: `
     <h1>Order desk</h1>
     <p class="muted">
@@ -85,20 +86,20 @@ interface Refusal {
       are cut from it.
     </p>
     <form class="inline" (ngSubmit)="openTyped()" data-testid="open-order">
-      <input name="orderId" placeholder="Order id" aria-label="Order id" data-testid="order-id"
-             [value]="typed()" (input)="typed.set($any($event.target).value)" required />
+      <app-entity-picker [kind]="'order'" placeholder="Order" ariaLabel="Order id" testId="order-id" [required]="true"
+                         [(value)]="typed" />
       <button type="submit">Open</button>
     </form>
     @if (session.can('ORDER_CREATE') && session.orgUnitId()) {
       <form class="inline" (ngSubmit)="raise()" data-testid="raise-order">
         <input name="orderNo" placeholder="Order number" aria-label="Order number" [value]="raising().orderNo"
                (input)="setRaise('orderNo', $any($event.target).value)" required />
-        <input name="raiseCustomer" placeholder="Customer id" aria-label="New order customer id"
-               [value]="raising().customerPartnerId"
-               (input)="setRaise('customerPartnerId', $any($event.target).value)" required />
-        <input name="raiseOrigin" placeholder="Origin terminal id" aria-label="New order origin terminal id"
-               [value]="raising().originTerminalId"
-               (input)="setRaise('originTerminalId', $any($event.target).value)" required />
+        <app-entity-picker [kind]="'customer'" placeholder="Customer" ariaLabel="New order customer id"
+                           [value]="raising().customerPartnerId" [required]="true"
+                           (valueChange)="setRaise('customerPartnerId', $event)" />
+        <app-entity-picker [kind]="'terminal'" placeholder="Origin terminal" ariaLabel="New order origin terminal id"
+                           [value]="raising().originTerminalId" [required]="true"
+                           (valueChange)="setRaise('originTerminalId', $event)" />
         <input name="raisePickup" placeholder="Pickup (ISO time, optional)" aria-label="New order pickup"
                [value]="raising().requestedPickupAt"
                (input)="setRaise('requestedPickupAt', $any($event.target).value)" />
@@ -188,10 +189,10 @@ interface Refusal {
               </p>
             }
             <div class="inline" data-testid="header-editor">
-              <input aria-label="Customer id" placeholder="Customer id" [value]="header().customerPartnerId"
-                     (input)="setHeader('customerPartnerId', $any($event.target).value)" />
-              <input aria-label="Origin terminal id" placeholder="Origin terminal id" [value]="header().originTerminalId"
-                     (input)="setHeader('originTerminalId', $any($event.target).value)" />
+              <app-entity-picker [kind]="'customer'" ariaLabel="Customer id" placeholder="Customer"
+                                 [value]="header().customerPartnerId" (valueChange)="setHeader('customerPartnerId', $event)" />
+              <app-entity-picker [kind]="'terminal'" ariaLabel="Origin terminal id" placeholder="Origin terminal"
+                                 [value]="header().originTerminalId" (valueChange)="setHeader('originTerminalId', $event)" />
               <input aria-label="Pickup" placeholder="Pickup (ISO time)" [value]="header().requestedPickupAt"
                      (input)="setHeader('requestedPickupAt', $any($event.target).value)" />
               <input aria-label="Delivery" placeholder="Delivery (ISO time)" [value]="header().requestedDeliveryAt"
@@ -230,10 +231,10 @@ interface Refusal {
                                  (input)="setLine(i, 'widthM', $any($event.target).value)" /></td>
                       <td><input [attr.aria-label]="'Line ' + l.lineNo + ' height m'" [value]="l.heightM" size="4"
                                  (input)="setLine(i, 'heightM', $any($event.target).value)" /></td>
-                      <td><input [attr.aria-label]="'Line ' + l.lineNo + ' consignee id'" [value]="l.consigneePartnerId"
-                                 (input)="setLine(i, 'consigneePartnerId', $any($event.target).value)" /></td>
-                      <td><input [attr.aria-label]="'Line ' + l.lineNo + ' destination id'" [value]="l.destinationTerminalId"
-                                 (input)="setLine(i, 'destinationTerminalId', $any($event.target).value)" /></td>
+                      <td><app-entity-picker [kind]="'partner'" [ariaLabel]="'Line ' + l.lineNo + ' consignee id'"
+                                             [value]="l.consigneePartnerId" (valueChange)="setLine(i, 'consigneePartnerId', $event)" /></td>
+                      <td><app-entity-picker [kind]="'terminal'" [ariaLabel]="'Line ' + l.lineNo + ' destination id'"
+                                             [value]="l.destinationTerminalId" (valueChange)="setLine(i, 'destinationTerminalId', $event)" /></td>
                       <td>
                         @if (lines().length > 1) {
                           <button type="button" class="link" [attr.aria-label]="'Drop line ' + l.lineNo"
