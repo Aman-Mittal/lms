@@ -137,7 +137,9 @@ function between(low: number, high: number): number {
  * the same against CI and a local stack. The consignment has not left, which
  * is exactly what the delivery desk should refuse to prove.
  */
-export async function newConsignment(request: APIRequestContext, session: Session): Promise<string> {
+export async function newConsignment(
+  request: APIRequestContext, session: Session, deadWeightKg = 500,
+): Promise<string> {
   const org = session.orgUnitId;
   const customer = await post(request, session, '/api/v1/partners', {
     orgUnitId: org, code: `ZZ-E2E-C-${uuid()}`, legalName: 'E2E customer', partnerType: 'CUSTOMER',
@@ -162,12 +164,32 @@ export async function newConsignment(request: APIRequestContext, session: Sessio
   });
   await post(request, session, `/api/v1/orders/${order.id}/lines`, {
     lineNo: 1, materialCode: 'GOODS', materialDescription: 'General goods', materialClass: 'GENERAL',
-    quantity: 10, uom: 'CASE', deadWeightKg: 500, consigneePartnerId: consignee.id,
+    quantity: 10, uom: 'CASE', deadWeightKg, consigneePartnerId: consignee.id,
     destinationTerminalId: destination.id,
   });
   await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
   const consignments = await post(request, session, `/api/v1/orders/${order.id}/consignments`, {});
   return consignments[0].id as string;
+}
+
+/** A consignment's reference, the number a desk looks it up by. */
+export async function trackingRefOf(
+  request: APIRequestContext, session: Session, consignmentId: string,
+): Promise<string> {
+  const read = await request.get(`${API}/api/v1/consignments/${consignmentId}`, {
+    headers: { Authorization: `Bearer ${session.token}` },
+  });
+  expect(read.ok(), `GET consignment: ${read.status()}`).toBeTruthy();
+  return (await read.json()).trackingRef as string;
+}
+
+/** Splits a consignment through the API into equal parts and returns the parts. */
+export async function splitEvenly(
+  request: APIRequestContext, session: Session, consignmentId: string, count: number, eachKg: number,
+): Promise<{ id: string; trackingRef: string }[]> {
+  return post(request, session, `/api/v1/consignments/${consignmentId}/split`, {
+    parts: Array.from({ length: count }, () => ({ deadWeightKg: eachKg, volumeM3: 0 })),
+  });
 }
 
 /** Raises a claim through the API and returns its id and number, and the consignment it is against. */
@@ -546,79 +568,108 @@ export async function newSite(
   return siteAt(request, session, code, category, between(10, 30), between(70, 90));
 }
 
-// ------------------------------------------------------------ order desk
+// ---------------------------------------------------------------- client billing
 
-export interface DeskOrder {
-  /** Empty when no order was raised. */
-  orderId: string;
-  orderNo: string;
-  originId: string;
-  destinationId: string;
-  consigneeId: string;
-  /** Two customers, so an edit can move the order from one to the other. */
-  customers: Array<{ id: string; name: string }>;
+/** A `YYYY-MM-DD` day, UTC, offset from today by whole months, on the given day of that month. */
+export function dayOfMonth(monthsAgo: number, day: number): string {
+  const d = new Date();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - monthsAgo);
+  d.setUTCDate(day);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
- * Two customers, an origin and a destination, and a consignee; and, unless `state` is NONE,
- * an order between them with one measured line, left a draft or validated.
+ * A fresh 3PL client: a customer holding a contract in force since 90 days ago, untaxed
+ * so the sums stay readable -- handling 25 a pallet in and 30 out, transport 5 a kilo.
  */
-export async function newDeskOrder(
-  request: APIRequestContext, session: Session, salt: string, state: 'NONE' | 'DRAFT' | 'VALIDATED' = 'DRAFT',
-): Promise<DeskOrder> {
-  const org = session.orgUnitId;
-  const site = (name: string) => post(request, session, '/api/v1/terminals/point-radius', {
-    orgUnitId: org, code: `ZZ-OD-${name}-${salt}`, name: `Desk ${name} ${salt}`, category: 'CUSTOMER_SITE',
-    centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 500, dockCount: 2, avgDwellMinutes: 45,
+export async function newBillingClient(
+  request: APIRequestContext, session: Session,
+): Promise<{ id: string; code: string }> {
+  const code = `ZZ-E2E-3PL-${uuid()}`;
+  const client = await post(request, session, '/api/v1/partners', {
+    orgUnitId: session.orgUnitId, code, legalName: 'E2E 3PL client', partnerType: 'CUSTOMER',
+    taxId: `TAX-${uuid()}`,
   });
-  const partner = (code: string, legalName: string, partnerType: string) => post(request, session, '/api/v1/partners', {
-    orgUnitId: org, code: `ZZ-OD-${code}-${salt}`, legalName, partnerType, taxId: `TAX-${uuid()}`,
+  const started = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
+  await post(request, session, '/api/v1/client-billing/contracts', {
+    orgUnitId: session.orgUnitId, code: `E2E-3PL-${uuid()}`, clientPartnerId: client.id, currency: 'INR',
+    effectiveFrom: started, transportRatePerKg: 5, transportMinimumCharge: 0, storageRatePerPalletDay: 0,
+    handlingInRatePerPallet: 25, handlingOutRatePerPallet: 30, transportTaxRatePct: 0, warehouseTaxRatePct: 0,
   });
-  const origin = await site('ORIG');
-  const destination = await site('DEST');
-  const first = `Desk customer one ${salt}`;
-  const second = `Desk customer two ${salt}`;
-  const customers = [
-    { id: (await partner('C1', first, 'CUSTOMER')).id as string, name: first },
-    { id: (await partner('C2', second, 'CUSTOMER')).id as string, name: second },
-  ];
-  const consignee = await partner('N', `Desk consignee ${salt}`, 'CONSIGNEE');
-  const made: DeskOrder = {
-    orderId: '', orderNo: `ZZ-OD-SO-${salt}`, originId: origin.id, destinationId: destination.id,
-    consigneeId: consignee.id, customers,
-  };
-  if (state === 'NONE') {
-    return made;
-  }
-  const order = await post(request, session, '/api/v1/orders', {
-    orgUnitId: org, customerPartnerId: customers[0].id, orderNo: made.orderNo, originTerminalId: origin.id,
-  });
-  await post(request, session, `/api/v1/orders/${order.id}/lines`, {
-    lineNo: 1, materialCode: 'COIL-1', materialDescription: 'Steel coil', materialClass: 'GENERAL', quantity: 1,
-    uom: 'EA', deadWeightKg: 500, lengthM: 1.2, widthM: 0.8, heightM: 1.5,
-    consigneePartnerId: consignee.id, destinationTerminalId: destination.id,
-  });
-  if (state === 'VALIDATED') {
-    await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
-  }
-  return { ...made, orderId: order.id };
+  return { id: client.id as string, code };
 }
 
-/** Moves a draft order to another customer through the API, as a second editor would. */
-export async function editOrderElsewhere(
-  request: APIRequestContext, session: Session, order: DeskOrder, customerId: string,
+/** Records pallets handled in for the client on the 10th of last month, a month that can be billed. */
+export async function handledInLastMonth(
+  request: APIRequestContext, session: Session, clientId: string, pallets: number,
 ): Promise<void> {
-  const headers = { Authorization: `Bearer ${session.token}` };
-  const read = await request.get(`${API}/api/v1/orders/${order.orderId}`, { headers });
-  expect(read.ok(), `GET order: ${read.status()}`).toBeTruthy();
-  const edit = await request.put(`${API}/api/v1/orders/${order.orderId}`, {
-    headers: { ...headers, 'If-Match': read.headers()['etag'] },
-    data: { customerPartnerId: customerId, originTerminalId: order.originId },
+  await post(request, session, `/api/v1/client-billing/clients/${clientId}/service-usage`, {
+    serviceType: 'HANDLING_IN', quantity: pallets, occurredOn: dayOfMonth(1, 10),
+    reference: `E2E-IN-${uuid()}`, sourceKey: `e2e-${uuid()}`,
   });
-  expect(edit.status(), `PUT order: ${await edit.text()}`).toBe(204);
 }
 
-/** Cuts an order's consignments through the API, as another planner would. */
-export async function cutConsignments(request: APIRequestContext, session: Session, orderId: string): Promise<void> {
-  await post(request, session, `/api/v1/orders/${orderId}/consignments`, {});
+/**
+ * Hands one unit of the client's goods from a warehouse to transport, through the
+ * warehouse's own API: received, put away, ordered out, picked, packed and dispatched at
+ * 420 kg. Client billing charges it on the client's contract as it happens -- today.
+ */
+export async function handOffFor(
+  request: APIRequestContext, session: Session, clientId: string,
+): Promise<string> {
+  const org = session.orgUnitId;
+  const place = (category: string, name: string) => post(request, session, '/api/v1/terminals/point-radius', {
+    orgUnitId: org, code: `E2E-${name}-${uuid()}`, name: `E2E ${name}`, category,
+    centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 500, dockCount: 2,
+    avgDwellMinutes: 45,
+  });
+  const warehouse = await place('WAREHOUSE', 'WH');
+  const destination = await place('CUSTOMER_SITE', 'DEST');
+  const consignee = await post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-E2E-N-${uuid()}`, legalName: 'E2E consignee', partnerType: 'CONSIGNEE',
+    taxId: `TAX-${uuid()}`,
+  });
+  const bin = await post(request, session, `/api/v1/warehouses/${warehouse.id}/bins`, {
+    code: `E2E-BIN-${uuid()}`, capacityUnits: 50,
+  });
+  const sku = await post(request, session, '/api/v1/skus', {
+    code: `E2E-SKU-${uuid()}`, description: 'E2E widget', ownerPartnerId: clientId, uom: 'EA',
+  });
+  const asn = await post(request, session, '/api/v1/asns', {
+    warehouseId: warehouse.id, asnNo: `E2E-ASN-${uuid()}`, lines: [{ skuId: sku.id, quantity: 30 }],
+  });
+  await post(request, session, `/api/v1/asns/${asn.id}/receipt`, {
+    lines: [{ lineNo: 1, receivedQty: 30, damagedQty: 0 }], crossDock: false,
+  });
+  await post(request, session, '/api/v1/putaways', { binId: bin.id, skuId: sku.id, quantity: 30 });
+  const order = await post(request, session, '/api/v1/outbound-orders', {
+    warehouseId: warehouse.id, orderNo: `E2E-OUT-${uuid()}`, lines: [{ skuId: sku.id, quantity: 30 }],
+  });
+  await post(request, session, `/api/v1/outbound-orders/${order.id}/pick`, {});
+  const unit = await post(request, session, `/api/v1/outbound-orders/${order.id}/pack`, {});
+  await post(request, session, `/api/v1/handling-units/${unit.id}/dispatch`, {
+    reference: `E2E-HO-${uuid()}`, destinationTerminalId: destination.id, consigneePartnerId: consignee.id,
+    grossWeightKg: 420,
+  });
+  return unit.id as string;
+}
+
+/** The service types charged to a client in the month holding `day`, as the API lists them. */
+export async function chargedServices(
+  request: APIRequestContext, session: Session, clientId: string, day: string,
+): Promise<string[]> {
+  const read = await request.get(
+    `${API}/api/v1/client-billing/clients/${clientId}/charges?period=${day}&limit=50`,
+    { headers: { Authorization: `Bearer ${session.token}` } },
+  );
+  expect(read.ok(), `GET charges: ${read.status()}`).toBeTruthy();
+  return ((await read.json()).items as Array<{ serviceType: string }>).map((c) => c.serviceType).sort();
+}
+
+/** Bills last month for the client through the API; resolves to the invoice id. */
+export async function billLastMonth(request: APIRequestContext, session: Session, clientId: string): Promise<string> {
+  return (await post(request, session, `/api/v1/client-billing/clients/${clientId}/billing-runs`, {
+    period: dayOfMonth(1, 1),
+  })).id as string;
 }
