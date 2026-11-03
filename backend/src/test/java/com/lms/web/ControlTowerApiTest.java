@@ -231,16 +231,16 @@ class ControlTowerApiTest {
         UUID accident = raise(api, ExceptionCategory.ACCIDENT);
         UUID delay = raise(api, ExceptionCategory.ETA_DELAY);
 
-        ExceptionSlice first = api.listExceptions(null, null, null, 1);
+        ExceptionSlice first = api.listExceptions(null, null, null, 1, null);
         assertThat(first.getItems()).hasSize(1);
         assertThat(first.getHasMore()).isTrue();
-        ExceptionSlice second = api.listExceptions(null, null, first.getNextCursor(), 1);
+        ExceptionSlice second = api.listExceptions(null, null, first.getNextCursor(), 1, null);
         assertThat(second.getItems()).hasSize(1);
         assertThat(second.getHasMore()).isFalse();
         assertThat(List.of(first.getItems().get(0).getId(), second.getItems().get(0).getId()))
                 .containsExactly(delay, accident);
 
-        ExceptionSlice p3Only = api.listExceptions(null, "P3", null, null);
+        ExceptionSlice p3Only = api.listExceptions(null, "P3", null, null, null);
         assertThat(p3Only.getItems()).extracting(com.lms.client.model.Exception::getId)
                 .containsExactly(delay);
 
@@ -283,7 +283,7 @@ class ControlTowerApiTest {
         UUID retry = api.raiseException(request, key).getId();
 
         assertThat(retry).isEqualTo(first);
-        assertThat(api.listExceptions(null, null, null, null).getItems()).hasSize(1);
+        assertThat(api.listExceptions(null, null, null, null, null).getItems()).hasSize(1);
     }
 
     @Test
@@ -304,7 +304,7 @@ class ControlTowerApiTest {
 
         ControlTowerApi api = client(desk, CONTROL_TOWER);
         List<com.lms.client.model.Exception> board =
-                api.listExceptions(null, null, null, null).getItems();
+                api.listExceptions(null, null, null, null, null).getItems();
         assertThat(board).hasSize(1);
 
         com.lms.client.model.Exception ticket = api.getException(board.get(0).getId());
