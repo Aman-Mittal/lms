@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { LmsGateway, TripRoute as Route } from '../gateway/lms-gateway';
 import { MapView } from './map-view';
 
@@ -52,12 +53,22 @@ import { MapView } from './map-view';
     }
   `,
 })
-export class TripRoute {
+export class TripRoute implements OnInit {
   private readonly gateway = inject(LmsGateway);
+  private readonly location = inject(ActivatedRoute);
   readonly route = signal<Route | null>(null);
   readonly loading = signal(false);
   readonly error = signal('');
   readonly typed = signal('');
+
+  /** A link from another screen names the trip, so the route is shown straight away. */
+  ngOnInit(): void {
+    const trip = this.location.snapshot.queryParamMap.get('trip');
+    if (trip) {
+      this.typed.set(trip);
+      void this.lookUp();
+    }
+  }
 
   async lookUp(): Promise<void> {
     this.route.set(null);

@@ -22,6 +22,15 @@ import {
   ClientBillingService, ClientCharge, ClientContract, ClientInvoice, ClientInvoiceLine, ClientStatementEntry,
 } from '../api';
 import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lms-gateway';
+// Commercial
+import {
+  AddSlabRequestRateBasisEnum, Allocation as CommercialAllocation, DefineGuideRequestStrategyEnum,
+  FreightBill as CommercialFreightBill, FreightBillLine as CommercialFreightBillLine, Offer as CommercialOffer,
+  RoutingGuide as CommercialRoutingGuide,
+} from '../api';
+import type {
+  AllocationDetail, FreightBillDetail, GuideDraft, GuideVendorDraft, RoutingGuideDetail, SlabDraft, TariffDraft,
+} from './lms-gateway';
 import type { DemoResetOutcome } from './lms-gateway';
 import {
   AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
@@ -43,6 +52,67 @@ import {
   WebhookChanges, WebhookDeliveryPage, WebhookDraft, WebhookSecret, WebhookView,
   OrderDesk, OrderHeaderDraft, OrderLineDraft, OrderRaiseDraft,
 } from './lms-gateway';
+// Warehouse operations
+import { WarehouseService } from '../api';
+import type {
+  AsnDraft, DispatchDraft, OutboundDraft, ReceiptCountDraft, SkuDraft, StockMoveDraft, WarehouseDocument,
+} from './lms-gateway';
+// Administration
+import {
+  AccessPoliciesService, AccessPolicy, AttachDocumentRequest, ComplianceDocument, ComplianceService,
+  CreateAccessPolicyRequestEffectEnum, ReviseAccessPolicyRequestEffectEnum, SetUserAccessAttributesRequest,
+  SetUserAccessAttributesRequestFreightModesEnum, User, UserAccessAttributes, UsersService,
+} from '../api';
+import type {
+  AccessAttributesDraft, AccessFreightMode, AccessPolicyChanges, AccessPolicyDraft, AccessPolicyPage,
+  AccessPolicyView, AdminUser, DocumentDraft, DocumentOwnerType, PolicyEffect,
+} from './lms-gateway';
+// Control tower
+import { Exception as ApiException, ExceptionCategory } from '../api';
+import type {
+  DetectorSettingsView, ExceptionDraft, ExceptionFilter, TripActivity, TripWatchDraft, TripWatchView,
+} from './lms-gateway';
+
+/** An instant as the React console shows one: `YYYY-MM-DD HH:mm` in UTC. */
+function instant(v: string | null | undefined): string {
+  return v ? text(new Date(v)) : '';
+}
+
+/** A ticket as the exception desk lists and opens it. */
+function ticketRow(e: ApiException): Row {
+  return {
+    id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
+    category: text(e.category), description: text(e.description), source: text(e.source),
+    tripId: text(e.tripId), tripNo: text(e.tripNo), registrationNo: text(e.registrationNo),
+    subjectLabel: text(e.subjectLabel), assigneeName: text(e.assigneeName), raisedBy: text(e.raisedBy),
+    raisedAt: instant(e.raisedAt), resolution: text(e.resolution), resolvedBy: text(e.resolvedBy),
+    closedBy: text(e.closedBy), suspendsSettlement: e.suspendsSettlement ? 'Yes' : '',
+    positionSource: text(e.positionSource), lat: text(e.lat), lon: text(e.lon),
+  };
+}
+
+/** A typed number, or nothing when the field was left blank. */
+function decimalOrAbsent(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+/** A blank note is no note. */
+function noteOf(note: string): { note: string } | undefined {
+  return note.trim() ? { note: note.trim() } : undefined;
+}
+
+/** The result, or null when the API answered 404; any other failure is thrown on. */
+async function absentOn404<T>(call: Promise<T>): Promise<T | null> {
+  try {
+    return await call;
+  } catch (e) {
+    if (e instanceof ApiProblem && e.status === 404) {
+      return null;
+    }
+    throw e;
+  }
+}
 
 /** A load as the building screen shows it. */
 function loadRow(l: Load): Row {
@@ -974,6 +1044,292 @@ export class GeneratedLmsGateway extends LmsGateway {
     }));
   }
 
+  // Warehouse operations
+  private readonly warehouse = inject(WarehouseService);
+
+  warehouseChoices(): Promise<Choice[]> {
+    return this.call(this.terminals.listTerminals({ category: 'WAREHOUSE', limit: 200 }),
+      (s) => s.items.map((t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` })));
+  }
+
+  warehouseBins(warehouseId: string): Promise<Row[]> {
+    return this.call(this.warehouse.listBins({ warehouseId, limit: 200 }), (s) => s.items.map(flatRow));
+  }
+
+  createBin(warehouseId: string, code: string, capacityUnits: number): Promise<string> {
+    return this.call(this.warehouse.createBin({ warehouseId, createBinRequest: { code: code.trim(), capacityUnits } }),
+      (r) => r.id);
+  }
+
+  skus(): Promise<Row[]> {
+    return this.call(this.warehouse.listSkus({ limit: 200 }), (s) => s.items.map(flatRow));
+  }
+
+  createSku(draft: SkuDraft): Promise<string> {
+    return this.call(this.warehouse.createSku({
+      createSkuRequest: {
+        code: draft.code.trim(), description: draft.description.trim(),
+        ownerPartnerId: blankAsAbsent(draft.ownerPartnerId), uom: blankAsAbsent(draft.uom),
+      },
+    }), (r) => r.id);
+  }
+
+  asns(warehouseId: string): Promise<Row[]> {
+    return this.call(this.warehouse.listAsns({ warehouseId, limit: 100 }), (s) => s.items.map(flatRow));
+  }
+
+  asn(id: string): Promise<WarehouseDocument> {
+    return this.call(this.warehouse.getAsn({ id }), (a) => documentOf(a, a.lines));
+  }
+
+  createAsn(draft: AsnDraft): Promise<string> {
+    return this.call(this.warehouse.createAsn({
+      createAsnRequest: {
+        warehouseId: draft.warehouseId, asnNo: draft.asnNo.trim(), supplierPartnerId: blankAsAbsent(draft.supplierPartnerId),
+        lines: draft.lines.map((l) => ({ skuId: l.skuId.trim(), lotNo: blankAsAbsent(l.lotNo), quantity: Number(l.quantity) })),
+      },
+    }), (r) => r.id);
+  }
+
+  receiveAsn(id: string, counts: ReceiptCountDraft[], crossDock: boolean): Promise<void> {
+    return this.call(this.warehouse.receiveAsn({
+      id, receiveAsnRequest: {
+        crossDock,
+        lines: counts.map((c) => ({
+          lineNo: c.lineNo, receivedQty: Number(c.receivedQty), damagedQty: Number(c.damagedQty || 0),
+        })),
+      },
+    }), () => undefined);
+  }
+
+  putaway(draft: StockMoveDraft): Promise<void> {
+    return this.call(this.warehouse.putaway({ putawayRequest: stockMove(draft) }), () => undefined);
+  }
+
+  stock(warehouseId: string): Promise<Row[]> {
+    return this.call(this.warehouse.listStock({ warehouseId, limit: 200 }), (s) => s.items.map(flatRow));
+  }
+
+  stockMovements(skuId: string): Promise<Row[]> {
+    return this.call(this.warehouse.listStockMovements({ skuId, limit: 100 }), (s) => s.items.map(flatRow));
+  }
+
+  adjustStock(draft: StockMoveDraft): Promise<string> {
+    return this.call(this.warehouse.adjustStock({ adjustStockRequest: { ...stockMove(draft), reason: draft.reason.trim() } }),
+      (r) => r.id);
+  }
+
+  releaseQuarantine(draft: StockMoveDraft): Promise<string> {
+    return this.call(this.warehouse.releaseQuarantinedStock({
+      releaseQuarantineRequest: { ...stockMove(draft), reason: draft.reason.trim() },
+    }), (r) => r.id);
+  }
+
+  writeOffQuarantine(warehouseId: string, draft: StockMoveDraft): Promise<string> {
+    return this.call(this.warehouse.writeOffQuarantinedStock({
+      writeOffQuarantineRequest: {
+        warehouseId, skuId: draft.skuId.trim(), lotNo: blankAsAbsent(draft.lotNo), quantity: Number(draft.quantity),
+        reason: draft.reason.trim(),
+      },
+    }), (r) => r.id);
+  }
+
+  outboundOrders(warehouseId: string): Promise<Row[]> {
+    return this.call(this.warehouse.listOutboundOrders({ warehouseId, limit: 100 }), (s) => s.items.map(flatRow));
+  }
+
+  outboundOrder(id: string): Promise<WarehouseDocument> {
+    return this.call(this.warehouse.getOutboundOrder({ id }), (o) => documentOf(o, o.lines));
+  }
+
+  createOutboundOrder(draft: OutboundDraft): Promise<string> {
+    return this.call(this.warehouse.createOutboundOrder({
+      createOutboundOrderRequest: {
+        warehouseId: draft.warehouseId, orderNo: draft.orderNo.trim(), shipTo: blankAsAbsent(draft.shipTo),
+        lines: draft.lines.map((l) => ({ skuId: l.skuId.trim(), quantity: Number(l.quantity) })),
+      },
+    }), (r) => r.id);
+  }
+
+  pickOutboundOrder(id: string): Promise<void> {
+    return this.call(this.warehouse.pickOutboundOrder({ id }), () => undefined);
+  }
+
+  packOutboundOrder(id: string): Promise<string> {
+    return this.call(this.warehouse.packOutboundOrder({ id }), (r) => r.id);
+  }
+
+  cancelBackOrder(id: string): Promise<void> {
+    return this.call(this.warehouse.cancelOutboundOrderBackOrder({ id }), () => undefined);
+  }
+
+  handlingUnits(warehouseId: string): Promise<Row[]> {
+    return this.call(this.warehouse.listHandlingUnits({ warehouseId, limit: 100 }), (s) => s.items.map(flatRow));
+  }
+
+  handlingUnit(id: string): Promise<WarehouseDocument> {
+    return this.call(this.warehouse.getHandlingUnit({ id }), (u) => documentOf(u, u.contents));
+  }
+
+  dispatchHandlingUnit(id: string, draft: DispatchDraft): Promise<void> {
+    return this.call(this.warehouse.dispatchHandlingUnit({
+      id, dispatchRequest: {
+        reference: blankAsAbsent(draft.reference), destinationTerminalId: blankAsAbsent(draft.destinationTerminalId),
+        consigneePartnerId: blankAsAbsent(draft.consigneePartnerId), grossWeightKg: numberOrAbsent(draft.grossWeightKg),
+      },
+    }), () => undefined);
+  }
+
+  pickWaves(warehouseId: string): Promise<Row[]> {
+    return this.call(this.warehouse.listPickWaves({ warehouseId, limit: 100 }), (s) => s.items.map(flatRow));
+  }
+
+  pickWave(id: string): Promise<WarehouseDocument> {
+    return this.call(this.warehouse.getPickWave({ id }), (w) => documentOf(w, w.orders));
+  }
+
+  releasePickWave(warehouseId: string, orderIds: string[]): Promise<string> {
+    return this.call(this.warehouse.releasePickWave({ releasePickWaveRequest: { warehouseId, orderIds } }), (r) => r.id);
+  }
+
+  pickPickWave(id: string): Promise<void> {
+    return this.call(this.warehouse.pickPickWave({ id }), () => undefined);
+  }
+
+  // Control tower
+
+  exceptionTickets(filter: ExceptionFilter): Promise<Row[]> {
+    return this.call(this.controlTower.listExceptions({
+      status: filter.status || undefined, severity: (filter.severity || undefined) as 'P1' | 'P2' | 'P3' | undefined,
+      limit: 50,
+    }), (page) => page.items.map(ticketRow));
+  }
+
+  exceptionTicket(id: string): Promise<Row> {
+    return this.call(this.controlTower.getException({ id }), ticketRow);
+  }
+
+  exceptionHistory(id: string): Promise<Row[]> {
+    return this.call(this.controlTower.getExceptionHistory({ id }), (steps) => steps.map((a) => ({
+      action: text(a.action), fromStatus: text(a.fromStatus), toStatus: text(a.toStatus), note: text(a.note),
+      actor: text(a.actor), occurredAt: instant(a.occurredAt),
+    })));
+  }
+
+  raiseException(draft: ExceptionDraft): Promise<string> {
+    return this.call(this.controlTower.raiseException({
+      raiseExceptionRequest: {
+        tripId: draft.tripId.trim(), category: draft.category as ExceptionCategory, description: draft.description.trim(),
+      },
+    }), (r) => text(r.id));
+  }
+
+  assignException(id: string, assigneeUserId: string, note: string): Promise<void> {
+    return this.call(this.controlTower.assignException({
+      id, assignExceptionRequest: { assigneeUserId: assigneeUserId.trim(), note: note.trim() || undefined },
+    }), () => undefined);
+  }
+
+  investigateException(id: string, note: string): Promise<void> {
+    return this.call(this.controlTower.investigateException({ id, exceptionNoteRequest: noteOf(note) }), () => undefined);
+  }
+
+  resolveException(id: string, resolution: string): Promise<void> {
+    return this.call(this.controlTower.resolveException({
+      id, resolveExceptionRequest: { resolution: resolution.trim() },
+    }), () => undefined);
+  }
+
+  reopenException(id: string, reason: string): Promise<void> {
+    return this.call(this.controlTower.reopenException({ id, reopenExceptionRequest: { reason: reason.trim() } }),
+      () => undefined);
+  }
+
+  closeException(id: string, note: string): Promise<void> {
+    return this.call(this.controlTower.closeException({ id, exceptionNoteRequest: noteOf(note) }), () => undefined);
+  }
+
+  userChoices(): Promise<Choice[]> {
+    return this.call(this.users.listUsers(), (users) => users.map((u) => ({
+      id: text(u.id), label: `${text(u.fullName)} · ${text(u.email)}`,
+    })));
+  }
+
+  detectorSettings(): Promise<DetectorSettingsView> {
+    return this.call(this.controlTower.getDetectorSettings(), (d) => ({
+      etaSlipMinutes: d.etaSlipMinutes ?? 0, temperatureExcursionMinutes: d.temperatureExcursionMinutes ?? 0,
+      customised: d.customised ?? false,
+    }));
+  }
+
+  saveDetectorSettings(etaSlipMinutes: number, temperatureExcursionMinutes: number): Promise<void> {
+    return this.call(this.controlTower.setDetectorSettings({
+      setDetectorSettingsRequest: { etaSlipMinutes, temperatureExcursionMinutes },
+    }), () => undefined);
+  }
+
+  tripWatch(tripId: string): Promise<TripWatchView | null> {
+    return absentOn404(this.call(this.controlTower.getTripWatch({ tripId }), (w) => ({
+      committedArrivalAt: instant(w.committedArrivalAt), tempMinC: text(w.tempMinC), tempMaxC: text(w.tempMaxC),
+      outsideRangeSince: instant(w.outsideRangeSince), lastReadingAt: instant(w.lastReadingAt),
+    })));
+  }
+
+  setTripWatch(tripId: string, draft: TripWatchDraft): Promise<void> {
+    return this.call(this.controlTower.setTripWatch({
+      tripId,
+      setTripWatchRequest: {
+        committedArrivalAt: draft.committedArrivalAt ? new Date(draft.committedArrivalAt).toISOString() : undefined,
+        tempMinC: decimalOrAbsent(draft.tempMinC), tempMaxC: decimalOrAbsent(draft.tempMaxC),
+      },
+    }), () => undefined);
+  }
+
+  clearTripWatch(tripId: string): Promise<void> {
+    return this.call(this.controlTower.clearTripWatch({ tripId }), () => undefined);
+  }
+
+  async tripActivity(tripId: string): Promise<TripActivity> {
+    const [progress, crossings] = await Promise.all([
+      absentOn404(this.call(this.telematics.getProgress({ tripId }), (p) => p)),
+      this.call(this.telematics.listCrossings({ tripId }), (c) => c),
+    ]);
+    return {
+      progress: progress && {
+        tripNo: text(progress.tripNo), status: text(progress.status), lastFixAt: instant(progress.lastFixAt),
+        completionPct: text(progress.completionPct), remainingDistanceM: text(progress.remainingDistanceM),
+        estimatedMinutesRemaining: text(progress.estimatedMinutesRemaining),
+        offRoute: progress.offRoute ? 'Yes' : '', deviationM: text(progress.deviationM),
+      },
+      crossings: crossings.map((c) => ({
+        id: text(c.id), eventType: text(c.eventType), terminalCode: text(c.terminalCode), occurredAt: instant(c.occurredAt),
+      })),
+    };
+  }
+
+  vehiclePositions(): Promise<Mapped> {
+    return this.call(this.telematics.listPositions(), (positions) => ({
+      rows: positions.map((v) => ({
+        id: text(v.vehicleId), registrationNo: text(v.registrationNo), tripId: text(v.tripId), tripNo: text(v.tripNo),
+        tripStatus: text(v.tripStatus), speedKph: text(v.speedKph), recordedAt: instant(v.recordedAt),
+        ageSeconds: text(v.ageSeconds),
+      })),
+      features: positions
+        .filter((v) => v.lat !== undefined && v.lon !== undefined)
+        .map((v): MapFeature => ({
+          id: text(v.vehicleId), kind: 'vehicle', label: `${text(v.registrationNo)}${v.tripNo ? ` · ${v.tripNo}` : ''}`,
+          points: [{ lat: v.lat as number, lon: v.lon as number }],
+        })),
+    }));
+  }
+
+  openDeviations(): Promise<Row[]> {
+    return this.call(this.telematics.listOpenDeviations(), (rows) => rows.map((d) => ({
+      id: text(d.id), tripId: text(d.tripId), tripNo: text(d.tripNo), detectedAt: instant(d.detectedAt),
+      distanceM: text(d.distanceM), corridorM: text(d.corridorM),
+    })));
+  }
+
   /** Each distinct terminal named, read once. */
   private async terminalsById(ids: Array<string | null | undefined>): Promise<Map<string, Terminal>> {
     const distinct = [...new Set(ids.filter((id): id is string => !!id))];
@@ -998,4 +1354,339 @@ export class GeneratedLmsGateway extends LmsGateway {
       throw e;
     }
   }
+
+  // Administration
+  private readonly users = inject(UsersService);
+  private readonly accessPolicyApi = inject(AccessPoliciesService);
+  private readonly compliance = inject(ComplianceService);
+
+  adminUsers(): Promise<AdminUser[]> {
+    return this.call(this.users.listUsers(), (list) => list.map(adminUserOf));
+  }
+
+  userPermissions(userId: string): Promise<string[]> {
+    return this.call(this.users.getUserPermissions({ id: userId }), (codes) => [...codes].sort());
+  }
+
+  accessAttributes(userId: string): Promise<AccessAttributesDraft> {
+    return this.call(this.accessPolicyApi.getUserAccessAttributes({ id: userId }), adminAttributesOf);
+  }
+
+  setAccessAttributes(userId: string, draft: AccessAttributesDraft): Promise<void> {
+    return this.call(this.accessPolicyApi.setUserAccessAttributes({
+      id: userId, setUserAccessAttributesRequest: adminAttributesRequest(draft),
+    }), () => undefined);
+  }
+
+  accessPolicies(cursor?: string): Promise<AccessPolicyPage> {
+    return this.call(this.accessPolicyApi.listAccessPolicies({ cursor, limit: 100 }), (page) => ({
+      policies: page.items.map(adminPolicyOf), nextCursor: page.hasMore ? page.nextCursor ?? null : null,
+    }));
+  }
+
+  async createAccessPolicy(draft: AccessPolicyDraft): Promise<string> {
+    const condition = adminConditionOf(draft.condition);
+    return this.call(this.accessPolicyApi.createAccessPolicy({
+      createAccessPolicyRequest: {
+        code: draft.code.trim(), action: draft.action.trim(),
+        effect: draft.effect as CreateAccessPolicyRequestEffectEnum, description: draft.description.trim(),
+        condition, enabled: draft.enabled,
+      },
+    }), (made) => text(made.id));
+  }
+
+  async reviseAccessPolicy(id: string, changes: AccessPolicyChanges): Promise<void> {
+    const condition = adminConditionOf(changes.condition);
+    return this.call(this.accessPolicyApi.reviseAccessPolicy({
+      id,
+      reviseAccessPolicyRequest: {
+        effect: changes.effect as ReviseAccessPolicyRequestEffectEnum, description: changes.description.trim(),
+        condition, enabled: changes.enabled,
+      },
+    }), () => undefined);
+  }
+
+  deleteAccessPolicy(id: string): Promise<void> {
+    return this.call(this.accessPolicyApi.deleteAccessPolicy({ id }), () => undefined);
+  }
+
+  expiringDocuments(withinDays: number): Promise<Row[]> {
+    return this.call(this.compliance.listExpiringDocuments({ withinDays }), (docs) => docs.map(adminDocumentRow));
+  }
+
+  ownerDocuments(ownerType: DocumentOwnerType, ownerId: string): Promise<Row[]> {
+    const id = ownerId.trim();
+    const listed = ownerType === 'PARTNER' ? this.partners.listPartnerDocuments({ id })
+      : ownerType === 'VEHICLE' ? this.vehicles.listVehicleDocuments({ id })
+        : this.drivers.listDriverDocuments({ id });
+    return this.call(listed, (docs) => docs.map(adminDocumentRow));
+  }
+
+  attachDocument(ownerType: DocumentOwnerType, ownerId: string, draft: DocumentDraft): Promise<string> {
+    const id = ownerId.trim();
+    const attachDocumentRequest = adminDocumentRequest(draft);
+    const made = ownerType === 'PARTNER' ? this.partners.attachPartnerDocument({ id, attachDocumentRequest })
+      : ownerType === 'VEHICLE' ? this.vehicles.attachVehicleDocument({ id, attachDocumentRequest })
+        : this.drivers.attachDriverDocument({ id, attachDocumentRequest });
+    return this.call(made, (r) => text(r.id));
+  }
+
+  // Commercial
+  publishTariff(orgUnitId: string, draft: TariffDraft): Promise<string> {
+    return this.call(this.freightBills.publishTariff({
+      publishTariffRequest: {
+        orgUnitId, code: draft.code.trim(), vendorPartnerId: draft.vendorPartnerId.trim(),
+        originTerminalId: draft.originTerminalId.trim(), destinationTerminalId: draft.destinationTerminalId.trim(),
+        vehicleType: draft.vehicleType.trim(), effectiveFrom: draft.effectiveFrom,
+        currency: commercialBlank(draft.currency), minimumCharge: commercialNumber(draft.minimumCharge),
+        detentionFreeHours: commercialNumber(draft.detentionFreeHours),
+        detentionHourlyRate: commercialNumber(draft.detentionHourlyRate),
+        additionalDropFee: commercialNumber(draft.additionalDropFee),
+      },
+    }), (r) => text(r.id));
+  }
+
+  addTariffSlab(tariffId: string, slab: SlabDraft): Promise<string> {
+    return this.call(this.freightBills.addTariffSlab({
+      id: tariffId,
+      addSlabRequest: {
+        minWeightKg: Number(slab.minWeightKg), maxWeightKg: commercialNumber(slab.maxWeightKg),
+        rateBasis: slab.rateBasis as unknown as AddSlabRequestRateBasisEnum, rateAmount: Number(slab.rateAmount),
+      },
+    }), (r) => text(r.id));
+  }
+
+  recordFuelSurcharge(month: string, surchargePct: number): Promise<string> {
+    return this.call(this.freightBills.recordFuelSurcharge({ fuelSurchargeRequest: { month, surchargePct } }),
+      (r) => text(r.id));
+  }
+
+  defineRoutingGuide(orgUnitId: string, draft: GuideDraft): Promise<string> {
+    return this.call(this.sourcing.defineRoutingGuide({
+      defineGuideRequest: {
+        orgUnitId, originTerminalId: draft.originTerminalId.trim(),
+        destinationTerminalId: draft.destinationTerminalId.trim(), vehicleType: draft.vehicleType.trim(),
+        strategy: draft.strategy as unknown as DefineGuideRequestStrategyEnum,
+      },
+    }), (r) => text(r.id));
+  }
+
+  routingGuide(id: string): Promise<RoutingGuideDetail> {
+    return this.call(this.sourcing.getRoutingGuide({ id }), commercialGuideOf);
+  }
+
+  addGuideVendor(guideId: string, draft: GuideVendorDraft): Promise<void> {
+    return this.call(this.sourcing.addRoutingGuideVendor({
+      id: guideId,
+      addVendorRequest: {
+        vendorPartnerId: draft.vendorPartnerId.trim(), rankNo: draft.rankNo,
+        responseSlaMinutes: draft.responseSlaMinutes, agreedRate: commercialNumber(draft.agreedRate),
+      },
+    }), () => undefined);
+  }
+
+  retireRoutingGuide(id: string): Promise<void> {
+    return this.call(this.sourcing.retireRoutingGuide({ id }), () => undefined);
+  }
+
+  allocations(status?: string): Promise<Row[]> {
+    return this.call(this.sourcing.listAllocations({ status: status || undefined, limit: 100 }),
+      (page) => page.items.map(commercialAllocationRow));
+  }
+
+  async allocationDetail(id: string): Promise<AllocationDetail> {
+    const [allocation, offers] = await Promise.all([
+      this.call(this.sourcing.getAllocation({ id }), commercialAllocationRow),
+      this.call(this.sourcing.listOffers({ id }), (rows) => rows.map(commercialOfferRow)),
+    ]);
+    return { allocation, offers };
+  }
+
+  allocateLoad(loadId: string): Promise<string> {
+    return this.call(this.sourcing.allocateLoad({ allocateRequest: { loadId: loadId.trim() } }), (r) => text(r.id));
+  }
+
+  acceptOffer(allocationId: string, vendorPartnerId: string): Promise<void> {
+    return this.call(this.sourcing.acceptOffer({ id: allocationId, vendorResponseRequest: { vendorPartnerId } }),
+      () => undefined);
+  }
+
+  rejectOffer(allocationId: string, vendorPartnerId: string): Promise<void> {
+    return this.call(this.sourcing.rejectOffer({ id: allocationId, vendorResponseRequest: { vendorPartnerId } }),
+      () => undefined);
+  }
+
+  cancelAllocation(id: string): Promise<void> {
+    return this.call(this.sourcing.cancelAllocation({ id }), () => undefined);
+  }
+
+  freightBillList(status?: string): Promise<Row[]> {
+    return this.call(this.freightBills.listFreightBills({ status: status || undefined, limit: 100 }),
+      (page) => page.items.map(commercialBillRow));
+  }
+
+  async freightBill(id: string): Promise<FreightBillDetail> {
+    const [bill, lines] = await Promise.all([
+      this.call(this.freightBills.getFreightBill({ id }), commercialBillRow),
+      this.call(this.freightBills.getFreightBillLines({ id }), (rows) => rows.map(commercialBillLineRow)),
+    ]);
+    return { bill, lines };
+  }
+
+  matchFreightBill(id: string, claimedAmount: number): Promise<string> {
+    return this.call(this.freightBills.matchFreightBill({ id, matchRequest: { claimedAmount } }), (r) => text(r.status));
+  }
+
+  resolveFreightBill(id: string, reason: string): Promise<void> {
+    return this.call(this.freightBills.resolveDispute({ id, resolveDisputeRequest: { reason } }), () => undefined);
+  }
+}
+
+// Administration
+
+function adminUserOf(u: User): AdminUser {
+  return {
+    id: text(u.id), email: text(u.email), fullName: text(u.fullName), status: text(u.status),
+    orgName: text(u.orgName), lastLoginAt: text(u.lastLoginAt),
+  };
+}
+
+function adminAttributesOf(a: UserAccessAttributes): AccessAttributesDraft {
+  return {
+    region: text(a.region), freightModes: (a.freightModes ?? []).map((m) => m as string as AccessFreightMode),
+    partnerId: text(a.partnerId), approvalLimit: text(a.approvalLimit),
+  };
+}
+
+/** An empty set of modes is left out rather than sent: absent means unrestricted, `[]` would mean none. */
+function adminAttributesRequest(d: AccessAttributesDraft): SetUserAccessAttributesRequest {
+  return {
+    region: blankAsAbsent(d.region),
+    freightModes: d.freightModes.length > 0
+      ? d.freightModes.map((m) => m as SetUserAccessAttributesRequestFreightModesEnum) : undefined,
+    partnerId: blankAsAbsent(d.partnerId), approvalLimit: numberOrAbsent(d.approvalLimit),
+  };
+}
+
+function adminPolicyOf(p: AccessPolicy): AccessPolicyView {
+  return {
+    id: text(p.id), code: text(p.code), action: text(p.action), effect: text(p.effect) as PolicyEffect,
+    description: text(p.description), condition: JSON.stringify(p.condition ?? {}, null, 2),
+    enabled: p.enabled === true, updatedAt: text(p.updatedAt),
+  };
+}
+
+/** The condition a desk typed, as the object the API takes; anything but a JSON object is refused here. */
+function adminConditionOf(condition: string): { [key: string]: unknown } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(condition);
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ApiProblem('The condition must be a JSON object, such as {"attr": "subject.region", "op": "present"}.',
+      undefined, {}, 'condition-not-json');
+  }
+  return parsed as { [key: string]: unknown };
+}
+
+/** `state` reads Expired, Expiring (within 30 days), Valid, or No expiry. */
+function adminDocumentRow(d: ComplianceDocument): Row {
+  const days = d.daysToExpiry;
+  const state = d.expired ? 'Expired' : days === undefined || days === null ? 'No expiry'
+    : days <= 30 ? 'Expiring' : 'Valid';
+  return {
+    id: text(d.id), ownerType: text(d.ownerType), ownerLabel: text(d.ownerLabel),
+    documentType: text(d.documentType), documentNo: text(d.documentNo), issuingAuthority: text(d.issuingAuthority),
+    issuedOn: text(d.issuedOn), expiresOn: text(d.expiresOn), daysToExpiry: text(days), state,
+  };
+}
+
+function adminDocumentRequest(d: DocumentDraft): AttachDocumentRequest {
+  return {
+    documentType: d.documentType.trim(), documentNo: d.documentNo.trim(),
+    issuingAuthority: blankAsAbsent(d.issuingAuthority), issuedOn: blankAsAbsent(d.issuedOn),
+    expiresOn: blankAsAbsent(d.expiresOn),
+  };
+}
+
+// Warehouse operations
+
+/** A record's scalar fields as display cells; nested lists are mapped by the caller. */
+function flatRow(record: object): Row {
+  return Object.fromEntries(Object.entries(record)
+    .filter(([, v]) => v === null || v === undefined || typeof v !== 'object')
+    .map(([k, v]) => [k, text(v)]));
+}
+
+function documentOf(header: object, lines: object[] | undefined): WarehouseDocument {
+  return { header: flatRow(header), lines: (lines ?? []).map(flatRow) };
+}
+
+function stockMove(d: StockMoveDraft) {
+  return { binId: d.binId.trim(), skuId: d.skuId.trim(), lotNo: blankAsAbsent(d.lotNo), quantity: Number(d.quantity) };
+}
+
+// Commercial
+
+/** A blank optional text left out of a request. */
+function commercialBlank(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** A blank optional figure left out of a request. */
+function commercialNumber(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+function commercialGuideOf(g: CommercialRoutingGuide): RoutingGuideDetail {
+  return {
+    guide: {
+      id: text(g.id), originTerminalCode: text(g.originTerminalCode), destinationTerminalCode: text(g.destinationTerminalCode),
+      vehicleType: text(g.vehicleType), strategy: text(g.strategy), active: g.active ? 'Yes' : '',
+    },
+    entries: (g.entries ?? []).map((e) => ({
+      rankNo: text(e.rankNo), vendorPartnerId: text(e.vendorPartnerId), vendorName: text(e.vendorName),
+      responseSlaMinutes: text(e.responseSlaMinutes), agreedRate: text(e.agreedRate),
+    })),
+  };
+}
+
+function commercialAllocationRow(a: CommercialAllocation): Row {
+  return {
+    id: text(a.id), loadId: text(a.loadId), loadNo: text(a.loadNo), strategy: text(a.strategy), status: text(a.status),
+    pendingVendorName: text(a.pendingVendorName), respondsBy: text(a.respondsBy),
+    awardedVendorName: text(a.awardedVendorName), awardedAt: text(a.awardedAt), currentRank: text(a.currentRank),
+    offersMade: text(a.offersMade), appliedRuleName: text(a.appliedRuleName), createdAt: text(a.createdAt),
+  };
+}
+
+function commercialOfferRow(o: CommercialOffer): Row {
+  return {
+    id: text(o.id), rankNo: text(o.rankNo), vendorPartnerId: text(o.vendorPartnerId), vendorName: text(o.vendorName),
+    outcome: text(o.outcome), offeredAt: text(o.offeredAt), respondsBy: text(o.respondsBy),
+    respondedAt: text(o.respondedAt),
+  };
+}
+
+function commercialBillRow(b: CommercialFreightBill): Row {
+  return {
+    id: text(b.id), billNo: text(b.billNo), status: text(b.status), source: text(b.source), currency: text(b.currency),
+    tripNo: text(b.tripNo), loadNo: text(b.loadNo), vendorName: text(b.vendorName), tariffCode: text(b.tariffCode),
+    pricedOn: text(b.pricedOn), chargeableWeightKg: text(b.chargeableWeightKg), baseFreight: text(b.baseFreight),
+    detentionAmount: text(b.detentionAmount), multiDropAmount: text(b.multiDropAmount),
+    fuelSurchargeAmount: text(b.fuelSurchargeAmount), computedAmount: text(b.computedAmount),
+    claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount), variancePct: text(b.variancePct),
+    resolution: text(b.resolution), matchedAt: text(b.matchedAt), settlementHeldBy: text(b.settlementHeldBy),
+  };
+}
+
+function commercialBillLineRow(l: CommercialFreightBillLine): Row {
+  return {
+    lineNo: text(l.lineNo), chargeType: text(l.chargeType), narrative: text(l.narrative), quantity: text(l.quantity),
+    unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+  };
 }
