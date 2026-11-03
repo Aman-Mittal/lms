@@ -153,6 +153,42 @@ export interface DeliveryProofView {
   otpExpiresAt: string;
 }
 
+// ---------------------------------------------------------------- consignments
+
+/** A consignment as the consignment desk shows it, every cell formatted for display. */
+export interface ConsignmentCard {
+  id: string;
+  trackingRef: string;
+  status: string;
+  orderNo: string;
+  consigneeName: string;
+  destinationTerminalCode: string;
+  deadWeightKg: string;
+  volumeM3: string;
+  chargeableWeightKg: string;
+  loadNo: string;
+  freightMode: string;
+  /** For a part of a split consignment: the consignment it is a part of; empty otherwise. */
+  parentId: string;
+  parentTrackingRef: string;
+  /** For a SPLIT consignment: how many parts, and how many delivered or cancelled; null otherwise. */
+  partCount: number | null;
+  partsDelivered: number | null;
+  partsCancelled: number | null;
+}
+
+/** One part of a split as the planner states it, in kilograms and cubic metres. */
+export interface SplitPartDraft {
+  deadWeightKg: string;
+  volumeM3: string;
+}
+
+/** A part as the split made it. */
+export interface SplitPart {
+  id: string;
+  trackingRef: string;
+}
+
 // ---------------------------------------------------------------- tracking links
 
 /** A link as it is issued: the token is shown here and nowhere else. */
@@ -182,6 +218,9 @@ export interface PublicTrackingView {
   proofRecorded: boolean;
   /** The last reported position while in transit, to two decimals; null otherwise. */
   position: { lat: string; lon: string; recordedAt: string } | null;
+  /** For a consignment split across vehicles: parts being carried, and how many delivered; null otherwise. */
+  partsTotal: number | null;
+  partsDelivered: number | null;
 }
 
 /** What a demo reset did. */
@@ -351,7 +390,7 @@ export interface ParkedEventDetail {
 
 /** What a subscription can ask for. `PING` is what a test ping sends and cannot be subscribed to. */
 export const WEBHOOK_EVENT_TYPES = [
-  'ORDER_VALIDATED', 'CONSIGNMENTS_GENERATED', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
+  'ORDER_VALIDATED', 'CONSIGNMENTS_GENERATED', 'CONSIGNMENT_SPLIT', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
   'DELIVERY_PROOF_RECORDED', 'CLAIM_RAISED', 'CLAIM_STATUS_CHANGED',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
@@ -409,75 +448,44 @@ export interface ConsignmentPage {
 /** The most consignments one request may put on a load. */
 export const MAX_BULK_ASSIGNMENT = 500;
 
-// ---------------------------------------------------------------- order desk
+// ---------------------------------------------------------------- client billing
 
-/** An order's header as an edit restates it, whole. Blank strings are values left unset. */
-export interface OrderHeaderDraft {
-  customerPartnerId: string;
-  originTerminalId: string;
-  /** ISO instants, or blank. */
-  requestedPickupAt: string;
-  requestedDeliveryAt: string;
-  /** Both for a part-load order, neither for a full truckload. */
-  originHubTerminalId: string;
-  destinationHubTerminalId: string;
+/** An invoice and its lines, in line order. */
+export interface ClientInvoiceDetail {
+  invoice: Row;
+  lines: Row[];
 }
 
-/** What raising an order needs; it starts as a draft. */
-export interface OrderRaiseDraft {
-  orderNo: string;
-  customerPartnerId: string;
-  originTerminalId: string;
-  requestedPickupAt: string;
-  requestedDeliveryAt: string;
+/** What a client owes as of today, in age buckets, and the invoices it is made of. */
+export interface ClientAgeingView {
+  currency: string;
+  outstanding: string;
+  unappliedCredit: string;
+  /** Keyed `0-30`, `31-60`, `61-90` and `90+`. */
+  buckets: Record<string, string>;
+  invoices: Row[];
 }
 
-/**
- * A line as entered or restated. Numbers stay as typed, and blank optional fields are left
- * out of the request. The measurements travel with it, or an edit would clear them.
- */
-export interface OrderLineDraft {
-  lineNo: number;
-  materialCode: string;
-  materialDescription: string;
-  materialClass: string;
-  hazmatUnCode: string;
-  quantity: string;
-  uom: string;
-  deadWeightKg: string;
-  lengthM: string;
-  widthM: string;
-  heightM: string;
-  volumetricDivisor: string;
-  consigneePartnerId: string;
-  destinationTerminalId: string;
+/** Money received from a client; `receivedOn` is a `YYYY-MM-DD` day. */
+export interface PaymentDraft {
+  amount: number;
+  receivedOn: string;
+  reference: string;
 }
 
-/** A stored line: the draft it restates as, and what is shown beside it. */
-export interface OrderLineView extends OrderLineDraft {
-  id: string;
-  consigneeName: string;
-  destinationTerminalCode: string;
-  planned: boolean;
-}
-
-/** An order as the desk shows it, with the version every edit must send back. */
-export interface OrderDesk {
-  order: Row;
-  version: string;
-  header: OrderHeaderDraft;
-  lines: OrderLineView[];
+/** A credit against a whole invoice, before tax, spread over its lines. */
+export interface CreditNoteDraft {
+  reason: string;
+  amount: number;
 }
 
 /**
  * The one error screens handle: a message fit to show, and the HTTP status if there was one.
  * `errors` names each item a refusal of many was about -- a field, or a consignment's
- * tracking reference -- with its reasons; it is empty otherwise. `code` is the problem's
- * stable name, such as `order-has-consignments`, or empty when there was none.
+ * tracking reference -- with its reasons; it is empty otherwise.
  */
 export class ApiProblem extends Error {
-  constructor(message: string, readonly status?: number, readonly errors: Record<string, string> = {},
-    readonly code = '') {
+  constructor(message: string, readonly status?: number, readonly errors: Record<string, string> = {}) {
     super(message);
     this.name = 'ApiProblem';
   }
@@ -511,6 +519,12 @@ export interface LmsGateway {
   recordDeliveryProof(consignmentId: string, draft: ProofDraft): Promise<void>;
   /** Null when no code has been issued for the consignment yet. */
   deliveryProof(consignmentId: string): Promise<DeliveryProofView | null>;
+  /** A consignment by the reference a customer quotes. */
+  consignmentByRef(trackingRef: string): Promise<ConsignmentCard>;
+  consignment(id: string): Promise<ConsignmentCard>;
+  /** Every part of a split consignment, in reference order (at most 500). */
+  consignmentParts(id: string): Promise<ConsignmentCard[]>;
+  splitConsignment(id: string, parts: SplitPartDraft[]): Promise<SplitPart[]>;
 
   /** Shown once: the token in the result cannot be read again. */
   issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink>;
@@ -581,22 +595,24 @@ export interface LmsGateway {
    */
   assignConsignments(loadId: string, consignmentIds: string[]): Promise<void>;
 
-  /** Rejects with a 404 problem for an order that does not exist. */
-  orderDesk(orderId: string): Promise<OrderDesk>;
-  /** Resolves to the new order's id. */
-  raiseOrder(orgUnitId: string, draft: OrderRaiseDraft): Promise<string>;
+  /** Customer partners a 3PL contract may be held by. */
+  clientChoices(): Promise<Choice[]>;
+  /** Every contract version of the client, newest first. */
+  clientContracts(clientId: string): Promise<Row[]>;
+  /** The client's charges in the month holding `period` (a `YYYY-MM-DD` day). */
+  clientCharges(clientId: string, period: string): Promise<Row[]>;
   /**
-   * The edits below send `version` as If-Match: the version the desk was read at. A stale one
-   * is refused with the problem code `concurrent-modification`, and nothing changes.
+   * Bills the month holding `period`; resolves to the invoice's id. Running a month
+   * again answers the same invoice.
    */
-  reviseOrderHeader(orderId: string, version: string, header: OrderHeaderDraft): Promise<void>;
-  replaceOrderLines(orderId: string, version: string, lines: OrderLineDraft[]): Promise<void>;
-  removeOrderLine(orderId: string, version: string, lineId: string): Promise<void>;
-  /** A validated order with no consignments yet; a null part is kept as it is. */
-  amendOrder(orderId: string, version: string, header: OrderHeaderDraft | null,
-    lines: OrderLineDraft[] | null): Promise<void>;
-  validateOrder(orderId: string): Promise<void>;
-  cancelOrder(orderId: string, reason: string): Promise<void>;
-  /** Resolves to how many consignments were cut. */
-  generateConsignments(orderId: string): Promise<number>;
+  runClientBilling(clientId: string, period: string): Promise<string>;
+  /** Newest period first. */
+  clientInvoices(clientId: string): Promise<Row[]>;
+  clientInvoice(invoiceId: string): Promise<ClientInvoiceDetail>;
+  recordClientPayment(clientId: string, draft: PaymentDraft): Promise<void>;
+  /** Resolves to the credit note's number. */
+  issueClientCreditNote(invoiceId: string, draft: CreditNoteDraft): Promise<string>;
+  /** Invoices, credit notes and payments in the order they happened, with the running balance. */
+  clientStatement(clientId: string): Promise<Row[]>;
+  clientAgeing(clientId: string): Promise<ClientAgeingView>;
 }
