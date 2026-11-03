@@ -35,6 +35,7 @@ function uuid(): string {
 /** A fresh warehouse with one roomy bin and one SKU of its own, so a spec sees only what it made. */
 export interface Floor {
   id: string;
+  code: string;
   binId: string;
   binCode: string;
   skuId: string;
@@ -42,8 +43,9 @@ export interface Floor {
 }
 
 export async function newFloor(request: APIRequestContext, session: Session): Promise<Floor> {
+  const code = `E2E-WH-${uuid()}`;
   const warehouse = await post(request, session, '/api/v1/terminals/point-radius', {
-    orgUnitId: session.orgUnitId, code: `E2E-WH-${uuid()}`, name: 'E2E warehouse', category: 'WAREHOUSE',
+    orgUnitId: session.orgUnitId, code, name: 'E2E warehouse', category: 'WAREHOUSE',
     centre: { lat: Number((24 + Math.random() * 30).toFixed(6)), lon: Number((10 + Math.random() * 150).toFixed(6)) },
     radiusMetres: 500, dockCount: 2, avgDwellMinutes: 45,
   });
@@ -51,7 +53,7 @@ export async function newFloor(request: APIRequestContext, session: Session): Pr
   const bin = await post(request, session, `/api/v1/warehouses/${warehouse.id}/bins`, { code: binCode, capacityUnits: 500 });
   const skuCode = `E2E-SKU-${uuid()}`;
   const sku = await post(request, session, '/api/v1/skus', { code: skuCode, description: 'E2E widget', uom: 'EA' });
-  return { id: warehouse.id as string, binId: bin.id as string, binCode, skuId: sku.id as string, skuCode };
+  return { id: warehouse.id as string, code, binId: bin.id as string, binCode, skuId: sku.id as string, skuCode };
 }
 
 /** Receives units of the floor's SKU at the dock, `damaged` of them into quarantine; resolves to the ASN's id. */
