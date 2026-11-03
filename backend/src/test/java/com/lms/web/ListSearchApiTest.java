@@ -247,6 +247,47 @@ class ListSearchApiTest {
                 .containsExactly(ref, ref + "-01", ref + "-02");
     }
 
+    @Test
+    @DisplayName("routing guides are found by their lane's terminal codes or the vehicle type, and page")
+    void routingGuides() {
+        String[] rights = {"TERMINAL_CREATE", "TERMINAL_READ", "ROUTING_GUIDE_MANAGE"};
+        String pune = terminal("PNQ-DC", "Pune DC");
+        String mumbai = terminal("BOM-HUB", "Mumbai Hub");
+        String delhi = terminal("DEL-HUB", "Delhi Hub");
+        guide(rights, pune, mumbai, "TRAILER_32FT");
+        guide(rights, pune, delhi, "RIGID_19FT");
+        String retired = guide(rights, mumbai, delhi, "TRAILER_32FT");
+        Outcome retire = kit.post(tenant, "/api/v1/routing-guides/" + retired + "/retire", "{}", rights);
+        assertThat(retire.status()).as(retire.body()).isEqualTo(204);
+
+        assertThat(lanes(rights, "/api/v1/routing-guides?q=pnq"))
+                .containsExactlyInAnyOrder("PNQ-DC>BOM-HUB", "PNQ-DC>DEL-HUB");
+        assertThat(lanes(rights, "/api/v1/routing-guides?q=del-"))
+                .containsExactlyInAnyOrder("PNQ-DC>DEL-HUB", "BOM-HUB>DEL-HUB");
+        assertThat(lanes(rights, "/api/v1/routing-guides?q=32ft"))
+                .containsExactlyInAnyOrder("PNQ-DC>BOM-HUB", "BOM-HUB>DEL-HUB");
+        assertThat(lanes(rights, "/api/v1/routing-guides?q=32ft&active=true")).containsExactly("PNQ-DC>BOM-HUB");
+        assertThat(lanes(rights, "/api/v1/routing-guides?q=%25")).isEmpty();
+        assertThat(kit.parse(ok(rights, "/api/v1/routing-guides?q=pnq")).get("items").get(0).get("entries"))
+                .isEmpty();
+
+        List<String> seen = new ArrayList<>();
+        String cursor = null;
+        do {
+            JsonNode page = kit.parse(ok(rights, "/api/v1/routing-guides?limit=1"
+                    + (cursor == null ? "" : "&cursor=" + cursor)));
+            page.get("items").forEach(item -> seen.add(item.get("id").asString()));
+            cursor = page.hasNonNull("nextCursor") ? page.get("nextCursor").asString() : null;
+        } while (cursor != null);
+        assertThat(seen).hasSize(3).doesNotHaveDuplicates();
+
+        Outcome forged = kit.get(tenant, "/api/v1/routing-guides?cursor=not-a-cursor", rights);
+        assertThat(forged.body()).contains("invalid-cursor");
+        Outcome other = kit.get(kit.newTenant("guides"), "/api/v1/routing-guides?q=pnq", rights);
+        assertThat(other.status()).isEqualTo(200);
+        assertThat(kit.parse(other).get("items")).isEmpty();
+    }
+
     // ------------------------------------------------------------- helpers
 
     private List<String> codes(String path, String field) {
@@ -385,6 +426,22 @@ class ListSearchApiTest {
         Outcome validated = kit.post(tenant, "/api/v1/orders/" + id + "/validate", "{}", all);
         assertThat(validated.status()).as(validated.body()).isBetween(200, 204);
         return id;
+    }
+
+    private String guide(String[] rights, String origin, String destination, String vehicleType) {
+        Outcome outcome = kit.post(tenant, "/api/v1/routing-guides", """
+                {"orgUnitId":"%s","originTerminalId":"%s","destinationTerminalId":"%s","vehicleType":"%s"}"""
+                .formatted(tenant.orgUnitId(), origin, destination, vehicleType), rights);
+        assertThat(outcome.status()).as(outcome.body()).isEqualTo(201);
+        return kit.parse(outcome).get("id").asString();
+    }
+
+    /** The lanes of a page of guides, as {@code ORIGIN>DESTINATION}. */
+    private List<String> lanes(String[] rights, String path) {
+        List<String> out = new ArrayList<>();
+        kit.parse(ok(rights, path)).get("items").forEach(item -> out.add(
+                item.get("originTerminalCode").asString() + ">" + item.get("destinationTerminalCode").asString()));
+        return out;
     }
 
     private List<String> codesAs(String[] rights, String path, String field) {
