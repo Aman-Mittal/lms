@@ -292,8 +292,8 @@ export class TariffsPanel {
         <app-refusal [refusal]="defineRefusal()" testId="guide-refusal" />
       }
       <form class="inline" (ngSubmit)="open(typed())" data-testid="open-guide">
-        <input name="guideId" aria-label="Guide id" placeholder="Guide id" [value]="typed()"
-               (input)="typed.set($any($event.target).value)" required />
+        <app-entity-picker [kind]="'routing-guide'" ariaLabel="Guide id" placeholder="Guide (lane or vehicle type)"
+                           [required]="true" [(value)]="typed" />
         <button type="submit">Open</button>
       </form>
       <app-refusal [refusal]="openRefusal()" testId="guide-open-refusal" />
