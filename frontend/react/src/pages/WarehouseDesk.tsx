@@ -18,6 +18,7 @@ import { useState, type FormEvent } from 'react';
 import {
   ApiProblem, type AsnLineDraft, type OutboundLineDraft, type Row, type StockMoveDraft, type WarehouseDocument,
 } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
@@ -64,10 +65,8 @@ interface Context {
  * orders picked, packed and dispatched, pick waves, and the bins and SKUs it all runs on.
  */
 export function WarehouseDesk() {
-  const { gateway } = useSession();
   const [typed, setTyped] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
-  const choices = useLoad(() => gateway.warehouseChoices(), 'warehouses');
 
   function open(event: FormEvent) {
     event.preventDefault();
@@ -79,11 +78,8 @@ export function WarehouseDesk() {
       <h1>Warehouse operations</h1>
       <p className="muted">Open a warehouse to receive, store, pick, pack and dispatch its goods.</p>
       <form className="inline" onSubmit={open} data-testid="open-warehouse">
-        <input placeholder="Warehouse id" aria-label="Warehouse id" data-testid="warehouse-id" list="warehouse-options"
-          value={typed} onChange={(e) => setTyped(e.target.value)} required />
-        <datalist id="warehouse-options">
-          {(choices.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-        </datalist>
+        <EntityPicker kind="warehouse" placeholder="Warehouse" ariaLabel="Warehouse id" testId="warehouse-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       {warehouseId && <Warehouse key={warehouseId} warehouseId={warehouseId} />}
@@ -107,12 +103,6 @@ function Warehouse({ warehouseId }: { warehouseId: string }) {
   return (
     <section data-testid="warehouse-desk">
       {error && <p className="error" role="alert">{error}</p>}
-      <datalist id="bin-options">
-        {context.bins.map((b) => <option key={b.id} value={b.id}>{b.code}</option>)}
-      </datalist>
-      <datalist id="sku-options">
-        {context.skus.map((s) => <option key={s.id} value={s.id}>{s.code} · {s.description}</option>)}
-      </datalist>
       <nav className="inline" aria-label="Warehouse sections">
         {TABS.map(([key, title]) => (
           <button key={key} className={tab === key ? undefined : 'link'} aria-pressed={tab === key}
@@ -218,8 +208,8 @@ function LineEditor<T extends AsnLineDraft | OutboundLineDraft>(
     <>
       {lines.map((l, i) => (
         <div className="inline" key={i}>
-          <input aria-label={`Line ${i + 1} SKU`} placeholder="SKU id" list="sku-options" value={l.skuId}
-            onChange={(e) => set(i, 'skuId', e.target.value)} required />
+          <EntityPicker kind="sku" ariaLabel={`Line ${i + 1} SKU`} placeholder="SKU" value={l.skuId}
+            onChange={(id) => set(i, 'skuId', id)} required />
           {withLot && (
             <input aria-label={`Line ${i + 1} lot`} placeholder="Lot (optional)" value={(l as AsnLineDraft).lotNo}
               onChange={(e) => set(i, 'lotNo' as keyof T, e.target.value)} />
@@ -262,8 +252,8 @@ function CreateAsn({ warehouseId, onCreated }: { warehouseId: string; onCreated:
       <form onSubmit={submit} data-testid="create-asn">
         <div className="inline">
           <input aria-label="ASN number" placeholder="ASN number" value={asnNo} onChange={(e) => setAsnNo(e.target.value)} required />
-          <input aria-label="Supplier id" placeholder="Supplier id (optional)" value={supplier}
-            onChange={(e) => setSupplier(e.target.value)} />
+          <EntityPicker kind="vendor" ariaLabel="Supplier id" placeholder="Supplier (optional)" value={supplier}
+            onChange={setSupplier} />
         </div>
         <LineEditor lines={lines} onChange={setLines} blank={BLANK_ASN_LINE} withLot />
         <p><button type="submit">Create ASN</button></p>
@@ -329,7 +319,7 @@ function AsnPanel({ asnId, version, onChanged }: { asnId: string; version: numbe
 
 const BLANK_MOVE: StockMoveDraft = { binId: '', skuId: '', lotNo: '', quantity: '', reason: '' };
 
-function Putaway({ changed }: Context) {
+function Putaway({ changed, warehouseId }: Context) {
   const { gateway } = useSession();
   const [move, setMove] = useState<StockMoveDraft>({ ...BLANK_MOVE });
   const { run, report } = useAction();
@@ -346,7 +336,7 @@ function Putaway({ changed }: Context) {
     <>
       <h3>Put away</h3>
       <form className="inline" onSubmit={submit} data-testid="putaway">
-        <MoveFields move={move} onChange={setMove} withBin withReason={false} />
+        <MoveFields move={move} onChange={setMove} withBin withReason={false} warehouseId={warehouseId} />
         <button type="submit">Put away</button>
       </form>
       {report}
@@ -354,17 +344,18 @@ function Putaway({ changed }: Context) {
   );
 }
 
-function MoveFields({ move, onChange, withBin, withReason }:
-  { move: StockMoveDraft; onChange: (move: StockMoveDraft) => void; withBin: boolean; withReason: boolean }) {
+function MoveFields({ move, onChange, withBin, withReason, warehouseId }:
+  { move: StockMoveDraft; onChange: (move: StockMoveDraft) => void; withBin: boolean; withReason: boolean;
+    warehouseId: string }) {
   const set = (field: keyof StockMoveDraft, value: string) => onChange({ ...move, [field]: value });
   return (
     <>
       {withBin && (
-        <input aria-label="Bin" placeholder="Bin id" list="bin-options" value={move.binId}
-          onChange={(e) => set('binId', e.target.value)} required />
+        <EntityPicker kind="bin" warehouseId={warehouseId} ariaLabel="Bin" placeholder="Bin" value={move.binId}
+          onChange={(id) => set('binId', id)} required />
       )}
-      <input aria-label="SKU" placeholder="SKU id" list="sku-options" value={move.skuId}
-        onChange={(e) => set('skuId', e.target.value)} required />
+      <EntityPicker kind="sku" ariaLabel="SKU" placeholder="SKU" value={move.skuId}
+        onChange={(id) => set('skuId', id)} required />
       <input aria-label="Lot" placeholder="Lot (optional)" value={move.lotNo} onChange={(e) => set('lotNo', e.target.value)} />
       <input aria-label="Quantity" placeholder="Quantity" inputMode="numeric" value={move.quantity}
         onChange={(e) => set('quantity', e.target.value)} required />
@@ -396,8 +387,8 @@ function Stock(context: Context) {
       )}
       <h3>Movements</h3>
       <form className="inline" onSubmit={(e) => { e.preventDefault(); setShown(skuId.trim()); }} data-testid="movements">
-        <input aria-label="SKU for movements" placeholder="SKU id" list="sku-options" value={skuId}
-          onChange={(e) => setSkuId(e.target.value)} required />
+        <EntityPicker kind="sku" ariaLabel="SKU for movements" placeholder="SKU" value={skuId}
+          onChange={setSkuId} required />
         <button type="submit">Show movements</button>
       </form>
       {movements.error && <p className="error" role="alert">{movements.error}</p>}
@@ -445,7 +436,7 @@ function StockMove({ kind, title, testId, button, warehouseId, changed }: StockM
     <>
       <h3>{title}</h3>
       <form className="inline" onSubmit={submit} data-testid={testId}>
-        <MoveFields move={move} onChange={setMove} withBin={kind !== 'write-off'} withReason />
+        <MoveFields move={move} onChange={setMove} withBin={kind !== 'write-off'} withReason warehouseId={warehouseId} />
         <button type="submit">{button}</button>
       </form>
       {report}
@@ -625,7 +616,6 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
 function UnitPanel({ unitId, version, onChanged }: { unitId: string; version: number; onChanged: () => void }) {
   const { gateway, can } = useSession();
   const detail = useLoad(() => gateway.handlingUnit(unitId), `${unitId}:${version}`);
-  const terminals = useLoad(() => gateway.terminalChoices(), 'terminals');
   const [label, setLabel] = useState(false);
   const [reference, setReference] = useState('');
   const [destination, setDestination] = useState('');
@@ -677,13 +667,10 @@ function UnitPanel({ unitId, version, onChanged }: { unitId: string; version: nu
           <div className="inline">
             <input aria-label="Dispatch reference" placeholder="Dispatch reference" value={reference}
               onChange={(e) => setReference(e.target.value)} />
-            <input aria-label="Destination terminal" placeholder="Destination terminal (optional)" list="terminal-options"
-              value={destination} onChange={(e) => setDestination(e.target.value)} />
-            <datalist id="terminal-options">
-              {(terminals.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </datalist>
-            <input aria-label="Consignee id" placeholder="Consignee id (optional)" value={consignee}
-              onChange={(e) => setConsignee(e.target.value)} />
+            <EntityPicker kind="terminal" ariaLabel="Destination terminal" placeholder="Destination terminal (optional)"
+              value={destination} onChange={setDestination} />
+            <EntityPicker kind="partner" ariaLabel="Consignee id" placeholder="Consignee (optional)" value={consignee}
+              onChange={setConsignee} />
             <input aria-label="Gross weight kg" placeholder="Gross kg (optional)" inputMode="decimal" value={weight}
               onChange={(e) => setWeight(e.target.value)} />
           </div>
@@ -843,8 +830,8 @@ function Setup({ warehouseId, bins, skus, changed }: Context) {
               onChange={(e) => setSku({ ...sku, code: e.target.value })} required />
             <input aria-label="SKU description" placeholder="Description" value={sku.description}
               onChange={(e) => setSku({ ...sku, description: e.target.value })} required />
-            <input aria-label="Owner id" placeholder="Owner client id (optional)" value={sku.ownerPartnerId}
-              onChange={(e) => setSku({ ...sku, ownerPartnerId: e.target.value })} />
+            <EntityPicker kind="customer" ariaLabel="Owner id" placeholder="Owner client (optional)"
+              value={sku.ownerPartnerId} onChange={(id) => setSku({ ...sku, ownerPartnerId: id })} />
             <input aria-label="Unit of measure" placeholder="Unit (optional)" value={sku.uom}
               onChange={(e) => setSku({ ...sku, uom: e.target.value })} />
             <button type="submit">Create SKU</button>
