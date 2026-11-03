@@ -16,6 +16,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { ApiProblem, MAX_BULK_ASSIGNMENT, type Row } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 
@@ -51,8 +52,8 @@ export function LoadBuilding() {
         up to {MAX_BULK_ASSIGNMENT} at a time.
       </p>
       <form className="inline" onSubmit={open} data-testid="open-load">
-        <input placeholder="Load id" aria-label="Load id" data-testid="load-id"
-          value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="load" placeholder="Load" ariaLabel="Load id" testId="load-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       {build.error && <p className="error" role="alert">{build.error}</p>}
@@ -217,8 +218,8 @@ function AddPanel({ loadId, onAdded }: { loadId: string; onAdded: () => void }) 
     <section data-testid="add-panel">
       <h3>Add consignments</h3>
       <form className="inline" onSubmit={find} data-testid="find-unassigned">
-        <input placeholder="Order id (optional)" aria-label="Order id" data-testid="order-filter"
-          value={orderTyped} onChange={(e) => setOrderTyped(e.target.value)} />
+        <EntityPicker kind="order" placeholder="Order (optional)" ariaLabel="Order id" testId="order-filter"
+          value={orderTyped} onChange={setOrderTyped} />
         <button type="submit">Find waiting consignments</button>
       </form>
       {added > 0 && <p className="ok" data-testid="bulk-added">Added {added} consignments to the load.</p>}

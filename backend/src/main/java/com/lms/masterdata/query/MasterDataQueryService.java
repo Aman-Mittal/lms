@@ -14,11 +14,11 @@
  * limitations under the License.
  */package com.lms.masterdata.query;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -85,18 +85,31 @@ public class MasterDataQueryService {
     @PreAuthorize("hasAuthority('PARTNER_READ')")
     public Slice<PartnerView> listPartners(String partnerType, String status,
                                            String cursor, Integer limit) {
+        return listPartners(partnerType, status, cursor, limit, null);
+    }
+
+    /**
+     * As {@link #listPartners(String, String, String, Integer)}, narrowed to
+     * partners whose code or legal name contains {@code q}.
+     */
+    @PreAuthorize("hasAuthority('PARTNER_READ')")
+    public Slice<PartnerView> listPartners(String partnerType, String status,
+                                           String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<PartnerView> rows = jdbc.sql(PARTNER_SELECT + """
                          WHERE (CAST(:partnerType AS text) IS NULL
                                 OR p.partner_type = CAST(:partnerType AS text))
                            AND (CAST(:status AS text) IS NULL OR p.status = CAST(:status AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(p.code) LIKE CAST(:q AS text)
+                                OR lower(p.legal_name) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL OR p.code > CAST(:cursor AS text))
                          ORDER BY p.code
                          LIMIT :limit
                         """)
                 .param("partnerType", partnerType)
                 .param("status", status)
+                .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(PartnerView.class)
@@ -139,16 +152,24 @@ public class MasterDataQueryService {
 
     @PreAuthorize("hasAuthority('VEHICLE_READ')")
     public Slice<VehicleView> listVehicles(String status, String cursor, Integer limit) {
+        return listVehicles(status, cursor, limit, null);
+    }
+
+    /** As {@link #listVehicles(String, String, Integer)}, narrowed to registrations containing {@code q}. */
+    @PreAuthorize("hasAuthority('VEHICLE_READ')")
+    public Slice<VehicleView> listVehicles(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<VehicleView> rows = jdbc.sql(VEHICLE_SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR v.status = CAST(:status AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(v.registration_no) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL
                                 OR v.registration_no > CAST(:cursor AS text))
                          ORDER BY v.registration_no
                          LIMIT :limit
                         """)
                 .param("status", status)
+                .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(VehicleView.class)
@@ -180,6 +201,15 @@ public class MasterDataQueryService {
 
     @PreAuthorize("hasAuthority('DRIVER_READ')")
     public Slice<DriverView> listDrivers(String status, String cursor, Integer limit) {
+        return listDrivers(status, cursor, limit, null);
+    }
+
+    /**
+     * As {@link #listDrivers(String, String, Integer)}, narrowed to drivers
+     * whose licence number or name contains {@code q}.
+     */
+    @PreAuthorize("hasAuthority('DRIVER_READ')")
+    public Slice<DriverView> listDrivers(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         // Sorted by licence number rather than by name, which is what a reader
@@ -188,11 +218,14 @@ public class MasterDataQueryService {
         // rows at every page boundary.
         List<DriverView> rows = jdbc.sql(DRIVER_SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR d.status = CAST(:status AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(d.licence_no) LIKE CAST(:q AS text)
+                                OR lower(d.full_name) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL OR d.licence_no > CAST(:cursor AS text))
                          ORDER BY d.licence_no
                          LIMIT :limit
                         """)
                 .param("status", status)
+                .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(DriverView.class)
@@ -221,16 +254,28 @@ public class MasterDataQueryService {
 
     @PreAuthorize("hasAuthority('TERMINAL_READ')")
     public Slice<TerminalView> listTerminals(String category, String cursor, Integer limit) {
+        return listTerminals(category, cursor, limit, null);
+    }
+
+    /**
+     * As {@link #listTerminals(String, String, Integer)}, narrowed to
+     * terminals whose code or name contains {@code q}.
+     */
+    @PreAuthorize("hasAuthority('TERMINAL_READ')")
+    public Slice<TerminalView> listTerminals(String category, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<TerminalView> rows = jdbc.sql(TERMINAL_SELECT + """
                          WHERE (CAST(:category AS text) IS NULL
                                 OR t.functional_category = CAST(:category AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(t.code) LIKE CAST(:q AS text)
+                                OR lower(t.name) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL OR t.code > CAST(:cursor AS text))
                          ORDER BY t.code
                          LIMIT :limit
                         """)
                 .param("category", category)
+                .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(TerminalView.class)
