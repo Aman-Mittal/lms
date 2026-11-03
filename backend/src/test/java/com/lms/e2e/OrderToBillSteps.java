@@ -475,7 +475,7 @@ public class OrderToBillSteps {
 
     private FreightBill billForTrip() {
         if (billId == null) {
-            billId = api(SettlementApi.class).listFreightBills(null, null, 200).getItems().stream()
+            billId = api(SettlementApi.class).listFreightBills(null, null, 200, null).getItems().stream()
                     .filter(bill -> tripId.equals(bill.getTripId()))
                     .findFirst()
                     .orElseThrow(() -> new AssertionError("No freight bill was raised for the trip"))
