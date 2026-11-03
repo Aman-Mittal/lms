@@ -17,6 +17,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { apiSession, newPlannedLoad, openScreen, printed, signIn, stubPrint, tag, withoutPermissions } from './support';
 import { commercialLane, commercialVendor, deliveredTrip } from './support-commercial';
+// Rate cards and rail tariffs
+import { commercialRailheads, commercialRateCard, commercialRateCards } from './support-commercial';
 
 /** An amount as the screen shows it, whether or not trailing zeros are kept. */
 function amount(value: number): RegExp {
@@ -169,6 +171,22 @@ test.describe('commercial desk', () => {
     });
   });
 
+  test('the load to allocate is picked by typing part of its load number', async ({ page, request }, info) => {
+    const salt = tag(info);
+    await newPlannedLoad(request, await apiSession(request), salt);
+    await signIn(page);
+    await openCommercial(page);
+
+    const allocate = page.getByTestId('allocate-load');
+    const input = allocate.getByLabel('Load id to allocate', { exact: true });
+    await input.fill(`ar-ld-${salt}`);
+    const option = page.getByRole('option', { name: new RegExp(`ZZ-AR-LD-${salt}`, 'i') });
+    await expect(option).toHaveCount(1);
+    await option.click();
+    await allocate.getByRole('button', { name: 'Allocate load' }).click();
+    await expect(page.getByTestId('allocation-panel').getByTestId('allocation-status')).toHaveText('OFFERED');
+  });
+
   test('a vendor\'s overclaim disputes the bill, the dispute is settled with a reason, and the bill prints', async ({ page, request }, info) => {
     test.setTimeout(120_000);
     const trip = await deliveredTrip(request, await apiSession(request), tag(info));
@@ -253,5 +271,121 @@ test.describe('what each person is offered', () => {
     await form.getByRole('button', { name: 'Open' }).click();
     await expect(page.getByTestId('bill-refusal')).toBeVisible();
     await expect(page.getByTestId('bill-panel')).toHaveCount(0);
+  });
+});
+
+// Rate cards and rail tariffs
+
+/** Lists one vendor's rate cards and opens the card with the given code. */
+async function openRateCard(page: Page, vendorId: string, code: string) {
+  const filter = page.getByTestId('rate-card-filter');
+  await filter.getByLabel('Vendor filter').fill(vendorId);
+  await filter.getByRole('button', { name: 'List' }).click();
+  const row = page.getByTestId('rate-card-row').filter({ hasText: code });
+  await expect(row).toHaveCount(1);
+  await row.click();
+  const panel = page.getByTestId('rate-card-panel');
+  await expect(panel.getByTestId('rate-card-code')).toHaveText(code);
+  return panel;
+}
+
+test.describe('rate cards and rail tariffs', () => {
+  test('a published rate card is listed and opens with its bands, lightest first', async ({ page, request }, info) => {
+    const salt = tag(info);
+    const card = await commercialRateCard(request, await apiSession(request), salt);
+    await signIn(page);
+    await openCommercial(page);
+
+    const panel = await openRateCard(page, card.vendor.id, card.code);
+    await expect(page.getByTestId('rate-card-row').filter({ hasText: card.code })).toContainText('2');
+    await expect(panel.getByTestId('rate-card-vendor')).toHaveText(`${card.vendor.code} Carriers`);
+    await expect(panel.getByTestId('rate-card-state')).toContainText('from ');
+    const bands = panel.getByTestId('rate-card-band');
+    await expect(bands).toHaveCount(2);
+    await expect(bands.nth(0)).toContainText('PER_KG');
+    await expect(bands.nth(0).locator('td').first()).toHaveText(amount(0));
+    await expect(bands.nth(1)).toContainText('FLAT');
+    await expect(bands.nth(1).locator('td').nth(1)).toHaveText('—');
+
+    await test.step('only superseded versions: this one is still in force', async () => {
+      const filter = page.getByTestId('rate-card-filter');
+      await filter.getByLabel('Versions').selectOption('superseded');
+      await filter.getByRole('button', { name: 'List' }).click();
+      await expect(page.getByTestId('no-rate-cards')).toBeVisible();
+    });
+  });
+
+  test('more rate cards than a page are reached with Load more', async ({ page, request }, info) => {
+    test.setTimeout(120_000);
+    const vendor = await commercialRateCards(request, await apiSession(request), tag(info), 52);
+    await signIn(page);
+    await openCommercial(page);
+
+    const filter = page.getByTestId('rate-card-filter');
+    await filter.getByLabel('Vendor filter').fill(vendor.id);
+    await filter.getByRole('button', { name: 'List' }).click();
+    await expect(page.getByTestId('rate-card-row')).toHaveCount(50);
+    await page.getByTestId('rate-cards-more').click();
+    await expect(page.getByTestId('rate-card-row')).toHaveCount(52);
+    await expect(page.getByTestId('rate-cards-more')).toHaveCount(0);
+  });
+
+  test('a rate card that does not exist is reported by its code', async ({ page }) => {
+    await signIn(page);
+    await openCommercial(page);
+    const form = page.getByTestId('open-rate-card');
+    await form.getByLabel('Rate card id').fill(crypto.randomUUID());
+    await form.getByRole('button', { name: 'Open' }).click();
+    await expect(page.getByTestId('rate-card-refusal').getByTestId('refusal-code')).toHaveText('not-found');
+    await expect(page.getByTestId('rate-card-panel')).toHaveCount(0);
+  });
+
+  test('a rail rate card is published between two railheads and read back', async ({ page, request }, info) => {
+    const salt = tag(info);
+    const { from, to, carrier } = await commercialRailheads(request, await apiSession(request), salt);
+    await signIn(page);
+    await openCommercial(page);
+
+    const form = page.getByTestId('publish-rail-tariff');
+    await form.getByLabel('Code').fill(`ZZ-CM-RAILCARD-${salt}`);
+    await form.getByLabel('Rail carrier').fill(carrier.id);
+    await form.getByLabel('Origin railhead').fill(from.id);
+    await form.getByLabel('Destination railhead').fill(to.id);
+    await form.getByLabel('Per wagon').fill('18000');
+    await form.getByLabel('Minimum charge').fill('25000');
+    await form.getByRole('button', { name: 'Publish rail rate card' }).click();
+
+    await expect(page.getByTestId('rail-tariff-published')).toContainText(`ZZ-CM-RAILCARD-${salt}`);
+    const panel = page.getByTestId('rail-tariff-panel');
+    await expect(panel.getByTestId('rail-tariff-code')).toHaveText(`ZZ-CM-RAILCARD-${salt}`);
+    await expect(panel.getByTestId('rail-per-wagon')).toHaveText(amount(18000));
+    await expect(panel.getByTestId('rail-per-container')).toHaveText('—');
+    await expect(page.getByTestId('rail-tariff-row').filter({ hasText: `ZZ-CM-RAILCARD-${salt}` })).toHaveCount(1);
+
+    await test.step('the same pair from a non-railhead is refused by its code', async () => {
+      const lane = await commercialLane(request, await apiSession(request), `RX-${salt}`);
+      await form.getByLabel('Code').fill(`ZZ-CM-RAILBAD-${salt}`);
+      await form.getByLabel('Rail carrier').fill(carrier.id);
+      await form.getByLabel('Origin railhead').fill(lane.origin.id);
+      await form.getByLabel('Destination railhead').fill(to.id);
+      await form.getByLabel('Per wagon').fill('18000');
+      await form.getByRole('button', { name: 'Publish rail rate card' }).click();
+      await expect(page.getByTestId('rail-tariff-refusal').getByTestId('refusal-code'))
+        .toHaveText('rail-tariff-not-railhead');
+    });
+  });
+
+  test('without the right to manage tariffs, cards are read but nothing can be published', async ({ page, request }, info) => {
+    const salt = tag(info);
+    const card = await commercialRateCard(request, await apiSession(request), salt);
+    await withoutPermissions(page, ['TARIFF_MANAGE']);
+    await signIn(page);
+    await openCommercial(page);
+
+    await expect(page.getByTestId('publish-tariff')).toHaveCount(0);
+    await expect(page.getByTestId('publish-rail-tariff')).toHaveCount(0);
+    await expect(page.getByTestId('rail-tariffs')).toBeVisible();
+    const panel = await openRateCard(page, card.vendor.id, card.code);
+    await expect(panel.getByTestId('rate-card-band')).toHaveCount(2);
   });
 });
