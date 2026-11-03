@@ -18,6 +18,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import { DemoDataService } from '../api';
+import {
+  ClientBillingService, ClientCharge, ClientContract, ClientInvoice, ClientInvoiceLine, ClientStatementEntry,
+} from '../api';
+import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lms-gateway';
 import type { DemoResetOutcome } from './lms-gateway';
 import {
   AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
@@ -55,6 +59,50 @@ function consignmentRow(c: Consignment): Row {
     consigneeName: text(c.consigneeName), destinationTerminalCode: text(c.destinationTerminalCode),
     totalDeadWeightKg: text(c.totalDeadWeightKg), materialClasses: text(c.materialClasses),
     containsHazmat: c.containsHazmat ? 'Yes' : '',
+  };
+}
+
+/** A client contract version as the billing desk lists it. */
+function contractRow(c: ClientContract): Row {
+  return {
+    id: text(c.id), code: text(c.code), currency: text(c.currency), effectiveFrom: text(c.effectiveFrom),
+    effectiveTo: text(c.effectiveTo), transportRatePerKg: text(c.transportRatePerKg),
+    handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
+    storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+  };
+}
+
+/** A charge as the billing desk lists it; `invoiced` and `late` read Yes or nothing. */
+function chargeRow(c: ClientCharge): Row {
+  return {
+    id: text(c.id), occurredOn: text(c.occurredOn), serviceType: text(c.serviceType), serviceCode: text(c.serviceCode),
+    quantity: text(c.quantity), unit: text(c.unit), reference: text(c.reference),
+    invoiced: c.invoiceId ? 'Yes' : '', late: c.late ? 'Yes' : '',
+  };
+}
+
+function invoiceRow(i: ClientInvoice): Row {
+  return {
+    id: text(i.id), invoiceNo: text(i.invoiceNo), periodStart: text(i.periodStart), periodEnd: text(i.periodEnd),
+    status: text(i.status), currency: text(i.currency), taxableAmount: text(i.taxableAmount),
+    taxAmount: text(i.taxAmount), totalAmount: text(i.totalAmount), creditedAmount: text(i.creditedAmount),
+    lineCount: text(i.lineCount), issuedAt: text(i.issuedAt), clientName: text(i.clientName),
+  };
+}
+
+function invoiceLineRow(l: ClientInvoiceLine): Row {
+  return {
+    lineNo: text(l.lineNo), serviceType: text(l.serviceType), narrative: text(l.narrative),
+    quantity: text(l.quantity), unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+    taxAmount: text(l.taxAmount), lineTotal: text(l.lineTotal), creditedAmount: text(l.creditedAmount),
+  };
+}
+
+function statementRow(e: ClientStatementEntry): Row {
+  return {
+    id: text(e.documentId), entryType: text(e.entryType), documentNo: text(e.documentNo), issuedAt: text(e.issuedAt),
+    invoiceNo: text(e.invoiceNo), reason: text(e.reason), debit: text(e.debit), credit: text(e.credit),
+    balance: text(e.balance),
   };
 }
 
@@ -218,6 +266,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly ltl = inject(LTLRatingService);
   private readonly deadLetters = inject(EventDeadLetterService);
   private readonly hooks = inject(WebhooksService);
+  private readonly clientBilling = inject(ClientBillingService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
     partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
@@ -739,6 +788,72 @@ export class GeneratedLmsGateway extends LmsGateway {
   assignConsignments(loadId: string, consignmentIds: string[]): Promise<void> {
     return this.call(this.loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } }),
       () => undefined);
+  }
+
+  clientChoices(): Promise<Choice[]> {
+    return this.call(this.partners.listPartners({ partnerType: 'CUSTOMER', limit: 200 }),
+      (s) => s.items.map((p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` })));
+  }
+
+  clientContracts(clientId: string): Promise<Row[]> {
+    return this.call(this.clientBilling.listClientContracts({ clientId }), (rows) => rows.map(contractRow));
+  }
+
+  clientCharges(clientId: string, period: string): Promise<Row[]> {
+    return this.call(this.clientBilling.listClientCharges({ clientId, period, limit: 200 }),
+      (page) => page.items.map(chargeRow));
+  }
+
+  runClientBilling(clientId: string, period: string): Promise<string> {
+    return this.call(this.clientBilling.runClientBilling({ clientId, clientBillingRunRequest: { period } }),
+      (r) => r.id);
+  }
+
+  clientInvoices(clientId: string): Promise<Row[]> {
+    return this.call(this.clientBilling.listClientInvoices({ clientId, limit: 100 }),
+      (page) => page.items.map(invoiceRow));
+  }
+
+  async clientInvoice(invoiceId: string): Promise<ClientInvoiceDetail> {
+    const [invoice, lines] = await Promise.all([
+      this.call(this.clientBilling.getClientInvoice({ id: invoiceId }), invoiceRow),
+      this.call(this.clientBilling.getClientInvoiceLines({ id: invoiceId }), (rows) => rows.map(invoiceLineRow)),
+    ]);
+    return { invoice, lines };
+  }
+
+  recordClientPayment(clientId: string, draft: PaymentDraft): Promise<void> {
+    return this.call(this.clientBilling.recordClientPayment({
+      clientId,
+      clientPaymentRequest: { amount: draft.amount, receivedOn: draft.receivedOn, reference: draft.reference },
+    }), () => undefined);
+  }
+
+  async issueClientCreditNote(invoiceId: string, draft: CreditNoteDraft): Promise<string> {
+    const issued = await this.call(this.clientBilling.issueClientCreditNote({
+      id: invoiceId, clientCreditNoteRequest: { reason: draft.reason, amount: draft.amount },
+    }), (r) => r.id);
+    return this.call(this.clientBilling.getClientCreditNote({ id: issued }), (n) => text(n.creditNoteNo));
+  }
+
+  clientStatement(clientId: string): Promise<Row[]> {
+    return this.call(this.clientBilling.getClientStatement({ clientId, limit: 200 }),
+      (page) => page.items.map(statementRow));
+  }
+
+  clientAgeing(clientId: string): Promise<ClientAgeingView> {
+    return this.call(this.clientBilling.getClientAgeing({ clientId }), (a) => ({
+      currency: text(a.currency), outstanding: text(a.outstanding), unappliedCredit: text(a.unappliedCredit),
+      buckets: {
+        '0-30': text(a.buckets?.days0to30), '31-60': text(a.buckets?.days31to60),
+        '61-90': text(a.buckets?.days61to90), '90+': text(a.buckets?.over90),
+      },
+      invoices: (a.invoices ?? []).map((i) => ({
+        id: text(i.invoiceId), invoiceNo: text(i.invoiceNo), issuedOn: text(i.issuedOn), total: text(i.total),
+        credited: text(i.credited), paid: text(i.paid), outstanding: text(i.outstanding),
+        ageDays: text(i.ageDays), bucket: text(i.bucket),
+      })),
+    }));
   }
 
   /** Each distinct terminal named, read once. */
