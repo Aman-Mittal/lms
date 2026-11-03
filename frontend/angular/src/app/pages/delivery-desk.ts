@@ -18,18 +18,19 @@ import { FormsModule } from '@angular/forms';
 import { DeliveryProofView, LmsGateway, OtpIssued } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { Qr } from './qr';
+import { EntityPicker } from './entity-picker';
 
 /** The delivery desk: issue a one-time code, record the proof, print the slip. */
 @Component({
   selector: 'app-delivery-desk',
-  imports: [FormsModule, Qr],
+  imports: [FormsModule, Qr, EntityPicker],
   template: `
     <h1>Delivery desk</h1>
     <p class="muted">Issue the consignee's one-time code, then record the proof when they give it back.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
-      <input name="consignmentId" placeholder="Consignment id" aria-label="Consignment id"
-             data-testid="consignment-id" [value]="typed()" (input)="typed.set($any($event.target).value)" required />
+      <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Consignment id" testId="consignment-id" [required]="true"
+                         [(value)]="typed" />
       <button type="submit">Look up</button>
     </form>
     @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }

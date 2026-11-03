@@ -154,6 +154,7 @@
     parameters:
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
     responses:
       "200":
         description: One page of parts.
@@ -163,6 +164,31 @@
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/consignments:
+  get:
+    tags: [Planning]
+    operationId: listConsignments
+    summary: Every consignment, by tracking reference
+    description: |
+      Consignments in any state, keyed on the tracking reference: what a desk
+      picks from when it acts on one that has already moved. Requires
+      `LOAD_READ`; a portal user sees only the consignments their partner is
+      the customer of.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
+    responses:
+      "200":
+        description: One page of consignments.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
 
 /api/v1/consignments/unassigned:
@@ -181,6 +207,7 @@
           Only the consignments cut from this order: how a large order's
           consignments are found together to be put on one load. An unknown
           order, or another tenant's, is an empty page.
+      - $ref: "#/components/parameters/q"
     responses:
       "200":
         description: One page of unassigned consignments.
@@ -228,6 +255,7 @@
       - $ref: "#/components/parameters/status"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
     responses:
       "200":
         description: One page of loads.
