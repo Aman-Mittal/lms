@@ -15,6 +15,7 @@
  */
 
 import { useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
@@ -22,8 +23,10 @@ import { MapView } from './MapView';
 /** A trip's track so far and where it is now. */
 export function TripRoute() {
   const { gateway } = useSession();
-  const [typed, setTyped] = useState('');
-  const [tripId, setTripId] = useState('');
+  // A link from another screen names the trip, so the route is shown straight away.
+  const [params] = useSearchParams();
+  const [typed, setTyped] = useState(params.get('trip') ?? '');
+  const [tripId, setTripId] = useState(params.get('trip') ?? '');
   const route = useLoad(() => (tripId ? gateway.tripRoute(tripId) : Promise.resolve(null)), tripId);
 
   function lookUp(event: FormEvent) {
