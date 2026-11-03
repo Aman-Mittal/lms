@@ -338,7 +338,8 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
       )}
       <form className="inline" data-testid="open-guide"
         onSubmit={(e) => { e.preventDefault(); void open(typed); }}>
-        <input aria-label="Guide id" placeholder="Guide id" value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="routing-guide" ariaLabel="Guide id" placeholder="Guide (lane or vehicle type)"
+                      value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       <RefusalNote refusal={openRefusal} testId="guide-open-refusal" />
