@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -110,11 +111,22 @@ public class SourcingQueryService {
      * so the cursor needs no tie-breaker column.
      */
     public Slice<AllocationView> list(String status, String cursor, Integer limit) {
+        return list(status, cursor, limit, null);
+    }
+
+    /**
+     * As {@link #list(String, String, Integer)}, narrowed to allocations whose
+     * load number or id contains {@code q} -- a person quotes the load, a
+     * pasted link carries the id.
+     */
+    public Slice<AllocationView> list(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<AllocationView> rows = jdbc.sql(SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR a.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR l.load_no > CAST(:cursor AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(l.load_no) LIKE CAST(:q AS text)
+                                OR CAST(a.id AS text) LIKE CAST(:q AS text))
                         """ + PARTNER_SCOPE + """
                          ORDER BY l.load_no
                          LIMIT :limit
@@ -122,6 +134,7 @@ public class SourcingQueryService {
                 .param("status", status)
                 .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
+                .param("q", Search.containsPattern(q))
                 .param("limit", pageSize + 1)
                 .query(AllocationView.class)
                 .list();
