@@ -32,6 +32,8 @@ public record FreightBillRaised(
         UUID billId,
         String billNo,
         UUID tripId,
+        /** The rail leg this bill pays for; null for a bill raised from a trip. */
+        UUID itineraryLegId,
         UUID vendorPartnerId,
         BigDecimal computedAmount,
         boolean priced,

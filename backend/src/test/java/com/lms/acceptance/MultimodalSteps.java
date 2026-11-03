@@ -18,6 +18,8 @@ package com.lms.acceptance;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,18 +32,25 @@ import com.lms.masterdata.command.RegisterTerminalCommand;
 import com.lms.masterdata.command.TerminalCommandService;
 import com.lms.masterdata.command.domain.Terminal;
 import com.lms.multimodal.command.ItineraryCommandService;
+import com.lms.multimodal.command.MissedConnectionSweep;
 import com.lms.multimodal.command.PlanItineraryCommand;
+import com.lms.multimodal.command.PublishRailTariffCommand;
+import com.lms.multimodal.command.RailTariffCommandService;
 import com.lms.multimodal.command.domain.ItineraryLeg;
+import com.lms.multimodal.events.ConnectionMissed;
 import com.lms.multimodal.query.CarrierCostView;
 import com.lms.multimodal.query.ItineraryQueryService;
 import com.lms.multimodal.query.ItineraryView;
 import com.lms.multimodal.query.LegView;
+import com.lms.multimodal.query.RailTariffQueryService;
+import com.lms.multimodal.query.RailTariffView;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.geo.LatLon;
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,18 +73,26 @@ public class MultimodalSteps {
     private ItineraryCommandService itineraries;
     @Autowired
     private ItineraryQueryService queries;
+    @Autowired
+    private RailTariffCommandService railTariffs;
+    @Autowired
+    private RailTariffQueryService railTariffQueries;
+    @Autowired
+    private MissedConnectionSweep sweep;
+    @Autowired
+    private MultimodalEventProbe announced;
 
     private RuntimeException failure;
     private Instant missedAt;
 
     // ------------------------------------------------------------------ given
 
-    /** Railheads are terminals like any other; a hub is the nearest category. */
+    /** A terminal of the RAILHEAD category, where rail legs start and end. */
     @Given("a railhead {string} at {double},{double}")
     public void aRailhead(String code, double lat, double lon) {
         world.putRef(code, terminals.register(new RegisterTerminalCommand.PointRadius(
                 world.orgUnitId(), world.uniqueCode(code), code,
-                Terminal.FunctionalCategory.HUB,
+                Terminal.FunctionalCategory.RAILHEAD,
                 new LatLon(lat, lon), 1500, 2, null, null, 45, List.of())));
     }
 
@@ -119,7 +136,8 @@ public class MultimodalSteps {
                     units == null ? null : ItineraryLeg.UnitType.valueOf(units.split(" ")[1]),
                     units == null ? null : Integer.valueOf(units.split(" ")[0]),
                     blank(row.get("booking")), null,
-                    world.ref(row.get("carrier")), new BigDecimal(row.get("cost"))));
+                    world.ref(row.get("carrier")),
+                    blank(row.get("cost")) == null ? null : new BigDecimal(row.get("cost").strip())));
         }
         try {
             world.putRef("itinerary:" + shipment, itineraries.plan(
@@ -129,7 +147,39 @@ public class MultimodalSteps {
         }
     }
 
+    /**
+     * Days are counted from today in UTC, as every tariff date is; a dash is a
+     * unit the card does not price.
+     */
+    @When("rail rate card {string} is published for {string} from {string} to {string} "
+            + "from day {int} at {string} per wagon, {string} per container, minimum {int}")
+    public void railRateCard(String code, String carrier, String from, String to, int day,
+                             String perWagon, String perContainer, int minimum) {
+        failure = null;
+        try {
+            world.putRef("rail-tariff:" + code, railTariffs.publish(new PublishRailTariffCommand(
+                    world.uniqueCode(code), world.ref(carrier), world.ref(from), world.ref(to),
+                    "INR", amount(perWagon), amount(perContainer), BigDecimal.valueOf(minimum),
+                    today().plusDays(day))));
+        } catch (RuntimeException e) {
+            failure = e;
+        }
+    }
+
     // ------------------------------------------------------------------- when
+
+    @Given("a railhead {string} at {double},{double} under {string}")
+    public void aRailheadUnder(String code, double lat, double lon, String orgPath) {
+        world.putRef(code, terminals.register(new RegisterTerminalCommand.PointRadius(
+                world.orgUnitId(orgPath), world.uniqueCode(code), code,
+                Terminal.FunctionalCategory.RAILHEAD,
+                new LatLon(lat, lon), 1500, 2, null, null, 45, List.of())));
+    }
+
+    @When("the missed-connection sweep runs")
+    public void sweepRuns() {
+        sweep.sweep();
+    }
 
     /** Gate, weighbridge, documents and dispatch, timed to the scenario. */
     @When("road trip {string} leaves its origin {int} hours ago")
@@ -253,10 +303,66 @@ public class MultimodalSteps {
         assertThat(view.legs()).allSatisfy(l -> assertThat(l.connectionMissedAt()).isNull());
     }
 
+    @Then("leg {int} of shipment {string} missed its connection with leg {int} not yet arrived")
+    public void missedWithNoArrival(int seq, String shipment, int predecessor) {
+        LegView leg = leg(shipment, seq);
+        assertThat(leg(shipment, predecessor).arrivedAt()).as("leg %s arrived", predecessor)
+                .isNull();
+        assertThat(leg.connectionMissedAt()).as("connection missed").isNotNull();
+        // Nothing has arrived, so the earliest start is a bound: arriving at
+        // the moment of detection and transferring.
+        assertThat(leg.earliestStartAt()).isEqualTo(
+                leg.connectionMissedAt().plus(leg.transferDwellMinutes(), ChronoUnit.MINUTES));
+    }
+
+    @Then("leg {int} of shipment {string} has not missed its connection")
+    public void notMissed(int seq, String shipment) {
+        assertThat(leg(shipment, seq).connectionMissedAt()).isNull();
+    }
+
+    @Then("the missed connection on leg {int} of shipment {string} was announced once")
+    public void announcedOnce(int seq, String shipment) {
+        UUID legId = leg(shipment, seq).id();
+        List<ConnectionMissed> events = announced.missed().stream()
+                .filter(event -> event.legId().equals(legId))
+                .toList();
+        assertThat(events).hasSize(1);
+    }
+
+    @Then("leg {int} of shipment {string} costs {int}, priced by rail rate card {string}")
+    public void pricedByCard(int seq, String shipment, int cost, String card) {
+        LegView leg = leg(shipment, seq);
+        assertThat(leg.costAmount()).isEqualByComparingTo(BigDecimal.valueOf(cost));
+        assertThat(leg.railTariffId()).isEqualTo(world.ref("rail-tariff:" + card));
+    }
+
+    @Then("leg {int} of shipment {string} costs {int} as given, priced by no card")
+    public void pricedAsGiven(int seq, String shipment, int cost) {
+        LegView leg = leg(shipment, seq);
+        assertThat(leg.costAmount()).isEqualByComparingTo(BigDecimal.valueOf(cost));
+        assertThat(leg.railTariffId()).isNull();
+    }
+
+    @Then("rail rate card {string} is in force until day {int}")
+    public void cardClosed(String code, int day) {
+        assertThat(railTariff(code).effectiveTo()).isEqualTo(today().plusDays(day));
+    }
+
+    @Then("rail rate card {string} is in force with no end")
+    public void cardOpen(String code) {
+        assertThat(railTariff(code).effectiveTo()).isNull();
+    }
+
     @Then("the multimodal desk refuses mentioning {string}")
     public void refused(String fragment) {
         assertThat(failure).as("the multimodal desk should have refused").isNotNull();
         assertThat(failure.getMessage()).contains(fragment);
+    }
+
+    @Then("the multimodal desk refuses access")
+    public void refusedAccess() {
+        assertThat(failure).as("the multimodal desk should have refused access")
+                .isInstanceOf(AccessDeniedException.class);
     }
 
     @Then("the multimodal desk refuses with code {string}")
@@ -291,6 +397,19 @@ public class MultimodalSteps {
                 .filter(l -> tripId.equals(l.tripId()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("No leg runs trip " + tripId));
+    }
+
+    private RailTariffView railTariff(String code) {
+        UUID id = world.ref("rail-tariff:" + code);
+        return railTariffQueries.findById(id).orElseThrow(() -> new AssertionError("No " + code));
+    }
+
+    private static LocalDate today() {
+        return LocalDate.now(ZoneOffset.UTC);
+    }
+
+    private static BigDecimal amount(String value) {
+        return "-".equals(value.strip()) ? null : new BigDecimal(value.strip());
     }
 
     private static Instant hoursAgo(Instant now, String hours) {

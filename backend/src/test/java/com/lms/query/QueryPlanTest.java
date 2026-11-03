@@ -25,6 +25,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +66,8 @@ class QueryPlanTest {
 
     @Autowired
     private JdbcClient jdbc;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeAll
     static void note() {
@@ -108,6 +112,92 @@ class QueryPlanTest {
                  ORDER BY bill_no
                  LIMIT 51
                 """, "freight_bill");
+    }
+
+    @Test
+    @DisplayName("one order's consignments waiting for a load are index-served")
+    void unassignedConsignmentsOfAnOrder() {
+        // How a large order is put on one vehicle: its consignments are found
+        // together, whatever else waits in the tenant's queue.
+        assertIndexed("""
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND order_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PLANNED'
+                 ORDER BY tracking_ref
+                 LIMIT 201
+                """, "consignment");
+    }
+
+    @Test
+    @DisplayName("a vendor-portal user's trip listing is index-served")
+    void partnerScopedTripListing() {
+        assertIndexed("""
+                SELECT * FROM trip
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND trip_no > 'TR-0000'
+                 ORDER BY trip_no
+                 LIMIT 51
+                """, "trip");
+    }
+
+    @Test
+    @DisplayName("a vendor-portal user's load listing is index-served")
+    void partnerScopedLoadListing() {
+        assertIndexed("""
+                SELECT * FROM load_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND awarded_vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND load_no > 'LD-0000'
+                 ORDER BY load_no
+                 LIMIT 51
+                """, "load_unit");
+    }
+
+    @Test
+    @DisplayName("the offers addressed to a vendor-portal user are index-served")
+    void partnerScopedAllocationListing() {
+        // The EXISTS probe the allocation listing adds for a portal vendor.
+        String sql = """
+                SELECT a.id FROM allocation a
+                  JOIN load_unit l ON l.id = a.load_id
+                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND l.load_no > 'LD-0000'
+                   AND EXISTS (SELECT 1 FROM allocation_offer po
+                                WHERE po.tenant_id = a.tenant_id
+                                  AND po.allocation_id = a.id
+                                  AND po.vendor_partner_id = '00000000-0000-0000-0000-000000000002')
+                 ORDER BY l.load_no
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "allocation_offer");
+    }
+
+    @Test
+    @DisplayName("a customer-portal user's order listing is index-served")
+    void partnerScopedOrderListing() {
+        assertIndexed("""
+                SELECT * FROM sales_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND customer_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND order_no > 'SO-0000'
+                 ORDER BY order_no
+                 LIMIT 51
+                """, "sales_order");
+    }
+
+    @Test
+    @DisplayName("a customer-portal user's SKU listing is index-served")
+    void partnerScopedSkuListing() {
+        assertIndexed("""
+                SELECT * FROM sku
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND owner_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND code > 'SKU-0000'
+                 ORDER BY code
+                 LIMIT 51
+                """, "sku");
     }
 
     @Test
@@ -249,6 +339,62 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the missed-connection sweep's candidates are index-served")
+    void legsAwaitingAnOverduePredecessor() {
+        // Run every few minutes for every tenant. The partial index holds only
+        // legs not yet started and not yet marked, and each predecessor is a
+        // point lookup on (itinerary, seq).
+        assertIndexed("""
+                SELECT n.* FROM itinerary_leg n
+                  JOIN itinerary_leg p
+                    ON p.tenant_id = n.tenant_id
+                   AND p.itinerary_id = n.itinerary_id
+                   AND p.seq = n.seq - 1
+                 WHERE n.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND n.departed_at IS NULL
+                   AND n.connection_missed_at IS NULL
+                   AND n.seq > 1
+                   AND p.arrived_at IS NULL
+                   AND p.planned_arrival_at + n.transfer_dwell_minutes * INTERVAL '1 minute'
+                       < TIMESTAMPTZ '2026-10-01 00:00:00+00'
+                   AND n.planned_departure_at < TIMESTAMPTZ '2026-10-01 00:00:00+00'
+                       + n.transfer_dwell_minutes * INTERVAL '1 minute'
+                 ORDER BY n.planned_departure_at, n.id
+                 LIMIT 200
+                """, "itinerary_leg");
+    }
+
+    @Test
+    @DisplayName("the rail rate card in force on a day is index-served")
+    void railTariffInForce() {
+        // Asked for every rail leg planned without a cost.
+        assertIndexed("""
+                SELECT * FROM rail_tariff
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND carrier_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND origin_terminal_id = '00000000-0000-0000-0000-000000000003'
+                   AND destination_terminal_id = '00000000-0000-0000-0000-000000000004'
+                   AND effective_from <= DATE '2026-10-01'
+                   AND (effective_to IS NULL OR effective_to >= DATE '2026-10-01')
+                 ORDER BY effective_from DESC
+                 LIMIT 1
+                """, "rail_tariff");
+    }
+
+    @Test
+    @DisplayName("the rail rate card listing pages newest first without a sort")
+    void railTariffListing() {
+        assertIndexed("""
+                SELECT * FROM rail_tariff
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "rail_tariff");
+    }
+
+    @Test
     @DisplayName("compliance document expiry lookup is index-served")
     void complianceDocumentExpiry() {
         assertIndexed("""
@@ -317,6 +463,188 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a warehouse's ASNs page newest first without a sort")
+    void asnListingPage() {
+        assertIndexed("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "asn");
+        assertNoSort("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's ASNs narrowed to one status page without a sort")
+    void asnListingByStatus() {
+        assertIndexed("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "asn");
+        assertNoSort("""
+                SELECT * FROM asn
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's outbound orders page newest first without a sort")
+    void outboundOrderListingPage() {
+        assertIndexed("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "outbound_order");
+        assertNoSort("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's outbound orders narrowed to one status page without a sort")
+    void outboundOrderListingByStatus() {
+        assertIndexed("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "outbound_order");
+        assertNoSort("""
+                SELECT * FROM outbound_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's handling units page newest first without a sort")
+    void handlingUnitListingPage() {
+        assertIndexed("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "handling_unit");
+        assertNoSort("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a warehouse's handling units narrowed to one status page without a sort")
+    void handlingUnitListingByStatus() {
+        assertIndexed("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "handling_unit");
+        assertNoSort("""
+                SELECT * FROM handling_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'PACKED'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """);
+    }
+
+    @Test
+    @DisplayName("a portal user's ASN page probes each ASN's lines by index")
+    void partnerScopedAsnListing() {
+        // The partner filter is an EXISTS per candidate row; it must be a seek
+        // into the ASN's lines, never a walk of every line the tenant has.
+        assertIndexed("""
+                SELECT a.id FROM asn a
+                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND a.warehouse_id = '00000000-0000-0000-0000-000000000002'
+                   AND EXISTS (SELECT 1 FROM asn_line l
+                                 JOIN sku s ON s.id = l.sku_id
+                                WHERE l.tenant_id = a.tenant_id AND l.asn_id = a.id
+                                  AND s.owner_partner_id = '00000000-0000-0000-0000-000000000003')
+                 ORDER BY a.created_at DESC, a.id DESC
+                 LIMIT 51
+                """, "asn_line");
+    }
+
+    @Test
+    @DisplayName("whether an order waits in a wave is index-served")
+    void orderAwaitingWave() {
+        // Asked before every single-order pick.
+        assertIndexed("""
+                SELECT wave_id FROM pick_wave_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND order_id = '00000000-0000-0000-0000-000000000002'
+                """, "pick_wave_order");
+    }
+
+    @Test
+    @DisplayName("a wave's orders come back in sequence from its key")
+    void waveOrdersInSequence() {
+        assertIndexed("""
+                SELECT order_id FROM pick_wave_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND wave_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY seq
+                """, "pick_wave_order");
+    }
+
+    @Test
+    @DisplayName("an order's lines are summed for the listing from an index")
+    void outboundLineTotals() {
+        assertIndexed("""
+                SELECT sum(ordered_qty), sum(picked_qty) FROM outbound_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND order_id = '00000000-0000-0000-0000-000000000002'
+                """, "outbound_line");
+    }
+
+    @Test
     @DisplayName("active refresh token lookup by hash is index-served")
     void refreshTokenByHash() {
         assertIndexed("""
@@ -365,6 +693,36 @@ class QueryPlanTest {
                  WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
                    AND terminal_id = '00000000-0000-0000-0000-000000000002'
                 """, "ltl_zone_terminal");
+    }
+
+    @Test
+    @DisplayName("a hub's dockets awaiting delivery page by docket number from the index")
+    void docketsAwaitingDeliveryAtAHub() {
+        // The delivery planner's work queue. Leading with the hub and the
+        // status keeps dockets still on the road -- most of them -- out of
+        // the seek altogether.
+        assertIndexed("""
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND destination_hub_terminal_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'ARRIVED_AT_HUB'
+                   AND tracking_ref > 'DKT-0000000000'
+                 ORDER BY tracking_ref
+                 LIMIT 50
+                """, "consignment");
+    }
+
+    @Test
+    @DisplayName("the load a consignment is on now is found from its links by index")
+    void currentLoadOfAConsignment() {
+        // A docket may be linked to a line haul and a delivery load; every
+        // consignment read picks one of at most two links this way.
+        assertIndexed("""
+                SELECT load_id FROM load_consignment
+                 WHERE consignment_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY (leg = 'DELIVERY') DESC
+                 LIMIT 1
+                """, "load_consignment");
     }
 
     @Test
@@ -483,6 +841,107 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a client's statement pages invoices and credit notes in issue order by index")
+    void clientStatement() {
+        // Both halves of the union seek on (tenant, client, issued_at, id), so
+        // every page costs the same however long the client's history is.
+        String sql = """
+                SELECT * FROM (
+                    SELECT i.id AS document_id, i.issued_at, i.total_amount AS debit
+                      FROM client_invoice i
+                     WHERE i.tenant_id = '00000000-0000-0000-0000-000000000001'
+                       AND i.client_partner_id = '00000000-0000-0000-0000-000000000002'
+                       AND (i.issued_at, i.id) > (TIMESTAMPTZ '2026-01-01 00:00:00+00',
+                                                  '00000000-0000-0000-0000-000000000009')
+                    UNION ALL
+                    SELECT cn.id, cn.issued_at, 0
+                      FROM client_credit_note cn
+                     WHERE cn.tenant_id = '00000000-0000-0000-0000-000000000001'
+                       AND cn.client_partner_id = '00000000-0000-0000-0000-000000000002'
+                       AND (cn.issued_at, cn.id) > (TIMESTAMPTZ '2026-01-01 00:00:00+00',
+                                                    '00000000-0000-0000-0000-000000000009')
+                ) entries
+                 ORDER BY issued_at, document_id
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "client_invoice");
+        assertIndexed(sql, "client_credit_note");
+    }
+
+    @Test
+    @DisplayName("what has been credited against an invoice and its lines is index-served")
+    void clientCreditedAmounts() {
+        // Read for every invoice shown, for every margin row, and under the
+        // lock before every credit note is issued.
+        assertIndexed("""
+                SELECT sum(total_amount) FROM client_credit_note
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND invoice_id = '00000000-0000-0000-0000-000000000002'
+                """, "client_credit_note");
+        assertIndexed("""
+                SELECT sum(taxable_amount), sum(tax_amount) FROM client_credit_note_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND invoice_line_id = '00000000-0000-0000-0000-000000000002'
+                """, "client_credit_note_line");
+        assertIndexed("""
+                SELECT * FROM client_credit_note_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND credit_note_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY line_no
+                """, "client_credit_note_line");
+    }
+
+    @Test
+    @DisplayName("a client's ledger-derived storage month is index-served")
+    void clientStorageDays() {
+        assertIndexed("""
+                SELECT held_on, units_held, pallets FROM client_storage_day
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND period_start = DATE '2026-01-01'
+                 ORDER BY held_on
+                """, "client_storage_day");
+    }
+
+    @Test
+    @DisplayName("the stock an owner holds, and how it moved since a day, is index-served")
+    void ownerStockFromTheLedger() {
+        // The warehouse::api read behind ledger storage: the owner's SKUs,
+        // their balances now, and their movements since the month began --
+        // never the whole ledger.
+        String sql = """
+                WITH owned AS (
+                    SELECT id FROM sku
+                     WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                       AND owner_partner_id = '00000000-0000-0000-0000-000000000002'
+                )
+                SELECT (SELECT sum(b.on_hand) FROM stock_balance b
+                         WHERE b.tenant_id = '00000000-0000-0000-0000-000000000001'
+                           AND b.sku_id IN (SELECT id FROM owned)),
+                       (SELECT sum(m.quantity) FROM stock_movement m
+                         WHERE m.tenant_id = '00000000-0000-0000-0000-000000000001'
+                           AND m.sku_id IN (SELECT id FROM owned)
+                           AND m.occurred_at >= TIMESTAMPTZ '2026-01-01 00:00:00+00')
+                """;
+        assertIndexed(sql, "sku");
+        assertIndexed(sql, "stock_balance");
+        assertIndexed(sql, "stock_movement");
+    }
+
+    @Test
+    @DisplayName("the client margin's credit-note reduction is index-served")
+    void clientMarginCredits() {
+        assertIndexed("""
+                SELECT sum(cl.taxable_amount)
+                  FROM client_credit_note cn
+                  JOIN client_credit_note_line cl
+                    ON cl.tenant_id = cn.tenant_id AND cl.credit_note_id = cn.id
+                 WHERE cn.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND cn.invoice_id = '00000000-0000-0000-0000-000000000002'
+                """, "client_credit_note_line");
+    }
+
+    @Test
     @DisplayName("the client portal binding lookup is index-served")
     void clientPortalBinding() {
         // Asked on every client-billing read and command.
@@ -525,6 +984,71 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a circuit's payable is found by index")
+    void freightBillByCircuitRun() {
+        // Runs on every delivery of a circuit completion, redeliveries included.
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND circuit_run_id = '00000000-0000-0000-0000-000000000002'
+                """, "freight_bill");
+    }
+
+    @Test
+    @DisplayName("a rail leg's payable is found by index")
+    void freightBillByItineraryLeg() {
+        // Runs on every delivery of a rail leg's release, redeliveries included.
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND itinerary_leg_id = '00000000-0000-0000-0000-000000000002'
+                """, "freight_bill");
+    }
+
+    @Test
+    @DisplayName("the bill a trip is paid on is found by index, cancelled ones included")
+    void freightBillByTrip() {
+        // The redelivery check for trip bills. It must see a superseded,
+        // cancelled trip bill too, so it cannot lean on the partial unique
+        // index of live bills alone.
+        assertIndexed("""
+                SELECT * FROM freight_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY (status = 'CANCELLED'), created_at DESC
+                 LIMIT 1
+                """, "freight_bill");
+    }
+
+    @Test
+    @DisplayName("a split consignment's parts page by reference from the index, without a sort")
+    void consignmentParts() {
+        // Read by the parts listing and by every split consignment's view and
+        // public tracking. The partial index holds parts only.
+        String sql = """
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND parent_consignment_id = '00000000-0000-0000-0000-000000000002'
+                   AND tracking_ref > 'LR-0000000000-050'
+                 ORDER BY tracking_ref
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "consignment");
+        assertNoSort(sql);
+    }
+
+    @Test
+    @DisplayName("the consignment made from a handling unit is found by index")
+    void consignmentByHandlingUnit() {
+        // Runs on every delivery of a warehouse hand-off.
+        assertIndexed("""
+                SELECT * FROM consignment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND handling_unit_id = '00000000-0000-0000-0000-000000000002'
+                """, "consignment");
+    }
+
+    @Test
     @DisplayName("the exception board pages newest first without a sort")
     void exceptionBoard() {
         // Keyset on (raised_at, id), descending. The row comparison and the
@@ -549,6 +1073,35 @@ class QueryPlanTest {
                    AND status = 'RAISED'
                  ORDER BY raised_at DESC, id DESC
                  LIMIT 51
+                """, "exception_ticket");
+    }
+
+    @Test
+    @DisplayName("a redelivered detection finds its ticket by index")
+    void exceptionBySourceKey() {
+        // Asked on every delivery of every event the control tower turns into
+        // a ticket -- route deviations, missed connections, milk-run stops,
+        // receipt variances and pick shortfalls. The partial unique index
+        // serves it, because an equality on source_key implies it is not null.
+        assertIndexed("""
+                SELECT * FROM exception_ticket
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND source_key = 'pick-shortfall:00000000-0000-0000-0000-000000000002:1'
+                """, "exception_ticket");
+    }
+
+    @Test
+    @DisplayName("the exception summary counts open tickets by index")
+    void exceptionSummary() {
+        // Now also counts the open tickets that have no trip; still one pass
+        // over the open statuses, never the whole history.
+        assertIndexed("""
+                SELECT count(*) FILTER (WHERE severity = 'P1')::int AS open_p1,
+                       count(*) FILTER (WHERE suspends_settlement)::int AS settlement_holds,
+                       count(*) FILTER (WHERE trip_id IS NULL)::int AS open_without_trip
+                  FROM exception_ticket
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status IN ('RAISED', 'ASSIGNED', 'UNDER_INVESTIGATION', 'RESOLVED')
                 """, "exception_ticket");
     }
 
@@ -611,6 +1164,19 @@ class QueryPlanTest {
         assertThat(offenders)
                 .as("non-unique indexes on tenant-scoped tables must lead with tenant_id")
                 .isEmpty();
+    }
+
+    /**
+     * A keyset page must ride its index in order: a Sort node would mean
+     * every page sorts every matching row before taking the first 51.
+     */
+    private void assertNoSort(String sql) {
+        // One transaction, so the SET LOCAL holds for the EXPLAIN after it.
+        String plan = new TransactionTemplate(transactionManager).execute(status -> {
+            jdbc.sql("SET LOCAL enable_seqscan = off").update();
+            return String.join("\n", jdbc.sql("EXPLAIN " + sql).query(String.class).list());
+        });
+        assertThat(plan).as("keyset page should not sort:%n%s", plan).doesNotContain("Sort");
     }
 
     private void assertIndexed(String sql, String table) {

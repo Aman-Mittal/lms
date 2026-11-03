@@ -20,6 +20,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+/**
+ * One issued invoice.
+ *
+ * @param totalAmount    taxable amount plus tax: what the invoice charged
+ * @param creditedAmount the total of the credit notes issued against it, tax
+ *                       included; the invoice itself is never changed
+ */
 public record ClientInvoiceView(
         UUID id,
         String invoiceNo,
@@ -30,7 +37,10 @@ public record ClientInvoiceView(
         LocalDate periodEnd,
         String status,
         String currency,
+        BigDecimal taxableAmount,
+        BigDecimal taxAmount,
         BigDecimal totalAmount,
+        BigDecimal creditedAmount,
         int lineCount,
         Instant issuedAt) {
 }

@@ -48,5 +48,7 @@ public record TripView(
         BigDecimal plannedWeightKg,
         Long originDwellMinutes,
         int documentCount,
+        Instant cancelledAt,
+        String cancellationReason,
         Instant createdAt) {
 }

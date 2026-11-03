@@ -15,15 +15,20 @@
  */
 package com.lms.planning.command;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
 import com.lms.order.api.FreightMode;
+import com.lms.order.api.OrderPlanningPort;
+import com.lms.planning.api.LoadInUseGuard;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.LoadUnit;
+import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -39,10 +44,20 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
 
     private final LoadUnitRepository loads;
     private final ConsignmentRepository consignments;
+    private final PlanningLinks links;
+    private final OrderPlanningPort orderPlanning;
+    private final List<LoadInUseGuard> inUseGuards;
+    private final TransitionAudit audit;
 
-    public LoadLifecycleAdapter(LoadUnitRepository loads, ConsignmentRepository consignments) {
+    public LoadLifecycleAdapter(LoadUnitRepository loads, ConsignmentRepository consignments,
+                                PlanningLinks links, OrderPlanningPort orderPlanning,
+                                List<LoadInUseGuard> inUseGuards, TransitionAudit audit) {
         this.loads = loads;
         this.consignments = consignments;
+        this.links = links;
+        this.orderPlanning = orderPlanning;
+        this.inUseGuards = inUseGuards;
+        this.audit = audit;
     }
 
     @Override
@@ -54,9 +69,10 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
             List<Consignment> aboard = consignments.findOnLoad(tenantId, loadId);
             // A consolidated LTL vehicle is hired for its line haul, so its lane
             // ends at the destination hub and its stops are hubs. Last-mile
-            // delivery of each docket from there is not this vehicle's journey.
-            boolean ltl = load.freightMode() == FreightMode.LTL;
-            Function<Consignment, UUID> stop = ltl
+            // delivery of each docket from there is not this vehicle's journey;
+            // it is a DELIVERY load's, whose stops are the consignees.
+            boolean lineHaul = load.freightMode() == FreightMode.LTL && !load.isDelivery();
+            Function<Consignment, UUID> stop = lineHaul
                     ? Consignment::destinationHubTerminalId
                     : Consignment::destinationTerminalId;
             return new LoadSummary(load.id(), load.loadNo(), load.status().name(),
@@ -71,13 +87,172 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     @Override
     @Transactional
     public void recordAwarded(UUID loadId, UUID vendorPartnerId) {
-        loads.save(require(loadId).awardTo(vendorPartnerId));
+        LoadUnit before = require(loadId);
+        LoadUnit awarded = loads.save(before.awardTo(vendorPartnerId));
+        // Only a change is a transition: awarding a load to the vendor it is
+        // already awarded to is a repeat, and a repeat audits nothing.
+        if (before.status() != awarded.status()
+                || !java.util.Objects.equals(before.awardedVendorPartnerId(), vendorPartnerId)) {
+            audit.record("LOAD_AWARDED", PlanningAudit.LOAD, loadId, PlanningAudit.load(before),
+                    PlanningAudit.load(awarded));
+        }
     }
 
     @Override
     @Transactional
+    public void recordAwardWithdrawn(UUID loadId) {
+        LoadUnit before = require(loadId);
+        if (before.status() == LoadUnit.LoadStatus.PLANNED
+                || before.status() == LoadUnit.LoadStatus.CANCELLED) {
+            return;
+        }
+        // Asked before anything changes: a trip raised against the load refuses.
+        inUseGuards.forEach(guard -> guard.requireNotInUse(List.of(loadId)));
+        LoadUnit planned = loads.save(before.withdrawAward());
+        audit.record("LOAD_AWARD_WITHDRAWN", PlanningAudit.LOAD, loadId,
+                PlanningAudit.load(before), PlanningAudit.load(planned));
+    }
+
+    /**
+     * Moves the load to DISPATCHED and, for a part load, its dockets with it:
+     * a line haul's to IN_TRANSIT, a delivery load's to OUT_FOR_DELIVERY.
+     *
+     * <p>A full truckload's consignments are left as they were, as they always
+     * have been; this change is about the part-load journey only.
+     */
+    @Override
+    @Transactional
     public void recordDispatched(UUID loadId) {
-        loads.save(require(loadId).transitionTo(LoadUnit.LoadStatus.DISPATCHED));
+        LoadUnit before = require(loadId);
+        LoadUnit load = loads.save(before.transitionTo(LoadUnit.LoadStatus.DISPATCHED));
+        if (before.status() != load.status()) {
+            audit.record("LOAD_DISPATCHED", PlanningAudit.LOAD, loadId, PlanningAudit.load(before),
+                    PlanningAudit.load(load));
+        }
+        if (load.freightMode() != FreightMode.LTL) {
+            return;
+        }
+        Consignment.ConsignmentStatus from = load.isDelivery()
+                ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
+                : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
+        Consignment.ConsignmentStatus to = load.isDelivery()
+                ? Consignment.ConsignmentStatus.OUT_FOR_DELIVERY
+                : Consignment.ConsignmentStatus.IN_TRANSIT;
+        advanceDockets(load, from, to);
+    }
+
+    @Override
+    @Transactional
+    public void recordTripCompleted(UUID loadId) {
+        LoadUnit load = require(loadId);
+        List<Consignment> delivered;
+        if (load.freightMode() == FreightMode.LTL) {
+            Consignment.ConsignmentStatus boarded = load.isDelivery()
+                    ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
+                    : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
+            Consignment.ConsignmentStatus moving = load.isDelivery()
+                    ? Consignment.ConsignmentStatus.OUT_FOR_DELIVERY
+                    : Consignment.ConsignmentStatus.IN_TRANSIT;
+            Consignment.ConsignmentStatus arrived = load.isDelivery()
+                    ? Consignment.ConsignmentStatus.DELIVERED
+                    : Consignment.ConsignmentStatus.ARRIVED_AT_HUB;
+            // A line haul dispatched before dispatch moved its dockets still has
+            // them boarded rather than moving; they have travelled all the same.
+            advanceDockets(load, boarded, moving);
+            List<Consignment> arrivedDockets = advanceDockets(load, moving, arrived);
+            // At a hub a docket has not been delivered; only a delivery load's have.
+            delivered = load.isDelivery() ? arrivedDockets : List.of();
+        } else {
+            delivered = deliverFullTruckload(load);
+        }
+
+        // Only a dispatched load can finish. Anything else -- already
+        // COMPLETED on a repeat call -- is left as it is.
+        if (load.status() == LoadUnit.LoadStatus.DISPATCHED) {
+            LoadUnit completed = loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+            audit.record("LOAD_COMPLETED", PlanningAudit.LOAD, load.id(), PlanningAudit.load(load),
+                    PlanningAudit.load(completed));
+        }
+
+        fulfilOrders(load.tenantId(), delivered);
+    }
+
+    /**
+     * Delivers a full truckload's consignments: they board, travel and arrive
+     * in one step, because a full truckload goes from its origin straight to
+     * its consignee and nothing is tracked in between.
+     *
+     * <p>Walks the existing state machine (ASSIGNED_TO_LOAD, IN_TRANSIT,
+     * DELIVERED) in memory and writes each consignment once. Only a load that
+     * has left is delivered; a COMPLETED one is revisited too, so a load
+     * completed before this was tracked heals on its next completion call.
+     * Consignments in any other state -- already delivered, cancelled -- are
+     * skipped, so a repeat call changes nothing.
+     *
+     * @return the consignments delivered by this call
+     */
+    private List<Consignment> deliverFullTruckload(LoadUnit load) {
+        if (load.status() != LoadUnit.LoadStatus.DISPATCHED
+                && load.status() != LoadUnit.LoadStatus.COMPLETED) {
+            return List.of();
+        }
+        List<Consignment> delivered = new ArrayList<>();
+        List<TransitionAudit.Entry> deliveredEntries = new ArrayList<>();
+        for (Consignment consignment : consignments.findOnLoad(load.tenantId(), load.id())) {
+            Consignment.ConsignmentStatus status = consignment.status();
+            if (consignment.isDocket() || (status != Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD
+                    && status != Consignment.ConsignmentStatus.IN_TRANSIT)) {
+                continue;
+            }
+            Consignment moving = consignment.transitionTo(Consignment.ConsignmentStatus.IN_TRANSIT);
+            Consignment done = consignments.save(
+                    moving.transitionTo(Consignment.ConsignmentStatus.DELIVERED));
+            delivered.add(done);
+            deliveredEntries.add(PlanningAudit.entry(consignment, done));
+        }
+        audit.recordAll("CONSIGNMENT_DELIVERED", PlanningAudit.CONSIGNMENT, deliveredEntries);
+        return delivered;
+    }
+
+    /**
+     * Tells each order whose consignments are now all delivered, so that the
+     * order closes as fulfilled. One query decides which orders qualify, however
+     * many consignments were delivered; the order itself decides whether it
+     * has any demand still unplanned.
+     */
+    private void fulfilOrders(UUID tenantId, List<Consignment> delivered) {
+        Set<UUID> orderIds = delivered.stream().map(Consignment::orderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        for (UUID orderId : links.orderIdsWithNothingLeftToCarry(tenantId, orderIds)) {
+            orderPlanning.recordFulfilled(orderId);
+        }
+    }
+
+    /**
+     * Moves every docket on the load that is in {@code from} to {@code to}.
+     *
+     * <p>Dockets in any other state are skipped rather than refused: on a
+     * line haul's arrival, a docket already put on a delivery load must not
+     * be dragged back, and on a repeat call everything has already moved.
+     *
+     * @return the dockets moved, each audited as CONSIGNMENT_ plus the status it reached
+     */
+    private List<Consignment> advanceDockets(LoadUnit load, Consignment.ConsignmentStatus from,
+                                             Consignment.ConsignmentStatus to) {
+        List<Consignment> moved = new ArrayList<>();
+        List<TransitionAudit.Entry> movedEntries = new ArrayList<>();
+        for (Consignment docket : consignments.findOnLoad(load.tenantId(), load.id())) {
+            if (docket.isDocket() && docket.status() == from) {
+                Consignment next = consignments.save(docket.transitionTo(to));
+                moved.add(next);
+                movedEntries.add(PlanningAudit.entry(docket, next));
+            }
+        }
+        // One statement for the whole movement; none when nothing moved, which
+        // is what a repeated completion of the same load does.
+        audit.recordAll("CONSIGNMENT_" + to.name(), PlanningAudit.CONSIGNMENT, movedEntries);
+        return moved;
     }
 
     @Override
@@ -102,7 +277,11 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
                             + " consignment(s) that have not been delivered");
         }
 
-        loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+        LoadUnit completed = loads.save(load.transitionTo(LoadUnit.LoadStatus.COMPLETED));
+        if (load.status() != completed.status()) {
+            audit.record("LOAD_COMPLETED", PlanningAudit.LOAD, loadId, PlanningAudit.load(load),
+                    PlanningAudit.load(completed));
+        }
     }
 
     /**

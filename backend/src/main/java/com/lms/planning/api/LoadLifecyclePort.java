@@ -47,11 +47,42 @@ public interface LoadLifecyclePort {
      */
     void recordAwarded(UUID loadId, UUID vendorPartnerId);
 
+    /**
+     * Records that the load's award has been withdrawn: the load returns to
+     * PLANNED with no vendor, so that sourcing can offer it again.
+     *
+     * <p>Refused with {@code load-has-active-trip} while a trip that is not
+     * cancelled is raised against it (see {@link LoadInUseGuard}); a load that
+     * has left is refused by the state machine
+     * ({@code load-illegal-transition}).
+     *
+     * <p>Idempotent: a load already PLANNED, or CANCELLED (nothing to give
+     * back), is left as it is.
+     */
+    void recordAwardWithdrawn(UUID loadId);
+
     /** Records that the load has physically left the origin. */
     void recordDispatched(UUID loadId);
 
     /** Records that every consignment on the load has been delivered. */
     void recordCompleted(UUID loadId);
+
+    /**
+     * Records that the trip running the load has completed at its destination.
+     *
+     * <p>What that means for the freight aboard is planning's to decide. For a
+     * part-load LINE_HAUL load, the destination is a hub: its dockets have
+     * ARRIVED_AT_HUB and wait there for a delivery load. For a part-load
+     * DELIVERY load, its dockets are DELIVERED. Either way the load itself is
+     * COMPLETED. A full-truckload load's consignments are all DELIVERED and
+     * the load is COMPLETED; each order whose consignments are then all
+     * delivered is told, so that it can close as fulfilled. A part-load
+     * DELIVERY load's orders are told the same way.
+     *
+     * <p>Idempotent: dockets already moved on, and a load already completed,
+     * are left alone, so a repeated call changes nothing.
+     */
+    void recordTripCompleted(UUID loadId);
 
     /**
      * What other contexts are allowed to know about a load.

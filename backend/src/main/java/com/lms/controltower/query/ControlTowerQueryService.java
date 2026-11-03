@@ -47,6 +47,7 @@ public class ControlTowerQueryService {
     private static final String SELECT = """
             SELECT x.id, x.ticket_no, x.trip_id, x.trip_no, x.vehicle_id,
                    v.registration_no,
+                   x.subject_type, x.subject_id, x.subject_label,
                    x.category, x.severity, x.status, x.description, x.source,
                    x.lat, x.lon, x.position_source, x.position_at, x.suspends_settlement,
                    x.raised_by, x.raised_at,
@@ -104,6 +105,20 @@ public class ControlTowerQueryService {
                 view.raisedAt().atOffset(ZoneOffset.UTC), view.id()).encode());
     }
 
+    /** The terms a trip is being watched against, if it is watched. */
+    public Optional<TripWatchView> watchOf(UUID tripId) {
+        return jdbc.sql("""
+                        SELECT trip_id, committed_arrival_at, temp_min_c AS temp_min_c,
+                               temp_max_c AS temp_max_c, temp_out_since AS outside_range_since,
+                               last_temp_at AS last_reading_at
+                          FROM trip_watch
+                         WHERE trip_id = :tripId
+                        """)
+                .param("tripId", tripId)
+                .query(TripWatchView.class)
+                .optional();
+    }
+
     /** Every step the ticket has been through, oldest first. */
     public List<ExceptionActivityView> historyOf(UUID exceptionId) {
         return jdbc.sql("""
@@ -129,7 +144,8 @@ public class ControlTowerQueryService {
                                count(*) FILTER (WHERE severity = 'P2')::int AS open_p2,
                                count(*) FILTER (WHERE severity = 'P3')::int AS open_p3,
                                count(*) FILTER (WHERE status = 'RAISED')::int AS unassigned,
-                               count(*) FILTER (WHERE suspends_settlement)::int AS settlement_holds
+                               count(*) FILTER (WHERE suspends_settlement)::int AS settlement_holds,
+                               count(*) FILTER (WHERE trip_id IS NULL)::int AS open_without_trip
                           FROM exception_ticket
                          WHERE status IN ('RAISED', 'ASSIGNED', 'UNDER_INVESTIGATION', 'RESOLVED')
                         """)

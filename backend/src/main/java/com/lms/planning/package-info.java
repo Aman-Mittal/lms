@@ -21,7 +21,12 @@
  * consignments grouped by destination, and consignments are aggregated into
  * loads that respect a vehicle's hard capacities.
  *
- * <p>Both declared dependencies are synchronous ports rather than events, and
+ * <p>{@code identity::access} is the access decision point's SPI: planning
+ * describes a load to it (so a trip is raised only in the caller's subtree)
+ * and reads the caller's partner to confine a vendor-portal user to their own
+ * awarded loads.
+ *
+ * <p>Both module dependencies are synchronous ports rather than events, and
  * both for the same reason: they gate the operator's next click. Load building
  * must know what a vehicle can carry <em>before</em> the load is built, and
  * consignment generation must return the references it just created. Learning
@@ -39,8 +44,22 @@
  * goods certification and material compatibility apply to a consolidated load
  * exactly as to any other. Each docket is announced as {@code DocketBooked} so
  * that finance can bill it to its customer without reading planning's tables.
+ *
+ * <p>Listens to {@code warehouse::events} for the hand-off of a handling unit
+ * -- receipt to loaded truck. A unit dispatched with a destination, consignee
+ * and weighed gross becomes one full-truckload consignment, with no order
+ * behind it, and is put on a load like any other. An event rather than a port
+ * because nobody is waiting on it: the warehouse has finished with the unit,
+ * and the consignment appears among those not yet on a load.
+ *
+ * <p>A docket travels on two loads. Its LINE_HAUL load runs hub to hub; when
+ * execution reports that load's trip complete (through {@code LoadLifecyclePort},
+ * which execution already calls on dispatch) the docket has arrived at its
+ * destination hub, and a DELIVERY load opened at that hub takes it to its
+ * consignee. The docket's state machine is documented on {@code Consignment}.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",
-        allowedDependencies = {"order::api", "masterdata::api"})
+        allowedDependencies = {"order::api", "masterdata::api", "warehouse::events",
+                "identity::access"})
 package com.lms.planning;

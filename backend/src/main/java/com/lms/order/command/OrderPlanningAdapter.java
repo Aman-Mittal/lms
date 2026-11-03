@@ -22,6 +22,8 @@ import java.util.UUID;
 import com.lms.order.api.OrderPlanningPort;
 import com.lms.order.command.domain.OrderLine;
 import com.lms.order.command.domain.SalesOrder;
+import com.lms.shared.audit.TransitionAudit;
+import com.lms.shared.config.Json;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Service;
@@ -41,10 +43,13 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
 
     private final SalesOrderRepository orders;
     private final OrderLineRepository lines;
+    private final TransitionAudit audit;
 
-    public OrderPlanningAdapter(SalesOrderRepository orders, OrderLineRepository lines) {
+    public OrderPlanningAdapter(SalesOrderRepository orders, OrderLineRepository lines,
+                                TransitionAudit audit) {
         this.orders = orders;
         this.lines = lines;
+        this.audit = audit;
     }
 
     @Override
@@ -85,7 +90,33 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
         // table knows what was planned before.
         long total = lines.countByOrder(tenantId, orderId);
         long planned = lines.countPlannedByOrder(tenantId, orderId);
-        orders.save(order.withCoverage((int) planned, (int) total));
+        SalesOrder covered = orders.save(order.withCoverage((int) planned, (int) total));
+        // Only a change of status is a transition. Planning a further line of
+        // an order that was already partly planned, or being told the same
+        // thing twice, moves nothing and audits nothing.
+        if (order.status() != covered.status()) {
+            audit.record(switch (covered.status()) {
+                        case PARTIALLY_PLANNED -> "ORDER_PARTIALLY_PLANNED";
+                        case FULLY_PLANNED -> "ORDER_FULLY_PLANNED";
+                        default -> "ORDER_COVERAGE_CHANGED";
+                    }, OrderCommandService.AUDIT_TYPE, orderId,
+                    Json.object("status", order.status().name()),
+                    Json.object("status", covered.status().name(),
+                            "plannedLines", String.valueOf(planned),
+                            "totalLines", String.valueOf(total)));
+        }
+    }
+
+    @Override
+    @Transactional
+    public void recordFulfilled(UUID orderId) {
+        SalesOrder order = require(orderId);
+        if (order.status() == SalesOrder.OrderStatus.FULLY_PLANNED) {
+            orders.save(order.transitionTo(SalesOrder.OrderStatus.FULFILLED));
+            audit.record("ORDER_FULFILLED", OrderCommandService.AUDIT_TYPE, orderId,
+                    Json.object("status", order.status().name()),
+                    Json.object("status", "FULFILLED"));
+        }
     }
 
     @Override

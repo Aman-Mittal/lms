@@ -8,10 +8,14 @@ before touching the codebase.
 ## 1. What this project is
 
 An MVP of the platform described in `README.md`. The vision document specifies
-twelve modules; the MVP implements a **thin end-to-end spine** through nine of
-them. It is not a prototype — every path in scope is real, tested, and walkable.
-It is also not complete — see "Deliberately deferred" below and do not pretend
-otherwise in docs, comments, or commit messages.
+twelve modules; the code is a **modular monolith of thirteen bounded contexts
+plus a shared kernel** (§4 lists them). It began as a thin order-to-bill spine
+and has since grown the freight modes (full and part truckload, milk run,
+rail/multimodal), warehousing, third-party-logistics client billing and
+attribute-based access control. It is not a prototype — every path in scope is
+real, tested, and walkable. It is also not complete — see "Deliberately
+deferred" below and do not pretend otherwise in docs, comments, or commit
+messages.
 
 The hard constraint behind nearly every design decision: the backend runs on a
 **Render free web service — 512 MB RAM, 0.1 CPU**, backed by a **1 GB Postgres
@@ -27,8 +31,8 @@ infrastructure, it needs an ADR.
 |---|---|---|
 | Java | **25 LTS** | Required, not preferred — see the note below. |
 | Maven | via `./mvnw` | Wrapper is script-only — there is no committed jar. Never invoke a global `mvn`. |
-| Spring Boot | **4.1.0** | |
-| Spring Modulith | **2.1.0** | |
+| Spring Boot | **4.1.1** | |
+| Spring Modulith | **2.1.1** | |
 | Node | 24.x | Frontend only. |
 
 Always run Maven through `backend/mvnw`.
@@ -46,7 +50,7 @@ These have already cost time. Do not rediscover them.
   but your GraalVM installation does not" — a message that sounds like a
   corrupt cache and is actually a version floor. The JVM build works fine on
   21; only the native build breaks, so this fails late.
-- **Jackson 3, not Jackson 2.** Spring Boot 4 ships Jackson `3.1.4`. Databind and
+- **Jackson 3, not Jackson 2.** Spring Boot 4 ships Jackson 3. Databind and
   core live under **`tools.jackson.*`**, *not* `com.fasterxml.jackson.databind`.
   Annotations are the exception — they remain `com.fasterxml.jackson.annotation`.
   Importing the `com.fasterxml` databind packages will not compile.
@@ -131,6 +135,22 @@ These have already cost time. Do not rediscover them.
 - **Bind parameters used only in `IS NULL` need an explicit cast.** Postgres has
   nothing to infer a type from and fails with "could not determine data type of
   parameter". Write `CAST(:id AS uuid) IS NULL`, not `:id IS NULL`.
+- **Stale `__Accessor_` classes break a plain `verify` after a native build.**
+  An earlier native or AOT build leaves `target/classes/*__Accessor_*.class`
+  files behind. A later `./mvnw verify` that does not clean then fails with
+  "No accessor to get property". Always `./mvnw clean verify`, and always after
+  a native build.
+- **The OpenAPI contract is split, and fragments must stay self-contained.**
+  `api/openapi.yaml` is only the head. Parameters, responses, schemas and paths
+  live in `api/spec/` (`paths-<tag>.yaml`, `schemas-<tag>.yaml`,
+  `parameters.yaml`, `responses.yaml`), and a Maven antrun step
+  (`bundle-openapi`) splices them into `target/openapi/openapi.yaml`, which is
+  what the client generator and `OpenApiContractTest` read. Fragments keep
+  `#/components/...` references, never cross-file ones: with a cross-file
+  `$ref`, openapi-generator invents its own model names and the client stops
+  matching the spec. Add a new schema or path to its tag's own fragment.
+- **XML comments in `pom.xml` must not contain `--`.** It is illegal inside an
+  XML comment, and the parse error does not point at the comment.
 - **No Lombok.** Use Java records and Spring Data JDBC constructor binding.
 - **No `springdoc-openapi`.** `api/openapi.yaml` is hand-authored and is the
   contract source of truth. Do not generate the spec from annotations; generate
@@ -146,8 +166,25 @@ Each bounded context is a top-level package under `com.lms`:
 
 ```
 identity  masterdata  order  planning  sourcing  execution  telematics  finance
-controltower  shared
+controltower  milkrun  multimodal  warehouse  clientbilling  shared
 ```
+
+| Module | Role |
+|---|---|
+| `identity` | Tenants, org hierarchy, users, authentication, RBAC, audit log, and attribute-based access control (policies as per-tenant data, decided by the `@abac` bean). Depends on nothing. |
+| `masterdata` | Business partners and KYC, vehicles, drivers, dispatch readiness, terminals as geofences (including HUB, WAREHOUSE and RAILHEAD categories). |
+| `order` | Demand ingestion and validation: orders, lines, chargeable weight, dangerous goods, freight mode (FTL or LTL with hubs). |
+| `planning` | Consignment generation (lorry receipts and LTL dockets), load building, consolidation; turns a warehouse hand-off into a consignment. |
+| `sourcing` | Routing guides, cascading and round-robin allocation, offer timeouts. |
+| `execution` | Trip state machine, gate log, weighbridge, dispatch gate, LTL delivery leg. |
+| `telematics` | GPS ingest, geofence crossings, route deviation, stoppage detection, retention. |
+| `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables, rail-leg carrier payables. |
+| `controltower` | Exception tickets from people and detectors (route deviation, stoppage, ETA slip, temperature excursion, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
+| `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
+| `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
+| `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
+| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
+| `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
 - A context **must not** call another context's classes directly. Cross-context
   communication is `ApplicationEventPublisher` and domain events only.
@@ -195,6 +232,28 @@ Rules that make the split worth having:
   `@NamedInterface`, so peers declare `allowedDependencies = "masterdata::events"`
   and get the events without gaining access to `command`, `query` or `domain`.
   Everything else is internal and the build enforces that.
+- **When a module needs a synchronous answer from one that depends on it, it
+  publishes an SPI in its own `api/`** and the dependent module implements it.
+  `order::api` defines `OrderCancellationHook`, implemented by planning, so that
+  cancelling an order can refuse (when freight has left) or cascade (to
+  consignments and loads) inside the same transaction. `OrderPlanningPort` is the
+  opposite direction: planning telling order what happened (lines planned, order
+  fulfilled). Do not replace either with an after-commit event if the caller must
+  be able to stop the operation. The same pattern is used by `planning::api`:
+  `LoadInUseGuard` (execution implements it: a live trip on the load) and
+  `LoadCancellationHook` (sourcing implements it: withdraw the open allocation),
+  so planning never depends on execution or sourcing.
+  `order::api` also defines `OrderAmendmentGuard` (planning implements it: refuse
+  while a live consignment exists), which is what lets a validated order be
+  amended only before freight is cut from it.
+- **Order edits carry `If-Match`.** `GET /orders/{id}` returns the version as its
+  `ETag`; the edit endpoints (`PUT /orders/{id}`, `PUT /orders/{id}/lines`,
+  `DELETE /orders/{id}/lines/{lineId}`, `POST /orders/{id}/amend`) require it in
+  `If-Match` (quoted or bare, never `*`) and a stale value is 409
+  `concurrent-modification`. A draft is edited freely; a VALIDATED order with no
+  consignments only through the amendment, which validates it again and audits
+  `ORDER_AMENDED` with before and after. Other update endpoints (terminals) still
+  take the version in the body; the header form is the one to copy.
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
@@ -210,6 +269,29 @@ least once** and republishes incomplete events after a restart.
   `IdempotencyService`. The claim is an `INSERT`, not check-then-insert — the
   primary key settles the race between concurrent retries instead of leaving it
   to chance.
+- **Bad input answers a 4xx problem document, never 500.** `GlobalExceptionHandler`
+  extends `ResponseEntityExceptionHandler`, so malformed or empty bodies, wrong
+  types, missing parameters, unrouted paths and wrong methods are 400, 404, 405,
+  406 or 415 with a stable `code` (`malformed-request`, `missing-parameter`,
+  `invalid-parameter`, `validation-failed`, `not-found`, `method-not-allowed`,
+  ...); the catch-all is for genuinely unexpected errors only and says nothing
+  about them. 401 and 403 from the security chain are problem documents too
+  (`ProblemSecurityHandlers`): a rejected token's reason is never echoed (expiry
+  is the one exception, because a client needs it to refresh).
+- **Jackson 3 sets `FAIL_ON_NULL_FOR_PRIMITIVES` on**, so a record with an `int`
+  or `boolean` sent `{}` fails before bean validation runs. The default is turned
+  off in `application.yaml`; where a silent default would be unsafe (a `boolean
+  enabled` that would switch a policy off) the field is boxed and `@NotNull`.
+- **Lifecycle transitions are audited in the transition's own transaction**
+  (`TransitionAudit`, `MANDATORY`, batched; or `AuditTrail.recordAtomically`), so a
+  rolled-back transition leaves no audit row. `AuditTrail.record` (`REQUIRES_NEW`)
+  is only for entries that must outlive a failure, and see the pool hazard under
+  section 8.
+- **Lost races answer 409, never 500.** `GlobalExceptionHandler` maps a stale
+  `@Version` write to 409 `concurrent-modification` and a unique violation (after
+  a check-then-insert) to 409 `duplicate-resource`; the client re-reads and
+  retries. Problem documents carry a fixed detail and never a constraint, table
+  or SQL text. Other integrity violations (a foreign key, say) stay 500.
 - A retry receives **the original response**, not a 409. The client is retrying
   precisely because it never learned the first outcome.
 - Reusing a key with a different body is rejected: that is a client defect, and
@@ -331,6 +413,23 @@ self-invocation proxy problems too. The same rule applies in tests; see
 The acceptance suite proves isolation rather than assuming it: `identity.feature`
 runs a query with **no tenant predicate at all** and asserts the result is
 confined to the scoped tenant, and that an unscoped query returns nothing.
+`tenant_isolation.feature` does the same for twelve more tables (read, update,
+delete and move-into-another-tenant all refused, as `lms_app`), and
+`TenantIsolationApiTest` and the `e2e/tenant_isolation.feature` scenarios prove
+over HTTP that tenant B gets 404 for tenant A's order, consignment, load, trip,
+allocation, freight bill, exception ticket, ASN, outbound order, handling unit
+and client invoice, and sees none of their rows in a listing.
+
+**A foreign key is checked as the table owner, so row-level security does not
+stop an id in a request body from naming another tenant's row.** This was a real
+hole: tenant B could POST a partner with tenant A's `orgUnitId` and get 201, a
+row of B's pointing into A's organisation (and confirming that the unit exists).
+Organisational units are now refused centrally in `PolicyDecisionPoint.permitsIn`
+(403, identical for a foreign and a nonexistent unit). Every other id a service
+takes from a body must be looked up under RLS (which makes a foreign id read as
+absent) and never trusted because the database accepted the insert. Only the org
+unit path and the ids listed in `ForeignReferenceApiTest` are covered by tests
+today; the rest are listed under known defects.
 
 ---
 
@@ -378,7 +477,7 @@ a judgement call to make in a PR — it needs an ADR.
 ```bash
 # Backend
 cd backend
-./mvnw verify                      # unit + integration tests + license gate
+./mvnw clean verify                # unit + integration + e2e tests + license gate (always clean: see §3)
 ./mvnw test -Dtest=ModularityTests # boundary check alone
 ./mvnw -Pnative -DskipTests package  # native image (GraalVM 25, ~6-8 GB RAM, ~3 min)
 
@@ -406,7 +505,6 @@ request's metadata or a diff against the base branch:
 |---|---|
 | Applied migrations unchanged | Needs the base branch to know which migrations already existed |
 | Dependency review | Reports only what the PR *adds*, and reads the advisory database |
-| PR title is conventional | The title becomes the squash-merge commit subject |
 | Behaviour change carries a test | Needs the diff to see that domain code moved and tests did not |
 
 The migration check is the load-bearing one. Flyway validates a checksum per
@@ -438,7 +536,15 @@ includes production, after the image has been built and pushed.
   body is optional are called with an empty one.
 - **End-to-end Cucumber** (`src/test/resources/e2e/`, runner `RunEndToEndTest`,
   glue `com.lms.e2e`) walks order to paid bill entirely over HTTP with the
-  generated client, signed in as the seeded demo administrator. It is separate
+  generated client, signed in as the seeded demo administrator. Beside
+  `order_to_bill.feature` there is one feature per freight mode and billing
+  flow (`ltl_docket`, `milk_run`, `rail_itinerary`, `warehouse_flow`,
+  `client_billing`), each with its own step class and each tagged (`@ltl`,
+  `@milkrun`, `@rail`, `@warehouse`, `@clientbilling`) so one can be run alone
+  with `-Dcucumber.filter.tags=@rail`. `HttpWorld` is the shared plumbing
+  (sign-in, salted codes, shifted geography, a trip ready to dispatch); step
+  texts must stay unique across every class in the package. Each mode keeps to
+  its own latitude band so scenarios of different modes cannot overlap terminals. It is separate
   from the acceptance suite on purpose: in-process steps cannot notice a
   controller mapping a field wrongly or a spec naming a field the server never
   sends. The demo tenant is shared by every scenario, so codes are salted and
@@ -448,25 +554,125 @@ includes production, after the image has been built and pushed.
   against the application in every build, the native-image workflow runs it
   against each binary, and the *Smoke (deployed)* workflow runs it against
   Render. Change the script, not three copies of it.
+- **Cancelled rows must not hold a unique key.** `allocation_load_unique` (V33)
+  and `trip_live_load_unique` (V34) are partial indexes that ignore CANCELLED
+  rows, so a load can be offered or given a trip again; keep the cancelled row as
+  history rather than deleting it.
+- **Integration tests at the HTTP and database level.** Cucumber acceptance
+  scenarios call services in-process; anything about transactions, triggers or
+  the wire needs a Spring test on Testcontainers Postgres (see
+  `OrderLifecycleIntegrationTest`: a trigger forces a failure mid-cascade and
+  the test asserts nothing was left half-done) or an HTTP end-to-end scenario
+  (`e2e/lifecycle.feature`). Reproduce a defect with a failing scenario before
+  fixing it.
+- **Contention and isolation tests** run against real Postgres over HTTP:
+  `ConflictHandlingApiTest` (12 threads, same unique key or same aggregate;
+  exactly the expected winners, every loser a 409, no 500) and
+  `TenantIsolationApiTest`, built on the shared `ApiTestKit` (HTTP, tokens, a
+  start-gated `race()`) and `TenantSeeds` (one row of everything per tenant).
+  A race test must release all threads together or it measures nothing.
 - **Performance** tests carry `@Tag("performance")` and are excluded from the
   default build; run them with `./mvnw verify -Pperformance` (also weekly in
   the *Performance* workflow, or on a PR labelled `performance`). Assert
   relative properties -- a deep keyset page costs what the first page costs --
-  over absolute timings, which vary by machine. Restart tests start a pod with
+  over absolute timings, which vary by machine. Count statements with
+  `pg_stat_statements` rather than timing them: `LifecycleBulkPerformanceTest`
+  asserts that completing a load and cancelling an order cost about one
+  statement per consignment at 40 and at 400, so an N+1 shows up as a ratio.
+  `WriteContentionPerformanceTest` puts 20 threads on one aggregate and one
+  unique key for 15 rounds and asserts only relative properties (no 500, no
+  hang, median loser latency a small factor of the winner's, contended cost
+  within a factor of uncontended). Restart tests start a pod with
   `SpringApplicationBuilder.run("--key=value")`: builder `.properties()` are
   defaults that `application.yaml` silently overrides.
+- **JMeter** (`performance/jmeter/`): `lms-api.jmx` signs in once and drives a
+  mixed workload (ten reads at random, one write in ten iterations, a readiness
+  probe). `run.sh` runs it and `summarise.py` fails the run on error rate or
+  95th percentile; limits are env vars. It targets a deployment, so it lives
+  in the on-demand *JMeter (deployed)* workflow, not in the default build.
+  Sized for the free tier (5 users); raise load against bigger machines only.
 - Assert on behaviour, not on log output.
 
 ---
 
 ## 8. Deliberately deferred
 
+**Known defects, found by the specification audit and not yet fixed**
+- **`AuditTrail.record` and `recordFor` still take a second connection.** They run
+  in `REQUIRES_NEW`; with the free-tier pool of 5, requests queued on a row lock
+  can leave the lock holder unable to get a connection for its audit row. Every
+  command path now audits through `TransitionAudit` or `AuditTrail.recordAtomically`,
+  which join the caller's transaction; only the login path (`AuthService`, via
+  `recordFor`) still uses the new-transaction form, on purpose, so a failed login
+  is recorded. New code must use the atomic form.
+- Two audit mechanisms now exist side by side: `TransitionAudit` (batched, for
+  bulk transitions) and `AuditTrail.recordAtomically` (single). They should be
+  one.
+- Telematics is deliberately not audited (a stoppage or deviation already
+  becomes a control-tower ticket with its own history). Order coverage changes
+  (`ORDER_PARTIALLY_PLANNED`, `ORDER_FULLY_PLANNED`) and LTL docket movements
+  (`CONSIGNMENT_IN_TRANSIT`, `_ARRIVED_AT_HUB`, `_OUT_FOR_DELIVERY`,
+  `_DELIVERED`, one batched row-set per movement) are audited through
+  `TransitionAudit`. `ORDER_PARTIALLY_PLANNED` has no scenario: planning draws
+  every plannable line in one call, so a partial state is not reachable through
+  the services today.
+- Cancelling an order or allocation withdraws sourcing work, but a trip already
+  raised on a load is refused (`load-has-active-trip`) rather than cancelled:
+  cancel the trip first.
+- Existing databases may hold AWARDED allocations on CANCELLED loads from before
+  the lifecycle fixes; cancelling such an allocation is a no-op on the load.
+- Cross-tenant body ids: `ForeignReferenceApiTest` covers order customer and
+  origin terminal, order-line consignee and destination terminal, load origin
+  terminal and vehicle, routing-guide terminals, trip, allocation, exception,
+  consolidation and ASN references, rate-card vendor and terminals, LTL zone
+  terminals, client portal users, exception assignees and a user's partner
+  attribute. **No test**: warehouse bin and SKU ids and milk-run, rail and
+  itinerary ids, which are looked up through repositories or ports under RLS but
+  not proved. **Not checked at all**: `orgUnitId` on `POST /tariffs`.
+
+**Deferred by design**
+
 Not built, and interfaces are left open for them. Do not describe these as
 implemented: reverse auction / spot bidding, OCR pipeline, ERP synchronisation,
-SAML/OIDC SSO and MFA, multi-leg modal planning, TSP route sequencing,
-notification engine, i18n, cold-storage archival. Within the control tower
-(§3.8), only route deviation raises tickets automatically; stoppage, ETA and
-temperature detectors are not built, and those categories are raised by hand.
+SAML/OIDC SSO and MFA, TSP route sequencing (a milk run's stop order is
+authored, not optimised), notification engine, i18n, cold-storage archival.
+Multimodal itineraries exist, but the planner does not search for them: a
+person assembles the legs.
+
+Within the control tower (§3.8), tickets are raised automatically from route
+deviation and stoppage (telematics), missed connections (multimodal), skipped
+and late milk-run stops, receipt variances and pick shortfalls (warehouse).
+The stoppage detector is ping-driven: a trip in transit that reports no
+movement (within `lms.telematics.stoppage-radius-m`, default 100) for
+`lms.telematics.stoppage-threshold-minutes` (default 45) outside every
+terminal geofence raises one EXTENDED_STOPPAGE ticket, and a device that stops
+reporting altogether is therefore not caught. The ETA and temperature detectors
+(V35) run off `TripEtaProjected` (one per trip per ingested batch) and
+`TemperatureReported` (one per probe reading) events and judge only a trip with
+a `trip_watch` row, which the desk sets through
+`PUT /api/v1/exceptions/trip-watches/{tripId}` (committed arrival, temperature
+band). Tolerances are per tenant in `detector_setting`, defaulting to
+`lms.controltower.eta-slip-minutes` (60) and
+`lms.controltower.temperature-excursion-minutes` (15). One unclosed ticket per
+trip and kind is enforced by `exception_ticket_open_detector_idx`.
+
+Gaps the freight-mode, warehouse and billing work left open on purpose:
+
+- A rail leg's freight bill is raised when the leg is RELEASED (V32, keyed on
+  `itinerary_leg_id`, expected amount the leg's recorded cost) and then follows
+  the ordinary match, dispute and approval path. Settlement holds are per trip,
+  so a control-tower hold does not freeze a rail leg's bill.
+- A warehouse hand-off consignment has no sales order, so trip charges skip it;
+  client billing instead charges the hand-off itself from `warehouse::events`
+  (`ClientHandOffListener`): handling out (a pallet per unit) and transport (gross
+  kg), for the client owning the SKUs inside, split by units held when a unit mixes
+  owners, keyed `HANDOFF:<unit>:<client>:<service>` so a redelivery charges once.
+  Owners without a client contract, and unowned SKUs, are not billed. Transport on
+  such a charge has no `trip_id`, so the margin shows no carrier cost for it.
+- A client payment is recorded against the client, not matched to an invoice
+  (V30). The ageing endpoint applies payments to the oldest invoice first, a
+  convention rather than the client's remittance; with no payment terms on a
+  contract it counts days since issue, so nothing is "past due".
 
 The vision document's §5.1 target of 20 000 GPS pings/second is a **production**
 NFR. The free-tier deployment sustains roughly 50–100/second. Say so plainly

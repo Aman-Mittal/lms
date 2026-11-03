@@ -1,0 +1,4 @@
+src/app/api
+.angular
+node_modules
+dist

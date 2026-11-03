@@ -1,0 +1,99 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+CustomFieldEntityType:
+  type: string
+  enum: [PARTNER, VEHICLE, DRIVER, TERMINAL, ORDER, LOAD, TRIP]
+  description: The kind of record a custom field belongs to.
+
+CustomFieldType:
+  type: string
+  enum: [TEXT, NUMBER, DATE, BOOLEAN, SELECT]
+
+CustomFieldDefinition:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    entityType: { $ref: "#/components/schemas/CustomFieldEntityType" }
+    key:
+      type: string
+      description: Lower-case letters, digits and underscores, starting with a
+        letter. The name a value is stored and sent under; never changes.
+    label: { type: string }
+    fieldType: { $ref: "#/components/schemas/CustomFieldType" }
+    required: { type: boolean }
+    options:
+      type: array
+      items: { type: string }
+      description: The choices of a `SELECT` field; empty for any other.
+    displayOrder: { type: integer }
+    active:
+      type: boolean
+      description: False once retired. A retired field keeps its stored values
+        but is no longer validated or required.
+
+CustomFieldDefinitionSlice:
+  type: object
+  description: Every definition, in display order. No cursor.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/CustomFieldDefinition" }
+    nextCursor:
+      type: string
+      description: Always null.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+DefineCustomFieldRequest:
+  type: object
+  properties:
+    entityType: { $ref: "#/components/schemas/CustomFieldEntityType" }
+    key: { type: string, pattern: "^[a-z][a-z0-9_]{1,39}$" }
+    label: { type: string, maxLength: 80 }
+    fieldType: { $ref: "#/components/schemas/CustomFieldType" }
+    required: { type: boolean, default: false }
+    options:
+      type: array
+      items: { type: string, maxLength: 80 }
+      maxItems: 50
+      description: Required for `SELECT`, refused for any other type.
+    displayOrder: { type: integer, default: 0 }
+  required: [entityType, key, label, fieldType]
+
+ReviseCustomFieldRequest:
+  type: object
+  properties:
+    label: { type: string, maxLength: 80 }
+    required: { type: boolean, default: false }
+    options:
+      type: array
+      items: { type: string, maxLength: 80 }
+      maxItems: 50
+    displayOrder: { type: integer }
+    active: { type: boolean, default: true }
+  required: [label]
+
+CustomFieldValues:
+  type: object
+  properties:
+    values:
+      type: object
+      additionalProperties: true
+      description: |
+        Field key to value. `TEXT` is a string of up to 500 characters,
+        `NUMBER` a number, `BOOLEAN` true or false, `DATE` a string as
+        `YYYY-MM-DD`, `SELECT` one of the field's options. A null clears the
+        field.
+  required: [values]

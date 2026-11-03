@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -37,6 +38,7 @@ import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -73,6 +75,8 @@ public class ExecutionSteps {
     private TripRepository trips;
     @Autowired
     private PlatformTransactionManager transactionManager;
+    @Autowired
+    private JdbcClient jdbc;
 
     private RuntimeException failure;
 
@@ -179,6 +183,46 @@ public class ExecutionSteps {
         });
     }
 
+    @When("trip {string} is cancelled because {string}")
+    public void cancelTrip(String tripNo, String reason) {
+        attempt(() -> {
+            tripCommands.cancel(world.ref("trip:" + tripNo), reason);
+            return null;
+        });
+    }
+
+    @When("trip {string} is cancelled without a reason")
+    public void cancelTripWithoutReason(String tripNo) {
+        attempt(() -> {
+            tripCommands.cancel(world.ref("trip:" + tripNo), " ");
+            return null;
+        });
+    }
+
+    @When("trip {string} is moving")
+    public void beginTransit(String tripNo) {
+        attempt(() -> {
+            tripCommands.beginTransit(world.ref("trip:" + tripNo));
+            return null;
+        });
+    }
+
+    @When("trip {string} arrives at {word}")
+    public void arrive(String tripNo, String time) {
+        attempt(() -> {
+            tripCommands.arrive(world.ref("trip:" + tripNo), at(time));
+            return null;
+        });
+    }
+
+    @When("trip {string} is completed at {word}")
+    public void complete(String tripNo, String time) {
+        attempt(() -> {
+            tripCommands.complete(world.ref("trip:" + tripNo), at(time));
+            return null;
+        });
+    }
+
     // ------------------------------------------------------------------- then
 
     @Then("trip {string} is {string}")
@@ -238,7 +282,64 @@ public class ExecutionSteps {
         assertRefusal(fragment);
     }
 
+    @Then("cancelling is refused mentioning {string}")
+    public void cancellingRefused(String fragment) {
+        assertRefusal(fragment);
+    }
+
+    @Then("cancelling is refused as invalid")
+    public void cancellingRefusedAsInvalid() {
+        assertThat(failure).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Then("trip {string} records the cancellation reason {string}")
+    public void cancellationReason(String tripNo, String expected) {
+        Trip trip = trip(tripNo);
+        assertThat(trip.cancellationReason()).isEqualTo(expected);
+        assertThat(trip.cancelledAt()).isNotNull();
+    }
+
+    @Then("no freight bill exists for trip {string}")
+    public void noFreightBill(String tripNo) {
+        assertThat(jdbc.sql("SELECT count(*) FROM freight_bill WHERE trip_id = :id")
+                .param("id", world.ref("trip:" + tripNo)).query(Long.class).single()).isZero();
+    }
+
+    @Then("the audit trail for trip {string} lists {string}")
+    public void auditTrailLists(String tripNo, String commaSeparatedActions) {
+        List<String> expected = java.util.Arrays.stream(commaSeparatedActions.split(","))
+                .map(String::trim).toList();
+        assertThat(auditActions(tripNo)).containsExactlyElementsOf(expected);
+    }
+
+    @Then("the audit trail for trip {string} has {int} {string} entries")
+    public void auditTrailCount(String tripNo, int expected, String action) {
+        assertThat(auditActions(tripNo)).filteredOn(action::equals).hasSize(expected);
+    }
+
+    @Then("the {string} audit entry for trip {string} mentions {string}")
+    public void auditEntryMentions(String action, String tripNo, String fragment) {
+        String states = jdbc.sql("""
+                        SELECT coalesce(before_state::text, '') || ' ' || coalesce(after_state::text, '')
+                          FROM audit_log
+                         WHERE resource_type = 'TRIP' AND resource_id = :id AND action = :action
+                         ORDER BY occurred_at DESC LIMIT 1
+                        """)
+                .param("id", world.ref("trip:" + tripNo)).param("action", action)
+                .query(String.class).single();
+        assertThat(states).contains(fragment);
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    private List<String> auditActions(String tripNo) {
+        return jdbc.sql("""
+                        SELECT action FROM audit_log
+                         WHERE resource_type = 'TRIP' AND resource_id = :id
+                         ORDER BY occurred_at, id
+                        """)
+                .param("id", world.ref("trip:" + tripNo)).query(String.class).list();
+    }
 
     private void awardLoad(String loadNo, int weightKg, String originCode, String consigneeCode,
                            String destinationCode, String registration, String vendorCode,

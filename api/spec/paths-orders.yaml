@@ -1,0 +1,296 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/orders:
+  get:
+    tags: [Orders]
+    operationId: listOrders
+    summary: A page of orders
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of orders.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Orders]
+    operationId: raiseOrder
+    summary: Raise an order
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RaiseOrderRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Orders]
+    operationId: getOrder
+    summary: One order
+    responses:
+      "200":
+        description: The order. Its `ETag` is the version to send in `If-Match`.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The order's version, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Order" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+  put:
+    tags: [Orders]
+    operationId: updateOrder
+    summary: Edit a draft order's header
+    description: |
+      Replaces the commercial header of an order that is still a draft. Refused
+      with `order-not-editable` once it is validated (use the amendment instead),
+      and with 409 `concurrent-modification` when `If-Match` is not the current
+      version. The change is audited with before and after.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateOrderRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/lines:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Orders]
+    operationId: listOrderLines
+    summary: Lines on an order
+    responses:
+      "200":
+        description: |
+          Lines in order. An unknown id, or one that belongs to another tenant,
+          is an empty list and not a 404.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/OrderLine" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Orders]
+    operationId: addOrderLine
+    summary: Add a line
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AddOrderLineRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+  put:
+    tags: [Orders]
+    operationId: replaceOrderLines
+    summary: Replace the lines of a draft order
+    description: |
+      Replaces every line of a draft order with the given set, atomically.
+      Refused with `order-not-editable` once the order is validated and with 409
+      `concurrent-modification` when `If-Match` is not the current version.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReplaceOrderLinesRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/lines/{lineId}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the order.
+    - name: lineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the line.
+  delete:
+    tags: [Orders]
+    operationId: removeOrderLine
+    summary: Remove a line from a draft order
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/amend:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Orders]
+    operationId: amendOrder
+    summary: Amend a validated order
+    description: |
+      The controlled way to change demand after validation. Allowed only while
+      the order is VALIDATED and no consignment has been cut from it; the order
+      is validated again against the result in the same transaction, stays
+      VALIDATED, and its version moves on. The amendment is audited as
+      `ORDER_AMENDED` with before and after. Refused, all 409:
+      `order-not-amendable` for a cancelled or fulfilled order,
+      `order-has-consignments` once freight has been cut (including a partly or
+      fully planned order), `order-not-validated` for a draft (edit it),
+      `order-validation-failed` when the amended order would not validate, and
+      `concurrent-modification` when `If-Match` is not the current version.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AmendOrderRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/validate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Orders]
+    operationId: validateOrder
+    summary: Validate an order
+    description: |
+      Computes chargeable weight and refuses incompatible material on one
+      order. Either succeeds or explains why, which is not something a status
+      field could express.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/cancel:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Orders]
+    operationId: cancelOrder
+    summary: Cancel an order
+    description: |
+      Cancels the order and, in the same transaction, every consignment cut
+      from it that has not been delivered: they are taken off any load that has
+      not left, and a load left empty is cancelled. Refused with
+      `order-work-dispatched` when any of that freight is already dispatched,
+      in transit or delivered, and with `order-illegal-transition` for an order
+      that was delivered, and with `load-has-active-trip` while a trip that is
+      not cancelled is raised against a load the freight is on (cancel the trip
+      first). A load the cancellation empties is cancelled and its pending
+      offer or award in sourcing is withdrawn; the receivable of each cancelled
+      part-load docket is cancelled. Cancelling an order that is already
+      cancelled changes nothing. The body, and the reason in it, are optional;
+      a reason is kept in the audit trail.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelOrderRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

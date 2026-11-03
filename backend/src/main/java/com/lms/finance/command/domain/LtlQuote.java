@@ -24,9 +24,15 @@ import java.math.BigDecimal;
  * separately computed figure; the database holds the receivable to the same
  * rule with a CHECK constraint.
  *
- * @param minimumApplied true when the card's minimum, not the docket, set the
- *                       chargeable weight -- shown so a customer billed for
- *                       50 kg on a 12 kg parcel can see why
+ * @param minimumApplied   true when the card's minimum, not the docket, set the
+ *                         chargeable weight -- shown so a customer billed for
+ *                         50 kg on a 12 kg parcel can see why
+ * @param odaBasis         how the ODA charge was reckoned; null when the docket
+ *                         was not out of the delivery area and none was charged
+ * @param fuelSurchargePct the month's fuel index the freight was surcharged at,
+ *                         or null when the month had none
+ * @param fuelSurcharge    that percentage of the freight amount; zero when
+ *                         there was no index
  */
 public record LtlQuote(
         BigDecimal volumeCft,
@@ -36,9 +42,12 @@ public record LtlQuote(
         boolean outOfDeliveryArea,
         BigDecimal freightAmount,
         BigDecimal docketCharge,
-        BigDecimal odaSurcharge) {
+        BigDecimal odaSurcharge,
+        LtlRateCard.OdaBasis odaBasis,
+        BigDecimal fuelSurchargePct,
+        BigDecimal fuelSurcharge) {
 
     public BigDecimal total() {
-        return freightAmount.add(docketCharge).add(odaSurcharge);
+        return freightAmount.add(docketCharge).add(odaSurcharge).add(fuelSurcharge);
     }
 }

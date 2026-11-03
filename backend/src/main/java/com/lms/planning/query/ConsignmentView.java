@@ -24,6 +24,7 @@ public record ConsignmentView(
         UUID id,
         String trackingRef,
         String status,
+        /** Null for a consignment received from a warehouse hand-off. */
         UUID orderId,
         String orderNo,
         String consigneeName,
@@ -38,5 +39,20 @@ public record ConsignmentView(
         String freightMode,
         String originHubCode,
         String destinationHubCode,
+        /**
+         * The warehouse handling unit carried, for a consignment received from
+         * a warehouse hand-off; {@code orderId} is then null.
+         */
+        UUID handlingUnitId,
+        String handlingUnitNo,
+        /** For a part of a split consignment: the consignment it is a part of. */
+        UUID parentConsignmentId,
+        String parentTrackingRef,
+        /** For a SPLIT consignment: how many parts it became. Null otherwise. */
+        Integer partCount,
+        /** For a SPLIT consignment: how many of its parts have been delivered. */
+        Integer partsDelivered,
+        /** For a SPLIT consignment: how many of its parts have been cancelled. */
+        Integer partsCancelled,
         Instant createdAt) {
 }

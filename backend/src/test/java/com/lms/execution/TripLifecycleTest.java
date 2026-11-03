@@ -110,9 +110,54 @@ class TripLifecycleTest {
             // road with no open trip against it.
             Trip onRoad = readyToDispatch().dispatch(T0.plusSeconds(7200));
 
-            assertThatThrownBy(() -> onRoad.cancel())
-                    .isInstanceOf(BusinessRuleViolationException.class)
-                    .hasMessageContaining("cannot move from DISPATCHED to CANCELLED");
+            assertThatThrownBy(() -> onRoad.cancel("too late", T0))
+                    .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                            e -> assertThat(e.code()).isEqualTo("trip-not-cancellable"))
+                    .hasMessageContaining("can no longer be cancelled");
+        }
+
+        @Test
+        @DisplayName("a trip can be cancelled from every state before dispatch, and records when and why")
+        void cancelBeforeDispatch() {
+            Trip assigned = planned().assign(UUID.randomUUID(), UUID.randomUUID());
+            Trip atOrigin = assigned.gateIn(T0);
+            Trip loaded = readyToDispatch();
+
+            for (Trip trip : new Trip[] {planned(), assigned, atOrigin, loaded}) {
+                Trip cancelled = trip.cancel("  customer withdrew  ", T0.plusSeconds(60));
+
+                assertThat(cancelled.status()).isEqualTo(TripStatus.CANCELLED);
+                assertThat(cancelled.cancellationReason()).isEqualTo("customer withdrew");
+                assertThat(cancelled.cancelledAt()).isEqualTo(T0.plusSeconds(60));
+            }
+        }
+
+        @Test
+        @DisplayName("every state from dispatch onwards refuses cancellation with trip-not-cancellable")
+        void cancelRefusedFromDispatchOnwards() {
+            Trip dispatched = readyToDispatch().dispatch(T0.plusSeconds(7200));
+            Trip moving = dispatched.beginTransit();
+            Trip arrived = moving.arrive(T0.plusSeconds(20_000));
+            Trip done = arrived.complete(T0.plusSeconds(21_000));
+
+            for (Trip trip : new Trip[] {dispatched, moving, arrived, done}) {
+                assertThatThrownBy(() -> trip.cancel("no", T0))
+                        .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                                e -> assertThat(e.code()).isEqualTo("trip-not-cancellable"));
+            }
+        }
+
+        @Test
+        @DisplayName("cancelling twice keeps the first reason; a blank reason is refused")
+        void cancelIsIdempotentAndNeedsAReason() {
+            Trip cancelled = planned().cancel("first", T0);
+
+            Trip again = cancelled.cancel("second", T0.plusSeconds(5));
+
+            assertThat(again).isSameAs(cancelled);
+            assertThat(again.cancellationReason()).isEqualTo("first");
+            assertThatThrownBy(() -> planned().cancel(" ", T0))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -130,7 +175,7 @@ class TripLifecycleTest {
         @Test
         @DisplayName("completed and cancelled are terminal")
         void terminalStates() {
-            Trip cancelled = planned().cancel();
+            Trip cancelled = planned().cancel("re-planned", T0);
             Trip done = readyToDispatch()
                     .dispatch(T0.plusSeconds(7200))
                     .beginTransit()

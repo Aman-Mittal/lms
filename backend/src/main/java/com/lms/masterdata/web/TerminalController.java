@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import com.lms.masterdata.command.RegisterTerminalCommand;
 import com.lms.masterdata.command.TerminalCommandService;
+import com.lms.masterdata.command.UpdateTerminalCommand;
 import com.lms.masterdata.command.domain.Terminal;
 import com.lms.masterdata.query.MasterDataQueryService;
 import com.lms.masterdata.query.TerminalView;
@@ -33,9 +34,11 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -104,6 +107,29 @@ public class TerminalController {
                 .body(new IdResponse(id));
     }
 
+    /**
+     * Changes a terminal. One endpoint, unlike registration: the code,
+     * category and unit are not in the body, so there is nothing a shape could
+     * contradict, and omitting the geofence keeps the present one. Sending both
+     * shapes, or half of the circle, is a 400.
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<Void> update(@PathVariable UUID id,
+                                       @Valid @RequestBody UpdateTerminalRequest request) {
+        terminals.update(new UpdateTerminalCommand(id, request.name(), request.version(),
+                request.geofence(), request.dockCount(), request.opensAt(), request.closesAt(),
+                request.avgDwellMinutes(), request.permittedVehicleTypes() == null
+                        ? List.of() : request.permittedVehicleTypes()));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Removes a terminal nothing refers to; 409 {@code terminal-in-use} otherwise. */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        terminals.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
     /** A coordinate pair, in the order a human writes one. */
     public record Point(@NotNull Double lat, @NotNull Double lon) {
     }
@@ -133,5 +159,42 @@ public class TerminalController {
             LocalTime closesAt,
             Integer avgDwellMinutes,
             List<String> permittedVehicleTypes) {
+    }
+
+    public record UpdateTerminalRequest(
+            @NotBlank String name,
+            @NotNull Long version,
+            List<Point> ring,
+            Point centre,
+            @Positive Double radiusMetres,
+            Integer dockCount,
+            LocalTime opensAt,
+            LocalTime closesAt,
+            Integer avgDwellMinutes,
+            List<String> permittedVehicleTypes) {
+
+        /** The geofence the body asks for, null if it leaves it alone. */
+        UpdateTerminalCommand.Geofence geofence() {
+            // An empty ring is no ring: some clients send an empty list for an unset one.
+            boolean polygon = ring != null && !ring.isEmpty();
+            boolean circle = centre != null || radiusMetres != null;
+            if (polygon && circle) {
+                throw new IllegalArgumentException(
+                        "Send a polygon ring or a centre with a radius, not both");
+            }
+            if (polygon) {
+                return new UpdateTerminalCommand.Polygon(
+                        ring.stream().map(p -> new LatLon(p.lat(), p.lon())).toList());
+            }
+            if (circle) {
+                if (centre == null || radiusMetres == null) {
+                    throw new IllegalArgumentException(
+                            "A circular geofence needs both a centre and a radius");
+                }
+                return new UpdateTerminalCommand.PointRadius(
+                        new LatLon(centre.lat(), centre.lon()), radiusMetres);
+            }
+            return null;
+        }
     }
 }

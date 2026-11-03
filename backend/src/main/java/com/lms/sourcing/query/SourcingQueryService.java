@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,8 +43,13 @@ public class SourcingQueryService {
                    pv.legal_name AS pending_vendor_name, pending.responds_by,
                    av.legal_name AS awarded_vendor_name, a.awarded_at,
                    coalesce(counted.offers_made, 0) AS offers_made,
-                   a.created_at
+                   a.created_at,
+                   -- The tenant's own preferences are not for a vendor to read.
+                   CASE WHEN CAST(:partner AS uuid) IS NULL THEN rf.rule_id END AS applied_rule_id,
+                   CASE WHEN CAST(:partner AS uuid) IS NULL THEN rf.rule_name END AS applied_rule_name,
+                   CASE WHEN CAST(:partner AS uuid) IS NULL THEN rf.action END AS applied_rule_action
               FROM allocation a
+              LEFT JOIN allocation_rule_firing rf ON rf.allocation_id = a.id
               JOIN load_unit l ON l.id = a.load_id
               LEFT JOIN LATERAL (
                     SELECT o.vendor_partner_id, o.responds_by
@@ -61,6 +67,17 @@ public class SourcingQueryService {
                    ) counted ON true
             """;
 
+    /**
+     * The portal-user predicate on allocations: only those in which an offer
+     * was addressed to the caller's company. Null for the tenant's own staff.
+     */
+    private static final String PARTNER_SCOPE = """
+               AND (CAST(:partner AS uuid) IS NULL
+                    OR EXISTS (SELECT 1 FROM allocation_offer po
+                                WHERE po.allocation_id = a.id
+                                  AND po.vendor_partner_id = CAST(:partner AS uuid)))
+            """;
+
     private final JdbcClient jdbc;
 
     public SourcingQueryService(JdbcClient jdbc) {
@@ -68,15 +85,20 @@ public class SourcingQueryService {
     }
 
     public Optional<AllocationView> findById(UUID id) {
-        return jdbc.sql(SELECT + " WHERE a.id = :id")
+        return jdbc.sql(SELECT + " WHERE a.id = :id" + PARTNER_SCOPE)
                 .param("id", id)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(AllocationView.class)
                 .optional();
     }
 
     public Optional<AllocationView> findByLoad(UUID loadId) {
-        return jdbc.sql(SELECT + " WHERE a.load_id = :loadId")
+        // A load can have several allocations (cancelled ones are kept as
+        // history); the live one is the answer, else the latest.
+        return jdbc.sql(SELECT + " WHERE a.load_id = :loadId" + PARTNER_SCOPE
+                        + " ORDER BY (a.status = 'CANCELLED'), a.created_at DESC LIMIT 1")
                 .param("loadId", loadId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(AllocationView.class)
                 .optional();
     }
@@ -93,10 +115,12 @@ public class SourcingQueryService {
         List<AllocationView> rows = jdbc.sql(SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR a.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR l.load_no > CAST(:cursor AS text))
+                        """ + PARTNER_SCOPE + """
                          ORDER BY l.load_no
                          LIMIT :limit
                         """)
                 .param("status", status)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(AllocationView.class)
@@ -152,9 +176,14 @@ public class SourcingQueryService {
                           FROM allocation_offer o
                           JOIN business_partner p ON p.id = o.vendor_partner_id
                          WHERE o.allocation_id = :allocationId
+                           -- A portal vendor sees the offers addressed to them,
+                           -- not who else was asked or at which rank.
+                           AND (CAST(:partner AS uuid) IS NULL
+                                OR o.vendor_partner_id = CAST(:partner AS uuid))
                          ORDER BY o.rank_no
                         """)
                 .param("allocationId", allocationId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(OfferView.class)
                 .list();
     }

@@ -31,7 +31,19 @@
  *
  * <p>Depends on {@code execution::api} to know which trip and vehicle a ticket
  * is about, and on {@code telematics::events} for the detections it turns
- * into tickets.
+ * into tickets. Also hears {@code multimodal::events} (missed connections),
+ * {@code milkrun::events} (skipped and late supplier stops) and
+ * {@code warehouse::events} (receipt variances and pick shortfalls); a ticket
+ * raised from those may be about an itinerary, a circuit run, an ASN or an
+ * outbound order rather than a trip, and one with no trip never holds
+ * settlement.
+ *
+ * <p>Two more detectors run off telematics events. A trip given terms through
+ * a trip watch -- the arrival it committed to, the temperature band its cargo
+ * must stay in -- raises an ETA_DELAY ticket when the projected arrival is later
+ * than committed by more than the tenant's tolerance, and a TEMPERATURE_EXCURSION
+ * ticket when readings stay out of band for longer than the tenant's duration.
+ * Each is at most one unclosed ticket per trip and kind.
  *
  * <p>Uses {@code identity::access} to tell the access decision point whether a
  * ticket is holding money, which is what decides who may close it.
@@ -39,5 +51,6 @@
 @org.springframework.modulith.ApplicationModule(
         displayName = "Exception & Control Tower",
         allowedDependencies = {"execution::api", "telematics::api", "telematics::events",
+                "multimodal::events", "milkrun::events", "warehouse::events",
                 "identity::access"})
 package com.lms.controltower;

@@ -1,0 +1,202 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Consignment:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    trackingRef: { type: string }
+    status:
+      type: string
+      description: |
+        PLANNED, ASSIGNED_TO_LOAD, IN_TRANSIT, DELIVERED or CANCELLED. An LTL
+        docket also passes through the hub states: its line haul's trip
+        completing leaves it ARRIVED_AT_HUB, a delivery load from that hub
+        makes it ASSIGNED_TO_DELIVERY, and that load's dispatch makes it
+        OUT_FOR_DELIVERY, before DELIVERED.
+        A planned full truckload split across vehicles becomes SPLIT, for
+        good: it carries nothing itself, and its parts carry it.
+    orderId:
+      type: string
+      format: uuid
+      description: The order it was cut from; absent for one received from a
+        warehouse hand-off.
+    orderNo: { type: string }
+    consigneeName: { type: string }
+    destinationTerminalCode: { type: string }
+    totalDeadWeightKg: { type: number }
+    totalVolumeM3: { type: number }
+    chargeableWeightKg: { type: number }
+    containsHazmat: { type: boolean }
+    materialClasses: { type: string }
+    loadNo:
+      type: string
+      description: The load it is on, or was last on -- for a docket, its
+        delivery load once it has one, otherwise its line haul.
+    freightMode:
+      type: string
+      description: LTL consignments are dockets, numbered `DKT-` rather than
+        `LR-`, and carry the hub pair below.
+    originHubCode: { type: string }
+    destinationHubCode: { type: string }
+    handlingUnitId:
+      type: string
+      format: uuid
+      description: The warehouse handling unit this consignment carries,
+        when it was received from a warehouse hand-off rather than cut from
+        an order. One unit becomes at most one consignment.
+    handlingUnitNo: { type: string }
+    parentConsignmentId:
+      type: string
+      format: uuid
+      description: For a part of a split consignment, the consignment it is a
+        part of.
+    parentTrackingRef: { type: string }
+    partCount:
+      type: integer
+      description: For a SPLIT consignment, how many parts it became.
+    partsDelivered:
+      type: integer
+      description: For a SPLIT consignment, how many of its parts have been
+        delivered.
+    partsCancelled:
+      type: integer
+      description: For a SPLIT consignment, how many of its parts have been
+        cancelled.
+
+SplitConsignmentRequest:
+  type: object
+  description: |
+    The parts a consignment is split into, each to go on its own vehicle. Their
+    dead weights and volumes must add up exactly to the consignment's.
+  properties:
+    parts:
+      type: array
+      description: 2 to 500 parts, in the order their references are numbered.
+      items: { $ref: "#/components/schemas/SplitPartRequest" }
+  required: [parts]
+
+SplitPartRequest:
+  type: object
+  properties:
+    deadWeightKg:
+      type: number
+      description: Above zero, to at most three decimal places.
+    volumeM3:
+      type: number
+      description: Zero or more, to at most three decimal places.
+  required: [deadWeightKg, volumeM3]
+
+ConsignmentPart:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    trackingRef:
+      type: string
+      description: The split consignment's reference, a dash, and the part
+        number zero-padded to the width of the count (at least two digits).
+  required: [id, trackingRef]
+
+Load:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    loadNo: { type: string }
+    status: { type: string }
+    originTerminalCode: { type: string }
+    vehicleRegistrationNo: { type: string }
+    vehicleType: { type: string }
+    capacityWeightKg: { type: number }
+    plannedWeightKg: { type: number }
+    weightUtilisationPct: { type: number }
+    volumeUtilisationPct: { type: number }
+    capacityVolumeM3: { type: number }
+    plannedVolumeM3: { type: number }
+    requiresHazmat: { type: boolean }
+    consignmentCount: { type: integer }
+    freightMode: { type: string }
+    ltlLeg:
+      $ref: "#/components/schemas/LtlLeg"
+
+OpenLoadRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    loadNo: { type: string }
+    originTerminalId: { type: string, format: uuid }
+    vehicleId: { type: string, format: uuid }
+    freightMode:
+      $ref: "#/components/schemas/FreightMode"
+    ltlLeg:
+      $ref: "#/components/schemas/LtlLeg"
+  required: [orgUnitId, loadNo, originTerminalId, vehicleId]
+
+LtlLeg:
+  type: string
+  enum: [LINE_HAUL, DELIVERY]
+  default: LINE_HAUL
+  description: |
+    Which leg of a part-load journey a load runs. A LINE_HAUL load
+    consolidates dockets at their origin hub and carries them to their
+    destination hub. A DELIVERY load is opened at a destination hub and
+    takes dockets that have arrived there to their consignees. Only LTL
+    loads may be DELIVERY loads (`delivery-leg-only-for-ltl`).
+
+AssignConsignmentRequest:
+  type: object
+  properties:
+    consignmentId: { type: string, format: uuid }
+  required: [consignmentId]
+
+BulkAssignConsignmentsRequest:
+  type: object
+  properties:
+    consignmentIds:
+      type: array
+      minItems: 1
+      maxItems: 500
+      description: In the order they are to board, none repeated.
+      items: { type: string, format: uuid }
+  required: [consignmentIds]
+
+LoadSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Load" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ConsignmentSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Consignment" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]

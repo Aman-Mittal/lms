@@ -1,0 +1,149 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/users/{id}/access-attributes:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Access policies]
+    operationId: getUserAccessAttributes
+    summary: The attributes a user's next token will carry
+    description: Requires `ACCESS_POLICY_MANAGE`.
+    responses:
+      "200":
+        description: The user's access attributes.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserAccessAttributes" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Access policies]
+    operationId: setUserAccessAttributes
+    summary: Replace a user's access attributes
+    description: |
+      Requires `ACCESS_POLICY_MANAGE`. Takes effect at the user's next sign-in
+      or token refresh, not on the token they hold now.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SetUserAccessAttributesRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/access-policies:
+  get:
+    tags: [Access policies]
+    operationId: listAccessPolicies
+    summary: A page of the tenant's access policies
+    description: Requires `ACCESS_POLICY_MANAGE`.
+    parameters:
+      - name: action
+        in: query
+        required: false
+        schema: { type: string }
+        description: Restricts the listing to policies refining one permission code.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of policies.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessPolicySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Access policies]
+    operationId: createAccessPolicy
+    summary: Add an access policy
+    description: |
+      Requires `ACCESS_POLICY_MANAGE`. The condition is validated on write: an
+      unknown operator or attribute is a 400, not a rule that silently never
+      matches. Applies from the next request.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateAccessPolicyRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/access-policies/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Access policies]
+    operationId: getAccessPolicy
+    summary: One access policy
+    responses:
+      "200":
+        description: The policy.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessPolicy" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Access policies]
+    operationId: reviseAccessPolicy
+    summary: Replace what a policy says
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReviseAccessPolicyRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  delete:
+    tags: [Access policies]
+    operationId: deleteAccessPolicy
+    summary: Remove a policy
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }

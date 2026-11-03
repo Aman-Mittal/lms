@@ -75,7 +75,8 @@ public class LtlController {
         UUID id = rating.publishRateCard(request.code(), request.originZone(),
                 request.destinationZone(), request.currency(), request.effectiveFrom(),
                 request.rateBasis(), request.rateAmount(), request.minimumChargeableWeightKg(),
-                request.kgPerCft(), request.docketCharge(), request.odaSurcharge());
+                request.kgPerCft(), request.docketCharge(), request.odaSurcharge(),
+                request.odaBasis(), request.odaRatePerKg(), request.odaMinimum());
         return ResponseEntity.created(URI.create("/api/v1/ltl/rate-cards/" + id))
                 .body(new IdResponse(id));
     }
@@ -106,6 +107,13 @@ public class LtlController {
             @PositiveOrZero BigDecimal minimumChargeableWeightKg,
             @NotNull @Positive BigDecimal kgPerCft,
             @PositiveOrZero BigDecimal docketCharge,
-            @PositiveOrZero BigDecimal odaSurcharge) {
+            /** The flat ODA amount; used when {@code odaBasis} is FLAT or omitted. */
+            @PositiveOrZero BigDecimal odaSurcharge,
+            /** FLAT when omitted. */
+            LtlRateCard.OdaBasis odaBasis,
+            /** Required when {@code odaBasis} is PER_KG. */
+            @PositiveOrZero BigDecimal odaRatePerKg,
+            /** The least a PER_KG ODA charge comes to. */
+            @PositiveOrZero BigDecimal odaMinimum) {
     }
 }

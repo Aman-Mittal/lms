@@ -15,6 +15,7 @@
  */
 package com.lms.warehouse.query;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -33,6 +34,11 @@ public record HandlingUnitView(
         String status,
         String dispatchRef,
         Instant dispatchedAt,
+        /** Where it was sent, when it was handed to transport planning; else null. */
+        UUID destinationTerminalId,
+        UUID consigneePartnerId,
+        BigDecimal grossWeightKg,
+        BigDecimal volumeM3,
         List<Content> contents) {
 
     public HandlingUnitView {

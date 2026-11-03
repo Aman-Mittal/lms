@@ -31,5 +31,5 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Trip Execution",
-        allowedDependencies = {"planning::api", "masterdata::api"})
+        allowedDependencies = {"planning::api", "masterdata::api", "identity::access"})
 package com.lms.execution;

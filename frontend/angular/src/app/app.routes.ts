@@ -1,0 +1,71 @@
+/*
+ * Copyright 2026 Aman Mittal
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { Routes } from '@angular/router';
+import { signedInOnly } from './auth';
+import { AllocationRules } from './pages/allocation-rules';
+import { LoginPage } from './pages/login';
+import { Shell } from './pages/shell';
+import { Track } from './pages/track';
+import { TrackingLinks } from './pages/tracking-links';
+import { ClaimsPage } from './pages/claims';
+import { Dashboard } from './pages/dashboard';
+import { ConsignmentDesk } from './pages/consignment-desk';
+import { DeliveryDesk } from './pages/delivery-desk';
+import { DemoSettings } from './pages/demo-settings';
+import { ListPage } from './pages/list';
+import { LoadBuilding } from './pages/load-building';
+import { OrderDeskPage } from './pages/order-desk';
+import { ClientBilling } from './pages/client-billing';
+import { LtlRating } from './pages/ltl-rating';
+import { ParkedEvents } from './pages/parked-events';
+import { FieldsSettings } from './pages/fields-settings';
+import { Webhooks } from './pages/webhooks';
+
+export const routes: Routes = [
+  { path: 'login', component: LoginPage },
+  // Public: a customer follows a link with no account, so no sign-in is asked for.
+  { path: 'track/:token', component: Track },
+  {
+    path: '',
+    component: Shell,
+    canActivate: [signedInOnly],
+    children: [
+      { path: '', pathMatch: 'full', component: Dashboard },
+      { path: 'settings/custom-fields', component: FieldsSettings },
+      { path: 'settings/demo', component: DemoSettings },
+      { path: 'settings/webhooks', component: Webhooks },
+      { path: 'claims', component: ClaimsPage },
+      { path: 'delivery', component: DeliveryDesk },
+      { path: 'consignments', component: ConsignmentDesk },
+      { path: 'tracking', component: TrackingLinks },
+      { path: 'allocation-rules', component: AllocationRules },
+      { path: 'load-building', component: LoadBuilding },
+      { path: 'order-desk', component: OrderDeskPage },
+      { path: 'client-billing', component: ClientBilling },
+      // The map screens load on first visit: Leaflet is the console's largest
+      // dependency and most sessions never open a map.
+      { path: 'map', loadComponent: () => import('./pages/network-map').then((m) => m.NetworkMap) },
+      { path: 'trip-route', loadComponent: () => import('./pages/trip-route').then((m) => m.TripRoute) },
+      { path: 'itineraries', loadComponent: () => import('./pages/itineraries').then((m) => m.Itineraries) },
+      { path: 'milk-runs', loadComponent: () => import('./pages/milk-runs').then((m) => m.MilkRuns) },
+      { path: 'ltl', component: LtlRating },
+      { path: 'parked-events', component: ParkedEvents },
+      { path: ':resource', component: ListPage },
+    ],
+  },
+  { path: '**', redirectTo: '' },
+];

@@ -145,9 +145,12 @@ class OpenApiContractTest {
     /** Every {@code METHOD /path} the contract declares. */
     @SuppressWarnings("unchecked")
     private Set<String> documentedOperations() throws Exception {
-        Path spec = Path.of("..", "api", "openapi.yaml");
+        // The assembled contract (api/openapi.yaml plus api/spec/, spliced by
+        // the build's bundle-openapi step): the same document clients are
+        // generated from and /openapi.yaml serves.
+        Path spec = Path.of("target", "openapi", "openapi.yaml");
         assertThat(Files.exists(spec))
-                .as("api/openapi.yaml is the contract clients are generated from")
+                .as("%s is assembled from api/ during generate-sources", spec)
                 .isTrue();
 
         Map<String, Object> document;

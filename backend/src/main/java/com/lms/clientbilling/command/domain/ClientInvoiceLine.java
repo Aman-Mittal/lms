@@ -41,15 +41,21 @@ public record ClientInvoiceLine(
         BigDecimal quantity,
         String unit,
         BigDecimal rate,
+        /** The taxable amount of the line. */
         BigDecimal amount,
+        /** Percent, from the contract version that priced the line. */
+        BigDecimal taxRate,
+        /** {@link Tax#on} the amount at the rate: half-up to two decimals. */
+        BigDecimal taxAmount,
         @Version Long version,
         Instant createdAt) {
 
     public static ClientInvoiceLine of(UUID id, UUID tenantId, UUID invoiceId, int lineNo,
                                        UUID chargeId, UUID contractId, ChargePricing.Priced priced,
-                                       ClientCharge charge) {
+                                       ClientCharge charge, BigDecimal taxRate) {
         return new ClientInvoiceLine(id, tenantId, invoiceId, lineNo, chargeId, contractId,
                 charge.serviceType(), priced.narrative(), charge.quantity(), priced.unit(),
-                priced.rate(), priced.amount(), null, Instant.now());
+                priced.rate(), priced.amount(), taxRate, Tax.on(priced.amount(), taxRate), null,
+                Instant.now());
     }
 }

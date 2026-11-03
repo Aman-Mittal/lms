@@ -49,13 +49,39 @@ public record ClientContract(
         BigDecimal storageRatePerPalletDay,
         BigDecimal handlingInRatePerPallet,
         BigDecimal handlingOutRatePerPallet,
+        /** Tax on transport lines, as a percentage. */
+        BigDecimal transportTaxRatePct,
+        /** Tax on storage, handling and value-added service lines, as a percentage. */
+        BigDecimal warehouseTaxRatePct,
+        /**
+         * Units of the client's SKUs that make one pallet position, for storage
+         * computed from the warehouse ledger.
+         */
+        int storageUnitsPerPallet,
         @Version Long version,
         Instant createdAt) {
 
-    /** The rates a contract is published with. */
+    /**
+     * The rates a contract is published with.
+     *
+     * @param transportTaxRatePct   tax on transport, percent; null is none
+     * @param warehouseTaxRatePct   tax on warehousing and value-added services,
+     *                              percent; null is none
+     * @param storageUnitsPerPallet units per pallet position for ledger-derived
+     *                              storage; null is one
+     */
     public record Rates(BigDecimal transportRatePerKg, BigDecimal transportMinimumCharge,
                         BigDecimal storageRatePerPalletDay, BigDecimal handlingInRatePerPallet,
-                        BigDecimal handlingOutRatePerPallet) {
+                        BigDecimal handlingOutRatePerPallet, BigDecimal transportTaxRatePct,
+                        BigDecimal warehouseTaxRatePct, Integer storageUnitsPerPallet) {
+
+        /** Untaxed, one unit to the pallet. */
+        public Rates(BigDecimal transportRatePerKg, BigDecimal transportMinimumCharge,
+                     BigDecimal storageRatePerPalletDay, BigDecimal handlingInRatePerPallet,
+                     BigDecimal handlingOutRatePerPallet) {
+            this(transportRatePerKg, transportMinimumCharge, storageRatePerPalletDay,
+                    handlingInRatePerPallet, handlingOutRatePerPallet, null, null, null);
+        }
     }
 
     public static ClientContract publish(UUID id, UUID tenantId, UUID orgUnitId, String code,
@@ -75,6 +101,9 @@ public record ClientContract(
                 nonNegative(rates.storageRatePerPalletDay(), "storage rate"),
                 nonNegative(rates.handlingInRatePerPallet(), "handling-in rate"),
                 nonNegative(rates.handlingOutRatePerPallet(), "handling-out rate"),
+                percentage(rates.transportTaxRatePct(), "transport tax rate"),
+                percentage(rates.warehouseTaxRatePct(), "warehouse tax rate"),
+                unitsPerPallet(rates.storageUnitsPerPallet()),
                 null, Instant.now());
     }
 
@@ -102,6 +131,14 @@ public record ClientContract(
     }
 
     /**
+     * The tax rate, in percent, for a line of this service type: the transport
+     * rate for movements, the warehouse rate for everything else.
+     */
+    public BigDecimal taxRateFor(ServiceType type) {
+        return type == ServiceType.TRANSPORT ? transportTaxRatePct : warehouseTaxRatePct;
+    }
+
+    /**
      * Closes this version so a successor can take over the following day --
      * the only change the database permits.
      */
@@ -118,7 +155,30 @@ public record ClientContract(
         return new ClientContract(id, tenantId, orgUnitId, code, clientPartnerId, currency,
                 effectiveFrom, lastDay, transportRatePerKg, transportMinimumCharge,
                 storageRatePerPalletDay, handlingInRatePerPallet, handlingOutRatePerPallet,
-                version, createdAt);
+                transportTaxRatePct, warehouseTaxRatePct, storageUnitsPerPallet, version,
+                createdAt);
+    }
+
+    private static BigDecimal percentage(BigDecimal value, String what) {
+        BigDecimal rate = nonNegative(value, what);
+        if (rate.compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new IllegalArgumentException("The " + what + " is a percentage; "
+                    + rate.toPlainString() + " is more than 100");
+        }
+        if (rate.stripTrailingZeros().scale() > 3) {
+            throw new IllegalArgumentException("The " + what + " carries at most three decimals");
+        }
+        return rate;
+    }
+
+    private static int unitsPerPallet(Integer value) {
+        if (value == null) {
+            return 1;
+        }
+        if (value <= 0) {
+            throw new IllegalArgumentException("A pallet holds at least one unit");
+        }
+        return value;
     }
 
     private static BigDecimal nonNegative(BigDecimal value, String what) {

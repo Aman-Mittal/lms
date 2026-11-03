@@ -19,16 +19,24 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * A leg arrived too late for the next one to start as planned.
+ * A leg arrived too late for the next one to start as planned -- or has not
+ * arrived at all, and no longer can in time.
  *
- * <p>Published once per leg, when the predecessor's arrival plus the next
- * leg's transfer dwell lands after the next leg's planned departure. Carries
+ * <p>Published once per leg, by whichever notices first: the arrival, when
+ * the predecessor's arrival plus the next leg's transfer dwell lands after the
+ * next leg's planned departure; or the periodic sweep, when the predecessor's
+ * planned arrival plus the dwell has passed with no arrival and arriving now
+ * would already be too late. Carries
  * the trip of the late-arriving leg when it was a road leg, so a listener that
  * raises a ticket against trips has something to raise it against; a rail leg
  * has none.
  *
  * @param earliestStartAt the predecessor's arrival plus the transfer dwell --
- *                        the soonest the missed leg can now start
+ *                        the soonest the missed leg can now start. From the
+ *                        sweep, with nothing arrived, a lower bound: the
+ *                        detection time plus the dwell. The leg's own record
+ *                        is revised when the predecessor arrives; the event
+ *                        is not published again.
  */
 public record ConnectionMissed(
         UUID tenantId,

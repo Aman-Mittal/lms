@@ -37,6 +37,13 @@ public interface PartnerStandingPort {
      */
     boolean canTransact(UUID partnerId);
 
+    /**
+     * Whether a partner of the caller's tenant has this id, whatever its
+     * status. A foreign tenant's partner reads as absent, which is what makes
+     * this the check for an id taken from a request body.
+     */
+    boolean exists(UUID partnerId);
+
     /** The partner's code, for messages that a human has to act on. */
     String codeOf(UUID partnerId);
 }

@@ -5,9 +5,16 @@
 > For what actually runs today, what has been measured, and what is still
 > missing, see **[DOCS/MVP.md](DOCS/MVP.md)**.
 >
-> Current state: platform foundations, multi-tenancy with verified row-level
-> isolation, identity/access, and the geospatial engine. Native image starts in
-> **0.643 s** using **71 MiB** of a 512 MB instance. 60 tests green.
+> Current state: a Spring Boot 4.1 / Spring Modulith modular monolith of
+> thirteen bounded contexts with verified row-level tenant isolation. It
+> covers identity and attribute-based access, master data, order, planning,
+> sourcing, trip execution, telematics, rating and settlement, the control
+> tower, full and part truckload (LTL) freight, milk runs, rail and multimodal
+> itineraries, warehousing and third-party-logistics client billing, all over
+> a contract-first REST API. Not built: the web console, reverse auction, OCR,
+> ERP sync, SSO/MFA, notifications and i18n (full list in MVP.md). A
+> point-in-time measurement of the container on a Render free-tier-sized
+> limit is recorded in MVP.md.
 
 lms
 

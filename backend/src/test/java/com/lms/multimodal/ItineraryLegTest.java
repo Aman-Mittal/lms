@@ -206,6 +206,73 @@ class ItineraryLegTest {
                         "RR", null, CARRIER, new BigDecimal("-1")), T0), "leg-cost-invalid");
     }
 
+    @Test
+    @DisplayName("a rail leg may be planned without a cost, to be priced from a card once")
+    void railPricedLater() {
+        ItineraryLeg unpriced = ItineraryLeg.plan(UUID.randomUUID(), TENANT, ITINERARY, 1,
+                new ItineraryLeg.Plan(Mode.RAIL, A, B, h(0), h(8), 0, null, UnitType.WAGON, 10,
+                        "RR", null, CARRIER, null), T0);
+        assertThat(unpriced.isPriced()).isFalse();
+
+        UUID card = UUID.randomUUID();
+        ItineraryLeg priced = unpriced.pricedBy(card, new BigDecimal("20000"));
+        assertThat(priced.isPriced()).isTrue();
+        assertThat(priced.costAmount()).isEqualByComparingTo("20000");
+        assertThat(priced.railTariffId()).isEqualTo(card);
+
+        // An explicit cost is never replaced by a card.
+        assertThatThrownBy(() -> rail(1, 0).pricedBy(card, BigDecimal.ONE))
+                .isInstanceOf(IllegalStateException.class);
+        // A road leg has no card to fall back on.
+        assertRefused(() -> ItineraryLeg.plan(UUID.randomUUID(), TENANT, ITINERARY, 1,
+                new ItineraryLeg.Plan(Mode.ROAD, A, B, h(0), h(8), 0, UUID.randomUUID(), null,
+                        null, null, null, CARRIER, null), T0), "leg-cost-invalid");
+    }
+
+    @Test
+    @DisplayName("a predecessor is overdue only once its arrival plus dwell has passed and time has run out")
+    void overduePredecessor() {
+        // Leg 1 due at hour 8; leg 2 transfers in 4 hours and leaves at 12.
+        ItineraryLeg first = road(1, 0);
+        ItineraryLeg next = rail(2, 240);
+
+        // Before hour 12 it is not yet late at all.
+        assertThat(next.isOverdueAfter(first, h(11))).isFalse();
+        // After it, arriving now would start leg 2 after 12: missed.
+        assertThat(next.isOverdueAfter(first, h(12).plusSeconds(1))).isTrue();
+        // Nothing to wait on for the first leg; nothing to miss once arrived.
+        assertThat(first.isOverdueAfter(null, h(100))).isFalse();
+        assertThat(next.isOverdueAfter(first.tripCompleted(h(0), h(30), null), h(40))).isFalse();
+        // Marked once, it is never overdue again.
+        ItineraryLeg marked = next.markConnectionMissed(h(17), h(13));
+        assertThat(marked.isOverdueAfter(first, h(20))).isFalse();
+    }
+
+    @Test
+    @DisplayName("with slack in the plan, an overdue predecessor still has time to make the connection")
+    void slackKeepsTheConnection() {
+        ItineraryLeg first = road(1, 0);
+        // Leg 2 leaves at hour 30 after a one-hour transfer; leg 1 was due at 8.
+        ItineraryLeg late = ItineraryLeg.plan(UUID.randomUUID(), TENANT, ITINERARY, 2,
+                new ItineraryLeg.Plan(Mode.RAIL, B, C, h(30), h(40), 60, null, UnitType.WAGON,
+                        10, "RR-2", null, CARRIER, BigDecimal.TEN), T0);
+        assertThat(late.isOverdueAfter(first, h(20))).isFalse();
+        assertThat(late.isOverdueAfter(first, h(29).plusSeconds(1))).isTrue();
+    }
+
+    @Test
+    @DisplayName("an arrival after the sweep's miss revises the earliest start, and only that")
+    void revisedEarliestStart() {
+        ItineraryLeg next = rail(2, 240);
+        assertThat(next.reviseEarliestStart(h(20), h(16))).isSameAs(next);
+
+        ItineraryLeg marked = next.markConnectionMissed(h(17), h(13));
+        ItineraryLeg revised = marked.reviseEarliestStart(h(20), h(16));
+        assertThat(revised.earliestStartAt()).isEqualTo(h(20));
+        assertThat(revised.connectionMissedAt()).isEqualTo(h(13));
+        assertThat(revised.reviseEarliestStart(h(20), h(18))).isSameAs(revised);
+    }
+
     // --------------------------------------------------------------- helpers
 
     /** Leg 1 by road A to B, hours 0 to 8. */

@@ -20,7 +20,9 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,8 +32,10 @@ import com.lms.clientbilling.query.ClientAccess;
 import com.lms.clientbilling.query.ClientDirectory;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.tenant.TenantContext;
+import com.lms.warehouse.events.HandlingUnitDispatched;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -56,15 +60,17 @@ public class ClientChargeService {
     private final ClientDirectory directory;
     private final ClientAccess access;
     private final ClientPeriods periods;
+    private final JdbcClient jdbc;
 
     public ClientChargeService(ClientChargeRepository charges, ClientContractRepository contracts,
                                ClientDirectory directory, ClientAccess access,
-                               ClientPeriods periods) {
+                               ClientPeriods periods, JdbcClient jdbc) {
         this.charges = charges;
         this.contracts = contracts;
         this.directory = directory;
         this.access = access;
         this.periods = periods;
+        this.jdbc = jdbc;
     }
 
     /**
@@ -76,7 +82,8 @@ public class ClientChargeService {
      * second call with it returns the first charge rather than adding another.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('CLIENT_BILLING_RUN')")
+    @PreAuthorize("hasAuthority('CLIENT_BILLING_RUN')"
+            + " and @abac.permits('CLIENT_BILLING_RUN', 'BUSINESS_PARTNER', #clientPartnerId)")
     public UUID recordServiceUsage(UUID clientPartnerId, ServiceType serviceType,
                                    String serviceCode, BigDecimal quantity, LocalDate occurredOn,
                                    String reference, String sourceKey) {
@@ -104,6 +111,13 @@ public class ClientChargeService {
         already = charges.findBySourceKey(tenantId, key);
         if (already.isPresent()) {
             return sameClientOrRefuse(already.get(), clientPartnerId);
+        }
+
+        if (serviceType == ServiceType.STORAGE && storageFromLedger(clientPartnerId, occurredOn)) {
+            throw new BusinessRuleViolationException("client-storage-from-ledger",
+                    "Storage on " + occurredOn + " was already computed from the warehouse "
+                            + "ledger for this client; recording it by hand as well would bill "
+                            + "the same pallets twice");
         }
 
         LocalDate period = periods.openPeriodFor(tenantId, clientPartnerId, occurredOn);
@@ -178,12 +192,99 @@ public class ClientChargeService {
         return created;
     }
 
+    /**
+     * Charges the client that owns the goods in a handling unit handed to
+     * transport: handling out, one pallet per unit, and transport on the
+     * unit's gross weight, both at the client's contract rates.
+     *
+     * <p>The consignment a hand-off becomes has no order, so no trip charge
+     * ever covers it and nothing is billed twice. A unit holding several
+     * owners' goods is split by units held, each owner paying its fraction.
+     * Goods with no owner, or an owner without a client contract, are not a
+     * 3PL client's and are left alone. Unguarded by {@code @PreAuthorize}, as
+     * {@link #captureTransport}: the platform reacting to a fact. Idempotent
+     * per unit, client and service, so a redelivery creates nothing.
+     *
+     * @return how many charges this call created; zero on a redelivery
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int captureHandOff(HandlingUnitDispatched event) {
+        if (!event.isHandedToTransport()) {
+            return 0;
+        }
+        UUID tenantId = TenantContext.requireTenantId();
+        Map<UUID, UUID> skuOwners = directory.ownersOf(event.contents().stream()
+                .map(HandlingUnitDispatched.Content::skuId).toList());
+        long total = event.contents().stream()
+                .mapToLong(HandlingUnitDispatched.Content::quantity).sum();
+        if (total <= 0) {
+            return 0;
+        }
+        Map<UUID, Long> unitsByClient = new LinkedHashMap<>();
+        for (HandlingUnitDispatched.Content content : event.contents()) {
+            UUID owner = skuOwners.get(content.skuId());
+            if (owner != null) {
+                unitsByClient.merge(owner, (long) content.quantity(), Long::sum);
+            }
+        }
+
+        LocalDate occurredOn = event.dispatchedAt().atZone(ZoneOffset.UTC).toLocalDate();
+        String reference = event.huNo() + (event.dispatchRef() == null ? ""
+                : " / " + event.dispatchRef());
+        int created = 0;
+        for (Map.Entry<UUID, Long> held : unitsByClient.entrySet()) {
+            UUID client = held.getKey();
+            if (contracts.countForClient(tenantId, client) == 0) {
+                continue;
+            }
+            BigDecimal share = BigDecimal.valueOf(held.getValue())
+                    .divide(BigDecimal.valueOf(total), 6, RoundingMode.HALF_UP);
+            String base = "HANDOFF:" + event.handlingUnitId() + ":" + client + ":";
+            periods.lock(tenantId, client);
+            LocalDate period = periods.openPeriodFor(tenantId, client, occurredOn);
+            created += captureHandOffCharge(tenantId, client, ServiceType.HANDLING_OUT,
+                    share, occurredOn, period, base + ServiceType.HANDLING_OUT, reference);
+            created += captureHandOffCharge(tenantId, client, ServiceType.TRANSPORT,
+                    event.grossWeightKg().multiply(share), occurredOn, period,
+                    base + ServiceType.TRANSPORT, reference);
+        }
+        if (created > 0) {
+            log.debug("Captured {} client hand-off charge(s) for unit {}", created, event.huNo());
+        }
+        return created;
+    }
+
+    private int captureHandOffCharge(UUID tenantId, UUID client, ServiceType type,
+                                     BigDecimal quantity, LocalDate occurredOn, LocalDate period,
+                                     String key, String reference) {
+        if (charges.findBySourceKey(tenantId, key).isPresent()) {
+            return 0;
+        }
+        // Never rounded to nothing: a charge needs a positive quantity.
+        BigDecimal rounded = quantity.setScale(3, RoundingMode.HALF_UP)
+                .max(new BigDecimal("0.001"));
+        charges.save(ClientCharge.capture(UUID.randomUUID(), tenantId, client, type, null,
+                rounded, type.unit(), occurredOn, period, key, reference, null, null));
+        return 1;
+    }
+
     private void requireClient(UUID tenantId, UUID clientPartnerId) {
         if (contracts.countForClient(tenantId, clientPartnerId) == 0) {
             throw new BusinessRuleViolationException("client-without-contract",
                     "Partner " + clientPartnerId + " holds no client contract, so there is "
                             + "nothing to charge it under");
         }
+    }
+
+    private boolean storageFromLedger(UUID clientPartnerId, LocalDate day) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM client_storage_day
+                                        WHERE client_partner_id = :client AND held_on = :day)
+                        """)
+                .param("client", clientPartnerId)
+                .param("day", day)
+                .query(Boolean.class)
+                .single();
     }
 
     private static UUID sameClientOrRefuse(ClientCharge existing, UUID clientPartnerId) {

@@ -22,13 +22,16 @@
  * execution, telematics — reads capacities, compliance state and geofences that
  * originate here.
  *
- * <p>{@code allowedDependencies} is empty. Master data is reference data: it is
- * depended upon, and depends on nothing. In particular it does not import
- * {@code identity} — the tenant and organisational scope arrive through
- * {@code TenantContext} in the shared kernel, which is how every module gets
- * them without coupling to how authentication works.
+ * <p>Master data is reference data: it is depended upon, and depends on
+ * nothing but {@code identity::access} -- the access decision point's SPI,
+ * through which it tells policies which organisational unit a terminal or a
+ * partner belongs to, so records filed beneath them (bins, ASNs, SKUs, milk
+ * runs, itineraries) can be held to the caller's subtree. It does not import
+ * the rest of {@code identity}: the tenant and organisational scope arrive
+ * through {@code TenantContext} in the shared kernel, which is how every
+ * module gets them without coupling to how authentication works.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Master Data",
-        allowedDependencies = {})
+        allowedDependencies = {"identity::access"})
 package com.lms.masterdata;

@@ -53,7 +53,7 @@ public class FleetCommandService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('VEHICLE_CREATE')")
+    @PreAuthorize("hasAuthority('VEHICLE_CREATE') and @abac.permitsIn('VEHICLE_CREATE', #orgUnitId)")
     public UUID registerVehicle(UUID orgUnitId, UUID ownerPartnerId, String registrationNo,
                                 String category, String vehicleType, String axleConfig,
                                 BigDecimal grossWeightKg, BigDecimal tareWeightKg, BigDecimal maxVolumeM3,
@@ -83,7 +83,7 @@ public class FleetCommandService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('DRIVER_CREATE')")
+    @PreAuthorize("hasAuthority('DRIVER_CREATE') and @abac.permitsIn('DRIVER_CREATE', #orgUnitId)")
     public UUID registerDriver(UUID orgUnitId, UUID employerPartnerId, String fullName, String phone,
                                String licenceNo, String licenceClass, String licenceAuthority,
                                LocalDate licenceExpiresOn, boolean hazmatEndorsed) {

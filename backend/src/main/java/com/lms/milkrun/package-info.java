@@ -36,8 +36,10 @@
  * security and would accept another tenant's terminal.
  *
  * <p>Skipped stops, late windows and the priced, completed circuit are
- * published as events. Nothing consumes them yet: turning them into control
- * tower tickets and freight bills is a follow-up, and the events are the seam.
+ * published as events. Finance turns a completed circuit into the carrier's
+ * payable; the completion event carries the carrying trip's load and vendor,
+ * read through {@code execution::api}, so finance need not ask. The control
+ * tower raises tickets from skipped stops and late windows.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Milk Runs",

@@ -60,5 +60,8 @@ public class AcceptanceTestContext {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // Scenarios here are timelines set in the past; a background pass of the
+        // missed-connection sweep would race their steps. Tests run it directly.
+        registry.add("lms.multimodal.connection-sweep.enabled", () -> "false");
     }
 }

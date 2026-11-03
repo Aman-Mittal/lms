@@ -1,0 +1,513 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/client-billing/contracts:
+  post:
+    tags: [Client billing]
+    operationId: publishClientContract
+    summary: Publish a client contract version
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. POST only: a contract is a version,
+      and correcting one means publishing a successor. The database refuses
+      an edit by trigger.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PublishClientContractRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/clients/{clientId}/contracts:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  get:
+    tags: [Client billing]
+    operationId: listClientContracts
+    summary: A client's contract versions, newest first
+    description: Requires `CLIENT_BILLING_READ`. A portal user may read only their own client's.
+    responses:
+      "200":
+        description: The versions.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ClientContract" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/clients/{clientId}/portal-users:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  post:
+    tags: [Client billing]
+    operationId: grantClientPortalAccess
+    summary: Confine a user to one client's records
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. A bound user sees only this client's
+      contracts, charges and invoices, and never the margin view. Rebinding
+      replaces the earlier binding.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientPortalUserRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/clients/{clientId}/service-usage:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  post:
+    tags: [Client billing]
+    operationId: recordClientServiceUsage
+    summary: Record warehouse or value-added service usage for a client
+    description: |
+      Requires `CLIENT_BILLING_RUN`, and a client in the caller's own
+      organisational unit or one beneath it (access policy
+      `client-billing-write-org-subtree`). Idempotent on `sourceKey`. The charge is
+      filed under the month it occurred, or under the next open month when
+      that one has already been invoiced.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ServiceUsageRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/clients/{clientId}/charges:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  get:
+    tags: [Client billing]
+    operationId: listClientCharges
+    summary: The charges filed under one billing month
+    description: Requires `CLIENT_BILLING_READ`.
+    parameters:
+      - name: period
+        in: query
+        required: true
+        schema: { type: string, format: date }
+        description: Any day of the billing month.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of charges.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientChargeSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/clients/{clientId}/billing-runs:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  post:
+    tags: [Client billing]
+    operationId: runClientBilling
+    summary: Bill a client's month and close it
+    description: |
+      Requires `CLIENT_BILLING_RUN`, and a client in the caller's own
+      organisational unit or one beneath it (access policy
+      `client-billing-write-org-subtree`). Idempotent per client and month: a rerun
+      answers with the invoice the first run issued and changes nothing.
+      Refused for a month that has not ended, and for a month with nothing
+      charged. Once the invoice exists the month is closed; later charges go
+      to the next open month.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientBillingRunRequest" }
+    responses:
+      "200":
+        description: The month's invoice.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/clients/{clientId}/invoices:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  get:
+    tags: [Client billing]
+    operationId: listClientInvoices
+    summary: A client's invoices, most recent month first
+    description: Requires `CLIENT_BILLING_READ`. A portal user may list only their own client's.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of invoices.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientInvoiceSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/invoices/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Client billing]
+    operationId: getClientInvoice
+    summary: One client invoice
+    description: |
+      Requires `CLIENT_BILLING_READ`. Another client's invoice is a 404 to a
+      portal user, the same answer as an invoice that does not exist.
+    responses:
+      "200":
+        description: The invoice.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientInvoice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/invoices/{id}/lines:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Client billing]
+    operationId: getClientInvoiceLines
+    summary: The priced charges behind an invoice total
+    description: Requires `CLIENT_BILLING_READ`.
+    responses:
+      "200":
+        description: Lines in order.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ClientInvoiceLine" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/clients/{clientId}/storage-computations:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  post:
+    tags: [Client billing]
+    operationId: computeClientStorage
+    summary: Charge a client's storage for an ended month from the warehouse ledger
+    description: |
+      Requires `CLIENT_BILLING_RUN`, and a client in the caller's own
+      organisational unit or one beneath it (access policy
+      `client-billing-write-org-subtree`). Reads, through the warehouse module's
+      read-only port, the units of the client's own SKUs (SKU owner = the
+      client) held at the end of each day of the month across every
+      warehouse; converts each day to pallet positions with the contract's
+      `storageUnitsPerPallet`, rounded up; and charges the month's
+      pallet-days as STORAGE, one charge per contract version in force.
+      Idempotent per client and month: every day is recorded, and a second
+      call answers with the first computation. Refused for a month that has
+      not ended, and for a month whose storage was already recorded by hand.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientStorageComputationRequest" }
+    responses:
+      "200":
+        description: The month's computation.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientStorage" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/clients/{clientId}/storage:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  get:
+    tags: [Client billing]
+    operationId: getClientStorage
+    summary: A client's ledger-derived storage for one month, day by day
+    description: Requires `CLIENT_BILLING_READ`.
+    parameters:
+      - name: period
+        in: query
+        required: true
+        schema: { type: string, format: date }
+        description: Any day of the month.
+    responses:
+      "200":
+        description: The computation, or `computed` false.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientStorage" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/clients/{clientId}/statement:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  get:
+    tags: [Client billing]
+    operationId: getClientStatement
+    summary: A client's invoices and credit notes with the running balance
+    description: |
+      Requires `CLIENT_BILLING_READ`. A portal user may read only their own
+      client's. Oldest first, keyset-paged on issue time and document id;
+      each entry carries the balance after it over the whole history.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of the statement.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientStatementSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/clients/{clientId}/ageing:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client partner.
+  get:
+    tags: [Client billing]
+    operationId: getClientAgeing
+    summary: What a client still owes, by invoice and by age
+    description: |
+      Requires `CLIENT_BILLING_READ`. Lists only invoices with something
+      still owing, oldest first, and totals them by days since issue. Credit
+      notes reduce their own invoice; payments settle the oldest invoices
+      first. A portal user sees only their own client's.
+    parameters:
+      - name: asOf
+        in: query
+        required: false
+        schema: { type: string, format: date }
+        description: The day to age to; today (UTC) when omitted. Documents
+          and payments recorded after it are ignored.
+    responses:
+      "200":
+        description: The receivable.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientAgeing" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/clients/{clientId}/payments:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client partner.
+  post:
+    tags: [Client billing]
+    operationId: recordClientPayment
+    summary: Record money received from a client
+    description: |
+      Requires `CLIENT_BILLING_RUN`, and a client in the caller's own
+      organisational unit or one beneath it (access policy
+      `client-billing-write-org-subtree`). Recorded against the client, not
+      an invoice, in the currency the client is invoiced in, and shown on the
+      statement as a credit. Refused (409) for a client with no invoice, and
+      when the remittance reference was already recorded for the client.
+      Never edited or removed. Audited. Refused to client portal users.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientPaymentRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/invoices/{id}/credit-notes:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Client billing]
+    operationId: issueClientCreditNote
+    summary: Issue a credit note against an invoice
+    description: |
+      Requires `CLIENT_CREDIT_NOTE_ISSUE`, and a client in the caller's own
+      organisational unit or one beneath it (access policy
+      `client-credit-note-write-org-subtree`). The invoice is not changed. Refused
+      (409) when the credit would exceed what remains creditable on a line
+      or on the invoice. Audited, and shown on the client's statement; it
+      reduces the receivable and margin of the invoice's month.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientCreditNoteRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/credit-notes/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Client billing]
+    operationId: getClientCreditNote
+    summary: One credit note with its lines
+    description: |
+      Requires `CLIENT_BILLING_READ`. Another client's credit note is a 404
+      to a portal user.
+    responses:
+      "200":
+        description: The credit note.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientCreditNote" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/margins:
+  get:
+    tags: [Client billing]
+    operationId: listClientMargins
+    summary: Receivable against carrier payable, per client, for one billed month
+    description: |
+      Requires `CLIENT_MARGIN_READ`, and refused to client portal users
+      whatever they hold: the margin is the 3PL's own number.
+    parameters:
+      - name: period
+        in: query
+        required: true
+        schema: { type: string, format: date }
+        description: Any day of the billed month.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of client margins.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientMarginSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }

@@ -128,13 +128,13 @@ class StockLedger {
     }
 
     /**
-     * Where a SKU can be picked from, in the order it should be: by bin code,
-     * then lot. A fixed order keeps two runs of the same pick identical, which
-     * is what makes a short pick explainable afterwards.
+     * Where a SKU can be picked from: every bin in the warehouse holding some.
+     * The allocator, not this query, decides the order they are taken in.
      */
-    List<Holding> pickableStock(UUID warehouseId, UUID skuId) {
+    List<WaveAllocator.Source> pickableStock(UUID warehouseId, UUID skuId) {
         return jdbc.sql("""
-                        SELECT b.location_type, b.location_id, b.sku_id, b.lot_no, b.on_hand
+                        SELECT b.location_id AS bin_id, w.code AS bin_code, b.sku_id, b.lot_no,
+                               b.on_hand
                           FROM stock_balance b
                           JOIN warehouse_bin w ON w.id = b.location_id
                          WHERE b.sku_id = :skuId
@@ -145,7 +145,7 @@ class StockLedger {
                         """)
                 .param("skuId", skuId)
                 .param("warehouseId", warehouseId)
-                .query(Holding.class)
+                .query(WaveAllocator.Source.class)
                 .list();
     }
 

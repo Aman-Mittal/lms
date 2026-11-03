@@ -134,11 +134,47 @@ public class PolicyDecisionPoint {
      */
     @Reflective
     public boolean permitsIn(String action, Object orgUnitId) {
+        if (!belongsToCallersTenant(orgUnitId)) {
+            // Refused, not looked up: a foreign or nonexistent unit is
+            // indistinguishable from the outside, which is the point. Without
+            // this a caller could write a row of their own tenant that points
+            // into another tenant's organisation -- the foreign key is checked
+            // by the database as its owner, which row-level security does not
+            // bind -- and learn from the answer that the unit exists.
+            log.info("Refusing {}: the organisational unit is not one of this tenant's", action);
+            return false;
+        }
         return decide(action, () -> {
             Map<String, Object> resource = new LinkedHashMap<>();
             resource.put("orgUnitId", orgUnitId);
             return resource;
         }).permitted();
+    }
+
+    /**
+     * Whether an organisational unit named in a request is the caller's
+     * tenant's. A null unit is not a claim about any tenant and is left to the
+     * policies; so is a call with no tenant bound, which {@link #decide}
+     * refuses in any case.
+     */
+    private boolean belongsToCallersTenant(Object orgUnitId) {
+        Optional<TenantContext.Scope> scope = TenantContext.current();
+        if (orgUnitId == null || scope.isEmpty()) {
+            return true;
+        }
+        UUID unit;
+        try {
+            unit = orgUnitId instanceof UUID id ? id : UUID.fromString(orgUnitId.toString());
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        UUID tenantId = scope.get().tenantId();
+        return Boolean.TRUE.equals(readOnly.execute(status -> jdbc.sql(
+                        "SELECT EXISTS (SELECT 1 FROM org_unit WHERE id = :id AND tenant_id = :tenant)")
+                .param("id", unit)
+                .param("tenant", tenantId)
+                .query(Boolean.class)
+                .single()));
     }
 
     /** The full decision, for callers that want to say why. */

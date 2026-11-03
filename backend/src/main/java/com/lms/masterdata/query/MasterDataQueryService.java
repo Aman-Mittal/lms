@@ -207,7 +207,7 @@ public class MasterDataQueryService {
             SELECT t.id, t.code, t.name, t.functional_category, t.geofence_type,
                    CAST(t.polygon AS text) AS polygon,
                    t.centre_lat, t.centre_lon, t.radius_m, t.dock_count,
-                   t.opens_at, t.closes_at, t.avg_dwell_minutes, t.created_at
+                   t.opens_at, t.closes_at, t.avg_dwell_minutes, t.version, t.created_at
               FROM terminal t
             """;
 
@@ -250,7 +250,8 @@ public class MasterDataQueryService {
                    d.document_type, d.document_no, d.issuing_authority,
                    d.issued_on, d.expires_on,
                    (d.expires_on - current_date) AS days_to_expiry,
-                   (d.expires_on < current_date) AS expired
+                   -- NULL < date is NULL, and a document without an expiry has not expired.
+                   coalesce(d.expires_on < current_date, false) AS expired
               FROM compliance_document d
               LEFT JOIN vehicle v ON d.owner_type = 'VEHICLE' AND v.id = d.owner_id
               LEFT JOIN driver dr ON d.owner_type = 'DRIVER' AND dr.id = d.owner_id

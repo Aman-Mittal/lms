@@ -44,6 +44,9 @@ public record DocketReceivableView(
         BigDecimal freightAmount,
         BigDecimal docketCharge,
         BigDecimal odaSurcharge,
+        String odaBasis,
+        BigDecimal fuelSurchargePct,
+        BigDecimal fuelSurcharge,
         BigDecimal totalAmount,
         String reason,
         Instant createdAt) {

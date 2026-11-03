@@ -30,6 +30,7 @@ import com.lms.clientbilling.query.ClientDirectory;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -72,7 +73,8 @@ public class ClientContractService {
      * name.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('CLIENT_CONTRACT_MANAGE')")
+    @PreAuthorize("hasAuthority('CLIENT_CONTRACT_MANAGE')"
+            + " and @abac.permitsIn('CLIENT_CONTRACT_MANAGE', #orgUnitId)")
     public UUID publishContract(UUID orgUnitId, String code, UUID clientPartnerId,
                                 String currency, LocalDate effectiveFrom,
                                 ClientContract.Rates rates, List<ServiceRateTerm> valueAdded) {
@@ -106,7 +108,7 @@ public class ClientContractService {
                     published.id(), term.serviceCode(), term.unit(), term.rate()));
         }
 
-        audit.record("CLIENT_CONTRACT_PUBLISHED", "CLIENT_CONTRACT", published.id(), null,
+        audit.recordAtomically("CLIENT_CONTRACT_PUBLISHED", "CLIENT_CONTRACT", published.id(), null,
                 Json.object("code", code, "client", clientPartnerId.toString(),
                         "effectiveFrom", effectiveFrom.toString()));
         return published.id();
@@ -123,6 +125,12 @@ public class ClientContractService {
     public void grantPortalAccess(UUID clientPartnerId, UUID userId) {
         UUID tenantId = TenantContext.requireTenantId();
         requireCustomer(clientPartnerId);
+        // The foreign key is checked as the table owner and would accept another
+        // tenant's user; a lookup under row-level security does not.
+        if (jdbc.sql("SELECT count(*) FROM app_user WHERE id = :id")
+                .param("id", userId).query(Long.class).single() == 0) {
+            throw new ResourceNotFoundException("AppUser", userId);
+        }
 
         jdbc.sql("""
                         INSERT INTO client_portal_user (tenant_id, user_id, client_partner_id,
@@ -138,7 +146,7 @@ public class ClientContractService {
                 .param("grantedAt", Instant.now().atOffset(ZoneOffset.UTC))
                 .update();
 
-        audit.record("CLIENT_PORTAL_ACCESS_GRANTED", "APP_USER", userId, null,
+        audit.recordAtomically("CLIENT_PORTAL_ACCESS_GRANTED", "APP_USER", userId, null,
                 Json.object("client", clientPartnerId.toString()));
     }
 

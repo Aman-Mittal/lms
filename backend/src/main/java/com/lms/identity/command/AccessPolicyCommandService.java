@@ -80,7 +80,7 @@ public class AccessPolicyCommandService {
 
         AccessPolicy created = policies.save(AccessPolicy.create(UUID.randomUUID(), tenantId,
                 code, action, effect, description, validated, enabled));
-        audit.record("ACCESS_POLICY_CREATED", "ACCESS_POLICY", created.id(), null,
+        audit.recordAtomically("ACCESS_POLICY_CREATED", "ACCESS_POLICY", created.id(), null,
                 snapshot(created));
         return created.id();
     }
@@ -92,7 +92,7 @@ public class AccessPolicyCommandService {
         AccessPolicy existing = require(policyId);
         AccessPolicy revised = policies.save(
                 existing.revise(effect, description, validated(condition), enabled));
-        audit.record("ACCESS_POLICY_REVISED", "ACCESS_POLICY", revised.id(),
+        audit.recordAtomically("ACCESS_POLICY_REVISED", "ACCESS_POLICY", revised.id(),
                 snapshot(existing), snapshot(revised));
     }
 
@@ -101,7 +101,7 @@ public class AccessPolicyCommandService {
     public void delete(UUID policyId) {
         AccessPolicy existing = require(policyId);
         policies.delete(existing);
-        audit.record("ACCESS_POLICY_DELETED", "ACCESS_POLICY", existing.id(),
+        audit.recordAtomically("ACCESS_POLICY_DELETED", "ACCESS_POLICY", existing.id(),
                 snapshot(existing), null);
     }
 
@@ -133,6 +133,15 @@ public class AccessPolicyCommandService {
             throw new IllegalArgumentException("An approval limit cannot be negative");
         }
 
+        // The foreign key on partner_id is checked as the table owner, so it
+        // would accept another tenant's partner; this lookup runs under RLS.
+        if (attributes.partnerId() != null && jdbc
+                .sql("SELECT count(*) FROM business_partner WHERE id = :id")
+                .param("id", attributes.partnerId()).query(Long.class).single() == 0) {
+            throw new IllegalArgumentException("No partner " + attributes.partnerId()
+                    + " exists in this tenant");
+        }
+
         int updated;
         try {
             updated = jdbc.sql("""
@@ -161,7 +170,7 @@ public class AccessPolicyCommandService {
             throw new ResourceNotFoundException("AppUser", userId);
         }
 
-        audit.record("USER_ACCESS_ATTRIBUTES_SET", "APP_USER", userId, null,
+        audit.recordAtomically("USER_ACCESS_ATTRIBUTES_SET", "APP_USER", userId, null,
                 Json.object("region", attributes.region(),
                         "freightModes", attributes.freightModes() == null ? null
                                 : String.join(",", attributes.freightModes()),

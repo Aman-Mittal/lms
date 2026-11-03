@@ -1,0 +1,72 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+Vehicle:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    registrationNo: { type: string }
+    category: { type: string }
+    vehicleType: { type: string }
+    axleConfig: { type: string }
+    status: { type: string, enum: [AVAILABLE, ON_TRIP, MAINTENANCE, RETIRED] }
+    grossWeightKg: { type: number }
+    tareWeightKg: { type: number }
+    payloadCapacityKg:
+      type: number
+      description: Gross less tare -- what the lorry carries once it has carried itself.
+    maxVolumeM3: { type: number }
+    hazmatCertified: { type: boolean }
+    reeferCapable: { type: boolean }
+    ownerPartnerId: { type: string, format: uuid }
+    ownerPartnerName: { type: string }
+    earliestDocumentExpiry:
+      type: string
+      format: date
+      description: The soonest certificate to lapse; what a dispatcher must act on.
+    expiredDocumentCount: { type: integer }
+    createdAt: { type: string, format: date-time }
+
+RegisterVehicleRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    ownerPartnerId: { type: string, format: uuid }
+    registrationNo: { type: string }
+    category: { type: string }
+    vehicleType: { type: string }
+    axleConfig: { type: string }
+    grossWeightKg: { type: number }
+    tareWeightKg: { type: number }
+    maxVolumeM3: { type: number }
+    hazmatCertified: { type: boolean }
+    reeferCapable: { type: boolean }
+  required: [orgUnitId, registrationNo, category, vehicleType, grossWeightKg, tareWeightKg]
+
+VehicleSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Vehicle" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]

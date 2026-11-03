@@ -41,9 +41,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * A tenant with one trip on one lorry, built through the real command
  * services -- the anchor that bulk-loaded rows hang their foreign keys on.
  */
-final class TripScaffold {
+public final class TripScaffold {
 
-    record Built(UUID tenantId, String orgPath, UUID orgUnitId, UUID tripId, UUID vehicleId) {
+    public record Built(UUID tenantId, String orgPath, UUID orgUnitId, UUID tripId, UUID vehicleId) {
     }
 
     /** Who the scaffold acts as. Not a credential: in-process test authentication carries none. */
@@ -56,7 +56,7 @@ final class TripScaffold {
     private TripScaffold() {
     }
 
-    static Built build(TestFixtures fixtures, SpineFixtures spine, FleetCommandService fleet,
+    public static Built build(TestFixtures fixtures, SpineFixtures spine, FleetCommandService fleet,
                        TerminalCommandService terminals, TripCommandService trips,
                        double lonOffset) {
         String salt = UUID.randomUUID().toString().substring(0, 8);

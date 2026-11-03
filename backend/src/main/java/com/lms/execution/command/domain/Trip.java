@@ -67,6 +67,8 @@ public record Trip(
         BigDecimal tareWeightKg,
         BigDecimal grossWeightKg,
         BigDecimal payloadWeightKg,
+        Instant cancelledAt,
+        String cancellationReason,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -139,7 +141,7 @@ public record Trip(
         return new Trip(id, tenantId, orgUnitId, loadId, tripNo, vendorPartnerId,
                 null, null, TripStatus.PLANNED, originTerminalId, destinationTerminalId,
                 plannedStartAt, null, null, null, null, null,
-                null, null, null, null, Instant.now(), Instant.now());
+                null, null, null, null, null, null, Instant.now(), Instant.now());
     }
 
     // ------------------------------------------------------------ milestones
@@ -182,8 +184,31 @@ public record Trip(
         return moved.with(builder -> builder.completedAt = at);
     }
 
-    public Trip cancel() {
-        return transitionTo(TripStatus.CANCELLED);
+    /**
+     * Cancels a trip that has not left the yard, recording when and why.
+     *
+     * <p>Refused with its own code rather than the generic transition one, so
+     * that a client can tell "too late to cancel" from any other illegal move.
+     * Cancelling a trip that is already cancelled returns it unchanged: the
+     * first reason and time stand, which makes a retried request harmless.
+     */
+    public Trip cancel(String reason, Instant at) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A cancellation needs a reason");
+        }
+        if (status == TripStatus.CANCELLED) {
+            return this;
+        }
+        if (!TRANSITIONS.get(status).contains(TripStatus.CANCELLED)) {
+            throw new BusinessRuleViolationException("trip-not-cancellable",
+                    "Trip " + tripNo + " is " + status + " and can no longer be cancelled; "
+                            + "a trip can only be cancelled before the vehicle is dispatched");
+        }
+        Trip moved = transitionTo(TripStatus.CANCELLED);
+        return moved.with(builder -> {
+            builder.cancelledAt = at;
+            builder.cancellationReason = reason.strip();
+        });
     }
 
     // ------------------------------------------------------------ weighbridge
@@ -279,7 +304,7 @@ public record Trip(
     /**
      * Copies the record with a few fields changed.
      *
-     * <p>A record with twenty-three components makes every canonical
+     * <p>A record with twenty-five components makes every canonical
      * constructor call a counting exercise, and a mis-ordered pair of
      * {@code Instant}s compiles perfectly. This mutable holder is used only
      * inside the aggregate; nothing escapes it.
@@ -295,6 +320,7 @@ public record Trip(
                 fields.destinationTerminalId, plannedStartAt, fields.gateInAt, fields.loadedAt,
                 fields.dispatchedAt, fields.arrivedAt, fields.completedAt,
                 fields.tareWeightKg, fields.grossWeightKg, fields.payloadWeightKg,
+                fields.cancelledAt, fields.cancellationReason,
                 version, createdAt, Instant.now());
     }
 
@@ -312,6 +338,8 @@ public record Trip(
         private BigDecimal tareWeightKg;
         private BigDecimal grossWeightKg;
         private BigDecimal payloadWeightKg;
+        private Instant cancelledAt;
+        private String cancellationReason;
 
         private Fields(Trip trip) {
             this.vendorPartnerId = trip.vendorPartnerId;
@@ -327,6 +355,8 @@ public record Trip(
             this.tareWeightKg = trip.tareWeightKg;
             this.grossWeightKg = trip.grossWeightKg;
             this.payloadWeightKg = trip.payloadWeightKg;
+            this.cancelledAt = trip.cancelledAt;
+            this.cancellationReason = trip.cancellationReason;
         }
     }
 }

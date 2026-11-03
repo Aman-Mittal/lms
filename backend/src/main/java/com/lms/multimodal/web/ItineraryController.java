@@ -98,6 +98,11 @@ public class ItineraryController {
                               @NotEmpty @Size(max = 10) List<@Valid @NotNull LegRequest> legs) {
     }
 
+    /**
+     * @param costAmount required for a road leg; optional for a rail leg, which
+     *                   is then priced from the rail rate card in force on its
+     *                   planned departure day
+     */
     public record LegRequest(@NotNull ItineraryLeg.Mode mode,
                              @NotNull UUID fromTerminalId,
                              @NotNull UUID toTerminalId,
@@ -110,7 +115,7 @@ public class ItineraryController {
                              String bookingRef,
                              String trainNo,
                              @NotNull UUID carrierPartnerId,
-                             @NotNull @DecimalMin("0") BigDecimal costAmount) {
+                             @DecimalMin("0") BigDecimal costAmount) {
 
         ItineraryLeg.Plan toPlan() {
             return new ItineraryLeg.Plan(mode, fromTerminalId, toTerminalId, plannedDepartureAt,

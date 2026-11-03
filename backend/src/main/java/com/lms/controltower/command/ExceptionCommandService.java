@@ -36,6 +36,7 @@ import com.lms.shared.tenant.TenantContext;
 import com.lms.telematics.api.VehicleFixPort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -64,6 +65,7 @@ public class ExceptionCommandService {
     private final VehicleFixPort fixes;
     private final AuditTrail audit;
     private final ApplicationEventPublisher events;
+    private final JdbcClient jdbc;
 
     /**
      * How old a telematics fix may be and still count as where the vehicle is.
@@ -80,6 +82,7 @@ public class ExceptionCommandService {
                                    ExceptionActivityRepository activities,
                                    TripLookupPort trips, VehicleFixPort fixes,
                                    AuditTrail audit, ApplicationEventPublisher events,
+                                   JdbcClient jdbc,
                                    @Value("${lms.controltower.max-fix-age-minutes:30}")
                                    long maxFixAgeMinutes) {
         this.tickets = tickets;
@@ -88,6 +91,7 @@ public class ExceptionCommandService {
         this.fixes = fixes;
         this.audit = audit;
         this.events = events;
+        this.jdbc = jdbc;
         this.maxFixAge = Duration.ofMinutes(maxFixAgeMinutes);
     }
 
@@ -108,8 +112,8 @@ public class ExceptionCommandService {
         ExceptionTicket.Position position =
                 capturePosition(trip.vehicleId(), reportedLat, reportedLon, now);
 
-        return open(tenantId, trip, category, description, ExceptionTicket.Source.MANUAL, null,
-                position, currentActor(), now);
+        return open(tenantId, trip, null, category, description, ExceptionTicket.Source.MANUAL,
+                null, position, currentActor(), now);
     }
 
     /**
@@ -149,15 +153,100 @@ public class ExceptionCommandService {
                 + " m from the planned route; the corridor is "
                 + corridorM.stripTrailingZeros().toPlainString() + " m";
 
-        return Optional.of(open(tenantId, trip, ExceptionCategory.ROUTE_DEVIATION, description,
-                ExceptionTicket.Source.ROUTE_DEVIATION, sourceKey, position, SYSTEM_ACTOR,
-                Instant.now()));
+        return Optional.of(open(tenantId, trip, null, ExceptionCategory.ROUTE_DEVIATION,
+                description, ExceptionTicket.Source.ROUTE_DEVIATION, sourceKey, position,
+                SYSTEM_ACTOR, Instant.now()));
+    }
+
+    /**
+     * Turns a detected stoppage into a P2 ticket.
+     *
+     * <p>Unguarded and idempotent, like {@link #raiseForRouteDeviation}: the
+     * source key names the stop (the trip and when the vehicle arrived at the
+     * spot), so a redelivery is a no-op. On top of that a trip has at most one
+     * stoppage ticket being worked on: a second stop while the first is still
+     * open adds nothing a person has not been told. Once that ticket is
+     * resolved or closed, a later stop raises a fresh one.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<UUID> raiseForStoppage(UUID tripId, Instant stationarySince,
+                                           long stoppedMinutes, long thresholdMinutes,
+                                           BigDecimal lat, BigDecimal lon, Instant detectedAt) {
+        UUID tenantId = TenantContext.requireTenantId();
+        String sourceKey = "stoppage:" + tripId + ":" + stationarySince.toEpochMilli();
+
+        Optional<ExceptionTicket> already = tickets.findBySourceKey(tenantId, sourceKey);
+        if (already.isPresent()) {
+            return already.map(ExceptionTicket::id);
+        }
+        Optional<ExceptionTicket> open = tickets.findOpenStoppage(tenantId, tripId);
+        if (open.isPresent()) {
+            return open.map(ExceptionTicket::id);
+        }
+
+        TripLookupPort.TripSnapshot trip = trips.find(tripId)
+                .orElseThrow(() -> new ResourceNotFoundException("Trip", tripId));
+
+        ExceptionTicket.Position position = lat == null || lon == null
+                ? ExceptionTicket.Position.none()
+                : new ExceptionTicket.Position(lat, lon, ExceptionTicket.PositionSource.DETECTOR,
+                        detectedAt);
+
+        String description = "Vehicle has not moved for " + stoppedMinutes
+                + " minutes outside any terminal; the threshold is " + thresholdMinutes
+                + " minutes";
+
+        return Optional.of(open(tenantId, trip, null, ExceptionCategory.EXTENDED_STOPPAGE,
+                description, ExceptionTicket.Source.STOPPAGE_DETECTED, sourceKey, position,
+                SYSTEM_ACTOR, Instant.now()));
+    }
+
+    /**
+     * Turns another module's exception-like fact into a ticket.
+     *
+     * <p>Unguarded and idempotent on the source key, for the same reasons as
+     * {@link #raiseForRouteDeviation}: the actor is the platform, and the
+     * outbox delivers at least once, so a redelivery returns the ticket the
+     * first delivery raised.
+     *
+     * <p>The trip is attached when the fact names one and execution still
+     * knows it. A fact about a trip execution has never heard of is still
+     * worth a ticket -- it is raised against its subject alone, rather than
+     * failing the delivery and being retried forever. No position is
+     * captured: these facts carry none, and by the time a republished event is
+     * heard the vehicle's latest fix may be somewhere else entirely.
+     *
+     * <p>Joins the caller's transaction. The listeners open a new one, scoped
+     * to the event's tenant, before calling.
+     */
+    @Transactional
+    public UUID raiseDetected(DetectedException detected) {
+        UUID tenantId = TenantContext.requireTenantId();
+
+        Optional<ExceptionTicket> already = tickets.findBySourceKey(tenantId, detected.sourceKey());
+        if (already.isPresent()) {
+            return already.get().id();
+        }
+
+        TripLookupPort.TripSnapshot trip = detected.tripId() == null
+                ? null
+                : trips.find(detected.tripId()).orElse(null);
+
+        return open(tenantId, trip, detected.subject(), detected.category(),
+                detected.description(), detected.source(), detected.sourceKey(),
+                ExceptionTicket.Position.none(), SYSTEM_ACTOR, Instant.now());
     }
 
     @Transactional
     @PreAuthorize("hasAuthority('EXCEPTION_MANAGE')")
     public void assign(UUID ticketId, UUID assigneeUserId, String note) {
         ExceptionTicket ticket = require(ticketId);
+        // A foreign key would accept another tenant's user; this lookup runs
+        // under row-level security and so does not.
+        if (jdbc.sql("SELECT count(*) FROM app_user WHERE id = :id")
+                .param("id", assigneeUserId).query(Long.class).single() == 0) {
+            throw new ResourceNotFoundException("AppUser", assigneeUserId);
+        }
         Instant now = Instant.now();
         record(ticket, tickets.save(ticket.assignTo(assigneeUserId, now)), "ASSIGNED", note, now);
     }
@@ -190,6 +279,48 @@ public class ExceptionCommandService {
     }
 
     /**
+     * Raises the ticket an ETA or temperature detector found, unless the trip
+     * already has one of that kind that has not been closed.
+     *
+     * <p>Unguarded and idempotent, and it joins the caller's transaction so a
+     * detector's own bookkeeping and the ticket commit together. Two checks
+     * make it so: the source key turns a redelivery into a no-op, and the
+     * unclosed ticket of the same category means a trip is not flooded while
+     * one is being worked. Two deliveries racing past both meet
+     * {@code exception_ticket_open_detector_idx} instead.
+     *
+     * @return the ticket, new or existing; empty when the trip is gone or cancelled
+     */
+    @Transactional
+    public Optional<UUID> raiseForTripDetector(UUID tripId, ExceptionCategory category,
+                                               ExceptionTicket.Source source, String sourceKey,
+                                               String description, BigDecimal lat,
+                                               BigDecimal lon, Instant detectedAt) {
+        UUID tenantId = TenantContext.requireTenantId();
+        Optional<ExceptionTicket> already = tickets.findBySourceKey(tenantId, sourceKey);
+        if (already.isPresent()) {
+            return already.map(ExceptionTicket::id);
+        }
+        Optional<ExceptionTicket> unclosed = tickets.findUnclosed(tenantId, tripId,
+                category.name());
+        if (unclosed.isPresent()) {
+            return unclosed.map(ExceptionTicket::id);
+        }
+        Optional<TripLookupPort.TripSnapshot> trip = trips.find(tripId)
+                .filter(snapshot -> !snapshot.isCancelled());
+        if (trip.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ExceptionTicket.Position position = lat == null || lon == null
+                ? ExceptionTicket.Position.none()
+                : new ExceptionTicket.Position(lat, lon, ExceptionTicket.PositionSource.DETECTOR,
+                        detectedAt);
+        return Optional.of(open(tenantId, trip.get(), null, category, description, source,
+                sourceKey, position, SYSTEM_ACTOR, Instant.now()));
+    }
+
+    /**
      * A manager closes the ticket, releasing anything it was holding up.
      *
      * <p>Audited with before and after state, because for a critical ticket
@@ -208,7 +339,7 @@ public class ExceptionCommandService {
         ExceptionTicket closed = tickets.save(ticket.close(currentActor(), now));
         record(ticket, closed, "CLOSED", note, now);
 
-        audit.record("EXCEPTION_CLOSED", "EXCEPTION_TICKET", closed.id(),
+        audit.recordAtomically("EXCEPTION_CLOSED", "EXCEPTION_TICKET", closed.id(),
                 Json.object("status", ticket.status().name(),
                         "resolvedBy", String.valueOf(ticket.resolvedBy())),
                 Json.object("status", closed.status().name(),
@@ -221,12 +352,18 @@ public class ExceptionCommandService {
 
     // ------------------------------------------------------------- internals
 
-    private UUID open(UUID tenantId, TripLookupPort.TripSnapshot trip, ExceptionCategory category,
+    /**
+     * @param trip    null for a ticket about something other than a trip
+     * @param subject null for a ticket about a trip alone
+     */
+    private UUID open(UUID tenantId, TripLookupPort.TripSnapshot trip,
+                      ExceptionTicket.Subject subject, ExceptionCategory category,
                       String description, ExceptionTicket.Source source, String sourceKey,
                       ExceptionTicket.Position position, String actor, Instant now) {
         ExceptionTicket ticket = tickets.save(ExceptionTicket.raise(UUID.randomUUID(), tenantId,
-                newTicketNo(), trip.tripId(), trip.tripNo(), trip.vehicleId(), category,
-                description, source, sourceKey, position, actor, now));
+                newTicketNo(), trip == null ? null : trip.tripId(),
+                trip == null ? null : trip.tripNo(), trip == null ? null : trip.vehicleId(),
+                subject, category, description, source, sourceKey, position, actor, now));
 
         activities.save(ExceptionActivity.of(tenantId, ticket.id(), "RAISED", null,
                 ticket.status(), ticket.description(), actor, now));

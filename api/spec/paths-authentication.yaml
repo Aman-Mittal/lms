@@ -1,0 +1,77 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/auth/login:
+  post:
+    tags: [Authentication]
+    operationId: login
+    summary: Exchange credentials for a token
+    description: |
+      The one endpoint that needs no token. Failures are deliberately vague:
+      naming which of the three was wrong would turn this into an account
+      enumeration oracle. Five consecutive failures lock the account for
+      fifteen minutes.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/LoginRequest" }
+    responses:
+      "200":
+        description: Signed in.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthResult" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/auth/refresh:
+  post:
+    tags: [Authentication]
+    operationId: refreshToken
+    summary: Exchange a refresh token for a new access token
+    description: |
+      The refresh token travels in the body, never a cookie -- which is what
+      makes CSRF protection unnecessary rather than merely disabled.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RefreshRequest" }
+    responses:
+      "200":
+        description: Refreshed.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthResult" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/auth/logout:
+  post:
+    tags: [Authentication]
+    operationId: logout
+    summary: Revoke a refresh token
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RefreshRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "400": { $ref: "#/components/responses/BadRequest" }

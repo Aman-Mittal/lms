@@ -84,7 +84,8 @@ public class MilkRunRouteCommandService {
      * not automatic: a run may already be on the road.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('MILKRUN_PLAN')")
+    @PreAuthorize("hasAuthority('MILKRUN_PLAN')"
+            + " and @abac.permits('MILKRUN_PLAN', 'TERMINAL', #plantTerminalId)")
     public UUID publish(String code, String name, UUID plantTerminalId, LocalDate effectiveFrom,
                         List<String> days, LocalTime departureTime, String timeZone,
                         BigDecimal runRate, BigDecimal perStopFee, String currency,
@@ -148,7 +149,7 @@ public class MilkRunRouteCommandService {
                     stop.plannedDwellMin()));
         }
 
-        audit.record("MILK_RUN_ROUTE_PUBLISHED", "MILK_RUN_ROUTE", published.id(), null,
+        audit.recordAtomically("MILK_RUN_ROUTE_PUBLISHED", "MILK_RUN_ROUTE", published.id(), null,
                 Json.object("code", published.code(),
                         "effectiveFrom", effectiveFrom.toString(),
                         "days", published.daysOfWeek(),

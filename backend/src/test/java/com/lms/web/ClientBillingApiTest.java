@@ -30,19 +30,31 @@ import com.lms.client.model.ClientBillingRunRequest;
 import com.lms.client.model.ClientChargeSlice;
 import com.lms.client.model.ClientContract;
 import com.lms.client.model.ClientContractServiceRate;
+import com.lms.client.model.ClientCreditNote;
+import com.lms.client.model.ClientCreditNoteLineRequest;
+import com.lms.client.model.ClientCreditNoteRequest;
 import com.lms.client.model.ClientInvoice;
 import com.lms.client.model.ClientInvoiceLine;
 import com.lms.client.model.ClientMargin;
 import com.lms.client.model.ClientPortalUserRequest;
 import com.lms.client.model.ClientServiceType;
+import com.lms.client.model.ClientStatementEntry;
+import com.lms.client.model.ClientStatementSlice;
+import com.lms.client.model.ClientStorage;
+import com.lms.client.model.ClientStorageComputationRequest;
 import com.lms.client.model.PublishClientContractRequest;
 import com.lms.client.model.ServiceUsageRequest;
 import com.lms.identity.access.SubjectAttributes;
 import com.lms.identity.command.domain.AppUser;
 import com.lms.identity.security.TokenService;
 import com.lms.masterdata.command.FleetCommandService;
+import com.lms.masterdata.command.RegisterTerminalCommand;
+import com.lms.masterdata.command.TerminalCommandService;
 import com.lms.masterdata.command.domain.BusinessPartner;
+import com.lms.masterdata.command.domain.Terminal;
+import com.lms.shared.geo.LatLon;
 import com.lms.shared.tenant.TenantContext;
+import com.lms.warehouse.command.WarehouseSetupCommandService;
 import feign.FeignException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,12 +63,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -90,7 +105,7 @@ class ClientBillingApiTest {
     /** What the 3PL's own billing desk holds. */
     private static final List<String> DESK = List.of(
             "CLIENT_CONTRACT_MANAGE", "CLIENT_BILLING_RUN", "CLIENT_BILLING_READ",
-            "CLIENT_MARGIN_READ");
+            "CLIENT_MARGIN_READ", "CLIENT_CREDIT_NOTE_ISSUE");
 
     /** Who in-process setup acts as. Not a credential: test authentication carries none. */
     private static final String SETUP_PRINCIPAL = "setup";
@@ -110,6 +125,14 @@ class ClientBillingApiTest {
     private FleetCommandService fleet;
     @Autowired
     private TokenService tokens;
+    @Autowired
+    private TerminalCommandService terminals;
+    @Autowired
+    private WarehouseSetupCommandService warehouseSetup;
+    @Autowired
+    private JdbcClient jdbc;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private String orgPath;
     private UUID orgUnitId;
@@ -287,6 +310,170 @@ class ClientBillingApiTest {
                 contractRequest(clientB, "B", LAST_MONTH.minusMonths(1)), null), 403);
     }
 
+    @Test
+    @DisplayName("tax on the invoice, a credit note against it, and the statement that shows both")
+    void taxCreditNotesAndStatementOverHttp() {
+        ClientBillingApi api = client(desk, DESK);
+        api.publishClientContract(contractRequest(clientA, "A-TAXED", LAST_MONTH.minusMonths(2))
+                .warehouseTaxRatePct(new BigDecimal("18")), null);
+        record(api, clientA, ClientServiceType.HANDLING_IN, null, "40", 2, "grn-1");
+        record(api, clientA, ClientServiceType.STORAGE, null, "300", 5, "snap-1");
+        UUID invoiceId = api.runClientBilling(clientA,
+                new ClientBillingRunRequest().period(LAST_MONTH), null).getId();
+
+        ClientInvoice invoice = api.getClientInvoice(invoiceId);
+        assertThat(invoice.getTaxableAmount()).isEqualByComparingTo("4600");
+        assertThat(invoice.getTaxAmount()).isEqualByComparingTo("828");
+        assertThat(invoice.getTotalAmount()).isEqualByComparingTo("5428");
+        assertThat(api.getClientInvoiceLines(invoiceId))
+                .extracting(ClientInvoiceLine::getTaxAmount)
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("180"), new BigDecimal("648"));
+
+        // Part of the storage line, by line.
+        UUID creditNoteId = api.issueClientCreditNote(invoiceId, new ClientCreditNoteRequest()
+                .reason("Fifty pallet-days were not used")
+                .lines(List.of(new ClientCreditNoteLineRequest().lineNo(2)
+                        .amount(new BigDecimal("600")))), null).getId();
+        ClientCreditNote note = api.getClientCreditNote(creditNoteId);
+        assertThat(note.getInvoiceId()).isEqualTo(invoiceId);
+        assertThat(note.getPeriodStart()).isEqualTo(LAST_MONTH);
+        assertThat(note.getTaxableAmount()).isEqualByComparingTo("600");
+        assertThat(note.getTaxAmount()).isEqualByComparingTo("108");
+        assertThat(note.getTotalAmount()).isEqualByComparingTo("708");
+        assertThat(note.getLines()).singleElement()
+                .satisfies(line -> assertThat(line.getInvoiceLineNo()).isEqualTo(2));
+
+        // The invoice is unchanged; what was credited is shown beside it.
+        ClientInvoice after = api.getClientInvoice(invoiceId);
+        assertThat(after.getTotalAmount()).isEqualByComparingTo("5428");
+        assertThat(after.getCreditedAmount()).isEqualByComparingTo("708");
+        assertThat(api.listClientMargins(LAST_MONTH, null, null).getItems()).singleElement()
+                .satisfies(m -> {
+                    assertThat(m.getReceivable()).isEqualByComparingTo("4000");
+                    assertThat(m.getCredited()).isEqualByComparingTo("600");
+                });
+
+        // Past what remains, either way it is asked for.
+        assertStatus(() -> api.issueClientCreditNote(invoiceId, new ClientCreditNoteRequest()
+                .reason("Too much").lines(List.of(new ClientCreditNoteLineRequest().lineNo(1)
+                        .amount(new BigDecimal("1000.01")))), null), 409);
+        assertStatus(() -> api.issueClientCreditNote(invoiceId, new ClientCreditNoteRequest()
+                .reason("Too much").amount(new BigDecimal("4000.01")), null), 409);
+        // Both an amount and lines, or neither, is a malformed request.
+        assertStatus(() -> api.issueClientCreditNote(invoiceId, new ClientCreditNoteRequest()
+                .reason("Unclear"), null), 400);
+        // Running the bill is not authority to give money back.
+        ClientBillingApi biller = client(desk, List.of("CLIENT_BILLING_RUN",
+                "CLIENT_BILLING_READ"));
+        assertStatus(() -> biller.issueClientCreditNote(invoiceId, new ClientCreditNoteRequest()
+                .reason("Goodwill").amount(BigDecimal.ONE), null), 403);
+
+        // The statement, one entry a page, still carries the whole-history balance.
+        ClientStatementSlice first = api.getClientStatement(clientA, null, 1);
+        assertThat(first.getItems()).singleElement().satisfies(entry -> {
+            assertThat(entry.getEntryType()).isEqualTo(ClientStatementEntry.EntryTypeEnum.INVOICE);
+            assertThat(entry.getDebit()).isEqualByComparingTo("5428");
+            assertThat(entry.getBalance()).isEqualByComparingTo("5428");
+        });
+        assertThat(first.getHasMore()).isTrue();
+        ClientStatementSlice second = api.getClientStatement(clientA, first.getNextCursor(), 1);
+        assertThat(second.getItems()).singleElement().satisfies(entry -> {
+            assertThat(entry.getEntryType())
+                    .isEqualTo(ClientStatementEntry.EntryTypeEnum.CREDIT_NOTE);
+            assertThat(entry.getInvoiceNo()).isEqualTo(invoice.getInvoiceNo());
+            assertThat(entry.getCredit()).isEqualByComparingTo("708");
+            assertThat(entry.getBalance()).isEqualByComparingTo("4720");
+        });
+        assertThat(second.getHasMore()).isFalse();
+        assertStatus(() -> api.getClientStatement(clientA, "not-a-cursor", null), 409);
+
+        // A portal user of another client sees neither.
+        api.grantClientPortalAccess(clientB,
+                new ClientPortalUserRequest().userId(portalUser.id()), null);
+        ClientBillingApi portalB = client(portalUser, PORTAL);
+        assertStatus(() -> portalB.getClientStatement(clientA, null, null), 403);
+        assertStatus(() -> portalB.getClientCreditNote(creditNoteId), 404);
+        assertThat(portalB.getClientStatement(clientB, null, null).getItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("storage computed from the warehouse ledger is charged once and shown day by day")
+    void ledgerStorageOverHttp() {
+        ClientBillingApi api = client(desk, DESK);
+        api.publishClientContract(contractRequest(clientA, "A-LEDGER", LAST_MONTH.minusMonths(2))
+                .storageUnitsPerPallet(10), null);
+
+        UUID tenantId = desk.tenantId();
+        UUID warehouseId = asSetup(tenantId, () -> terminals.register(
+                new RegisterTerminalCommand.PointRadius(orgUnitId, "WH-" + clientA.toString().substring(0, 8), "WH",
+                        Terminal.FunctionalCategory.WAREHOUSE, new LatLon(19.1, 72.9), 300, 4,
+                        null, null, 45, List.of())));
+        UUID ownSku = asSetup(tenantId, () -> warehouseSetup.createSku("A-SKU-" + clientA.toString().substring(0, 8),
+                "Client A widgets", clientA, "EA"));
+        UUID otherSku = asSetup(tenantId, () -> warehouseSetup.createSku("B-SKU-" + clientB.toString().substring(0, 8),
+                "Client B gadgets", clientB, "EA"));
+        // 25 units: 3 pallets of 10, from day 1 until day 11.
+        move(tenantId, warehouseId, ownSku, 25, LAST_MONTH);
+        move(tenantId, warehouseId, otherSku, 400, LAST_MONTH);
+        move(tenantId, warehouseId, ownSku, -25, LAST_MONTH.plusDays(10));
+
+        ClientStorage computed = api.computeClientStorage(clientA,
+                new ClientStorageComputationRequest().period(LAST_MONTH.plusDays(3)), null);
+        assertThat(computed.getComputed()).isTrue();
+        assertThat(computed.getPeriodStart()).isEqualTo(LAST_MONTH);
+        assertThat(computed.getUnitDays()).isEqualTo(250L);
+        assertThat(computed.getPalletDays()).isEqualTo(30L);
+        assertThat(computed.getDays()).hasSize(LAST_MONTH.lengthOfMonth());
+        assertThat(computed.getDays().get(0).getPallets()).isEqualTo(3L);
+
+        // Again: the same answer, and still one charge.
+        ClientStorage again = api.computeClientStorage(clientA,
+                new ClientStorageComputationRequest().period(LAST_MONTH), null);
+        assertThat(again.getPalletDays()).isEqualTo(30L);
+        assertThat(api.getClientStorage(LAST_MONTH, clientA).getPalletDays()).isEqualTo(30L);
+        assertThat(api.listClientCharges(LAST_MONTH, clientA, null, null).getItems())
+                .singleElement().satisfies(charge -> {
+                    assertThat(charge.getServiceType()).isEqualTo(ClientServiceType.STORAGE);
+                    assertThat(charge.getQuantity()).isEqualByComparingTo("30");
+                });
+        // Hand-recorded storage for a ledger-computed day would bill it twice.
+        assertStatus(() -> api.recordClientServiceUsage(clientA, usage(
+                ClientServiceType.STORAGE, null, "5", 4, "by-hand"), null), 409);
+        // A month still running has no closing stock for its last day yet.
+        assertStatus(() -> api.computeClientStorage(clientA,
+                new ClientStorageComputationRequest().period(LocalDate.now(ZoneOffset.UTC)),
+                null), 409);
+    }
+
+    @Test
+    @DisplayName("billing, usage, credit notes and ledger storage are held to the caller's organisational subtree")
+    void subtreePolicyHoldsCreditNotesAndStorage() {
+        ClientBillingApi head = client(desk, DESK);
+        publishContract(head, clientA, "A");
+        record(head, clientA, ClientServiceType.STORAGE, null, "100", 5, "a-1");
+        UUID invoiceId = head.runClientBilling(clientA,
+                new ClientBillingRunRequest().period(LAST_MONTH), null).getId();
+
+        // A caller in a branch beneath head office, whose client was filed at
+        // head office: outside their subtree, so refused despite the permission.
+        String branchPath = orgPath + "north/";
+        ClientBillingApi branch = clientWithToken(tokens.issueAccessToken(desk, branchPath,
+                DESK).value());
+        assertStatus(() -> branch.issueClientCreditNote(invoiceId, new ClientCreditNoteRequest()
+                .reason("Goodwill").amount(BigDecimal.ONE), null), 403);
+        assertStatus(() -> branch.runClientBilling(clientA,
+                new ClientBillingRunRequest().period(LAST_MONTH), null), 403);
+        assertStatus(() -> branch.recordClientServiceUsage(clientA, usage(
+                ClientServiceType.STORAGE, null, "1", 6, "branch-1"), null), 403);
+        assertStatus(() -> branch.computeClientStorage(clientA,
+                new ClientStorageComputationRequest().period(LAST_MONTH), null), 403);
+
+        // Head office files anywhere beneath it.
+        head.issueClientCreditNote(invoiceId, new ClientCreditNoteRequest()
+                .reason("Goodwill").amount(BigDecimal.ONE), null);
+    }
+
     // --------------------------------------------------------------- helpers
 
     private void publishContract(ClientBillingApi api, UUID client, String prefix) {
@@ -327,6 +514,29 @@ class ClientBillingApiTest {
                 .sourceKey(key);
     }
 
+    /** A ledger movement dated in the past, which no warehouse command can write. */
+    private void move(UUID tenantId, UUID warehouseId, UUID skuId, int quantity, LocalDate day) {
+        TenantContext.runWith(tenantId, orgPath, () ->
+                new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                        jdbc.sql("""
+                                        INSERT INTO stock_movement (id, tenant_id, warehouse_id,
+                                                                    movement_type, location_type,
+                                                                    location_id, sku_id, lot_no,
+                                                                    quantity, actor, occurred_at,
+                                                                    version)
+                                        VALUES (gen_random_uuid(), :tenantId, :warehouseId,
+                                                :type, 'DOCK', :warehouseId, :skuId, '',
+                                                :quantity, 'ClientBillingApiTest', :at, 0)
+                                        """)
+                                .param("tenantId", tenantId)
+                                .param("warehouseId", warehouseId)
+                                .param("type", quantity > 0 ? "RECEIPT" : "DISPATCH")
+                                .param("skuId", skuId)
+                                .param("quantity", quantity)
+                                .param("at", day.atTime(9, 0).atOffset(ZoneOffset.UTC))
+                                .update()));
+    }
+
     private static void assertStatus(Runnable call, int status) {
         assertThatThrownBy(call::run).isInstanceOfSatisfying(FeignException.class,
                 e -> assertThat(e.status()).isEqualTo(status));
@@ -350,7 +560,9 @@ class ClientBillingApiTest {
     }
 
     private <T> T asSetup(UUID tenantId, Supplier<T> action) {
-        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("PARTNER_CREATE"));
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("PARTNER_CREATE"),
+                new SimpleGrantedAuthority("TERMINAL_CREATE"),
+                new SimpleGrantedAuthority("WAREHOUSE_SETUP"));
         SecurityContextHolder.getContext().setAuthentication(
                 new TestingAuthenticationToken(SETUP_PRINCIPAL, null, authorities));
         try {

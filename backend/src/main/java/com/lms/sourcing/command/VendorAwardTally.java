@@ -86,6 +86,31 @@ public class VendorAwardTally {
                 .update();
     }
 
+    /**
+     * Takes back an award that was withdrawn, from the month it was counted in.
+     *
+     * <p>Without it a cancelled award keeps counting against the vendor's
+     * fair share, and re-offering the load awards it a second time. Never
+     * below zero, so retracting twice (or an award counted before the tally
+     * existed) cannot make a negative share.
+     */
+    public void retractAward(UUID tenantId, UUID guideId, UUID vendorPartnerId,
+                             java.time.Instant awardedAt) {
+        jdbc.sql("""
+                        UPDATE vendor_award_tally
+                           SET awarded_count = GREATEST(awarded_count - 1, 0)
+                         WHERE tenant_id = :tenantId
+                           AND guide_id = :guideId
+                           AND period_month = :period
+                           AND vendor_partner_id = :vendorId
+                        """)
+                .param("tenantId", tenantId)
+                .param("guideId", guideId)
+                .param("period", monthOf(awardedAt.atZone(java.time.ZoneOffset.UTC).toLocalDate()))
+                .param("vendorId", vendorPartnerId)
+                .update();
+    }
+
     /** The first of the month, so the period is a value rather than a range. */
     private static LocalDate monthOf(LocalDate date) {
         return date.withDayOfMonth(1);

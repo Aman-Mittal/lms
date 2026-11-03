@@ -15,8 +15,11 @@
  */
 package com.lms.planning.command;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
+import com.lms.planning.command.domain.LoadUnit;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -58,20 +61,55 @@ public class PlanningLinks {
      * Puts a consignment on a load at the next drop position.
      *
      * <p>No {@code ON CONFLICT DO NOTHING} here, deliberately. The unique
-     * constraint on {@code consignment_id} is what stops a consignment being
-     * booked onto two loads, and swallowing that violation would turn
-     * double-booked freight into a silent no-op that the operator reads as
-     * success.
+     * constraint on {@code (consignment_id, leg)} is what stops a consignment
+     * being booked onto two loads for the same leg, and swallowing that
+     * violation would turn double-booked freight into a silent no-op that the
+     * operator reads as success.
+     *
+     * @param leg the load's leg, copied onto the link so that a docket may be
+     *            on one line haul and one delivery load, never two of either
      */
-    public void linkToLoad(UUID tenantId, UUID loadId, UUID consignmentId, int dropSequence) {
+    public void linkToLoad(UUID tenantId, UUID loadId, UUID consignmentId, int dropSequence,
+                           LoadUnit.LtlLeg leg) {
         jdbc.sql("""
-                        INSERT INTO load_consignment (tenant_id, load_id, consignment_id, drop_sequence)
-                        VALUES (:tenantId, :loadId, :consignmentId, :dropSequence)
+                        INSERT INTO load_consignment
+                               (tenant_id, load_id, consignment_id, drop_sequence, leg)
+                        VALUES (:tenantId, :loadId, :consignmentId, :dropSequence, :leg)
                         """)
                 .param("tenantId", tenantId)
                 .param("loadId", loadId)
                 .param("consignmentId", consignmentId)
                 .param("dropSequence", dropSequence)
+                .param("leg", leg.name())
+                .update();
+    }
+
+    /**
+     * Puts several consignments on a load in one statement, at consecutive
+     * drop positions from {@code firstDropSequence} in the order given.
+     *
+     * <p>The same unique constraint as {@link #linkToLoad} guards it, and a
+     * violation by any one of them aborts the whole insert: the batch boards
+     * together or not at all.
+     */
+    public void linkAllToLoad(UUID tenantId, UUID loadId, List<UUID> consignmentIds,
+                              int firstDropSequence, LoadUnit.LtlLeg leg) {
+        if (consignmentIds.isEmpty()) {
+            return;
+        }
+        jdbc.sql("""
+                        INSERT INTO load_consignment
+                               (tenant_id, load_id, consignment_id, drop_sequence, leg)
+                        SELECT :tenantId, :loadId, boarding.id,
+                               CAST(:first + boarding.position - 1 AS integer), :leg
+                          FROM unnest(CAST(ARRAY[:ids] AS uuid[]))
+                               WITH ORDINALITY AS boarding (id, position)
+                        """)
+                .param("tenantId", tenantId)
+                .param("loadId", loadId)
+                .param("ids", consignmentIds)
+                .param("first", firstDropSequence)
+                .param("leg", leg.name())
                 .update();
     }
 
@@ -100,5 +138,94 @@ public class PlanningLinks {
                 .param("loadId", loadId)
                 .param("consignmentId", consignmentId)
                 .update();
+    }
+
+    /** Where a consignment sits: the load, and that load's status. */
+    public record Placement(UUID consignmentId, UUID loadId, String loadStatus) {
+    }
+
+    /**
+     * Every load placement of an order's consignments, in one statement.
+     *
+     * <p>Served by {@code consignment_order_idx} and the unique
+     * {@code (consignment_id, leg)} index on {@code load_consignment}.
+     */
+    public List<Placement> placementsOfOrder(UUID tenantId, UUID orderId) {
+        return jdbc.sql("""
+                        SELECT lc.consignment_id, lc.load_id, l.status
+                          FROM load_consignment lc
+                          JOIN load_unit l ON l.id = lc.load_id
+                         WHERE lc.tenant_id = :tenantId
+                           AND lc.consignment_id IN (SELECT c.id FROM consignment c
+                                                      WHERE c.tenant_id = :tenantId
+                                                        AND c.order_id = :orderId)
+                        """)
+                .param("tenantId", tenantId)
+                .param("orderId", orderId)
+                .query((rs, n) -> new Placement(rs.getObject("consignment_id", UUID.class),
+                        rs.getObject("load_id", UUID.class), rs.getString("status")))
+                .list();
+    }
+
+    /** Takes consignments off whatever loads hold them, in one statement. */
+    public void unlinkAll(UUID tenantId, Collection<UUID> consignmentIds) {
+        if (consignmentIds.isEmpty()) {
+            return;
+        }
+        jdbc.sql("""
+                        DELETE FROM load_consignment
+                         WHERE tenant_id = :tenantId AND consignment_id IN (:ids)
+                        """)
+                .param("tenantId", tenantId)
+                .param("ids", consignmentIds)
+                .update();
+    }
+
+    /**
+     * Links every part of a split consignment to the order lines the whole was
+     * cut from, in one statement: a part may hold some of any of them.
+     *
+     * <p>Served by the primary key on {@code consignment_line} and
+     * {@code consignment_parent_idx}.
+     */
+    public void linkPartsToLinesOf(UUID tenantId, UUID parentId) {
+        jdbc.sql("""
+                        INSERT INTO consignment_line (tenant_id, consignment_id, order_line_id)
+                        SELECT :tenantId, part.id, line.order_line_id
+                          FROM consignment part
+                          JOIN consignment_line line
+                            ON line.tenant_id = :tenantId AND line.consignment_id = :parentId
+                         WHERE part.tenant_id = :tenantId AND part.parent_consignment_id = :parentId
+                        ON CONFLICT DO NOTHING
+                        """)
+                .param("tenantId", tenantId)
+                .param("parentId", parentId)
+                .update();
+    }
+
+    /**
+     * Of these orders, the ones whose consignments have all been delivered or
+     * cancelled and at least one delivered: nothing is left to carry.
+     *
+     * <p>A split consignment is neither: it carries nothing itself, and is
+     * left out, so its order closes when its parts have been delivered.
+     *
+     * <p>Served by {@code consignment_order_idx}.
+     */
+    public List<UUID> orderIdsWithNothingLeftToCarry(UUID tenantId, Collection<UUID> orderIds) {
+        if (orderIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("""
+                        SELECT order_id FROM consignment
+                         WHERE tenant_id = :tenantId AND order_id IN (:orderIds)
+                         GROUP BY order_id
+                        HAVING count(*) FILTER (WHERE status NOT IN ('DELIVERED', 'CANCELLED', 'SPLIT')) = 0
+                           AND count(*) FILTER (WHERE status = 'DELIVERED') > 0
+                        """)
+                .param("tenantId", tenantId)
+                .param("orderIds", orderIds)
+                .query(UUID.class)
+                .list();
     }
 }

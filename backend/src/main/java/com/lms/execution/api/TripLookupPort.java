@@ -23,23 +23,34 @@ import java.util.UUID;
  *
  * <p>For the control tower, which raises tickets against trips and has to
  * know which vehicle to locate and whether the trip is still a live thing to
- * raise against. Read-only and deliberately narrow: a caller learns the
- * trip's identity and state, never the aggregate.
+ * raise against; and for multimodal, which checks that a road leg's trip runs
+ * between the leg's own terminals. Read-only and deliberately narrow: a caller
+ * learns the trip's identity and state, never the aggregate.
  */
 public interface TripLookupPort {
 
     Optional<TripSnapshot> find(UUID tripId);
 
     /**
-     * @param vehicleId null until a vehicle is nominated, which is a normal
-     *                  state for a trip that has not reached the gate
+     * @param vehicleId             null until a vehicle is nominated, which is a
+     *                              normal state for a trip that has not reached
+     *                              the gate
+     * @param loadId                the load the trip carries; added for the
+     *                              milk-run payable, which finance prices
+     *                              against the trip's load
+     * @param originTerminalId      where the trip starts
+     * @param destinationTerminalId where it ends; null when the trip was raised
+     *                              without one
      */
     record TripSnapshot(
             UUID tripId,
             String tripNo,
             String status,
             UUID vehicleId,
-            UUID vendorPartnerId) {
+            UUID vendorPartnerId,
+            UUID loadId,
+            UUID originTerminalId,
+            UUID destinationTerminalId) {
 
         public boolean isCancelled() {
             return "CANCELLED".equals(status);

@@ -30,14 +30,19 @@ import com.lms.client.ApiClient;
 import com.lms.client.api.LtlRatingApi;
 import com.lms.client.api.OrdersApi;
 import com.lms.client.api.PlanningApi;
+import com.lms.client.api.SettlementApi;
 import com.lms.client.model.AddOrderLineRequest;
 import com.lms.client.model.AssignConsignmentRequest;
 import com.lms.client.model.AssignLtlZoneRequest;
 import com.lms.client.model.Consignment;
+import com.lms.client.model.ConsignmentSlice;
 import com.lms.client.model.DocketReceivable;
 import com.lms.client.model.DocketReceivableSlice;
 import com.lms.client.model.FreightMode;
+import com.lms.client.model.FuelSurchargeRequest;
 import com.lms.client.model.IdResponse;
+import com.lms.client.model.Load;
+import com.lms.client.model.LtlLeg;
 import com.lms.client.model.OpenLoadRequest;
 import com.lms.client.model.PublishLtlRateCardRequest;
 import com.lms.client.model.RaiseOrderRequest;
@@ -139,8 +144,8 @@ class FreightModeApiTest {
             customerOne = partner("CUST1-" + salt);
             customerTwo = partner("CUST2-" + salt);
             consignee = partner("CONS-" + salt);
-            bombay = depot("HUB-BOM-" + salt, 19.10, 72.90);
-            delhi = depot("HUB-DEL-" + salt, 28.60, 77.20);
+            bombay = hub("HUB-BOM-" + salt, 19.10, 72.90);
+            delhi = hub("HUB-DEL-" + salt, 28.60, 77.20);
             site = depot("SITE-A-" + salt, 28.40, 77.00);
             remoteSite = depot("SITE-B-" + salt, 29.40, 77.90);
             lorry = fleet.registerVehicle(orgUnitId, null, "MH-04-" + salt, "TRUCK", "RIGID",
@@ -212,6 +217,64 @@ class FreightModeApiTest {
     }
 
     @Test
+    @DisplayName("the booking month's fuel index surcharges the docket, and a per-kg ODA card is honoured")
+    void fuelAndOdaPerKgOverHttp() {
+        LtlRatingApi rating = client(LtlRatingApi.class);
+        OrdersApi orders = client(OrdersApi.class);
+        PlanningApi planning = client(PlanningApi.class);
+        SettlementApi settlement = client(SettlementApi.class);
+
+        rating.assignLtlZone(bombay, new AssignLtlZoneRequest().zoneCode("WEST"));
+        rating.assignLtlZone(delhi, new AssignLtlZoneRequest().zoneCode("NORTH"));
+        rating.assignLtlZone(remoteSite,
+                new AssignLtlZoneRequest().zoneCode("NORTH").outOfDeliveryArea(true));
+        rating.publishLtlRateCard(new PublishLtlRateCardRequest()
+                .code("WN-ODA-" + salt).originZone("WEST").destinationZone("NORTH")
+                .effectiveFrom(LocalDate.now(ZoneOffset.UTC).minusDays(7))
+                .rateBasis(PublishLtlRateCardRequest.RateBasisEnum.PER_KG)
+                .rateAmount(new BigDecimal("12")).minimumChargeableWeightKg(new BigDecimal("50"))
+                .kgPerCft(new BigDecimal("6")).docketCharge(new BigDecimal("100"))
+                .odaBasis(PublishLtlRateCardRequest.OdaBasisEnum.PER_KG)
+                .odaRatePerKg(new BigDecimal("3.5")).odaMinimum(new BigDecimal("250")), null);
+        settlement.recordFuelSurcharge(new FuelSurchargeRequest()
+                .month(LocalDate.now(ZoneOffset.UTC)).surchargePct(new BigDecimal("7.5")), null);
+
+        book(orders, planning, "LTL-F", customerOne, remoteSite, "200");
+
+        // Freight 200 x 12 = 2400, fuel 7.5% of that = 180, docket 100,
+        // ODA 200 kg x 3.50 = 700 (above the 250 floor): 3380.
+        DocketReceivable receivable = onlyReceivable(rating, customerOne);
+        assertThat(receivable.getStatus()).isEqualTo(DocketReceivable.StatusEnum.PRICED);
+        assertThat(receivable.getFreightAmount()).isEqualByComparingTo("2400.00");
+        assertThat(receivable.getFuelSurchargePct()).isEqualByComparingTo("7.5");
+        assertThat(receivable.getFuelSurcharge()).isEqualByComparingTo("180.00");
+        assertThat(receivable.getOdaBasis()).isEqualTo(DocketReceivable.OdaBasisEnum.PER_KG);
+        assertThat(receivable.getOdaSurcharge()).isEqualByComparingTo("700.00");
+        assertThat(receivable.getTotalAmount()).isEqualByComparingTo("3380.00");
+    }
+
+    @Test
+    @DisplayName("a delivery load is opened at a hub and its queue is listed")
+    void deliveryLegOverHttp() {
+        PlanningApi planning = client(PlanningApi.class);
+
+        UUID delivery = planning.openLoad(new OpenLoadRequest().orgUnitId(orgUnitId)
+                .loadNo("LOAD-DL-" + salt).originTerminalId(delhi).vehicleId(lorry)
+                .freightMode(FreightMode.LTL).ltlLeg(LtlLeg.DELIVERY), null).getId();
+        Load load = planning.getLoad(delivery);
+        assertThat(load.getLtlLeg()).isEqualTo(LtlLeg.DELIVERY);
+        assertThat(load.getFreightMode()).isEqualTo("LTL");
+
+        ConsignmentSlice queue = planning.listDocketsAwaitingDelivery(delhi, null, null);
+        assertThat(queue.getItems()).isEmpty();
+        assertThat(queue.getHasMore()).isFalse();
+
+        assertConflict(() -> planning.openLoad(new OpenLoadRequest().orgUnitId(orgUnitId)
+                .loadNo("LOAD-DLX-" + salt).originTerminalId(delhi).vehicleId(lorry)
+                .ltlLeg(LtlLeg.DELIVERY), null), "delivery-leg-only-for-ltl");
+    }
+
+    @Test
     @DisplayName("mode refusals arrive as documented conflicts")
     void refusals() {
         OrdersApi orders = client(OrdersApi.class);
@@ -221,6 +284,10 @@ class FreightModeApiTest {
                 .freightMode(FreightMode.RAIL), null), "freight-mode-not-supported");
         assertConflict(() -> orders.raiseOrder(order("LTL-X", customerOne)
                 .freightMode(FreightMode.LTL), null), "ltl-order-needs-hubs");
+        // A customer's site is not a hub.
+        assertConflict(() -> orders.raiseOrder(order("LTL-Y", customerOne)
+                .freightMode(FreightMode.LTL).originHubTerminalId(site)
+                .destinationHubTerminalId(delhi), null), "ltl-hub-not-a-hub");
 
         // A full-truckload consignment cannot ride on a consolidated vehicle.
         UUID ftlOrder = orders.raiseOrder(order("FTL-1", customerOne), null).getId();
@@ -312,9 +379,18 @@ class FreightModeApiTest {
     }
 
     private UUID depot(String code, double lat, double lon) {
+        return terminal(code, Terminal.FunctionalCategory.CUSTOMER_SITE, lat, lon);
+    }
+
+    /** Part loads may only be booked between terminals registered as hubs. */
+    private UUID hub(String code, double lat, double lon) {
+        return terminal(code, Terminal.FunctionalCategory.HUB, lat, lon);
+    }
+
+    private UUID terminal(String code, Terminal.FunctionalCategory category, double lat,
+                          double lon) {
         return terminals.register(new RegisterTerminalCommand.PointRadius(orgUnitId, code, code,
-                Terminal.FunctionalCategory.CUSTOMER_SITE, new LatLon(lat, lon), 500, 2, null,
-                null, 45, List.of()));
+                category, new LatLon(lat, lon), 500, 2, null, null, 45, List.of()));
     }
 
     /** Runs setup scoped to the tenant and signed in with what the setup needs. */

@@ -1,0 +1,48 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/admin/demo-reset:
+  post:
+    tags: [Demo data]
+    operationId: resetDemoData
+    summary: Put the demo tenant back to its seeded state
+    description: |
+      Requires `DEMO_RESET`. Deletes every row the demo tenant owns, in every
+      table, and seeds it again (its administrator, root unit, role and default
+      access policies), in one transaction. Only on a deployment with the demo
+      switched on, and only from inside the configured demo tenant: anywhere
+      else it answers 404 `not-found`, as for any path that is not there.
+
+      Every user is recreated, the caller's included. Tokens are stateless, so
+      the caller's keeps working until it expires, but `signInAgain` says it
+      names a user that no longer exists.
+
+      The body must name the demo tenant's code in `confirm`; anything else is
+      refused with `code: demo-reset-unconfirmed`, so a replayed or empty
+      request cannot reset the demo by accident.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/DemoResetRequest" }
+    responses:
+      "200":
+        description: The demo was reset.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DemoReset" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }

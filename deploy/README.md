@@ -28,16 +28,30 @@ build runs on Render.
 2. **Make the package public.** GitHub → Packages → `lms` → Package settings →
    Change visibility → Public. Render pulls with no credential, so a private
    package fails the deploy.
-3. **Create the Blueprint.** Render → New → Blueprint → this repository, with
+3. **Create a Postgres.** Render's own free Postgres expires after 30 days,
+   so use an external one (Neon, Supabase, ...). Take the *direct* connection
+   string, not a transaction-mode pooler: the application uses `SET ROLE` and
+   per-request settings. Keep `?sslmode=require` if the provider needs it.
+4. **Create the Blueprint.** Render → New → Blueprint → this repository, with
    the blueprint path `deploy/render.yaml`. It creates the free web service and
-   the free Postgres and wires `DATABASE_URL` between them.
-4. **Recommended: set a JWT keypair.** Set `JWT_PUBLIC_KEY` and
+   asks for `DATABASE_URL` (the string from step 3), `JWT_PUBLIC_KEY` and
+   `JWT_PRIVATE_KEY`.
+5. **Recommended: set a JWT keypair.** Set `JWT_PUBLIC_KEY` and
    `JWT_PRIVATE_KEY` on the service (`deploy/.env.example` shows how to mint
    them). Without them an ephemeral pair is generated per process, and since a
    free instance sleeps after 15 idle minutes, every wake signs everybody out.
-5. **Sign in.** `POST /api/v1/auth/login` with tenant `demo`, email
+6. **Sign in.** `POST /api/v1/auth/login` with tenant `demo`, email
    `admin@demo.local`, and the password Render generated for
    `DEMO_ADMIN_PASSWORD` (the service's *Environment* tab).
+
+### The database login
+
+The first migration creates a restricted role, `lms_app`, and every request
+runs as it; that is what makes row-level security apply. The role in
+`DATABASE_URL` must be allowed to create roles and to be granted `lms_app`
+(Neon's default owner role is). If it cannot, the migration only logs
+`Could not grant lms_app ... SET ROLE will be skipped` and tenant isolation is
+no longer enforced, so look for that line in the first startup log.
 
 ## Checking a deployment
 
@@ -64,8 +78,8 @@ and one administrator. Each step is create-if-absent:
 - later starts change nothing, and an administrator's password is never reset;
 - permissions added by later migrations are granted to the role on the next
   start;
-- when the free database expires (30 days after creation) and is replaced, the
-  next start rebuilds the tenant unattended.
+- when the database is replaced, the next start rebuilds the tenant
+  unattended.
 
 There is no default password. Enabled without one, the seeder logs an error
 and the service still starts.
@@ -74,9 +88,11 @@ and the service still starts.
 
 - **Cold start.** Render takes roughly a minute to wake a sleeping service; the
   application itself starts in under a second once the container runs.
-- **Database expiry.** Free Postgres expires 30 days after creation, with a
-  14-day grace period. Recreate it from the Blueprint; migrations and the seed
-  rebuild everything else.
+- **Database expiry.** An external Postgres does not expire with Render's free
+  plan. Render's own free Postgres does (30 days after creation, 14-day grace),
+  which is why the Blueprint no longer creates one. If your provider's free
+  tier also recycles databases, point `DATABASE_URL` at the new one; migrations
+  and the seed rebuild everything else.
 - **Throughput.** A single 0.1 CPU instance sustains roughly 50–100 GPS pings
   per second. That is a demo figure, not the production target.
 

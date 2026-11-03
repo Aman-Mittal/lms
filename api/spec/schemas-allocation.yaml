@@ -1,0 +1,102 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+AllocationRuleAction:
+  type: string
+  enum: [PREFER, EXCLUDE]
+
+AllocationRuleVendor:
+  type: object
+  properties:
+    vendorPartnerId: { type: string, format: uuid }
+    vendorName: { type: string }
+
+AllocationRuleRequest:
+  type: object
+  properties:
+    name: { type: string, maxLength: 120 }
+    priority:
+      type: integer
+      minimum: 0
+      maximum: 100000
+      description: The lowest number is tried first. 100 if omitted.
+    active: { type: boolean, description: True if omitted. }
+    originTerminalId: { type: string, format: uuid }
+    destinationTerminalId: { type: string, format: uuid }
+    minWeightKg:
+      type: number
+      description: Inclusive. Tested against the load's planned weight.
+    maxWeightKg: { type: number, description: Inclusive. }
+    materialClass:
+      type: string
+      enum: [GENERAL, FOOD, PHARMA, CHEMICAL, TOXIC, FLAMMABLE, FRAGILE, TEMPERATURE_CONTROLLED]
+      description: Holds when any consignment on the load has this class.
+    action: { $ref: "#/components/schemas/AllocationRuleAction" }
+    vendorPartnerIds:
+      type: array
+      minItems: 1
+      maxItems: 20
+      items: { type: string, format: uuid }
+      description: Active vendors, each named once. For PREFER the order is the order asked.
+  required: [name, action, vendorPartnerIds]
+
+AllocationRule:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    name: { type: string }
+    priority: { type: integer }
+    active: { type: boolean }
+    originTerminalId: { type: string, format: uuid }
+    destinationTerminalId: { type: string, format: uuid }
+    minWeightKg: { type: number }
+    maxWeightKg: { type: number }
+    materialClass: { type: string }
+    action: { $ref: "#/components/schemas/AllocationRuleAction" }
+    vendors:
+      type: array
+      items: { $ref: "#/components/schemas/AllocationRuleVendor" }
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+
+AllocationRuleSlice:
+  type: object
+  description: One page. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/AllocationRule" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+AllocationEvaluationRequest:
+  type: object
+  properties:
+    loadId: { type: string, format: uuid }
+  required: [loadId]
+
+AllocationEvaluation:
+  type: object
+  properties:
+    loadId: { type: string, format: uuid }
+    loadNo: { type: string }
+    matchedRuleId: { type: string, format: uuid, description: Absent when no rule would fire. }
+    matchedRuleName: { type: string }
+    action: { $ref: "#/components/schemas/AllocationRuleAction" }
+    nextVendor:
+      $ref: "#/components/schemas/AllocationRuleVendor"
+    candidateOrder:
+      type: array
+      items: { $ref: "#/components/schemas/AllocationRuleVendor" }

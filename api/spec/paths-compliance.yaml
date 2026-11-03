@@ -1,0 +1,44 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/compliance/expiring:
+  get:
+    tags: [Compliance]
+    operationId: listExpiringDocuments
+    summary: Certificates that have lapsed or are about to
+    description: |
+      Spans vehicles, drivers and partners, because the question does.
+      Includes what has already expired: a list of what is about to lapse that
+      omits what already has answers 'is anything wrong' with 'no' on the day
+      it matters most.
+    parameters:
+      - name: withinDays
+        in: query
+        schema: { type: integer, minimum: 0, maximum: 3650, default: 30 }
+        description: How far ahead to look. Already-expired documents are
+          always included.
+    responses:
+      "200":
+        description: Soonest first.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ComplianceDocument" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }

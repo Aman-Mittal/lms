@@ -47,10 +47,30 @@
  * and the carrier payable are kept. A separate module would have to read the
  * other's tables to answer that. Freight modes themselves belong to order and
  * planning, which decide what a docket is and what may share a vehicle; this
- * module only prices what they booked, and depends on them one way.
+ * module only prices what they booked, and depends on them one way. A docket
+ * carries the fuel surcharge of its booking month, on its freight alone, from
+ * the same monthly index the carrier's bill is surcharged from.
+ *
+ * <p>Listens to {@code milkrun::events} for completed circuits. A circuit is
+ * priced by its route -- a run rate plus a fee per supplier collected from --
+ * so the milk-run module computes the charge and finance records it as the
+ * carrier's payable: a freight bill like any other, listed and matched against
+ * the vendor's claim by the same tolerance rule, but keyed on the circuit run
+ * and carrying no lane tariff. The circuit's bill supersedes an unsettled trip
+ * bill for the same lorry, so one movement is never payable twice.
+ *
+ * <p>Listens to {@code multimodal::events} for released rail legs. A rail leg
+ * has no trip, load or lane tariff; its expected charge is the cost recorded on
+ * the leg when the itinerary was planned (from the rail rate card or the
+ * planner's figure). Finance raises the rail carrier's freight bill with the
+ * leg as its subject, once per leg, and from there it is matched, disputed and
+ * approved by the same rule and the same approval limit as any other bill.
+ * Settlement holds are keyed on trips, so a rail leg's bill is not frozen by
+ * them: a missed-connection ticket is on the predecessor's trip, not the leg.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
         allowedDependencies = {"planning::api", "planning::events", "execution::events",
-                "controltower::events", "identity::access"})
+                "controltower::events", "identity::access", "milkrun::events",
+                "multimodal::events", "masterdata::api"})
 package com.lms.finance;

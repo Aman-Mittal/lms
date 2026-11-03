@@ -30,6 +30,14 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
     Optional<Consignment> findByTrackingRef(@Param("tenantId") UUID tenantId,
                                             @Param("trackingRef") String trackingRef);
 
+    /** Served by {@code consignment_handling_unit_idx}. */
+    @Query("""
+            SELECT * FROM consignment
+             WHERE tenant_id = :tenantId AND handling_unit_id = :handlingUnitId
+            """)
+    Optional<Consignment> findByHandlingUnit(@Param("tenantId") UUID tenantId,
+                                             @Param("handlingUnitId") UUID handlingUnitId);
+
     /** Served by {@code consignment_order_idx}. */
     @Query("""
             SELECT * FROM consignment
@@ -37,6 +45,18 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
              ORDER BY tracking_ref
             """)
     List<Consignment> findByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
+
+    /**
+     * How many of the order's consignments are live: not cancelled, and not
+     * split -- a split one lives on in its parts, which are counted. Served by
+     * {@code consignment_order_idx}.
+     */
+    @Query("""
+            SELECT count(*) FROM consignment
+             WHERE tenant_id = :tenantId AND order_id = :orderId
+               AND status NOT IN ('CANCELLED', 'SPLIT')
+            """)
+    long countLiveByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
 
     /**
      * The consignments already on a load.
@@ -52,4 +72,12 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
              ORDER BY lc.drop_sequence
             """)
     List<Consignment> findOnLoad(@Param("tenantId") UUID tenantId, @Param("loadId") UUID loadId);
+
+    /** A split consignment's parts, in receipt order. Served by {@code consignment_parent_idx}. */
+    @Query("""
+            SELECT * FROM consignment
+             WHERE tenant_id = :tenantId AND parent_consignment_id = :parentId
+             ORDER BY tracking_ref
+            """)
+    List<Consignment> findParts(@Param("tenantId") UUID tenantId, @Param("parentId") UUID parentId);
 }

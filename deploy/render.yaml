@@ -22,9 +22,11 @@
 # Two free-tier facts this file is shaped around:
 #   * The web service sleeps after 15 minutes of inactivity. The native image
 #     makes the wake-up cheap; a JVM image would not.
-#   * The free Postgres EXPIRES 30 DAYS AFTER CREATION. Re-provisioning is
-#     expected, which is why migrations and demo seed data must be idempotent
-#     and must run unattended on startup.
+#   * Render's own free Postgres EXPIRES 30 DAYS AFTER CREATION and takes the
+#     data with it, so this Blueprint does not create one. DATABASE_URL is a
+#     secret you set to an external Postgres (Neon, Supabase, ...); see
+#     deploy/README.md. Migrations and demo seed data are idempotent and run
+#     unattended on startup, so a replaced database rebuilds itself.
 
 services:
   - type: web
@@ -39,11 +41,11 @@ services:
       - key: PORT
         value: 8080
 
-      # Render injects the connection string; the app maps it to JDBC form.
+      # The external Postgres connection string, set in the Render dashboard
+      # (postgresql://user:password@host:port/db?sslmode=require). The app maps
+      # it to JDBC form. `sync: false` keeps it out of this file and out of git.
       - key: DATABASE_URL
-        fromDatabase:
-          name: lms-postgres
-          property: connectionString
+        sync: false
 
       # Sized for 0.1 CPU against a small Postgres. Raising these buys
       # contention, not throughput.
@@ -71,7 +73,7 @@ services:
 
       # A fresh free-tier database has no tenant and no user, so nobody could
       # sign in. This seeds a "demo" tenant and one administrator on every
-      # start (idempotently -- the free database is recreated every 30 days).
+      # start (idempotently, so a replaced database rebuilds itself).
       # Render generates the password once; read it from the service's
       # Environment tab. Sign in with tenant "demo", admin@demo.local.
       - key: LMS_DEMO_SEED
@@ -82,9 +84,3 @@ services:
       # The 1 GB database cannot hold telematics history indefinitely.
       - key: PING_RETENTION_DAYS
         value: "7"
-
-databases:
-  - name: lms-postgres
-    plan: free
-    databaseName: lms
-    user: lms

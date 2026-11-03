@@ -50,5 +50,22 @@ public class EndToEndContext {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("lms.demo.enabled", () -> "true");
         registry.add("lms.demo.admin-password", () -> DEMO_PASSWORD);
+        // A demo deployment hands the delivery code back, which is what lets a scenario play the consignee.
+        registry.add("lms.delivery.expose-otp", () -> "true");
+        // Customers' reads of a tracking link come from one address; the limit has its own test.
+        registry.add("lms.tracking.rate-limit.requests", () -> "100000");
+        // The dead-letter scenarios fail a probe event on purpose and park it in one pass:
+        // the probe listener exists here only, and the retrier is driven by the steps.
+        registry.add("lms.test.probe-listener", () -> "true");
+        registry.add("lms.events.retry.enabled", () -> "false");
+        registry.add("lms.events.retry.max-attempts", () -> "1");
+        // Webhook scenarios post to a receiver on this machine, over plain http, and
+        // wait for the platform's own timer: it ticks fast here and backs off briefly.
+        registry.add("lms.webhooks.allow-http", () -> "true");
+        registry.add("lms.webhooks.allow-private-targets", () -> "true");
+        registry.add("lms.webhooks.dispatcher.initial-delay-ms", () -> "1000");
+        registry.add("lms.webhooks.dispatcher.interval-ms", () -> "500");
+        registry.add("lms.webhooks.initial-backoff", () -> "PT1S");
+        registry.add("lms.webhooks.max-backoff", () -> "PT2S");
     }
 }

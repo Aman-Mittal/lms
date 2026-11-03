@@ -262,9 +262,15 @@ public class CircuitRunCommandService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         CircuitRun done = runs.save(circuit.run().complete(visited, skipped, source, at));
+        // Read at completion rather than when the trip was assigned: the vendor
+        // is whoever carried the circuit, and a trip can be re-awarded between
+        // being handed the circuit and finishing it.
+        Optional<TripLookupPort.TripSnapshot> trip = trips.find(done.tripId());
         events.publishEvent(new CircuitRunCompleted(done.tenantId(), done.id(), done.routeCode(),
                 done.runDate(), done.tripId(), visited, skipped, pickedUp, done.runRate(),
-                done.perStopFee(), done.chargeAmount(), done.currency(), at));
+                done.perStopFee(), done.chargeAmount(), done.currency(), at, done.tripNo(),
+                trip.map(TripLookupPort.TripSnapshot::loadId).orElse(null),
+                trip.map(TripLookupPort.TripSnapshot::vendorPartnerId).orElse(null)));
     }
 
     private CircuitRun require(UUID runId) {

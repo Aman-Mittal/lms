@@ -31,7 +31,7 @@ import org.springframework.data.relational.core.mapping.Table;
 
 /**
  * A physical location digitised into a spatial boundary (vision document
- * 3.2.3): plants, warehouses, ports, hubs, toll plazas, customer sites.
+ * 3.2.3): plants, warehouses, ports, hubs, toll plazas, customer sites, railheads.
  *
  * <p>The bounding box columns are stored rather than derived on read. They are
  * this platform's substitute for a spatial index (DOCS/adr/0004): the geofence
@@ -73,7 +73,9 @@ public record Terminal(
         Instant updatedAt) {
 
     public enum FunctionalCategory {
-        PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE
+        PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE,
+        /** Where rakes are placed, loaded and released; a rail leg runs between two. */
+        RAILHEAD
     }
 
     public enum GeofenceType {
@@ -119,6 +121,53 @@ public record Terminal(
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
                 null, Instant.now(), Instant.now());
+    }
+
+    /**
+     * The terminal with its descriptive fields replaced, geofence and identity
+     * unchanged. The code, category, organisational unit and creation time
+     * never change, which is why they are not parameters.
+     *
+     * @param expectedVersion the version the caller last read; the save is an
+     *                        update guarded on it, so a stale value loses
+     */
+    public Terminal revised(String newName, Integer newDockCount, LocalTime newOpensAt,
+                            LocalTime newClosesAt, Integer newAvgDwellMinutes,
+                            String[] newPermittedVehicleTypes, Long expectedVersion) {
+        if (newName == null || newName.isBlank()) {
+            throw new IllegalArgumentException("A terminal needs a name");
+        }
+        return new Terminal(id, tenantId, orgUnitId, code, newName.strip(), functionalCategory,
+                geofenceType, polygon, centreLat, centreLon, radiusM,
+                minLat, maxLat, minLon, maxLon,
+                newDockCount, newOpensAt, newClosesAt, newAvgDwellMinutes,
+                newPermittedVehicleTypes, expectedVersion, createdAt, Instant.now());
+    }
+
+    /** The same terminal with a polygon geofence, validated and boxed as on creation. */
+    public Terminal withPolygon(List<LatLon> ring) {
+        GeoUtils.validateRing(ring);
+        BoundingBox box = GeoUtils.boundingBoxOf(ring);
+        return new Terminal(id, tenantId, orgUnitId, code, name, functionalCategory,
+                GeofenceType.POLYGON, Json.of(toGeoJsonRing(ring)), null, null, null,
+                bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
+                dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
+                version, createdAt, Instant.now());
+    }
+
+    /** The same terminal with a point-radius geofence, boxed as on creation. */
+    public Terminal withPointRadius(LatLon centre, double radiusMetres) {
+        if (radiusMetres <= 0) {
+            throw new IllegalArgumentException("Terminal radius must be positive: " + radiusMetres);
+        }
+        BoundingBox box = new BoundingBox(centre.lat(), centre.lat(), centre.lon(), centre.lon())
+                .expandedBy(radiusMetres);
+        return new Terminal(id, tenantId, orgUnitId, code, name, functionalCategory,
+                GeofenceType.POINT_RADIUS, null, bd(centre.lat()), bd(centre.lon()),
+                BigDecimal.valueOf(radiusMetres),
+                bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
+                dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
+                version, createdAt, Instant.now());
     }
 
     /** The stored bounding box, for candidate filtering. */

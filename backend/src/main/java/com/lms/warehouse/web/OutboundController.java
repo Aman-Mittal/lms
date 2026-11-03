@@ -15,14 +15,19 @@
  */
 package com.lms.warehouse.web;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import com.lms.warehouse.command.OutboundCommandService;
+import com.lms.warehouse.command.domain.HandlingUnit;
+import com.lms.warehouse.query.HandlingUnitSummaryView;
 import com.lms.warehouse.query.HandlingUnitView;
+import com.lms.warehouse.query.OutboundOrderSummaryView;
 import com.lms.warehouse.query.OutboundOrderView;
 import com.lms.warehouse.query.WarehouseQueryService;
 import jakarta.validation.Valid;
@@ -35,6 +40,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Goods out: outbound orders, picking, packing and the hand-off. */
@@ -61,6 +67,14 @@ public class OutboundController {
                 .body(new IdResponse(id));
     }
 
+    @GetMapping("/api/v1/outbound-orders")
+    public Slice<OutboundOrderSummaryView> orders(@RequestParam UUID warehouseId,
+                                                  @RequestParam(required = false) String status,
+                                                  @RequestParam(required = false) String cursor,
+                                                  @RequestParam(required = false) Integer limit) {
+        return queries.outboundOrders(warehouseId, status, cursor, limit);
+    }
+
     @GetMapping("/api/v1/outbound-orders/{id}")
     public OutboundOrderView order(@PathVariable UUID id) {
         return queries.outboundOrder(id)
@@ -73,11 +87,26 @@ public class OutboundController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/api/v1/outbound-orders/{id}/cancel-back-order")
+    public ResponseEntity<Void> cancelBackOrder(@PathVariable UUID id) {
+        outbound.cancelBackOrder(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/api/v1/outbound-orders/{id}/pack")
     public ResponseEntity<IdResponse> pack(@PathVariable UUID id) {
         UUID unitId = outbound.pack(id);
         return ResponseEntity.created(URI.create("/api/v1/handling-units/" + unitId))
                 .body(new IdResponse(unitId));
+    }
+
+    @GetMapping("/api/v1/handling-units")
+    public Slice<HandlingUnitSummaryView> handlingUnits(
+            @RequestParam UUID warehouseId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer limit) {
+        return queries.handlingUnits(warehouseId, status, cursor, limit);
     }
 
     @GetMapping("/api/v1/handling-units/{id}")
@@ -89,7 +118,10 @@ public class OutboundController {
     @PostMapping("/api/v1/handling-units/{id}/dispatch")
     public ResponseEntity<Void> dispatch(@PathVariable UUID id,
                                          @RequestBody(required = false) DispatchRequest request) {
-        outbound.dispatch(id, request == null ? null : request.reference());
+        outbound.dispatch(id, request == null ? null : request.reference(),
+                request == null ? null : HandlingUnit.HandOff.ofNullable(
+                        request.destinationTerminalId(), request.consigneePartnerId(),
+                        request.grossWeightKg(), request.volumeM3()));
         return ResponseEntity.noContent().build();
     }
 
@@ -102,7 +134,14 @@ public class OutboundController {
     public record RequestedLine(@NotNull UUID skuId, @Positive int quantity) {
     }
 
-    /** @param reference what transport calls it: a load, a trip, a docket */
-    public record DispatchRequest(String reference) {
+    /**
+     * @param reference             what transport calls it: a load, a trip, a docket
+     * @param destinationTerminalId with the consignee and the gross weight, hands
+     *                              the unit to transport planning; all three or none
+     * @param volumeM3              optional even then
+     */
+    public record DispatchRequest(String reference, UUID destinationTerminalId,
+                                  UUID consigneePartnerId, BigDecimal grossWeightKg,
+                                  BigDecimal volumeM3) {
     }
 }

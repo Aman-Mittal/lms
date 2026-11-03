@@ -41,23 +41,27 @@ public record ClientInvoice(
         LocalDate periodEnd,
         Status status,
         String currency,
+        /** Taxable amount plus tax: what the client owes. */
         BigDecimal totalAmount,
+        /** The sum of the lines' tax, each rounded on its own line. */
+        BigDecimal taxAmount,
         int lineCount,
         Instant issuedAt,
         @Version Long version,
         Instant createdAt) {
 
     public enum Status {
-        /** Sent. Corrections are credit notes, which are not built yet. */
+        /** Sent. Never edited; a correction is a credit note against it. */
         ISSUED
     }
 
     public static ClientInvoice issue(UUID id, UUID tenantId, UUID clientPartnerId,
                                       String invoiceNo, LocalDate periodStart, String currency,
-                                      BigDecimal totalAmount, int lineCount, Instant at) {
+                                      BigDecimal taxableAmount, BigDecimal taxAmount,
+                                      int lineCount, Instant at) {
         return new ClientInvoice(id, tenantId, clientPartnerId, invoiceNo, periodStart,
-                periodEndOf(periodStart), Status.ISSUED, currency, totalAmount, lineCount, at,
-                null, at);
+                periodEndOf(periodStart), Status.ISSUED, currency, taxableAmount.add(taxAmount),
+                taxAmount, lineCount, at, null, at);
     }
 
     /** The last day of the month that starts on {@code periodStart}. */

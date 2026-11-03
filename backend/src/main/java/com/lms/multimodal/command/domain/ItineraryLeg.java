@@ -56,6 +56,8 @@ public record ItineraryLeg(
         String trainNo,
         UUID carrierPartnerId,
         BigDecimal costAmount,
+        /* The rail rate card that priced this leg; null when the cost was given. */
+        UUID railTariffId,
         Instant placedAt,
         Instant loadedAt,
         Instant departedAt,
@@ -161,12 +163,18 @@ public record ItineraryLeg(
             throw new BusinessRuleViolationException("leg-carrier-required",
                     leg + " needs the carrier who will be paid for it");
         }
-        if (plan.costAmount() == null || plan.costAmount().signum() < 0) {
+        if (plan.costAmount() != null && plan.costAmount().signum() < 0) {
             throw new BusinessRuleViolationException("leg-cost-invalid",
                     leg + " needs a cost of zero or more");
         }
 
         if (plan.mode() == Mode.ROAD) {
+            if (plan.costAmount() == null) {
+                // Road legs are costed by whoever plans them; there is no
+                // road rate card here to fall back on.
+                throw new BusinessRuleViolationException("leg-cost-invalid",
+                        leg + " is by road and needs a cost of zero or more");
+            }
             if (plan.tripId() == null) {
                 throw new BusinessRuleViolationException("road-leg-needs-trip",
                         leg + " is by road and needs the trip that runs it");
@@ -174,7 +182,7 @@ public record ItineraryLeg(
             return new ItineraryLeg(id, tenantId, itineraryId, seq, Mode.ROAD, Status.PLANNED,
                     plan.fromTerminalId(), plan.toTerminalId(), plan.plannedDepartureAt(),
                     plan.plannedArrivalAt(), dwell, plan.tripId(), null, null, null, null,
-                    plan.carrierPartnerId(), plan.costAmount(), null, null, null, null, null,
+                    plan.carrierPartnerId(), plan.costAmount(), null, null, null, null, null, null,
                     false, null, null, null, at, at);
         }
 
@@ -194,8 +202,29 @@ public record ItineraryLeg(
                 plan.fromTerminalId(), plan.toTerminalId(), plan.plannedDepartureAt(),
                 plan.plannedArrivalAt(), dwell, null, plan.unitType(), plan.unitCount(),
                 plan.bookingRef().strip(), blankToNull(plan.trainNo()),
-                plan.carrierPartnerId(), plan.costAmount(), null, null, null, null, null,
+                plan.carrierPartnerId(), plan.costAmount(), null, null, null, null, null, null,
                 false, null, null, null, at, at);
+    }
+
+    /**
+     * Prices a rail leg planned without a cost, from the rate card in force.
+     *
+     * <p>Only once, and only when no cost was given: an explicit cost is the
+     * planner overriding the card -- a spot rate, a negotiated one-off -- and
+     * the card must not silently replace it.
+     */
+    public ItineraryLeg pricedBy(UUID tariffId, BigDecimal amount) {
+        if (mode != Mode.RAIL || costAmount != null) {
+            throw new IllegalStateException("Leg " + seq + " is not a rail leg awaiting a price");
+        }
+        if (tariffId == null || amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException("A rail leg is priced by a card, at zero or more");
+        }
+        return new ItineraryLeg(id, tenantId, itineraryId, seq, mode, status, fromTerminalId,
+                toTerminalId, plannedDepartureAt, plannedArrivalAt, transferDwellMinutes, tripId,
+                unitType, unitCount, bookingRef, trainNo, carrierPartnerId, amount, tariffId,
+                placedAt, loadedAt, departedAt, arrivedAt, releasedAt, startedEarly,
+                connectionMissedAt, earliestStartAt, version, createdAt, updatedAt);
     }
 
     // ----------------------------------------------------------------- facts
@@ -206,6 +235,11 @@ public record ItineraryLeg(
 
     public boolean hasArrived() {
         return arrivedAt != null;
+    }
+
+    /** Whether a cost has been settled, given or priced from a card. */
+    public boolean isPriced() {
+        return costAmount != null;
     }
 
     /**
@@ -330,9 +364,51 @@ public record ItineraryLeg(
         }
         return new ItineraryLeg(id, tenantId, itineraryId, seq, mode, status, fromTerminalId,
                 toTerminalId, plannedDepartureAt, plannedArrivalAt, transferDwellMinutes, tripId,
-                unitType, unitCount, bookingRef, trainNo, carrierPartnerId, costAmount, placedAt,
-                loadedAt, departedAt, arrivedAt, releasedAt, startedEarly, at, earliestStart,
-                version, createdAt, at);
+                unitType, unitCount, bookingRef, trainNo, carrierPartnerId, costAmount,
+                railTariffId, placedAt, loadedAt, departedAt, arrivedAt, releasedAt, startedEarly,
+                at, earliestStart, version, createdAt, at);
+    }
+
+    /**
+     * Has the predecessor failed to turn up in time for this leg, with no
+     * arrival at all?
+     *
+     * <p>The sweep's question; the arrival-time detector cannot ask it,
+     * because nothing arrives. Two conditions, both needed. The predecessor's
+     * planned arrival plus this leg's dwell must have passed -- before then it
+     * is not even late. And there must no longer be time for it: arriving now
+     * and transferring would already start this leg after its planned
+     * departure. Without the second, a plan with slack would be marked missed
+     * while the connection could still be made.
+     *
+     * @param predecessor the previous leg; null for the first, which waits on
+     *                    nothing
+     */
+    public boolean isOverdueAfter(ItineraryLeg predecessor, Instant now) {
+        if (predecessor == null || predecessor.hasArrived() || hasStarted()
+                || connectionMissedAt != null) {
+            return false;
+        }
+        Duration dwell = Duration.ofMinutes(transferDwellMinutes);
+        return now.isAfter(predecessor.plannedArrivalAt().plus(dwell))
+                && now.plus(dwell).isAfter(plannedDepartureAt);
+    }
+
+    /**
+     * The predecessor finally arrived after the miss was recorded without it:
+     * the earliest start the sweep could only bound is now known. Changes no
+     * fact but that one, and publishes nothing -- the miss was announced once
+     * already.
+     */
+    public ItineraryLeg reviseEarliestStart(Instant earliestStart, Instant at) {
+        if (connectionMissedAt == null || hasStarted() || earliestStart.equals(earliestStartAt)) {
+            return this;
+        }
+        return new ItineraryLeg(id, tenantId, itineraryId, seq, mode, status, fromTerminalId,
+                toTerminalId, plannedDepartureAt, plannedArrivalAt, transferDwellMinutes, tripId,
+                unitType, unitCount, bookingRef, trainNo, carrierPartnerId, costAmount,
+                railTariffId, placedAt, loadedAt, departedAt, arrivedAt, releasedAt, startedEarly,
+                connectionMissedAt, earliestStart, version, createdAt, at);
     }
 
     // -------------------------------------------------------------- internals
@@ -378,9 +454,9 @@ public record ItineraryLeg(
                               Instant arrived, Instant released, boolean early, Instant at) {
         return new ItineraryLeg(id, tenantId, itineraryId, seq, mode, next, fromTerminalId,
                 toTerminalId, plannedDepartureAt, plannedArrivalAt, transferDwellMinutes, tripId,
-                unitType, unitCount, bookingRef, trainNo, carrierPartnerId, costAmount, placed,
-                loaded, departed, arrived, released, early, connectionMissedAt, earliestStartAt,
-                version, createdAt, at);
+                unitType, unitCount, bookingRef, trainNo, carrierPartnerId, costAmount,
+                railTariffId, placed, loaded, departed, arrived, released, early,
+                connectionMissedAt, earliestStartAt, version, createdAt, at);
     }
 
     private static String blankToNull(String value) {

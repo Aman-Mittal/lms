@@ -1,0 +1,228 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+MilkRunRoute:
+  type: object
+  description: |
+    One version of a milk-run circuit. Versions are never edited: a
+    successor is published from a date and the incumbent closes the day
+    before, so the plan in force on any past day stays answerable.
+  properties:
+    id: { type: string, format: uuid }
+    code:
+      type: string
+      description: The route's identity across versions.
+    name: { type: string }
+    plantTerminalId: { type: string, format: uuid }
+    plantCode: { type: string }
+    effectiveFrom: { type: string, format: date }
+    effectiveTo:
+      type: string
+      format: date
+      description: Inclusive last day. Absent on the version in force.
+    daysOfWeek:
+      type: string
+      description: Canonical and Monday first, e.g. `MON,WED,FRI`.
+    departureTime:
+      type: string
+      description: Local time at the plant, e.g. `06:30:00`.
+    timeZone: { type: string }
+    runRate: { type: number }
+    perStopFee: { type: number }
+    currency: { type: string }
+    createdAt: { type: string, format: date-time }
+
+MilkRunRouteSlice:
+  type: object
+  description: One page of routes in force, by code. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/MilkRunRoute" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+MilkRunRouteStop:
+  type: object
+  properties:
+    sequence: { type: integer }
+    terminalId: { type: string, format: uuid }
+    terminalCode: { type: string }
+    terminalName: { type: string }
+    windowOpenMin:
+      type: integer
+      description: Minutes after the circuit departs that the pickup window opens.
+    windowCloseMin: { type: integer }
+    plannedDwellMin: { type: integer }
+
+MilkRunStopPlan:
+  type: object
+  properties:
+    terminalId: { type: string, format: uuid }
+    windowOpenMin: { type: integer, minimum: 0 }
+    windowCloseMin: { type: integer, minimum: 0 }
+    plannedDwellMin: { type: integer, minimum: 0 }
+  required: [terminalId, windowOpenMin, windowCloseMin, plannedDwellMin]
+
+PublishMilkRunRouteRequest:
+  type: object
+  properties:
+    code: { type: string, minLength: 1 }
+    name: { type: string }
+    plantTerminalId: { type: string, format: uuid }
+    effectiveFrom:
+      type: string
+      format: date
+      description: Publishing closes the version in force the day before.
+    days:
+      type: array
+      minItems: 1
+      items:
+        type: string
+        enum: [MON, TUE, WED, THU, FRI, SAT, SUN]
+    departureTime:
+      type: string
+      description: Local time at the plant, `HH:mm` or `HH:mm:ss`.
+    timeZone:
+      type: string
+      default: UTC
+      description: IANA zone the departure time is read in.
+    runRate:
+      type: number
+      minimum: 0
+      description: Paid for running the circuit at all.
+    perStopFee:
+      type: number
+      minimum: 0
+      description: Paid for each supplier actually visited; skipped ones earn nothing.
+    currency: { type: string, default: INR }
+    stops:
+      type: array
+      minItems: 1
+      maxItems: 30
+      description: Supplier pickups in circuit order. Each supplier once; never the plant.
+      items: { $ref: "#/components/schemas/MilkRunStopPlan" }
+  required: [code, plantTerminalId, effectiveFrom, days, departureTime, runRate,
+             perStopFee, stops]
+
+CircuitRun:
+  type: object
+  description: One day's execution of one route, priced with the version in force that day.
+  properties:
+    id: { type: string, format: uuid }
+    routeId: { type: string, format: uuid }
+    routeCode: { type: string }
+    runDate: { type: string, format: date }
+    plannedDeparture: { type: string, format: date-time }
+    plantTerminalId: { type: string, format: uuid }
+    status:
+      type: string
+      enum: [PLANNED, IN_PROGRESS, COMPLETED]
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    startedAt: { type: string, format: date-time }
+    completedAt: { type: string, format: date-time }
+    completionSource:
+      type: string
+      enum: [GEOFENCE, MANUAL]
+    runRate: { type: number }
+    perStopFee: { type: number }
+    currency: { type: string }
+    stopsVisited: { type: integer }
+    stopsSkipped: { type: integer }
+    chargeAmount:
+      type: number
+      description: Run rate plus the per-stop fee for each supplier visited. Set on completion.
+    totalPickedUpKg: { type: number }
+
+CircuitRunSlice:
+  type: object
+  description: One page of circuits by day, then route. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/CircuitRun" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+CircuitRunStop:
+  type: object
+  properties:
+    sequence: { type: integer }
+    terminalId: { type: string, format: uuid }
+    terminalCode: { type: string }
+    windowOpensAt: { type: string, format: date-time }
+    windowClosesAt: { type: string, format: date-time }
+    plannedDwellMin: { type: integer }
+    status:
+      type: string
+      enum: [PENDING, ARRIVED, DEPARTED, SKIPPED]
+    arrivedAt: { type: string, format: date-time }
+    departedAt: { type: string, format: date-time }
+    arrivalSource:
+      type: string
+      enum: [GEOFENCE, MANUAL]
+    minutesLate:
+      type: integer
+      description: Zero when on time; minutes after the window closed, rounded up, when not.
+    pickedUpKg: { type: number }
+    skipReason: { type: string }
+
+GenerateCircuitRunsRequest:
+  type: object
+  properties:
+    fromDate:
+      type: string
+      format: date
+      description: First day to plan. Today (UTC) if omitted.
+    days:
+      type: integer
+      minimum: 1
+      maximum: 31
+      default: 7
+
+GenerateCircuitRunsResult:
+  type: object
+  properties:
+    generated:
+      type: integer
+      description: Runs newly planned. Zero when every one already existed.
+  required: [generated]
+
+AssignCircuitTripRequest:
+  type: object
+  properties:
+    tripId: { type: string, format: uuid }
+  required: [tripId]
+
+CircuitPickupRequest:
+  type: object
+  properties:
+    quantityKg: { type: number, minimum: 0 }
+  required: [quantityKg]
+
+CircuitSkipRequest:
+  type: object
+  properties:
+    reason: { type: string, minLength: 1 }
+  required: [reason]

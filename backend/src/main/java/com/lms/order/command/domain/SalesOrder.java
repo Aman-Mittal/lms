@@ -124,6 +124,25 @@ public record SalesOrder(
         if (orderNo == null || orderNo.isBlank()) {
             throw new IllegalArgumentException("Order number is mandatory");
         }
+        FreightMode mode = requireCoherent(orderNo, customerPartnerId, requestedPickupAt,
+                requestedDeliveryAt, freightMode, originHubTerminalId, destinationHubTerminalId);
+        return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo,
+                OrderStatus.DRAFT, originTerminalId, requestedPickupAt, requestedDeliveryAt,
+                source == null ? OrderSource.MANUAL : source, mode,
+                originHubTerminalId, destinationHubTerminalId, null, Instant.now(), Instant.now());
+    }
+
+    /**
+     * The shape rules shared by raising and revising: a customer, a delivery
+     * no earlier than the pickup, a supported mode, and hubs exactly when the
+     * mode is LTL.
+     *
+     * @return the mode, defaulted
+     */
+    private static FreightMode requireCoherent(String orderNo, UUID customerPartnerId,
+                                               Instant requestedPickupAt, Instant requestedDeliveryAt,
+                                               FreightMode freightMode, UUID originHubTerminalId,
+                                               UUID destinationHubTerminalId) {
         if (customerPartnerId == null) {
             throw new IllegalArgumentException("An order must name a customer");
         }
@@ -148,10 +167,38 @@ public record SalesOrder(
             throw new BusinessRuleViolationException("hubs-only-for-ltl",
                     "Order " + orderNo + " is a full truckload, which does not travel through hubs");
         }
-        return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo,
-                OrderStatus.DRAFT, originTerminalId, requestedPickupAt, requestedDeliveryAt,
-                source == null ? OrderSource.MANUAL : source, mode,
-                originHubTerminalId, destinationHubTerminalId, null, Instant.now(), Instant.now());
+        return mode;
+    }
+
+    /**
+     * The order with its commercial header replaced and its status kept.
+     *
+     * <p>The order number, organisational unit, source and freight mode never
+     * change here: the number is how people refer to the order, the unit is
+     * where it lives for access decisions, and the mode decides how freight
+     * cut from it is numbered, consolidated and priced.
+     *
+     * @param expectedVersion the version the caller last read; the save is an
+     *                        update guarded on it, so a stale value loses
+     */
+    public SalesOrder revised(UUID newCustomerPartnerId, UUID newOriginTerminalId,
+                              Instant newPickupAt, Instant newDeliveryAt,
+                              UUID newOriginHubTerminalId, UUID newDestinationHubTerminalId,
+                              Long expectedVersion) {
+        requireCoherent(orderNo, newCustomerPartnerId, newPickupAt, newDeliveryAt, freightMode,
+                newOriginHubTerminalId, newDestinationHubTerminalId);
+        return new SalesOrder(id, tenantId, orgUnitId, newCustomerPartnerId, orderNo, status,
+                newOriginTerminalId, newPickupAt, newDeliveryAt, source, freightMode,
+                newOriginHubTerminalId, newDestinationHubTerminalId,
+                expectedVersion, createdAt, Instant.now());
+    }
+
+    /** The same order, its version replaced by the one the caller says it read. */
+    public SalesOrder expecting(Long expectedVersion) {
+        return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, status,
+                originTerminalId, requestedPickupAt, requestedDeliveryAt, source, freightMode,
+                originHubTerminalId, destinationHubTerminalId,
+                expectedVersion, createdAt, Instant.now());
     }
 
     /** Whether lines may still be added or amended. */

@@ -116,6 +116,15 @@ public class TelematicsSteps {
                 BigDecimal.valueOf(60), null, BigDecimal.valueOf(5), true, "DEVICE"));
     }
 
+    /** Minutes rather than hours, for the stoppage threshold of forty-five. */
+    @Given("a position for {string} at {double},{double} {int} minutes ago")
+    public void aPositionMinutesAgo(String registration, double lat, double lon, int minutesAgo) {
+        batch.add(new PingIngestPort.PingReport(world.ref("vehicle:" + registration),
+                Instant.now().minus(minutesAgo, ChronoUnit.MINUTES),
+                BigDecimal.valueOf(lat), BigDecimal.valueOf(lon),
+                BigDecimal.valueOf(0), null, BigDecimal.valueOf(5), true, "DEVICE"));
+    }
+
     /**
      * A dense run of points along a straight line, as a lorry on a motorway
      * actually reports.

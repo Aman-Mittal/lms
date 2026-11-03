@@ -31,6 +31,10 @@ public record OrderView(
         UUID customerPartnerId,
         String customerName,
         String originTerminalCode,
+        /** What an edit of the header restates, with the hubs of a part-load order. */
+        UUID originTerminalId,
+        UUID originHubTerminalId,
+        UUID destinationHubTerminalId,
         Instant requestedPickupAt,
         Instant requestedDeliveryAt,
         int lineCount,
@@ -38,5 +42,7 @@ public record OrderView(
         BigDecimal totalDeadWeightKg,
         boolean containsHazmat,
         String freightMode,
-        Instant createdAt) {
+        Instant createdAt,
+        /** The optimistic-lock version: the ETag, and what an edit sends back in If-Match. */
+        Long version) {
 }

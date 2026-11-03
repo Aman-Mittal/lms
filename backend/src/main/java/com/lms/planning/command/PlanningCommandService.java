@@ -16,17 +16,22 @@
 package com.lms.planning.command;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 import com.lms.masterdata.api.FleetCapacityPort;
+import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
 import com.lms.order.api.OrderPlanningPort;
@@ -35,6 +40,7 @@ import com.lms.planning.command.domain.LoadUnit;
 import com.lms.planning.events.ConsignmentsGenerated;
 import com.lms.planning.events.DocketBooked;
 import com.lms.planning.events.LoadPlanned;
+import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
@@ -59,16 +65,21 @@ public class PlanningCommandService {
     private final LoadUnitRepository loads;
     private final PlanningLinks links;
     private final ApplicationEventPublisher events;
+    private final TransitionAudit audit;
+    private final TerminalCategoryPort terminals;
 
     public PlanningCommandService(OrderPlanningPort orderPlanning, FleetCapacityPort fleetCapacity,
                                   ConsignmentRepository consignments, LoadUnitRepository loads,
-                                  PlanningLinks links, ApplicationEventPublisher events) {
+                                  PlanningLinks links, ApplicationEventPublisher events,
+                                  TransitionAudit audit, TerminalCategoryPort terminals) {
         this.orderPlanning = orderPlanning;
         this.fleetCapacity = fleetCapacity;
         this.consignments = consignments;
         this.loads = loads;
         this.links = links;
         this.events = events;
+        this.audit = audit;
+        this.terminals = terminals;
     }
 
     // ------------------------------------------------------------ 3.4.1
@@ -115,6 +126,7 @@ public class PlanningCommandService {
 
         List<UUID> created = new ArrayList<>();
         List<String> refs = new ArrayList<>();
+        List<TransitionAudit.Entry> generated = new ArrayList<>();
         Set<UUID> plannedLineIds = new LinkedHashSet<>();
 
         for (Map.Entry<GroupKey, List<OrderPlanningPort.PlannableLine>> group : groups.entrySet()) {
@@ -145,6 +157,9 @@ public class PlanningCommandService {
                     ltl ? terms.originHubTerminalId() : null,
                     ltl ? terms.destinationHubTerminalId() : null));
 
+            generated.add(new TransitionAudit.Entry(consignment.id(), null,
+                    PlanningAudit.consignment(consignment)));
+
             if (ltl) {
                 dockets.add(new DocketBooked(tenantId, consignment.id(), consignment.trackingRef(),
                         orderId, terms.customerPartnerId(), consignment.consigneePartnerId(),
@@ -165,6 +180,7 @@ public class PlanningCommandService {
         // leaves the order's coverage untouched rather than claiming lines that
         // no consignment holds.
         orderPlanning.markLinesPlanned(orderId, plannedLineIds);
+        audit.recordAll("CONSIGNMENT_GENERATED", PlanningAudit.CONSIGNMENT, generated);
 
         events.publishEvent(new ConsignmentsGenerated(tenantId, orderId, created, refs,
                 terms.freightMode().name(), Instant.now()));
@@ -174,11 +190,64 @@ public class PlanningCommandService {
         return created;
     }
 
+    // -------------------------------------------------- warehouse hand-off
+
+    /**
+     * The volumetric conversion for a handling unit: 5 000 cm3 per kilogram,
+     * the divisor order applies to a line when its contract names none.
+     */
+    private static final BigDecimal CM3_PER_KG = new BigDecimal("5000");
+
+    /**
+     * Turns a handling unit the warehouse handed to transport into a
+     * consignment, ready to be put on a load.
+     *
+     * <p>The mapping: one unit is one full-truckload consignment, under a
+     * fresh {@code LR-} lorry receipt, for the consignee and to the
+     * destination terminal the dispatch named. Its dead weight is the gross
+     * weighed at the dock door -- packaging and pallet included, because that
+     * is what the lorry carries. Its volume is the measured volume, or zero
+     * when none was taken, and it is charged on the greater of the weight and
+     * the volumetric weight, as an order line is.
+     *
+     * <p>Unguarded by {@code @PreAuthorize}, like finance's bill raising: the
+     * actor is the platform, reacting to a dispatch somebody with warehouse
+     * authority already made. Joins the caller's transaction; the listener
+     * opens it after binding the tenant scope.
+     *
+     * <p>Idempotent on the handling unit. {@code consignment_handling_unit_idx}
+     * is the guarantee; this lookup makes a redelivered event a no-op.
+     *
+     * @return the consignment, new or already made from this unit
+     */
+    @Transactional
+    public UUID receiveHandOff(UUID handlingUnitId, UUID consigneePartnerId,
+                               UUID destinationTerminalId, BigDecimal grossWeightKg,
+                               BigDecimal volumeM3) {
+        UUID tenantId = TenantContext.requireTenantId();
+        return consignments.findByHandlingUnit(tenantId, handlingUnitId)
+                .map(Consignment::id)
+                .orElseGet(() -> {
+                    BigDecimal volume = volumeM3 == null ? BigDecimal.ZERO : volumeM3;
+                    BigDecimal volumetric = volume.multiply(new BigDecimal("1000000"))
+                            .divide(CM3_PER_KG, 3, RoundingMode.HALF_UP);
+                    BigDecimal chargeable = grossWeightKg.max(volumetric)
+                            .setScale(3, RoundingMode.HALF_UP);
+                    Consignment received = consignments.save(Consignment.fromHandlingUnit(
+                            UUID.randomUUID(), tenantId, handlingUnitId,
+                            nextTrackingRef(tenantId, "LR-"), consigneePartnerId,
+                            destinationTerminalId, grossWeightKg, volume, chargeable));
+                    audit.record("CONSIGNMENT_GENERATED", PlanningAudit.CONSIGNMENT,
+                            received.id(), null, PlanningAudit.consignment(received));
+                    return received.id();
+                });
+    }
+
     // ------------------------------------------------------------ 3.4.2
 
     /** Opens an empty full-truckload load sized against a specific, available vehicle. */
     @Transactional
-    @PreAuthorize("hasAuthority('LOAD_CREATE')")
+    @PreAuthorize("hasAuthority('LOAD_CREATE') and @abac.permitsIn('LOAD_CREATE', #orgUnitId)")
     public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId) {
         return openLoad(orgUnitId, loadNo, originTerminalId, vehicleId, FreightMode.FTL);
     }
@@ -190,9 +259,23 @@ public class PlanningCommandService {
      * dockets booked through that hub can be put on the vehicle.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('LOAD_CREATE')")
+    @PreAuthorize("hasAuthority('LOAD_CREATE') and @abac.permitsIn('LOAD_CREATE', #orgUnitId)")
     public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId,
                          FreightMode freightMode) {
+        return openLoad(orgUnitId, loadNo, originTerminalId, vehicleId, freightMode,
+                LoadUnit.LtlLeg.LINE_HAUL);
+    }
+
+    /**
+     * Opens an empty load in a stated freight mode and part-load leg.
+     *
+     * <p>A DELIVERY load is opened at a destination hub, and takes only
+     * dockets that have arrived there; see {@link #assignConsignment}.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE') and @abac.permitsIn('LOAD_CREATE', #orgUnitId)")
+    public UUID openLoad(UUID orgUnitId, String loadNo, UUID originTerminalId, UUID vehicleId,
+                         FreightMode freightMode, LoadUnit.LtlLeg ltlLeg) {
         UUID tenantId = TenantContext.requireTenantId();
 
         loads.findByLoadNo(tenantId, loadNo).ifPresent(existing -> {
@@ -200,14 +283,23 @@ public class PlanningCommandService {
                     "A load numbered " + loadNo + " already exists");
         });
 
+        // From the body, so looked up under row-level security: another
+        // tenant's terminal reads as absent.
+        if (terminals.functionalCategoryOf(originTerminalId).isEmpty()) {
+            throw new ResourceNotFoundException("Terminal", originTerminalId);
+        }
+
         FleetCapacityPort.VehicleCapacity capacity = fleetCapacity.capacityOf(vehicleId)
                 .orElseThrow(() -> new BusinessRuleViolationException("vehicle-unavailable",
                         "Vehicle " + vehicleId + " does not exist or is not available to plan against"));
 
-        return loads.save(LoadUnit.open(UUID.randomUUID(), tenantId, orgUnitId, loadNo,
+        LoadUnit opened = loads.save(LoadUnit.open(UUID.randomUUID(), tenantId, orgUnitId, loadNo,
                 originTerminalId, capacity.vehicleId(), capacity.vehicleType(),
                 capacity.hazmatCertified(), capacity.payloadCapacityKg(),
-                capacity.maxVolumeM3(), freightMode)).id();
+                capacity.maxVolumeM3(), freightMode, ltlLeg));
+        audit.record("LOAD_OPENED", PlanningAudit.LOAD, opened.id(), null,
+                PlanningAudit.load(opened));
+        return opened.id();
     }
 
     /**
@@ -216,6 +308,10 @@ public class PlanningCommandService {
      * <p>Three refusals, all hard: capacity (3.4.2), dangerous goods
      * certification (3.2.2 read through to planning), and material
      * compatibility against everything already on the vehicle (3.3).
+     *
+     * <p>A part-load DELIVERY load takes a docket only once its line haul has
+     * arrived ({@code docket-not-arrived-at-hub}), and only at the hub the
+     * load runs from ({@code docket-at-another-hub}).
      */
     @Transactional
     @PreAuthorize("hasAuthority('LOAD_CREATE')")
@@ -227,14 +323,33 @@ public class PlanningCommandService {
         Consignment consignment = consignments.findById(consignmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Consignment", consignmentId));
 
-        if (consignment.status() != Consignment.ConsignmentStatus.PLANNED) {
-            throw new BusinessRuleViolationException("consignment-not-assignable",
-                    "Consignment " + consignment.trackingRef() + " is " + consignment.status()
-                            + " and cannot be added to a load");
+        load.requireSameMode(consignment.freightMode(), consignment.trackingRef());
+
+        // The status a consignment must be in to board, and the one it moves
+        // to, depend on which leg the load runs -- see Consignment's state
+        // machine.
+        Consignment.ConsignmentStatus boarding;
+        Consignment.ConsignmentStatus boarded;
+        if (load.isDelivery()) {
+            boarding = Consignment.ConsignmentStatus.ARRIVED_AT_HUB;
+            boarded = Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY;
+        } else {
+            boarding = Consignment.ConsignmentStatus.PLANNED;
+            boarded = Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
         }
 
-        load.requireSameMode(consignment.freightMode(), consignment.trackingRef());
-        if (consignment.isDocket()) {
+        if (consignment.status() != boarding) {
+            throw new BusinessRuleViolationException(
+                    load.isDelivery() ? "docket-not-arrived-at-hub" : "consignment-not-assignable",
+                    "Consignment " + consignment.trackingRef() + " is " + consignment.status()
+                            + " and cannot be added to " + (load.isDelivery()
+                            ? "a delivery load until its line haul has arrived at the hub"
+                            : "a load"));
+        }
+
+        if (load.isDelivery()) {
+            rejectAwayFromHub(load, consignment);
+        } else if (consignment.isDocket()) {
             rejectOffNetwork(tenantId, load, consignment);
         }
         rejectIncompatibleWithLoad(tenantId, load, consignment);
@@ -247,13 +362,157 @@ public class PlanningCommandService {
                 consignment.containsHazmat());
 
         // The link row goes in before the load is saved. Its unique constraint
-        // on consignment_id is what makes double-booking impossible under
+        // on (consignment_id, leg) is what makes double-booking impossible under
         // concurrency, and a violation must abort before the load's totals have
         // been written.
-        links.linkToLoad(tenantId, loadId, consignmentId, links.nextDropSequence(tenantId, loadId));
+        links.linkToLoad(tenantId, loadId, consignmentId, links.nextDropSequence(tenantId, loadId),
+                load.ltlLeg());
 
         loads.save(updated);
-        consignments.save(consignment.transitionTo(Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD));
+        Consignment assigned = consignments.save(consignment.transitionTo(boarded));
+        audit.record("CONSIGNMENT_ASSIGNED", PlanningAudit.CONSIGNMENT, consignmentId,
+                PlanningAudit.consignment(consignment),
+                PlanningAudit.consignmentOn(assigned, loadId));
+    }
+
+    /** The most consignments one request may put on a load. */
+    public static final int MAX_BULK_ASSIGNMENT = 500;
+
+    /**
+     * Puts many consignments on a load at once, all or none.
+     *
+     * <p>The rules are exactly those of {@link #assignConsignment}, applied to
+     * every consignment in the batch: the load's mode, the status a
+     * consignment must be in for the load's leg, the hub rules of a part load,
+     * dangerous-goods certification, and material compatibility -- against
+     * what is already aboard and among the batch itself. Capacity is checked
+     * on the batch's total, because that is what the vehicle will carry.
+     *
+     * <p>What is aboard is read once, however large the batch: a vehicle
+     * filled with 150 parcels one call at a time re-reads its contents 150
+     * times, and this is the way not to.
+     *
+     * <p>A refusal names every consignment that cannot board and why
+     * ({@code load-bulk-assignment-refused}, with an {@code errors} entry per
+     * tracking reference), so a planner fixes the batch once rather than once
+     * per offending parcel. A load that is not open, or a batch that would
+     * overload it, is refused with the same code as a single assignment.
+     * Consignments board in the order given, after anything already aboard.
+     *
+     * @param consignmentIds 1 to {@value #MAX_BULK_ASSIGNMENT}, none twice
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('LOAD_CREATE')")
+    public void assignConsignments(UUID loadId, List<UUID> consignmentIds) {
+        UUID tenantId = TenantContext.requireTenantId();
+        if (consignmentIds.isEmpty() || consignmentIds.size() > MAX_BULK_ASSIGNMENT) {
+            throw new IllegalArgumentException("Between 1 and " + MAX_BULK_ASSIGNMENT
+                    + " consignments may be put on a load at once");
+        }
+        if (new HashSet<>(consignmentIds).size() != consignmentIds.size()) {
+            throw new IllegalArgumentException("A consignment is named more than once");
+        }
+
+        LoadUnit load = loads.findById(loadId)
+                .orElseThrow(() -> new ResourceNotFoundException("Load", loadId));
+        load.requireBuildable();
+
+        // From the body, so read under row-level security: another tenant's
+        // consignment reads as absent, exactly as one that does not exist.
+        Map<UUID, Consignment> found = new HashMap<>();
+        consignments.findAllById(consignmentIds).forEach(c -> found.put(c.id(), c));
+        List<UUID> missing = consignmentIds.stream().filter(id -> !found.containsKey(id)).toList();
+        if (missing.size() == 1) {
+            throw new ResourceNotFoundException("Consignment", missing.get(0));
+        }
+        if (!missing.isEmpty()) {
+            throw new ResourceNotFoundException("Consignments " + missing + " were not found");
+        }
+        List<Consignment> batch = consignmentIds.stream().map(found::get).toList();
+        List<Consignment> aboard = consignments.findOnLoad(tenantId, loadId);
+
+        Consignment.ConsignmentStatus boarding = load.isDelivery()
+                ? Consignment.ConsignmentStatus.ARRIVED_AT_HUB
+                : Consignment.ConsignmentStatus.PLANNED;
+        Consignment.ConsignmentStatus boarded = load.isDelivery()
+                ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
+                : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
+        UUID lineHaulHub = aboard.stream().map(Consignment::destinationHubTerminalId)
+                .filter(Objects::nonNull).findFirst()
+                .orElse(batch.stream().filter(Consignment::isDocket)
+                        .map(Consignment::destinationHubTerminalId)
+                        .filter(Objects::nonNull).findFirst().orElse(null));
+
+        Refusals refusals = new Refusals();
+        for (Consignment candidate : batch) {
+            refusals.check(candidate, () -> load.requireSameMode(candidate.freightMode(),
+                    candidate.trackingRef()));
+            if (candidate.status() != boarding) {
+                refusals.add(candidate,
+                        load.isDelivery() ? "docket-not-arrived-at-hub" : "consignment-not-assignable",
+                        "Consignment " + candidate.trackingRef() + " is " + candidate.status()
+                                + " and cannot be added to " + (load.isDelivery()
+                                ? "a delivery load until its line haul has arrived at the hub"
+                                : "a load"));
+            }
+            if (load.isDelivery()) {
+                refusals.check(candidate, () -> rejectAwayFromHub(load, candidate));
+            } else if (candidate.isDocket()) {
+                if (!candidate.originHubTerminalId().equals(load.originTerminalId())) {
+                    refusals.add(candidate, "docket-not-at-load-origin",
+                            "Docket " + candidate.trackingRef() + " is booked through another "
+                                    + "origin hub than the one load " + load.loadNo()
+                                    + " is consolidated at");
+                }
+                if (!Objects.equals(candidate.destinationHubTerminalId(), lineHaulHub)) {
+                    refusals.add(candidate, "docket-destination-hub-differs",
+                            "Docket " + candidate.trackingRef() + " is bound for another "
+                                    + "destination hub than the other dockets on load "
+                                    + load.loadNo());
+                }
+            }
+            if (candidate.containsHazmat() && !load.takesDangerousGoods()) {
+                refusals.add(candidate, "load-not-hazmat-certified",
+                        "Load " + load.loadNo() + " is built on a vehicle that is not certified "
+                                + "to carry dangerous goods in " + candidate.trackingRef());
+            }
+            for (String conflict : incompatibilities(candidate, aboard, "already on")) {
+                refusals.add(candidate, "load-incompatible-materials", conflict);
+            }
+            // Against every other member of the batch, not only those before it:
+            // two that clash are both named, each pointing at the other, because
+            // either one can be the one the planner leaves behind.
+            List<Consignment> rest = batch.stream().filter(other -> other != candidate).toList();
+            for (String conflict : incompatibilities(candidate, rest, "in")) {
+                refusals.add(candidate, "load-incompatible-materials", conflict);
+            }
+        }
+        refusals.throwIfAny(load, batch.size());
+
+        BigDecimal weight = batch.stream().map(Consignment::totalDeadWeightKg)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal volume = batch.stream().map(Consignment::totalVolumeM3)
+                .filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+        boolean hazmat = batch.stream().anyMatch(Consignment::containsHazmat);
+        LoadUnit updated = load.addConsignment(weight, volume, hazmat);
+
+        // Links first, as for one consignment: the unique (consignment_id, leg)
+        // constraint settles a race with another planner before any total is
+        // written, and one violation aborts the whole batch.
+        links.linkAllToLoad(tenantId, loadId, consignmentIds,
+                links.nextDropSequence(tenantId, loadId), load.ltlLeg());
+        loads.save(updated);
+
+        List<Consignment> assigned = new ArrayList<>();
+        consignments.saveAll(batch.stream().map(c -> c.transitionTo(boarded)).toList())
+                .forEach(assigned::add);
+        List<TransitionAudit.Entry> entries = new ArrayList<>();
+        for (int i = 0; i < batch.size(); i++) {
+            entries.add(new TransitionAudit.Entry(batch.get(i).id(),
+                    PlanningAudit.consignment(batch.get(i)),
+                    PlanningAudit.consignmentOn(assigned.get(i), loadId)));
+        }
+        audit.recordAll("CONSIGNMENT_ASSIGNED", PlanningAudit.CONSIGNMENT, entries);
     }
 
     /** Closes a load to further building and offers it for sourcing. */
@@ -272,6 +531,10 @@ public class PlanningCommandService {
         }
 
         LoadUnit planned = loads.save(load.transitionTo(LoadUnit.LoadStatus.PLANNED));
+        if (load.status() != planned.status()) {
+            audit.record("LOAD_PLANNED", PlanningAudit.LOAD, loadId, PlanningAudit.load(load),
+                    PlanningAudit.load(planned));
+        }
 
         events.publishEvent(new LoadPlanned(tenantId, planned.id(), planned.loadNo(),
                 planned.originTerminalId(), planned.vehicleType(), onLoad.size(),
@@ -316,6 +579,69 @@ public class PlanningCommandService {
     }
 
     /**
+     * Each material clash between a candidate and the consignments it would
+     * share a vehicle with, worded as {@link #rejectIncompatibleWithLoad}
+     * words them. Symmetric: asked from either side, a clashing pair is
+     * reported.
+     */
+    static List<String> incompatibilities(Consignment candidate,
+                                                  List<Consignment> others, String where) {
+        Set<MaterialClass> candidateClasses = candidate.materialClassSet();
+        List<String> conflicts = new ArrayList<>();
+        if (candidateClasses.isEmpty()) {
+            return conflicts;
+        }
+        for (Consignment other : others) {
+            for (MaterialClass onBoard : other.materialClassSet()) {
+                for (MaterialClass arriving : candidateClasses) {
+                    if (!onBoard.isCompatibleWith(arriving)) {
+                        conflicts.add(arriving + " in " + candidate.trackingRef()
+                                + " must not travel with " + onBoard + " " + where + " "
+                                + other.trackingRef());
+                    }
+                }
+            }
+        }
+        return conflicts;
+    }
+
+    /**
+     * Every reason a batch of consignments cannot board, gathered before any
+     * of it is refused.
+     */
+    private static final class Refusals {
+
+        private final Map<String, List<String>> byTrackingRef = new LinkedHashMap<>();
+
+        void add(Consignment consignment, String code, String reason) {
+            byTrackingRef.computeIfAbsent(consignment.trackingRef(), ref -> new ArrayList<>())
+                    .add(code + ": " + reason);
+        }
+
+        /** Runs a single-consignment rule and keeps its refusal instead of throwing it. */
+        void check(Consignment consignment, Runnable rule) {
+            try {
+                rule.run();
+            } catch (BusinessRuleViolationException e) {
+                add(consignment, e.code(), e.getMessage());
+            }
+        }
+
+        void throwIfAny(LoadUnit load, int asked) {
+            if (byTrackingRef.isEmpty()) {
+                return;
+            }
+            Map<String, String> errors = new LinkedHashMap<>();
+            byTrackingRef.forEach((ref, reasons) -> errors.put(ref, String.join("; ", reasons)));
+            throw new BusinessRuleViolationException("load-bulk-assignment-refused",
+                    "Load " + load.loadNo() + " cannot take " + errors.size() + " of the "
+                            + asked + " consignments: "
+                            + String.join("; ", errors.values()),
+                    errors);
+        }
+    }
+
+    /**
      * The consolidation rules of a part load, beyond those every load has.
      *
      * <p>A consolidated vehicle runs one line haul, from the hub where dockets
@@ -340,6 +666,19 @@ public class PlanningCommandService {
                             "Docket " + docket.trackingRef() + " is bound for another destination "
                                     + "hub than the dockets already on load " + load.loadNo());
                 });
+    }
+
+    /**
+     * The one rule of a delivery load beyond those every load has: it runs
+     * from one hub, so it can only take dockets that are in that hub's yard.
+     * A docket that arrived at another hub is a city away.
+     */
+    private static void rejectAwayFromHub(LoadUnit load, Consignment docket) {
+        if (!load.originTerminalId().equals(docket.destinationHubTerminalId())) {
+            throw new BusinessRuleViolationException("docket-at-another-hub",
+                    "Docket " + docket.trackingRef() + " has arrived at another hub than the one "
+                            + "delivery load " + load.loadNo() + " runs from");
+        }
     }
 
     private static void rejectIncompatible(List<OrderPlanningPort.PlannableLine> members) {

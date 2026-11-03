@@ -19,8 +19,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,7 +47,7 @@ public class PlanningQueryService {
                    round(l.planned_weight_kg * 100 / l.capacity_weight_kg, 2) AS weight_utilisation_pct,
                    round(l.planned_volume_m3 * 100 / l.capacity_volume_m3, 2) AS volume_utilisation_pct,
                    coalesce(lc.consignment_count, 0) AS consignment_count,
-                   l.requires_hazmat, l.freight_mode, l.created_at
+                   l.requires_hazmat, l.freight_mode, l.ltl_leg, l.created_at
               FROM load_unit l
               JOIN terminal t ON t.id = l.origin_terminal_id
               LEFT JOIN vehicle v ON v.id = l.vehicle_id
@@ -56,7 +58,7 @@ public class PlanningQueryService {
                    ) lc ON true
             """;
 
-    private static final String CONSIGNMENT_SELECT = """
+    private static final String CONSIGNMENT_COLUMNS = """
             SELECT c.id, c.tracking_ref, c.status,
                    c.order_id, o.order_no,
                    p.legal_name AS consignee_name,
@@ -65,15 +67,60 @@ public class PlanningQueryService {
                    c.contains_hazmat, c.material_classes,
                    l.load_no, c.freight_mode,
                    oh.code AS origin_hub_code, dh.code AS destination_hub_code,
+                   c.handling_unit_id, hu.hu_no AS handling_unit_no,
+                   c.parent_consignment_id, pc.tracking_ref AS parent_tracking_ref,
+                   sp.part_count, sp.parts_delivered, sp.parts_cancelled,
                    c.created_at
               FROM consignment c
-              JOIN sales_order o ON o.id = c.order_id
+              LEFT JOIN sales_order o ON o.id = c.order_id
+              LEFT JOIN handling_unit hu ON hu.id = c.handling_unit_id
               JOIN business_partner p ON p.id = c.consignee_partner_id
               JOIN terminal t ON t.id = c.destination_terminal_id
               LEFT JOIN terminal oh ON oh.id = c.origin_hub_terminal_id
               LEFT JOIN terminal dh ON dh.id = c.destination_hub_terminal_id
-              LEFT JOIN load_consignment lc ON lc.consignment_id = c.id
+              LEFT JOIN consignment pc ON pc.id = c.parent_consignment_id
+              LEFT JOIN LATERAL (
+                    SELECT count(*)::int AS part_count,
+                           count(*) FILTER (WHERE px.status = 'DELIVERED')::int AS parts_delivered,
+                           count(*) FILTER (WHERE px.status = 'CANCELLED')::int AS parts_cancelled
+                      FROM consignment px
+                     WHERE px.tenant_id = c.tenant_id AND px.parent_consignment_id = c.id
+                   ) sp ON c.status = 'SPLIT'
+            """;
+
+    /**
+     * A consignment with the load it is on now.
+     *
+     * <p>A docket can be linked to two loads -- its line haul, and later its
+     * delivery load -- so the link is chosen rather than joined: the delivery
+     * leg when there is one, because that is the vehicle the docket is on or
+     * was last on. Served by {@code load_consignment_unique_assignment}.
+     */
+    private static final String CONSIGNMENT_SELECT = CONSIGNMENT_COLUMNS + """
+              LEFT JOIN LATERAL (
+                    SELECT lcx.load_id, lcx.consignment_id
+                      FROM load_consignment lcx
+                     WHERE lcx.consignment_id = c.id
+                     ORDER BY (lcx.leg = 'DELIVERY') DESC
+                     LIMIT 1
+                   ) lc ON true
               LEFT JOIN load_unit l ON l.id = lc.load_id
+            """;
+
+    /** What is aboard one load, whichever leg it runs. */
+    private static final String CONSIGNMENT_ON_LOAD_SELECT = CONSIGNMENT_COLUMNS + """
+              JOIN load_consignment lc ON lc.consignment_id = c.id
+              JOIN load_unit l ON l.id = lc.load_id
+            """;
+
+    /**
+     * The portal-user predicate on loads. Null for the tenant's own staff; a
+     * partner id confines the read to loads awarded to that vendor, so a load
+     * still out to tender -- or awarded to a competitor -- reads as absent.
+     */
+    private static final String LOAD_PARTNER_SCOPE = """
+               AND (CAST(:partner AS uuid) IS NULL
+                    OR l.awarded_vendor_partner_id = CAST(:partner AS uuid))
             """;
 
     private final JdbcClient jdbc;
@@ -83,8 +130,9 @@ public class PlanningQueryService {
     }
 
     public Optional<LoadView> findLoad(UUID id) {
-        return jdbc.sql(LOAD_SELECT + " WHERE l.id = :id")
+        return jdbc.sql(LOAD_SELECT + " WHERE l.id = :id" + LOAD_PARTNER_SCOPE)
                 .param("id", id)
+                .param("partner", AccessSubject.current().partnerScope())
                 .query(LoadView.class)
                 .optional();
     }
@@ -102,10 +150,12 @@ public class PlanningQueryService {
         List<LoadView> rows = jdbc.sql(LOAD_SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR l.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR l.load_no > CAST(:cursor AS text))
+                        """ + LOAD_PARTNER_SCOPE + """
                          ORDER BY l.load_no
                          LIMIT :limit
                         """)
                 .param("status", status)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(LoadView.class)
@@ -130,24 +180,113 @@ public class PlanningQueryService {
     }
 
     public List<ConsignmentView> findConsignmentsOnLoad(UUID loadId) {
-        return jdbc.sql(CONSIGNMENT_SELECT + " WHERE lc.load_id = :loadId ORDER BY lc.drop_sequence")
+        return jdbc.sql(CONSIGNMENT_ON_LOAD_SELECT
+                        + " WHERE lc.load_id = :loadId ORDER BY lc.drop_sequence")
                 .param("loadId", loadId)
                 .query(ConsignmentView.class)
                 .list();
     }
 
-    /** Consignments not yet on a load: the planner's work queue. */
-    public Slice<ConsignmentView> listUnassigned(String cursor, Integer limit) {
+    /**
+     * A page of a split consignment's parts, in receipt order, keyed on the
+     * part's tracking reference. Empty for a consignment that was never split;
+     * absent -- so the caller answers 404 -- for one that does not exist.
+     *
+     * <p>Served by {@code consignment_parent_idx}.
+     */
+    public Optional<Slice<ConsignmentView>> listParts(UUID parentId, String cursor, Integer limit) {
+        if (jdbc.sql("SELECT 1 FROM consignment WHERE id = :id").param("id", parentId)
+                .query(Integer.class).optional().isEmpty()) {
+            return Optional.empty();
+        }
         int pageSize = Slice.clampLimit(limit);
-
         List<ConsignmentView> rows = jdbc.sql(CONSIGNMENT_SELECT + """
-                         WHERE c.status = 'PLANNED'
-                           AND lc.consignment_id IS NULL
+                         WHERE c.tenant_id = app_current_tenant()
+                           AND c.parent_consignment_id = :parent
                            AND (CAST(:cursor AS text) IS NULL
                                 OR c.tracking_ref > CAST(:cursor AS text))
                          ORDER BY c.tracking_ref
                          LIMIT :limit
                         """)
+                .param("parent", parentId)
+                .param("cursor", cursor)
+                .param("limit", pageSize + 1)
+                .query(ConsignmentView.class)
+                .list();
+        return Optional.of(Slice.of(rows, pageSize, ConsignmentView::trackingRef));
+    }
+
+    /** Consignments not yet on a load: the planner's work queue. */
+    public Slice<ConsignmentView> listUnassigned(String cursor, Integer limit) {
+        return listUnassigned(null, cursor, limit);
+    }
+
+    /**
+     * The planner's work queue, or the part of it cut from one order.
+     *
+     * <p>Narrowed by order because that is how a large order is planned: its
+     * hundred-odd consignments are put on one vehicle together, and in a
+     * tenant-wide queue sorted by tracking reference they are scattered among
+     * everybody else's. Served by {@code consignment_order_idx} when narrowed.
+     *
+     * @param orderId null for the whole queue
+     */
+    public Slice<ConsignmentView> listUnassigned(UUID orderId, String cursor, Integer limit) {
+        int pageSize = Slice.clampLimit(limit);
+
+        String ofOrder = orderId == null ? "" : """
+                           AND c.order_id = :orderId
+                        """;
+        var statement = jdbc.sql(CONSIGNMENT_SELECT + """
+                         WHERE c.status = 'PLANNED'
+                           AND lc.consignment_id IS NULL
+                        """ + ofOrder + """
+                           AND (CAST(:cursor AS text) IS NULL
+                                OR c.tracking_ref > CAST(:cursor AS text))
+                         ORDER BY c.tracking_ref
+                         LIMIT :limit
+                        """)
+                .param("cursor", cursor)
+                .param("limit", pageSize + 1);
+        if (orderId != null) {
+            statement = statement.param("orderId", orderId);
+        }
+        List<ConsignmentView> rows = statement
+                .query(ConsignmentView.class)
+                .list();
+
+        return Slice.of(rows, pageSize, ConsignmentView::trackingRef);
+    }
+
+    /**
+     * Dockets that have arrived at a destination hub and are waiting for a
+     * delivery load: the work queue of whoever plans deliveries from there.
+     *
+     * <p>Keyed on the docket number, and served by
+     * {@code consignment_hub_queue_idx}, which leads with the hub and the
+     * status so the seek never touches a docket still on the road.
+     *
+     * <p>A portal user sees only dockets booked by their own partner -- a
+     * customer tracking its freight through the hub -- and a vendor, who
+     * books no dockets, sees none. Staff, with no partner, see the yard.
+     */
+    @PreAuthorize("hasAuthority('LOAD_READ')")
+    public Slice<ConsignmentView> listAwaitingDelivery(UUID hubTerminalId, String cursor,
+                                                       Integer limit) {
+        int pageSize = Slice.clampLimit(limit);
+
+        List<ConsignmentView> rows = jdbc.sql(CONSIGNMENT_SELECT + """
+                         WHERE c.destination_hub_terminal_id = :hub
+                           AND c.status = 'ARRIVED_AT_HUB'
+                           AND (CAST(:cursor AS text) IS NULL
+                                OR c.tracking_ref > CAST(:cursor AS text))
+                           AND (CAST(:partner AS uuid) IS NULL
+                                OR c.customer_partner_id = CAST(:partner AS uuid))
+                         ORDER BY c.tracking_ref
+                         LIMIT :limit
+                        """)
+                .param("hub", hubTerminalId)
+                .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(ConsignmentView.class)

@@ -21,8 +21,12 @@ import java.util.UUID;
 /**
  * An outbound line could not be picked in full: the bins did not hold enough.
  *
- * <p>Keyed by {@code (orderId, lineNo)}; an order is picked once, so there is
- * at most one of these per line.
+ * <p>Published by an order's first pick only, alone or in a wave: a later
+ * pick of the back-order that still falls short owes nothing new. So there is
+ * at most one of these per line, keyed by {@code (orderId, lineNo)}.
+ * {@code waveId} is set when the first pick was part of a wave, and the
+ * shortfall is still this order's own: a wave attributes what it could not
+ * fill to each order separately.
  */
 public record PickShortfallRecorded(
         UUID tenantId,
@@ -34,5 +38,6 @@ public record PickShortfallRecorded(
         int orderedQty,
         int pickedQty,
         int shortQty,
+        UUID waveId,
         Instant recordedAt) {
 }

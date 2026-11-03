@@ -1,0 +1,60 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+AuthResult:
+  type: object
+  properties:
+    accessToken: { type: string }
+    accessTokenExpiresAt: { type: string, format: date-time }
+    refreshToken:
+      type: string
+      description: Opaque. Returned once and stored only as a hash.
+    refreshTokenExpiresAt: { type: string, format: date-time }
+    tokenType: { type: string, enum: [Bearer] }
+    userId: { type: string, format: uuid }
+    tenantId: { type: string, format: uuid }
+    orgUnitId:
+      type: string
+      format: uuid
+      description: The caller's own organisational unit -- what create
+        requests name as `orgUnitId` when filing under the caller's unit.
+    orgPath: { type: string }
+    permissions:
+      type: array
+      items: { type: string }
+  required: [accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt]
+
+LoginRequest:
+  type: object
+  description: |
+    The tenant code is required as well as the credentials. Email addresses
+    are unique per tenant rather than globally, so the same person may
+    legitimately hold accounts with two customers of the platform.
+  properties:
+    tenantCode: { type: string }
+    email: { type: string, format: email }
+    password: { type: string, format: password }
+    deviceFingerprint:
+      type: string
+      description: Optional. Binds a driver's long-lived refresh token to a device.
+  required: [tenantCode, email, password]
+
+RefreshRequest:
+  type: object
+  properties:
+    refreshToken: { type: string }
+  required: [refreshToken]

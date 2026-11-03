@@ -1,0 +1,197 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/deliveries/{consignmentId}/otp:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Delivery and claims]
+    operationId: issueDeliveryOtp
+    summary: Issue a one-time code for a delivery
+    description: |
+      Requires `POD_RECORD`. The consignment must have left: in transit or
+      delivered, or on a load whose trip has been dispatched (a full-truckload
+      consignment's own status does not advance, so the trip decides).
+      The code is kept only as a hash, expires (15 minutes by default) and
+      allows three wrong attempts; issuing again replaces it and resets the
+      count. Real delivery of the code is a notification, which is deferred:
+      the code is returned here **only** where the deployment exposes it (a
+      demo), and is otherwise absent from the response.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "200":
+        description: The code was issued.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OtpIssued" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}/proof:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Delivery and claims]
+    operationId: recordDeliveryProof
+    summary: Record the proof of delivery
+    description: |
+      Requires `POD_RECORD`. Succeeds when the code matches. A wrong, expired,
+      exhausted or never-issued code is refused with the same answer
+      (`code: otp-invalid`), so a caller cannot tell which; a wrong code counts
+      against the three attempts. One proof per consignment.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RecordDeliveryProofRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  get:
+    tags: [Delivery and claims]
+    operationId: getDeliveryProof
+    summary: A consignment's proof of delivery
+    description: Requires `POD_READ`. 404 until a code has been issued.
+    responses:
+      "200":
+        description: The proof, or the fact that a code is waiting to be matched.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeliveryProof" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/claims:
+  get:
+    tags: [Delivery and claims]
+    operationId: listClaims
+    summary: A page of claims
+    description: Requires `CLAIM_READ`. Ordered by claim number.
+    parameters:
+      - name: status
+        in: query
+        schema: { $ref: "#/components/schemas/ClaimStatus" }
+      - name: consignmentId
+        in: query
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of claims.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClaimSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Delivery and claims]
+    operationId: raiseClaim
+    summary: Raise a claim against a consignment
+    description: |
+      Requires `CLAIM_RAISE`. DAMAGE and SHORTAGE need a confirmed proof of
+      delivery (`code: claim-needs-proof-of-delivery`); LOSS and DELAY do not.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RaiseClaimRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/claims/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the claim.
+  get:
+    tags: [Delivery and claims]
+    operationId: getClaim
+    summary: One claim
+    description: Requires `CLAIM_READ`.
+    responses:
+      "200":
+        description: The claim.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Claim" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/claims/{id}/transitions:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the claim.
+  post:
+    tags: [Delivery and claims]
+    operationId: transitionClaim
+    summary: Move a claim along its lifecycle
+    description: |
+      Requires `CLAIM_DECIDE`. OPEN to UNDER_REVIEW; UNDER_REVIEW to APPROVED
+      or REJECTED; APPROVED to SETTLED. Approval states an approved amount
+      above zero and not above the claim; rejection needs a reason.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TransitionClaimRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

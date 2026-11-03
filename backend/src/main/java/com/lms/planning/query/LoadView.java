@@ -42,5 +42,7 @@ public record LoadView(
         int consignmentCount,
         boolean requiresHazmat,
         String freightMode,
+        /** LINE_HAUL or DELIVERY; always LINE_HAUL for a full truckload. */
+        String ltlLeg,
         Instant createdAt) {
 }

@@ -17,6 +17,7 @@ package com.lms.web;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -29,13 +30,18 @@ import java.util.stream.Collectors;
 import com.lms.acceptance.SpineFixtures;
 import com.lms.acceptance.TestFixtures;
 import com.lms.client.ApiClient;
+import com.lms.client.api.ControlTowerApi;
 import com.lms.client.api.MultimodalApi;
+import com.lms.client.model.ExceptionCategory;
 import com.lms.client.model.Itinerary;
 import com.lms.client.model.ItineraryLeg;
 import com.lms.client.model.ItinerarySlice;
 import com.lms.client.model.PlanItineraryLegRequest;
 import com.lms.client.model.PlanItineraryRequest;
+import com.lms.client.model.PublishRailTariffRequest;
 import com.lms.client.model.RailMilestoneRequest;
+import com.lms.client.model.RailTariff;
+import com.lms.client.model.RailTariffSlice;
 import com.lms.execution.command.TripCommandService;
 import com.lms.identity.command.domain.AppUser;
 import com.lms.identity.security.TokenService;
@@ -44,6 +50,7 @@ import com.lms.masterdata.command.RegisterTerminalCommand;
 import com.lms.masterdata.command.TerminalCommandService;
 import com.lms.masterdata.command.domain.BusinessPartner;
 import com.lms.masterdata.command.domain.Terminal;
+import com.lms.multimodal.command.MissedConnectionSweep;
 import com.lms.shared.geo.LatLon;
 import com.lms.shared.tenant.TenantContext;
 import feign.FeignException;
@@ -89,10 +96,17 @@ class MultimodalApiTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // Scenarios here are timelines set in the past; a background pass of the
+        // missed-connection sweep would race their steps. Tests run it directly.
+        registry.add("lms.multimodal.connection-sweep.enabled", () -> "false");
     }
 
     private static final List<String> MULTIMODAL = List.of(
             "MULTIMODAL_READ", "MULTIMODAL_PLAN", "MULTIMODAL_TRACK");
+
+    /** Publishing a rail rate card is the tariff authority, not planning. */
+    private static final List<String> RAIL_PRICING = List.of(
+            "MULTIMODAL_READ", "MULTIMODAL_PLAN", "TARIFF_MANAGE");
 
     /** What the in-process setup needs to build a trip. Never put in a token. */
     private static final List<String> SETUP = List.of(
@@ -115,6 +129,8 @@ class MultimodalApiTest {
     private TripCommandService trips;
     @Autowired
     private TokenService tokens;
+    @Autowired
+    private MissedConnectionSweep sweep;
 
     private String orgPath;
     private AppUser planner;
@@ -143,10 +159,10 @@ class MultimodalApiTest {
             railCarrier = vendor("RAIL-" + salt, orgUnitId);
             roadCarrier = vendor("ROAD-" + salt, orgUnitId);
 
-            railheadA = terminal("RH-A-" + salt, orgUnitId, Terminal.FunctionalCategory.HUB,
-                    21.15, 79.09);
-            railheadB = terminal("RH-B-" + salt, orgUnitId, Terminal.FunctionalCategory.HUB,
-                    28.64, 77.22);
+            railheadA = terminal("RH-A-" + salt, orgUnitId,
+                    Terminal.FunctionalCategory.RAILHEAD, 21.15, 79.09);
+            railheadB = terminal("RH-B-" + salt, orgUnitId,
+                    Terminal.FunctionalCategory.RAILHEAD, 28.64, 77.22);
             customerSite = terminal("SITE-" + salt, orgUnitId,
                     Terminal.FunctionalCategory.CUSTOMER_SITE, 28.50, 77.30);
             UUID vehicle = fleet.registerVehicle(orgUnitId, null, "DL-01-" + salt, "TRUCK",
@@ -246,7 +262,129 @@ class MultimodalApiTest {
         assertThat(api.listItineraries(null, null).getItems()).hasSize(1);
     }
 
+    @Test
+    @DisplayName("a rail leg planned without a cost is priced from the rate card over HTTP")
+    void railLegPricedFromCard() {
+        MultimodalApi api = client(RAIL_PRICING);
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+
+        UUID first = api.publishRailTariff(card("RC-OLD", today.minusDays(30), "1500"), null)
+                .getId();
+        UUID second = api.publishRailTariff(card("RC-NEW", today.minusDays(5), "2000"), null)
+                .getId();
+
+        // The successor closed the incumbent the day before it started.
+        RailTariff closed = api.getRailTariff(first);
+        assertThat(closed.getEffectiveTo()).isEqualTo(today.minusDays(6));
+        assertThat(closed.getPerWagonRate()).isNull();
+        RailTariff current = api.getRailTariff(second);
+        assertThat(current.getEffectiveTo()).isNull();
+        assertThat(current.getOriginTerminalId()).isEqualTo(railheadA);
+        RailTariffSlice page = api.listRailTariffs(null, 1);
+        assertThat(page.getItems()).extracting(RailTariff::getId).containsExactly(second);
+        assertThat(page.getHasMore()).isTrue();
+        assertThat(api.listRailTariffs(page.getNextCursor(), 1).getItems())
+                .extracting(RailTariff::getId).containsExactly(first);
+
+        // Four containers at 2000 on the card in force 36 hours ago.
+        PlanItineraryRequest plan = railThenRoad();
+        plan.getLegs().get(0).costAmount(null);
+        UUID id = api.planItinerary(plan, null).getId();
+        ItineraryLeg rail = api.getItinerary(id).getLegs().get(0);
+        assertThat(rail.getCostAmount()).isEqualByComparingTo("8000");
+        assertThat(rail.getRailTariffId()).isEqualTo(second);
+        assertThat(rail.getRailTariffCode()).isEqualTo(current.getCode());
+
+        // Backdating under the card in force is a conflict; so is a card
+        // that does not run between railheads.
+        assertStatus(() -> api.publishRailTariff(card("RC-BACK", today.minusDays(5), "1"), null),
+                409, "rail-tariff-backdated");
+        assertStatus(() -> api.publishRailTariff(card("RC-SITE", today, "1")
+                .destinationTerminalId(customerSite), null), 409, "rail-tariff-not-railhead");
+        // Planning is not pricing.
+        assertStatus(() -> client(MULTIMODAL).publishRailTariff(card("RC-X", today, "1"), null),
+                403, null);
+    }
+
+    @Test
+    @DisplayName("rail legs run between railheads, and road legs between their trip's terminals")
+    void terminalRules() {
+        MultimodalApi api = client(MULTIMODAL);
+
+        PlanItineraryRequest railToSite = railThenRoad();
+        railToSite.legs(List.of(railToSite.getLegs().get(0).toTerminalId(customerSite)));
+        assertStatus(() -> api.planItinerary(railToSite, null), 409, "rail-leg-not-at-railhead");
+
+        // The trip runs from railhead B; a leg from railhead A is not its leg.
+        PlanItineraryRequest wrongTrip = railThenRoad();
+        wrongTrip.legs(List.of(wrongTrip.getLegs().get(1).fromTerminalId(railheadA)));
+        assertStatus(() -> api.planItinerary(wrongTrip, null), 409,
+                "road-leg-trip-terminals-mismatch");
+
+        // No cost and no card.
+        PlanItineraryRequest unpriced = railThenRoad();
+        unpriced.getLegs().get(0).costAmount(null);
+        assertStatus(() -> api.planItinerary(unpriced, null), 409, "rail-leg-no-tariff");
+    }
+
+    @Test
+    @DisplayName("a train that never arrives is caught by the sweep and shows over HTTP")
+    void sweepCatchesTheTrainThatNeverCame() {
+        MultimodalApi api = client(MULTIMODAL);
+        UUID id = api.planItinerary(railThenRoad(), null).getId();
+        milestone(api, id, 1, RailMilestoneRequest.MilestoneEnum.PLACED, 40);
+        milestone(api, id, 1, RailMilestoneRequest.MilestoneEnum.LOADED, 38);
+        milestone(api, id, 1, RailMilestoneRequest.MilestoneEnum.DEPARTED, 36);
+        assertThat(api.getItinerary(id).getConnectionMissed()).isFalse();
+
+        // Due 14 hours ago and never reported again; the lorry was booked for
+        // twelve hours ago after two hours to unload.
+        sweep.sweep();
+
+        Itinerary swept = api.getItinerary(id);
+        assertThat(swept.getConnectionMissed()).isTrue();
+        ItineraryLeg road = swept.getLegs().get(1);
+        assertThat(road.getConnectionMissedAt()).isNotNull();
+        assertThat(road.getEarliestStartAt()).isEqualTo(road.getConnectionMissedAt().plusHours(2));
+
+        // The control tower hears it: one ticket about the itinerary, on no
+        // trip -- the late leg was the train -- so it holds no money.
+        assertThat(missedConnectionTickets(id)).singleElement().satisfies(ticket -> {
+            assertThat(ticket.getTripId()).isNull();
+            assertThat(ticket.getSuspendsSettlement()).isFalse();
+        });
+
+        // Sweeping again changes nothing, and raises nothing.
+        sweep.sweep();
+        assertThat(api.getItinerary(id).getLegs().get(1).getConnectionMissedAt())
+                .isEqualTo(road.getConnectionMissedAt());
+        assertThat(missedConnectionTickets(id)).hasSize(1);
+    }
+
+    private List<com.lms.client.model.Exception> missedConnectionTickets(UUID itineraryId) {
+        String token = tokens.issueAccessToken(planner, orgPath, List.of("EXCEPTION_READ"))
+                .value();
+        ApiClient apiClient = new ApiClient().setBasePath("http://localhost:" + port);
+        apiClient.getFeignBuilder().requestInterceptor(template ->
+                template.header("Authorization", "Bearer " + token));
+        return apiClient.buildClient(ControlTowerApi.class).listExceptions(null, null, null, 100)
+                .getItems().stream()
+                .filter(ticket -> itineraryId.equals(ticket.getSubjectId()))
+                .filter(ticket -> ticket.getCategory() == ExceptionCategory.MISSED_CONNECTION)
+                .toList();
+    }
+
     // --------------------------------------------------------------- helpers
+
+    private PublishRailTariffRequest card(String code, LocalDate from, String perContainer) {
+        return new PublishRailTariffRequest()
+                .code(code + "-" + UUID.randomUUID().toString().substring(0, 4))
+                .carrierPartnerId(railCarrier)
+                .originTerminalId(railheadA).destinationTerminalId(railheadB)
+                .perContainerRate(new BigDecimal(perContainer))
+                .minimumCharge(new BigDecimal("1000"))
+                .effectiveFrom(from);
+    }
 
     /**
      * Rail from railhead A to railhead B, 36 to 14 hours ago; then the trip

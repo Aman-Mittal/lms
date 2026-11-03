@@ -38,7 +38,12 @@ import org.springframework.stereotype.Component;
  *   <li>Freight is the rate times the chargeable weight -- in kilograms for a
  *       per-kg card, or converted back to cubic feet for a per-CFT one.</li>
  *   <li>The docket charge is added, and the ODA surcharge when the consignee's
- *       site is out of the delivery area.</li>
+ *       site is out of the delivery area: the card's flat amount, or its rate
+ *       per kg on the chargeable weight lifted to the card's ODA minimum.</li>
+ *   <li>The fuel surcharge is the month's percentage of the freight amount
+ *       alone. Fuel moves the cost of moving the freight; the docket charge
+ *       pays for paperwork and the ODA charge is already its own price, so
+ *       surcharging them would charge fuel twice.</li>
  * </ol>
  */
 @Component
@@ -49,9 +54,22 @@ public class LtlRatingEngine {
 
     private static final int WEIGHT_SCALE = 3;
     private static final int MONEY_SCALE = 2;
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
+    /** A quote with no fuel surcharge. */
     public LtlQuote quote(LtlRateCard card, BigDecimal deadWeightKg, BigDecimal volumeM3,
                           boolean outOfDeliveryArea) {
+        return quote(card, deadWeightKg, volumeM3, outOfDeliveryArea, null);
+    }
+
+    /**
+     * @param fuelSurchargePct the fuel index for the month the docket was
+     *                         booked in, or null when none was recorded --
+     *                         which charges no fuel rather than refusing to
+     *                         price
+     */
+    public LtlQuote quote(LtlRateCard card, BigDecimal deadWeightKg, BigDecimal volumeM3,
+                          boolean outOfDeliveryArea, BigDecimal fuelSurchargePct) {
         BigDecimal dead = deadWeightKg == null ? BigDecimal.ZERO : deadWeightKg;
         BigDecimal volume = volumeM3 == null ? BigDecimal.ZERO : volumeM3;
 
@@ -69,10 +87,28 @@ public class LtlRatingEngine {
                 : chargeableKg;
         BigDecimal freight = money(card.rateAmount().multiply(billedQuantity));
 
-        BigDecimal oda = outOfDeliveryArea ? money(card.odaSurcharge()) : money(BigDecimal.ZERO);
+        BigDecimal oda = outOfDeliveryArea ? oda(card, chargeableKg) : money(BigDecimal.ZERO);
+        BigDecimal fuel = fuelSurchargePct == null
+                ? money(BigDecimal.ZERO)
+                : money(freight.multiply(fuelSurchargePct).divide(HUNDRED));
 
         return new LtlQuote(volumeCft, volumetricKg, chargeableKg, minimumApplied,
-                outOfDeliveryArea, freight, money(card.docketCharge()), oda);
+                outOfDeliveryArea, freight, money(card.docketCharge()), oda,
+                outOfDeliveryArea ? card.odaBasis() : null, fuelSurchargePct, fuel);
+    }
+
+    /**
+     * The out-of-delivery-area charge on a docket that earns one.
+     *
+     * <p>Per kg, it is reckoned on the chargeable weight -- the same weight the
+     * freight is billed on -- so a bulky light docket pays for the space it
+     * takes on the last stretch as it did on the line haul.
+     */
+    private static BigDecimal oda(LtlRateCard card, BigDecimal chargeableKg) {
+        if (card.odaBasis() != LtlRateCard.OdaBasis.PER_KG) {
+            return money(card.odaSurcharge());
+        }
+        return money(card.odaRatePerKg().multiply(chargeableKg)).max(money(card.odaMinimum()));
     }
 
     private static BigDecimal money(BigDecimal value) {

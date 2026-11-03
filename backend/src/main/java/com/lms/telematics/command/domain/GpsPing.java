@@ -47,6 +47,7 @@ public record GpsPing(
         BigDecimal accuracyM,
         Boolean ignitionOn,
         String source,
+        BigDecimal temperatureC,
         Instant createdAt) {
 
     public LatLon point() {

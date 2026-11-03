@@ -30,6 +30,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtGra
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import com.lms.shared.error.ProblemSecurityHandlers;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -60,7 +61,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemSecurityHandlers problems)
+            throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 // CodeQL reports this as "Disabled Spring CSRF protection", high
@@ -117,8 +119,19 @@ public class SecurityConfig {
                         // The OpenAPI contract is public: the console on GitHub
                         // Pages generates its client from it.
                         .requestMatchers(HttpMethod.GET, "/openapi.yaml").permitAll()
+                        // A tracking link's token is its own credential: the
+                        // route is how a customer follows a consignment with
+                        // no account. See PublicTrackingController.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/public/tracking/*").permitAll()
                         .anyRequest().authenticated())
+                // A refusal by the filter chain is a problem document like any
+                // other, with the Bearer challenge kept; see ProblemSecurityHandlers.
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint(problems)
+                        .accessDeniedHandler(problems))
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(problems)
+                        .accessDeniedHandler(problems)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable());
@@ -152,8 +165,11 @@ public class SecurityConfig {
         // known GitHub Pages origin.
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-Id"));
-        config.setExposedHeaders(List.of("X-Correlation-Id"));
+        // If-Match carries the version an edit was read at, and Idempotency-Key
+        // makes a retried write safe; a browser sends neither unless allowed.
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-Id",
+                "If-Match", "Idempotency-Key"));
+        config.setExposedHeaders(List.of("X-Correlation-Id", "ETag"));
         // False. Tokens travel in the Authorization header, not in a cookie,
         // so nothing here needs credentialed requests -- and allowing them
         // widens what a compromised or mis-typed allowed origin could do.

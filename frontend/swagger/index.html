@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LMS API reference</title>
+    <link rel="stylesheet" href="swagger-ui.css" />
+  </head>
+  <body>
+    <div id="ui"></div>
+    <script src="swagger-ui-bundle.js"></script>
+    <script>
+      // The spec is the one the Angular and React clients are generated from,
+      // with its server address pointed at the live demo API.
+      SwaggerUIBundle({ url: 'openapi.yaml', dom_id: '#ui', deepLinking: true });
+    </script>
+  </body>
+</html>

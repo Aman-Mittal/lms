@@ -1,0 +1,218 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/webhooks/subscriptions:
+  post:
+    tags: [Webhooks]
+    operationId: subscribeWebhook
+    summary: Subscribe an address to events
+    description: |
+      Requires `WEBHOOK_MANAGE`. The address must use https and resolve to a
+      public address (`code: webhook-url-not-https`, `webhook-target-not-allowed`,
+      `webhook-url-unresolvable`, `webhook-url-invalid`). The response carries the
+      signing secret **once**; it is never shown again, only rotated.
+
+      Every delivery is a POST of a JSON envelope (`WebhookEnvelope`) with
+      the headers `X-Lms-Event` (the type), `X-Lms-Delivery` (the delivery id,
+      the same on every retry of it: use it to ignore duplicates),
+      `X-Lms-Timestamp` (seconds since the epoch) and `X-Lms-Signature`
+      (`v1=` and the hex HMAC-SHA256 of `<timestamp>.<body>` keyed with the
+      secret). Verify the signature over the raw body, compare in constant
+      time, and reject a timestamp more than a few minutes from your clock.
+      Any 2xx answer is success; anything else, or no answer within ten
+      seconds, is retried on a doubling backoff until the attempts run out,
+      and a subscription whose deliveries keep failing is paused.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/WebhookSubscriptionRequest" }
+    responses:
+      "201":
+        description: Subscribed. This is the only time the secret is shown.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookSecretIssued" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  get:
+    tags: [Webhooks]
+    operationId: listWebhookSubscriptions
+    summary: A page of webhook subscriptions
+    description: Requires `WEBHOOK_READ`. Ordered by name. Never includes a secret.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of subscriptions.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookSubscriptionSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+
+/api/v1/webhooks/subscriptions/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the subscription.
+  get:
+    tags: [Webhooks]
+    operationId: getWebhookSubscription
+    summary: One webhook subscription
+    description: Requires `WEBHOOK_READ`.
+    responses:
+      "200":
+        description: The subscription.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookSubscription" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+  put:
+    tags: [Webhooks]
+    operationId: reviseWebhookSubscription
+    summary: Replace a subscription's name, address, types and active flag
+    description: |
+      Requires `WEBHOOK_MANAGE`. Setting `active: false` stops new deliveries
+      and pauses pending ones; setting it back to true clears a pause the
+      platform applied and its failure count.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/WebhookRevisionRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/webhooks/subscriptions/{id}/secret-rotations:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the subscription.
+  post:
+    tags: [Webhooks]
+    operationId: rotateWebhookSecret
+    summary: Replace the signing secret
+    description: |
+      Requires `WEBHOOK_MANAGE`. The new secret is returned once and signs
+      every delivery from now on, retries of earlier events included.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "200":
+        description: The new secret, shown this once.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookSecretIssued" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/webhooks/subscriptions/{id}/pings:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the subscription.
+  post:
+    tags: [Webhooks]
+    operationId: pingWebhook
+    summary: Queue a test delivery
+    description: |
+      Requires `WEBHOOK_MANAGE`. Queues a `PING` delivery to this subscription,
+      whatever it subscribed to. Refused for an inactive subscription
+      (`code: webhook-subscription-inactive`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "202":
+        description: Queued.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookDeliveryQueued" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/webhooks/subscriptions/{id}/deliveries:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the subscription.
+  get:
+    tags: [Webhooks]
+    operationId: listWebhookDeliveries
+    summary: A subscription's deliveries, newest first
+    description: Requires `WEBHOOK_READ`. Shows status, attempts and the last response code; never a response body.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of deliveries.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookDeliverySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/webhooks/deliveries/{id}/redeliveries:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the delivery.
+  post:
+    tags: [Webhooks]
+    operationId: redeliverWebhook
+    summary: Send a delivery again
+    description: |
+      Requires `WEBHOOK_MANAGE`. Resets the delivery's attempts and makes it due
+      now; it keeps its id, so a receiver that already processed it can tell.
+      Refused for an inactive subscription (`code: webhook-subscription-inactive`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "202":
+        description: Queued again.
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }

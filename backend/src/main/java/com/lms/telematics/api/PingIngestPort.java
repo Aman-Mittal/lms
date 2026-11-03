@@ -47,6 +47,8 @@ public interface PingIngestPort {
      *                   arrived. Arrival order is not position order, and
      *                   treating it as such produces a track that jumps
      *                   backwards through time.
+     * @param temperatureC optional; the cargo temperature of a refrigerated
+     *                   vehicle, in degrees Celsius
      */
     record PingReport(
             UUID vehicleId,
@@ -57,7 +59,16 @@ public interface PingIngestPort {
             BigDecimal headingDeg,
             BigDecimal accuracyM,
             Boolean ignitionOn,
-            String source) {
+            String source,
+            BigDecimal temperatureC) {
+
+        /** A report from a vehicle with no temperature probe. */
+        public PingReport(UUID vehicleId, Instant recordedAt, BigDecimal lat, BigDecimal lon,
+                          BigDecimal speedKph, BigDecimal headingDeg, BigDecimal accuracyM,
+                          Boolean ignitionOn, String source) {
+            this(vehicleId, recordedAt, lat, lon, speedKph, headingDeg, accuracyM, ignitionOn,
+                    source, null);
+        }
     }
 
     /**

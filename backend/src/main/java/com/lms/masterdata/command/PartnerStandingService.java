@@ -44,6 +44,11 @@ public class PartnerStandingService implements PartnerStandingPort {
     }
 
     @Override
+    public boolean exists(UUID partnerId) {
+        return partnerId != null && partners.findById(partnerId).isPresent();
+    }
+
+    @Override
     public String codeOf(UUID partnerId) {
         return partners.findById(partnerId)
                 .map(BusinessPartner::code)

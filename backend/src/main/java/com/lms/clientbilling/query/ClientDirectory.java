@@ -16,7 +16,10 @@
 package com.lms.clientbilling.query;
 
 import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -62,6 +65,17 @@ public class ClientDirectory {
      * <p>A load can carry several clients' freight -- that is the point of
      * consolidating it -- so this returns one row per client, and each is
      * billed for its own share.
+     *
+     * <p>Part-load (LTL) dockets are left out, on both their line-haul and
+     * their delivery load. A docket is already billed to its customer, once,
+     * by finance's docket receivable: priced by zone on its own chargeable
+     * weight when it is booked, and covering the whole journey hub to
+     * consignee. Charging it again here per trip would bill one shipment two
+     * or three times -- once as a docket, then once for each vehicle it rode.
+     * So for a 3PL tenant the docket receivable is the client's transport
+     * charge for LTL, and this module bills only full truckloads per trip. A
+     * load is one mode or the other, never both, so an LTL load yields no
+     * shares at all and no transport charge is captured for its trip.
      */
     public List<ClientShare> sharesOf(UUID loadId) {
         return jdbc.sql("""
@@ -73,11 +87,35 @@ public class ClientDirectory {
                           JOIN consignment c ON c.id = lc.consignment_id
                           JOIN sales_order so ON so.id = c.order_id
                          WHERE lc.load_id = :loadId
+                           AND c.freight_mode <> 'LTL'
                          GROUP BY so.customer_partner_id
                          ORDER BY so.customer_partner_id
                         """)
                 .param("loadId", loadId)
                 .query(ClientShare.class)
                 .list();
+    }
+
+    /**
+     * Who owns each of these SKUs; a SKU with no owner, which the tenant holds
+     * for itself, is absent from the answer.
+     */
+    public Map<UUID, UUID> ownersOf(Collection<UUID> skuIds) {
+        Map<UUID, UUID> owners = new HashMap<>();
+        if (skuIds.isEmpty()) {
+            return owners;
+        }
+        jdbc.sql("""
+                        SELECT id, owner_partner_id FROM sku
+                         WHERE id IN (:ids) AND owner_partner_id IS NOT NULL
+                        """)
+                .param("ids", skuIds)
+                .query((rs, row) -> {
+                    owners.put(rs.getObject("id", UUID.class),
+                            rs.getObject("owner_partner_id", UUID.class));
+                    return null;
+                })
+                .list();
+        return owners;
     }
 }

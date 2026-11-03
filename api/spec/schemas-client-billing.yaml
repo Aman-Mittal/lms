@@ -1,0 +1,533 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+ClientContractServiceRate:
+  type: object
+  description: The price of one value-added service under a contract version.
+  properties:
+    serviceCode: { type: string }
+    unit: { type: string }
+    rate: { type: number, minimum: 0 }
+  required: [serviceCode, unit, rate]
+
+ClientContract:
+  type: object
+  description: |
+    One version of what a client pays. Immutable once published; a
+    correction is a successor version, which closes this one the day
+    before it starts.
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    clientPartnerId: { type: string, format: uuid }
+    currency: { type: string }
+    effectiveFrom: { type: string, format: date }
+    effectiveTo:
+      type: string
+      format: date
+      description: Inclusive. Null while this is the version in force.
+    transportRatePerKg: { type: number }
+    transportMinimumCharge: { type: number }
+    storageRatePerPalletDay: { type: number }
+    handlingInRatePerPallet: { type: number }
+    handlingOutRatePerPallet: { type: number }
+    transportTaxRatePct:
+      type: number
+      description: Tax on transport lines, in percent.
+    warehouseTaxRatePct:
+      type: number
+      description: Tax on storage, handling and value-added service lines, in percent.
+    storageUnitsPerPallet:
+      type: integer
+      description: Units of the client's SKUs that make one pallet position, for
+        storage computed from the warehouse ledger.
+    valueAddedServices:
+      type: array
+      items: { $ref: "#/components/schemas/ClientContractServiceRate" }
+
+PublishClientContractRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    code: { type: string }
+    clientPartnerId:
+      type: string
+      format: uuid
+      description: A business partner of type CUSTOMER.
+    currency: { type: string, default: INR }
+    effectiveFrom:
+      type: string
+      format: date
+      description: Publishing closes the incumbent version the day before.
+    transportRatePerKg: { type: number, minimum: 0 }
+    transportMinimumCharge: { type: number, minimum: 0 }
+    storageRatePerPalletDay: { type: number, minimum: 0 }
+    handlingInRatePerPallet: { type: number, minimum: 0 }
+    handlingOutRatePerPallet: { type: number, minimum: 0 }
+    transportTaxRatePct:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: |
+        Tax on transport lines, in percent, at most three decimals. Omitted
+        is no tax. Applied per invoice line and rounded half-up to two
+        decimals on each line.
+    warehouseTaxRatePct:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: Tax on storage, handling and value-added service lines, in
+        percent, with the same per-line rounding. Omitted is no tax.
+    storageUnitsPerPallet:
+      type: integer
+      minimum: 1
+      default: 1
+      description: |
+        Units of the client's SKUs that make one pallet position. Storage
+        computed from the warehouse ledger is the units held at the end of
+        each day divided by this, rounded up.
+    valueAddedServices:
+      type: array
+      description: Published with the version and immutable with it.
+      items: { $ref: "#/components/schemas/ClientContractServiceRate" }
+  required: [orgUnitId, code, clientPartnerId, effectiveFrom]
+
+ClientPortalUserRequest:
+  type: object
+  properties:
+    userId: { type: string, format: uuid }
+  required: [userId]
+
+ClientServiceType:
+  type: string
+  enum: [TRANSPORT, STORAGE, HANDLING_IN, HANDLING_OUT, VALUE_ADDED]
+  description: |
+    TRANSPORT is captured from completed trips and cannot be recorded by
+    hand. STORAGE is in pallet-days, HANDLING_IN and HANDLING_OUT in
+    pallets, VALUE_ADDED in the unit of the contract's rate for the
+    service code.
+
+ServiceUsageRequest:
+  type: object
+  properties:
+    serviceType: { $ref: "#/components/schemas/ClientServiceType" }
+    serviceCode:
+      type: string
+      description: Required for VALUE_ADDED, refused for anything else.
+    quantity: { type: number, exclusiveMinimum: 0 }
+    occurredOn: { type: string, format: date }
+    reference: { type: string }
+    sourceKey:
+      type: string
+      description: |
+        The caller's own identifier for this usage -- a warehouse ledger
+        entry, a storage snapshot. A second call with the same key returns
+        the charge the first one created.
+  required: [serviceType, quantity, occurredOn, sourceKey]
+
+ClientBillingRunRequest:
+  type: object
+  properties:
+    period:
+      type: string
+      format: date
+      description: Any day of the month to bill; normalised to the first.
+  required: [period]
+
+ClientCharge:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    clientPartnerId: { type: string, format: uuid }
+    serviceType: { $ref: "#/components/schemas/ClientServiceType" }
+    serviceCode: { type: string }
+    quantity: { type: number }
+    unit: { type: string }
+    occurredOn: { type: string, format: date }
+    billingPeriod:
+      type: string
+      format: date
+      description: The first day of the month this charge is invoiced in.
+    late:
+      type: boolean
+      description: True when the charge arrived after its own month was
+        billed and was moved to the next open month.
+    reference: { type: string }
+    sourceKey: { type: string }
+    tripId: { type: string, format: uuid }
+    invoiceId: { type: string, format: uuid }
+
+ClientChargeSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ClientCharge" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ClientInvoice:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    clientPartnerId: { type: string, format: uuid }
+    clientCode: { type: string }
+    clientName: { type: string }
+    periodStart: { type: string, format: date }
+    periodEnd: { type: string, format: date }
+    status:
+      type: string
+      enum: [ISSUED]
+      description: An issued invoice is never edited; corrections are credit notes.
+    currency: { type: string }
+    taxableAmount:
+      type: number
+      description: The sum of the lines' amounts, before tax.
+    taxAmount:
+      type: number
+      description: The sum of the lines' tax, each rounded half-up to two decimals.
+    totalAmount:
+      type: number
+      description: Taxable amount plus tax.
+    creditedAmount:
+      type: number
+      description: Total of the credit notes issued against this invoice, tax
+        included. The invoice's own figures never change.
+    lineCount: { type: integer }
+    issuedAt: { type: string, format: date-time }
+
+ClientInvoiceSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ClientInvoice" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ClientInvoiceLine:
+  type: object
+  properties:
+    lineNo: { type: integer }
+    serviceType: { $ref: "#/components/schemas/ClientServiceType" }
+    narrative: { type: string }
+    quantity: { type: number }
+    unit: { type: string }
+    rate: { type: number }
+    amount:
+      type: number
+      description: The taxable amount of the line.
+    taxRate:
+      type: number
+      description: Percent, from the contract version that priced the line.
+    taxAmount:
+      type: number
+      description: amount x taxRate / 100, rounded half-up to two decimals.
+    lineTotal:
+      type: number
+      description: amount plus taxAmount.
+    creditedAmount:
+      type: number
+      description: Taxable amount credited against this line so far.
+    chargeId: { type: string, format: uuid }
+    occurredOn:
+      type: string
+      format: date
+      description: The day that chose the contract version.
+    contractCode:
+      type: string
+      description: The contract version this line was priced against.
+
+ClientMargin:
+  type: object
+  properties:
+    clientPartnerId: { type: string, format: uuid }
+    clientCode: { type: string }
+    clientName: { type: string }
+    invoiceId: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    periodStart: { type: string, format: date }
+    currency: { type: string }
+    receivable:
+      type: number
+      description: The invoice's taxable amount less what credit notes against it
+        have credited. Tax is owed onwards and is not revenue.
+    transportReceivable: { type: number }
+    warehouseReceivable: { type: number }
+    credited:
+      type: number
+      description: Taxable amount credited against the invoice.
+    carrierPayable:
+      type: number
+      description: The carriers' computed freight for the same movements,
+        apportioned by the client's share of each load's chargeable weight.
+    margin: { type: number }
+    marginPct: { type: number }
+    movements: { type: integer }
+    unpricedMovements:
+      type: integer
+      description: Movements whose carrier bill is missing or unpriced, so
+        whose cost is counted as zero and the margin overstated.
+
+ClientMarginSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ClientMargin" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+
+ClientCreditNoteLineRequest:
+  type: object
+  properties:
+    lineNo:
+      type: integer
+      minimum: 1
+      description: The invoice line to credit.
+    amount:
+      type: number
+      exclusiveMinimum: 0
+      description: Taxable amount to credit, at most two decimals. Omitted
+        credits everything that remains creditable on the line.
+  required: [lineNo]
+
+ClientPaymentRequest:
+  type: object
+  properties:
+    amount:
+      type: number
+      exclusiveMinimum: 0
+      description: What arrived, tax included, at most two decimals.
+    receivedOn:
+      type: string
+      format: date
+      description: The day the money reached the bank.
+    reference:
+      type: string
+      minLength: 1
+      description: The client's remittance reference. One receipt per client and
+        reference; a second is refused.
+  required: [amount, receivedOn, reference]
+
+ClientCreditNoteRequest:
+  type: object
+  description: |
+    Exactly one of `amount` and `lines`. An amount is before tax and is
+    spread over the invoice's lines in proportion to what remains
+    creditable on each, to the cent. Tax is reversed at each line's rate
+    with the invoice rounding rule; the credit that exhausts a line
+    reverses exactly the tax still uncredited on it.
+  properties:
+    reason:
+      type: string
+      description: Why. Recorded on the credit note and in the audit trail.
+    amount:
+      type: number
+      exclusiveMinimum: 0
+      description: Taxable amount to credit, at most two decimals.
+    lines:
+      type: array
+      items: { $ref: "#/components/schemas/ClientCreditNoteLineRequest" }
+  required: [reason]
+
+ClientCreditNoteLine:
+  type: object
+  properties:
+    lineNo: { type: integer }
+    invoiceLineNo: { type: integer }
+    serviceType: { $ref: "#/components/schemas/ClientServiceType" }
+    narrative: { type: string }
+    taxableAmount: { type: number }
+    taxRate: { type: number }
+    taxAmount: { type: number }
+    lineTotal: { type: number }
+
+ClientCreditNote:
+  type: object
+  description: A correction to an issued invoice. Immutable once issued.
+  properties:
+    id: { type: string, format: uuid }
+    creditNoteNo: { type: string }
+    invoiceId: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    clientPartnerId: { type: string, format: uuid }
+    periodStart:
+      type: string
+      format: date
+      description: The credited invoice's month, whose receivable this reduces.
+    reason: { type: string }
+    currency: { type: string }
+    taxableAmount: { type: number }
+    taxAmount: { type: number }
+    totalAmount: { type: number }
+    lineCount: { type: integer }
+    issuedAt: { type: string, format: date-time }
+    lines:
+      type: array
+      items: { $ref: "#/components/schemas/ClientCreditNoteLine" }
+
+ClientStatementEntry:
+  type: object
+  description: |
+    One document on a client's statement. Amounts include tax. An invoice
+    is a debit; a credit note and a payment are credits, so the balance is
+    invoiced less credited and paid, and a negative balance is a client in
+    credit.
+  properties:
+    entryType: { type: string, enum: [INVOICE, CREDIT_NOTE, PAYMENT] }
+    documentId: { type: string, format: uuid }
+    documentNo: { type: string }
+    issuedAt: { type: string, format: date-time }
+    periodStart: { type: string, format: date }
+    invoiceNo:
+      type: string
+      description: The invoice itself, or the invoice a credit note corrects.
+    reason:
+      type: string
+      description: A credit note's reason, or a payment's remittance reference;
+        absent for an invoice.
+    currency: { type: string }
+    debit: { type: number }
+    credit: { type: number }
+    balance:
+      type: number
+      description: Running balance after this entry, over the client's whole
+        history rather than only this page.
+
+ClientStatementSlice:
+  type: object
+  description: One page, oldest first. No total and no page number -- both
+    need the scan keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ClientStatementEntry" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ClientStorageComputationRequest:
+  type: object
+  properties:
+    period:
+      type: string
+      format: date
+      description: Any day of the month to compute; normalised to the first.
+  required: [period]
+
+ClientStorageDay:
+  type: object
+  properties:
+    heldOn: { type: string, format: date }
+    unitsHeld:
+      type: integer
+      format: int64
+      description: Units of the client's SKUs in any warehouse at the end of the
+        day, UTC -- on the dock, in a bin, picked, packed or in quarantine.
+        Quarantined stock counts as held -- it is still in the building, occupying
+        a position, until released or written off.
+    unitsPerPallet:
+      type: integer
+      description: From the contract in force that day; absent on a day with
+        nothing held.
+    pallets:
+      type: integer
+      format: int64
+      description: unitsHeld / unitsPerPallet, rounded up.
+    chargeId: { type: string, format: uuid }
+
+ClientStorage:
+  type: object
+  description: A client's storage for one month, computed from the warehouse ledger.
+  properties:
+    clientPartnerId: { type: string, format: uuid }
+    periodStart: { type: string, format: date }
+    computed:
+      type: boolean
+      description: False when the month has not been computed; there are then no days.
+    unitDays: { type: integer, format: int64 }
+    palletDays:
+      type: integer
+      format: int64
+      description: The quantity the storage charges bill, at the contract's
+        storage rate per pallet-day.
+    days:
+      type: array
+      items: { $ref: "#/components/schemas/ClientStorageDay" }
+
+ClientAgeing:
+  type: object
+  description: |
+    A client's receivable as of a day. Age is counted from the day an
+    invoice was issued: a contract carries no payment terms yet, so nothing
+    here is "past due", only old. A credit note reduces the invoice it
+    corrects; payments are applied to the oldest invoices first, and what
+    they exceed is `unappliedCredit`.
+  properties:
+    clientPartnerId: { type: string, format: uuid }
+    asOf: { type: string, format: date }
+    currency: { type: string }
+    outstanding: { type: number }
+    unappliedCredit: { type: number }
+    buckets: { $ref: "#/components/schemas/ClientAgeingBuckets" }
+    invoices:
+      type: array
+      description: Invoices with something still owing, oldest first.
+      items: { $ref: "#/components/schemas/ClientAgeingInvoice" }
+
+ClientAgeingBuckets:
+  type: object
+  description: Outstanding by days since issue.
+  properties:
+    days0to30: { type: number }
+    days31to60: { type: number }
+    days61to90: { type: number }
+    over90: { type: number }
+
+ClientAgeingInvoice:
+  type: object
+  properties:
+    invoiceId: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    periodStart: { type: string, format: date }
+    issuedOn: { type: string, format: date }
+    total: { type: number }
+    credited: { type: number }
+    paid: { type: number }
+    outstanding: { type: number }
+    ageDays: { type: integer }
+    bucket: { type: string, enum: ["0-30", "31-60", "61-90", "90+"] }
