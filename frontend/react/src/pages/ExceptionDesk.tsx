@@ -19,6 +19,7 @@ import { Link } from 'react-router-dom';
 import {
   ApiProblem, EXCEPTION_SEVERITIES, EXCEPTION_STATUSES, MANUAL_EXCEPTION_CATEGORIES, type Row,
 } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 
@@ -109,8 +110,8 @@ function TicketList({ onOpen, reload }: { onOpen: (id: string) => void; reload: 
     <section data-testid="ticket-list">
       <h2>Tickets</h2>
       <form className="inline" onSubmit={open} data-testid="open-ticket">
-        <input placeholder="Ticket id" aria-label="Ticket id" data-testid="ticket-id" value={typed}
-          onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="ticket" placeholder="Ticket" ariaLabel="Ticket id" testId="ticket-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       <div className="inline">
@@ -176,8 +177,8 @@ function RaiseTicket({ onRaised }: { onRaised: (id: string) => void }) {
     <section>
       <h2>Raise a ticket</h2>
       <form className="inline" onSubmit={raise} data-testid="raise-ticket">
-        <input placeholder="Trip id" aria-label="Trip id of the ticket" value={tripId}
-          onChange={(e) => setTripId(e.target.value)} required />
+        <EntityPicker kind="trip" placeholder="Trip" ariaLabel="Trip id of the ticket"
+          value={tripId} onChange={setTripId} required />
         <select aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)}>
           {MANUAL_EXCEPTION_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -392,8 +393,8 @@ function TripDesk({ tripId, onTrip }: { tripId: string; onTrip: (tripId: string)
     <section data-testid="trip-desk">
       <h2>Trip watch</h2>
       <form className="inline" onSubmit={open} data-testid="open-trip">
-        <input placeholder="Trip id" aria-label="Trip id to watch" data-testid="watch-trip-id" value={typed}
-          onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="trip" placeholder="Trip" ariaLabel="Trip id to watch" testId="watch-trip-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Open trip</button>
       </form>
       {tripId && <TripPanel key={tripId} tripId={tripId} />}
