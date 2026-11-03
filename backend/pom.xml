@@ -256,6 +256,13 @@
       <version>${feign.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- The generator's Feign ApiClient (7.26) builds on Feign's OkHttp client. -->
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-okhttp</artifactId>
+      <version>${feign.version}</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>io.github.openfeign.form</groupId>
       <artifactId>feign-form</artifactId>
