@@ -17,27 +17,30 @@ import {
   AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   EventDeadLetterApi, LTLRatingApi, OrdersApi,
   MilkRunsApi, MultimodalApi, PartnersApi, PlanningApi, PublicTrackingApi, ResponseError, SettlementApi, TerminalsApi, SourcingApi, TelematicsApi, TrackingLinksApi, TripsApi, VehiclesApi, WebhooksApi,
-  type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type CustomFieldDefinition,
+  type ClaimStatus as ApiClaimStatus, type ClaimType as ApiClaimType, type Consignment, type CustomFieldDefinition,
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
-  type AllocationRule, type AllocationRuleAction, type Consignment, type Load, type AllocationRuleRequest,
-  type AddOrderLineRequest, type Order, type OrderLine, type UpdateOrderRequest,
+  type AllocationRule, type AllocationRuleAction, type Load, type AllocationRuleRequest,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
   type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
 } from '../api';
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
+import {
+  ClientBillingApi, type ClientCharge, type ClientContract, type ClientInvoice, type ClientInvoiceLine,
+  type ClientStatementEntry,
+} from '../api';
+import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lmsGateway';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
-  ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
+  ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
   type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
-  type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn,
+  type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn, type SplitPart, type SplitPartDraft,
   type GeoPoint, type MapFeature, type Mapped, type MappedDetail, type TrackingLinkView, type TripRoute,
   type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
   type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
-  type OrderDesk, type OrderHeaderDraft, type OrderLineDraft, type OrderRaiseDraft,
 } from './lmsGateway';
 
 /** A load as the building screen shows it. */
@@ -58,6 +61,55 @@ function consignmentRow(c: Consignment): Row {
     totalDeadWeightKg: text(c.totalDeadWeightKg), materialClasses: text(c.materialClasses),
     containsHazmat: c.containsHazmat ? 'Yes' : '',
   };
+}
+
+/** A client contract version as the billing desk lists it. */
+function contractRow(c: ClientContract): Row {
+  return {
+    id: text(c.id), code: text(c.code), currency: text(c.currency), effectiveFrom: text(c.effectiveFrom),
+    effectiveTo: text(c.effectiveTo), transportRatePerKg: text(c.transportRatePerKg),
+    handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
+    storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+  };
+}
+
+/** A charge as the billing desk lists it; `invoiced` and `late` read Yes or nothing. */
+function chargeRow(c: ClientCharge): Row {
+  return {
+    id: text(c.id), occurredOn: text(c.occurredOn), serviceType: text(c.serviceType), serviceCode: text(c.serviceCode),
+    quantity: text(c.quantity), unit: text(c.unit), reference: text(c.reference),
+    invoiced: c.invoiceId ? 'Yes' : '', late: c.late ? 'Yes' : '',
+  };
+}
+
+function invoiceRow(i: ClientInvoice): Row {
+  return {
+    id: text(i.id), invoiceNo: text(i.invoiceNo), periodStart: text(i.periodStart), periodEnd: text(i.periodEnd),
+    status: text(i.status), currency: text(i.currency), taxableAmount: text(i.taxableAmount),
+    taxAmount: text(i.taxAmount), totalAmount: text(i.totalAmount), creditedAmount: text(i.creditedAmount),
+    lineCount: text(i.lineCount), issuedAt: text(i.issuedAt), clientName: text(i.clientName),
+  };
+}
+
+function invoiceLineRow(l: ClientInvoiceLine): Row {
+  return {
+    lineNo: text(l.lineNo), serviceType: text(l.serviceType), narrative: text(l.narrative),
+    quantity: text(l.quantity), unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+    taxAmount: text(l.taxAmount), lineTotal: text(l.lineTotal), creditedAmount: text(l.creditedAmount),
+  };
+}
+
+function statementRow(e: ClientStatementEntry): Row {
+  return {
+    id: text(e.documentId), entryType: text(e.entryType), documentNo: text(e.documentNo), issuedAt: text(e.issuedAt),
+    invoiceNo: text(e.invoiceNo), reason: text(e.reason), debit: text(e.debit), credit: text(e.credit),
+    balance: text(e.balance),
+  };
+}
+
+/** A `YYYY-MM-DD` day as the generated client sends a date. */
+function day(value: string): Date {
+  return new Date(`${value}T00:00:00Z`);
 }
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -92,6 +144,17 @@ function ruleOf(r: AllocationRule): AllocationRuleView {
     minWeightKg: text(r.minWeightKg), maxWeightKg: text(r.maxWeightKg),
     materialClass: text(r.materialClass), action: (r.action ?? 'PREFER') as RuleAction,
     vendors: (r.vendors ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+  };
+}
+
+function consignmentCard(c: Consignment): ConsignmentCard {
+  return {
+    id: text(c.id), trackingRef: text(c.trackingRef), status: text(c.status), orderNo: text(c.orderNo),
+    consigneeName: text(c.consigneeName), destinationTerminalCode: text(c.destinationTerminalCode),
+    deadWeightKg: text(c.totalDeadWeightKg), volumeM3: text(c.totalVolumeM3),
+    chargeableWeightKg: text(c.chargeableWeightKg), loadNo: text(c.loadNo), freightMode: text(c.freightMode),
+    parentId: text(c.parentConsignmentId), parentTrackingRef: text(c.parentTrackingRef),
+    partCount: c.partCount ?? null, partsDelivered: c.partsDelivered ?? null, partsCancelled: c.partsCancelled ?? null,
   };
 }
 
@@ -183,77 +246,6 @@ function deliveryRow(d: WebhookDelivery): Row {
   };
 }
 
-/** A draft's optional value, left out of the request when blank. */
-function blankAsAbsent(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function numberOrAbsent(value: string): number | undefined {
-  const trimmed = value.trim();
-  return trimmed ? Number(trimmed) : undefined;
-}
-
-function instantOrAbsent(value: string): Date | undefined {
-  const trimmed = value.trim();
-  return trimmed ? new Date(trimmed) : undefined;
-}
-
-/** An instant as a draft holds it, to the second, or blank. */
-function isoOf(d: Date | null | undefined): string {
-  return d ? d.toISOString().replace(/\.\d{3}Z$/, 'Z') : '';
-}
-
-function headerRequest(h: OrderHeaderDraft): UpdateOrderRequest {
-  return {
-    customerPartnerId: h.customerPartnerId.trim(), originTerminalId: h.originTerminalId.trim(),
-    requestedPickupAt: instantOrAbsent(h.requestedPickupAt),
-    requestedDeliveryAt: instantOrAbsent(h.requestedDeliveryAt),
-    originHubTerminalId: blankAsAbsent(h.originHubTerminalId),
-    destinationHubTerminalId: blankAsAbsent(h.destinationHubTerminalId),
-  };
-}
-
-function lineRequest(l: OrderLineDraft): AddOrderLineRequest {
-  return {
-    lineNo: l.lineNo, materialCode: l.materialCode.trim(), materialDescription: l.materialDescription.trim(),
-    materialClass: l.materialClass, hazmatUnCode: blankAsAbsent(l.hazmatUnCode), quantity: Number(l.quantity),
-    uom: l.uom.trim(), deadWeightKg: Number(l.deadWeightKg), lengthM: numberOrAbsent(l.lengthM),
-    widthM: numberOrAbsent(l.widthM), heightM: numberOrAbsent(l.heightM),
-    volumetricDivisor: numberOrAbsent(l.volumetricDivisor), consigneePartnerId: blankAsAbsent(l.consigneePartnerId),
-    destinationTerminalId: l.destinationTerminalId.trim(),
-  };
-}
-
-/** An order and its lines as the desk shows them, each line ready to be restated by an edit. */
-function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
-  return {
-    order: {
-      id: text(o.id), orderNo: text(o.orderNo), status: text(o.status), customerName: text(o.customerName),
-      originTerminalCode: text(o.originTerminalCode), freightMode: text(o.freightMode),
-      lineCount: text(o.lineCount), plannedLineCount: text(o.plannedLineCount),
-      totalDeadWeightKg: text(o.totalDeadWeightKg), containsHazmat: o.containsHazmat ? 'Yes' : '',
-      requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
-    },
-    version: text(o.version),
-    header: {
-      customerPartnerId: text(o.customerPartnerId), originTerminalId: text(o.originTerminalId),
-      requestedPickupAt: isoOf(o.requestedPickupAt), requestedDeliveryAt: isoOf(o.requestedDeliveryAt),
-      originHubTerminalId: text(o.originHubTerminalId), destinationHubTerminalId: text(o.destinationHubTerminalId),
-    },
-    lines: lines.map((l) => ({
-      id: text(l.id), lineNo: l.lineNo ?? 0, materialCode: text(l.materialCode),
-      materialDescription: text(l.materialDescription), materialClass: text(l.materialClass),
-      hazmatUnCode: text(l.hazmatUnCode), quantity: text(l.quantity), uom: text(l.uom),
-      deadWeightKg: text(l.deadWeightKg), lengthM: text(l.lengthM), widthM: text(l.widthM),
-      heightM: text(l.heightM), volumetricDivisor: text(l.volumetricDivisor),
-      consigneePartnerId: text(l.consigneePartnerId), destinationTerminalId: text(l.destinationTerminalId),
-      consigneeName: text(l.consigneeName), destinationTerminalCode: text(l.destinationTerminalCode),
-      planned: l.planned ?? false,
-    })),
-  };
-}
-
 /** The adapter: the only file in the React app that imports the generated client. */
 export function createGeneratedGateway(getToken: () => string | null): LmsGateway {
   // The token is read per request (a function), so one gateway outlives sign-ins.
@@ -280,6 +272,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const links = new TrackingLinksApi(config);
   const rules = new AllocationRulesApi(config);
   const sourcing = new SourcingApi(config);
+  const clientBilling = new ClientBillingApi(config);
   // The public read is made with no credentials at all: a customer has none, and
   // a console left signed in must not send its token to a route that ignores it.
   const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
@@ -461,6 +454,33 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
         }
       }),
 
+    consignmentByRef: (trackingRef: string): Promise<ConsignmentCard> =>
+      guard(async () => consignmentCard(await loads.trackConsignment({ trackingRef }))),
+
+    consignment: (id: string): Promise<ConsignmentCard> =>
+      guard(async () => consignmentCard(await loads.getConsignment({ id }))),
+
+    consignmentParts: (id: string): Promise<ConsignmentCard[]> =>
+      guard(async () => {
+        // At most 500 parts, so at most three pages: read them all.
+        const parts: ConsignmentCard[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await loads.listConsignmentParts({ id, cursor, limit: 200 });
+          parts.push(...page.items.map(consignmentCard));
+          cursor = page.hasMore ? page.nextCursor ?? undefined : undefined;
+        } while (cursor);
+        return parts;
+      }),
+
+    splitConsignment: (id: string, parts: SplitPartDraft[]): Promise<SplitPart[]> =>
+      guard(async () => (await loads.splitConsignment({
+        id,
+        splitConsignmentRequest: {
+          parts: parts.map((p) => ({ deadWeightKg: Number(p.deadWeightKg), volumeM3: Number(p.volumeM3) })),
+        },
+      })).map((p) => ({ id: p.id, trackingRef: p.trackingRef }))),
+
     issueTrackingLink: (consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink> =>
       guard(async () => {
         const issued = await links.issueTrackingLink({
@@ -491,6 +511,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
             position: t.position
               ? { lat: text(t.position.lat), lon: text(t.position.lon), recordedAt: text(t.position.recordedAt) }
               : null,
+            partsTotal: t.partsTotal ?? null, partsDelivered: t.partsDelivered ?? null,
           };
         } catch (e) {
           if (e instanceof ResponseError && e.response.status === 404) {
@@ -805,53 +826,60 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         await loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } });
       }),
-    orderDesk: (orderId: string): Promise<OrderDesk> =>
+
+    clientChoices: (): Promise<Choice[]> =>
+      guard(async () => (await partners.listPartners({
+        partnerType: 'CUSTOMER' as unknown as ListPartnersPartnerTypeEnum, limit: 200,
+      })).items.map((p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` }))),
+    clientContracts: (clientId: string) =>
+      guard(async () => (await clientBilling.listClientContracts({ clientId })).map(contractRow)),
+    clientCharges: (clientId: string, period: string) =>
+      guard(async () => (await clientBilling.listClientCharges({ clientId, period: day(period), limit: 200 }))
+        .items.map(chargeRow)),
+    runClientBilling: (clientId: string, period: string) =>
+      guard(async () => (await clientBilling.runClientBilling({
+        clientId, clientBillingRunRequest: { period: day(period) },
+      })).id),
+    clientInvoices: (clientId: string) =>
+      guard(async () => (await clientBilling.listClientInvoices({ clientId, limit: 100 })).items.map(invoiceRow)),
+    clientInvoice: (invoiceId: string): Promise<ClientInvoiceDetail> =>
       guard(async () => {
-        const [order, lines] = await Promise.all([
-          orders.getOrder({ id: orderId }), orders.listOrderLines({ id: orderId })]);
-        return orderDeskOf(order, lines);
+        const [invoice, lines] = await Promise.all([
+          clientBilling.getClientInvoice({ id: invoiceId }), clientBilling.getClientInvoiceLines({ id: invoiceId })]);
+        return { invoice: invoiceRow(invoice), lines: lines.map(invoiceLineRow) };
       }),
-    raiseOrder: (orgUnitId: string, draft: OrderRaiseDraft) =>
-      guard(async () => text((await orders.raiseOrder({
-        raiseOrderRequest: {
-          orgUnitId, orderNo: draft.orderNo.trim(), customerPartnerId: draft.customerPartnerId.trim(),
-          originTerminalId: draft.originTerminalId.trim(), requestedPickupAt: instantOrAbsent(draft.requestedPickupAt),
-          requestedDeliveryAt: instantOrAbsent(draft.requestedDeliveryAt),
-        },
-      })).id)),
-    reviseOrderHeader: (orderId: string, version: string, header: OrderHeaderDraft) =>
+    recordClientPayment: (clientId: string, draft: PaymentDraft) =>
       guard(async () => {
-        await orders.updateOrder({ id: orderId, ifMatch: version, updateOrderRequest: headerRequest(header) });
-      }),
-    replaceOrderLines: (orderId: string, version: string, lines: OrderLineDraft[]) =>
-      guard(async () => {
-        await orders.replaceOrderLines({
-          id: orderId, ifMatch: version, replaceOrderLinesRequest: { lines: lines.map(lineRequest) },
+        await clientBilling.recordClientPayment({
+          clientId,
+          clientPaymentRequest: { amount: draft.amount, receivedOn: day(draft.receivedOn), reference: draft.reference },
         });
       }),
-    removeOrderLine: (orderId: string, version: string, lineId: string) =>
+    issueClientCreditNote: (invoiceId: string, draft: CreditNoteDraft) =>
       guard(async () => {
-        await orders.removeOrderLine({ id: orderId, ifMatch: version, lineId });
+        const issued = await clientBilling.issueClientCreditNote({
+          id: invoiceId, clientCreditNoteRequest: { reason: draft.reason, amount: draft.amount },
+        });
+        return text((await clientBilling.getClientCreditNote({ id: issued.id })).creditNoteNo);
       }),
-    amendOrder: (orderId: string, version: string, header: OrderHeaderDraft | null, lines: OrderLineDraft[] | null) =>
+    clientStatement: (clientId: string) =>
+      guard(async () => (await clientBilling.getClientStatement({ clientId, limit: 200 })).items.map(statementRow)),
+    clientAgeing: (clientId: string): Promise<ClientAgeingView> =>
       guard(async () => {
-        await orders.amendOrder({
-          id: orderId, ifMatch: version,
-          amendOrderRequest: {
-            header: header ? headerRequest(header) : undefined, lines: lines ? lines.map(lineRequest) : undefined,
+        const a = await clientBilling.getClientAgeing({ clientId });
+        return {
+          currency: text(a.currency), outstanding: text(a.outstanding), unappliedCredit: text(a.unappliedCredit),
+          buckets: {
+            '0-30': text(a.buckets?.days0to30), '31-60': text(a.buckets?.days31to60),
+            '61-90': text(a.buckets?.days61to90), '90+': text(a.buckets?.over90),
           },
-        });
+          invoices: (a.invoices ?? []).map((i) => ({
+            id: text(i.invoiceId), invoiceNo: text(i.invoiceNo), issuedOn: text(i.issuedOn), total: text(i.total),
+            credited: text(i.credited), paid: text(i.paid), outstanding: text(i.outstanding),
+            ageDays: text(i.ageDays), bucket: text(i.bucket),
+          })),
+        };
       }),
-    validateOrder: (orderId: string) =>
-      guard(async () => {
-        await orders.validateOrder({ id: orderId });
-      }),
-    cancelOrder: (orderId: string, reason: string) =>
-      guard(async () => {
-        await orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } });
-      }),
-    generateConsignments: (orderId: string) =>
-      guard(async () => (await loads.generateConsignments({ id: orderId })).length),
   };
 }
 
@@ -863,15 +891,11 @@ async function guard<T>(call: () => Promise<T>): Promise<T> {
     if (e instanceof ResponseError) {
       const status = e.response.status;
       try {
-        const body = (await e.response.clone().json()) as {
-          detail?: string; code?: string; errors?: Record<string, string>;
-        };
+        const body = (await e.response.clone().json()) as { detail?: string; errors?: Record<string, string> };
         if (body.errors && status !== 409) {
-          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status, body.errors,
-            body.code ?? '');
+          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status, body.errors);
         }
-        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status, body.errors ?? {},
-          body.code ?? '');
+        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status, body.errors ?? {});
       } catch (inner) {
         if (inner instanceof ApiProblem) {
           throw inner;
