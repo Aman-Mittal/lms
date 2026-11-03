@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
+import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -179,6 +180,59 @@ public class SourcingQueryService {
                         rs.getString("vehicle_type"), rs.getString("strategy"),
                         rs.getBoolean("active"), entries))
                 .optional();
+    }
+
+    /**
+     * A page of routing guides, without their vendors.
+     *
+     * <p>A guide has no code or name of its own: it is its lane and vehicle
+     * type, so that is what {@code q} searches -- the origin or destination
+     * terminal code, or the vehicle type. Keyed on the guide id, which is
+     * unique, so the cursor needs no tie-breaker; the order is stable rather
+     * than meaningful, which is all a picker paging through matches needs.
+     */
+    @PreAuthorize("hasAnyAuthority('ROUTING_GUIDE_MANAGE', 'LOAD_ALLOCATE')")
+    public Slice<RoutingGuideView> listGuides(Boolean active, String cursor, Integer limit, String q) {
+        int pageSize = Slice.clampLimit(limit);
+
+        List<RoutingGuideView> rows = jdbc.sql("""
+                        SELECT g.id, o.code AS origin_code, d.code AS destination_code,
+                               g.vehicle_type, g.strategy, g.active
+                          FROM routing_guide g
+                          JOIN terminal o ON o.id = g.origin_terminal_id
+                          JOIN terminal d ON d.id = g.destination_terminal_id
+                         WHERE (CAST(:active AS boolean) IS NULL OR g.active = CAST(:active AS boolean))
+                           AND (CAST(:cursor AS uuid) IS NULL OR g.id > CAST(:cursor AS uuid))
+                           AND (CAST(:q AS text) IS NULL OR lower(o.code) LIKE CAST(:q AS text)
+                                OR lower(d.code) LIKE CAST(:q AS text)
+                                OR lower(g.vehicle_type) LIKE CAST(:q AS text))
+                         ORDER BY g.id
+                         LIMIT :limit
+                        """)
+                .param("active", active)
+                .param("cursor", guideCursor(cursor))
+                .param("q", Search.containsPattern(q))
+                .param("limit", pageSize + 1)
+                .query((rs, row) -> new RoutingGuideView(rs.getObject("id", UUID.class),
+                        rs.getString("origin_code"), rs.getString("destination_code"),
+                        rs.getString("vehicle_type"), rs.getString("strategy"),
+                        rs.getBoolean("active"), List.of()))
+                .list();
+
+        return Slice.of(rows, pageSize, guide -> guide.id().toString());
+    }
+
+    /** A guide cursor is a guide id; anything else was not issued by this listing. */
+    private static UUID guideCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(cursor);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessRuleViolationException("invalid-cursor",
+                    "The cursor was not issued by this listing");
+        }
     }
 
     /** The full cascade trail for one allocation, oldest offer first. */

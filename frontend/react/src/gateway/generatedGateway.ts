@@ -1811,7 +1811,17 @@ function pickerVerbs({
             const s = await loads.listUnassignedConsignments({ q: search, cursor: at, limit: PICK_LIMIT });
             return page(s.items, s.nextCursor, (c) => ({ id: text(c.id), label: `${text(c.trackingRef)} · ${text(c.status)}` }));
           }
+          case 'routing-guide': {
+            const s = await sourcing.listRoutingGuides({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (g) => ({ id: text(g.id), label: guideLabel(g) }));
+          }
         }
       }),
   };
+}
+
+/** A routing guide is its lane and vehicle type; a retired one says so. */
+function guideLabel(g: CommercialRoutingGuide): string {
+  const lane = `${text(g.originTerminalCode)} → ${text(g.destinationTerminalCode)} · ${text(g.vehicleType)}`;
+  return g.active === false ? `${lane} · retired` : lane;
 }

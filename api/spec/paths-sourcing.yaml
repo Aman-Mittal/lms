@@ -183,6 +183,33 @@
       "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/routing-guides:
+  get:
+    tags: [Sourcing]
+    operationId: listRoutingGuides
+    summary: A page of routing guides
+    description: |
+      Requires `ROUTING_GUIDE_MANAGE` or `LOAD_ALLOCATE`. Guides come without
+      their vendors (`entries` is empty); read one guide for its ranks. A guide
+      is its lane and vehicle type, so `q` matches the origin or destination
+      terminal code or the vehicle type.
+    parameters:
+      - name: active
+        in: query
+        required: false
+        schema: { type: boolean }
+        description: Only live guides (true) or only retired ones (false).
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
+    responses:
+      "200":
+        description: One page of routing guides.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoutingGuideSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
   post:
     tags: [Sourcing]
     operationId: defineRoutingGuide

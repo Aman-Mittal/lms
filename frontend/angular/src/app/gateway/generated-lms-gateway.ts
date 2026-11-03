@@ -1458,6 +1458,9 @@ export class GeneratedLmsGateway extends LmsGateway {
       case 'unassigned':
         return this.call(this.loads.listUnassignedConsignments({ q: search, cursor: at, limit }),
           (s) => page(s.items, s.nextCursor, (c) => ({ id: text(c.id), label: `${text(c.trackingRef)} · ${text(c.status)}` })));
+      case 'routing-guide':
+        return this.call(this.sourcing.listRoutingGuides({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (g) => ({ id: text(g.id), label: guideLabel(g) })));
     }
   }
 
@@ -1831,4 +1834,10 @@ function railRateCardRow(r: RailRateCard): Row {
     perWagonRate: text(r.perWagonRate), perContainerRate: text(r.perContainerRate), minimumCharge: text(r.minimumCharge),
     effectiveFrom: text(r.effectiveFrom), effectiveTo: text(r.effectiveTo),
   };
+}
+
+/** A routing guide is its lane and vehicle type; a retired one says so. */
+function guideLabel(g: CommercialRoutingGuide): string {
+  const lane = `${text(g.originTerminalCode)} → ${text(g.destinationTerminalCode)} · ${text(g.vehicleType)}`;
+  return g.active === false ? `${lane} · retired` : lane;
 }

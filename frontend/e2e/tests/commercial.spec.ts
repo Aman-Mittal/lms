@@ -16,7 +16,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import { apiSession, newPlannedLoad, openScreen, printed, signIn, stubPrint, tag, withoutPermissions } from './support';
-import { commercialLane, commercialVendor, deliveredTrip } from './support-commercial';
+import { commercialGuide, commercialLane, commercialVendor, deliveredTrip } from './support-commercial';
 // Rate cards and rail tariffs
 import { commercialRailheads, commercialRateCard, commercialRateCards } from './support-commercial';
 
@@ -169,6 +169,24 @@ test.describe('commercial desk', () => {
       await allocate.getByRole('button', { name: 'Allocate load' }).click();
       await expect(page.getByTestId('allocate-refusal').getByTestId('refusal-code')).not.toBeEmpty();
     });
+  });
+
+  test('a routing guide is found by typing part of its lane and opened', async ({ page, request }, info) => {
+    const salt = tag(info);
+    const session = await apiSession(request);
+    const lane = await commercialLane(request, session, salt);
+    await commercialGuide(request, session, lane, 'TRAILER');
+    await signIn(page);
+    await openCommercial(page);
+
+    const open = page.getByTestId('open-guide');
+    await open.getByLabel('Guide id', { exact: true }).fill(`cm-orig-${salt}`);
+    const option = page.getByRole('option', { name: new RegExp(`${lane.origin.code} → ${lane.destination.code} · TRAILER`, 'i') });
+    await expect(option).toHaveCount(1);
+    await option.click();
+    await open.getByRole('button', { name: 'Open' }).click();
+    await expect(page.getByTestId('guide-panel')
+      .getByRole('heading', { name: `${lane.origin.code} → ${lane.destination.code} · TRAILER` })).toBeVisible();
   });
 
   test('the load to allocate is picked by typing part of its load number', async ({ page, request }, info) => {

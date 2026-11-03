@@ -79,6 +79,17 @@ export async function commercialLane(
   return { origin: await site('ORIG'), destination: await site('DEST') };
 }
 
+/** A routing guide for the lane and vehicle type, defined through the API; returns its id. */
+export async function commercialGuide(
+  request: APIRequestContext, session: Session, lane: { origin: Place; destination: Place }, vehicleType: string,
+): Promise<string> {
+  const made = await call(request, session, '/api/v1/routing-guides', {
+    orgUnitId: session.orgUnitId, originTerminalId: lane.origin.id, destinationTerminalId: lane.destination.id,
+    vehicleType,
+  });
+  return made.id as string;
+}
+
 export interface DeliveredTrip {
   tripNo: string;
   billId: string;

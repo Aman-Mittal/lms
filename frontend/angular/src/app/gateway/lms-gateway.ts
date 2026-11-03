@@ -1151,7 +1151,8 @@ export interface RailTariffDraft {
  */
 export type PickKind =
   | 'partner' | 'customer' | 'vendor' | 'terminal' | 'warehouse' | 'vehicle' | 'driver' | 'sku' | 'bin'
-  | 'order' | 'load' | 'trip' | 'ticket' | 'allocation' | 'bill' | 'consignment' | 'unassigned';
+  | 'order' | 'load' | 'trip' | 'ticket' | 'allocation' | 'bill' | 'consignment' | 'unassigned'
+  | 'routing-guide';
 
 export interface PickQuery {
   kind: PickKind;
