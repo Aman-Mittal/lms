@@ -142,12 +142,14 @@ test.describe('pickers for what has moved', () => {
     await page.getByRole('button', { name: 'Look up' }).click();
     await expect(page.getByTestId('no-proof')).toBeVisible();
 
-    await page.getByTestId('nav-tracking').click();
+    // Wait for each screen: React swaps pages in a transition, so the old
+    // screen's input, under the same label, is still there just after the click.
+    await openScreen(page, 'nav-tracking', 'Tracking links');
     await pick(page, page.locator('main'), 'Consignment id', tail, shown);
     await page.getByRole('button', { name: 'Look up' }).click();
     await expect(page.getByTestId('links-panel')).toBeVisible();
 
-    await page.getByTestId('nav-claims').click();
+    await openScreen(page, 'nav-claims', 'Claims');
     await pick(page, page.locator('main'), 'Filter by consignment', tail, shown);
     await page.getByRole('button', { name: 'Filter' }).click();
     await expect(page.getByText('No claims against that consignment.')).toBeVisible();

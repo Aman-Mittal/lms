@@ -21,6 +21,7 @@ import { useSession } from './session';
 /** A pasted id is taken as it is, without a search. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEBOUNCE_MS = 250;
+const UNMATCHED = 'Choose one of the suggestions, or paste an id.';
 
 export interface EntityPickerProps {
   kind: PickKind;
@@ -52,6 +53,8 @@ export function EntityPicker({
   const [next, setNext] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
+  // Why a submit was refused; kept apart from search errors, which a later search clears.
+  const [refusal, setRefusal] = useState('');
   const chosen = useRef(value);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Numbers each search, so an answer that arrives after a newer one -- or after
@@ -70,7 +73,7 @@ export function EntityPicker({
   // Text that names nothing is not an answer: the form will not send it.
   useEffect(() => {
     input.current?.setCustomValidity(
-      text.trim() && !chosen.current ? 'Choose one of the suggestions, or paste an id.' : '');
+      text.trim() && !chosen.current ? UNMATCHED : '');
   }, [text, value]);
 
   useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); } }, []);
@@ -93,6 +96,7 @@ export function EntityPicker({
 
   function typed(t: string) {
     setText(t);
+    setRefusal('');
     if (timer.current) { clearTimeout(timer.current); }
     if (UUID.test(t.trim())) {
       asked.current++;
@@ -109,6 +113,7 @@ export function EntityPicker({
   }
 
   function pick(choice: Choice) {
+    setRefusal('');
     chosen.current = choice.id;
     setText(choice.label);
     onChange(choice.id);
@@ -120,6 +125,10 @@ export function EntityPicker({
       <input ref={input} aria-label={ariaLabel} placeholder={placeholder} required={required}
         data-testid={testId} value={text} autoComplete="off" role="combobox" aria-expanded={open}
         onChange={(e) => typed(e.target.value)}
+        // The browser refuses the submit; say why where it can be read out.
+        onInvalid={(e) => {
+          if (text.trim() && !chosen.current) { e.preventDefault(); setOpen(false); setRefusal(UNMATCHED); }
+        }}
         onFocus={() => { if (!text.trim() && !open) { void search('', null); } }}
         onKeyDown={(e) => { if (e.key === 'Escape') { setOpen(false); } }}
         onBlur={() => { setTimeout(() => setOpen(false), 150); }} />
@@ -141,6 +150,7 @@ export function EntityPicker({
         </ul>
       )}
       {error && <span className="error" role="alert">{error}</span>}
+      {refusal && <span className="error" role="alert">{refusal}</span>}
     </span>
   );
 }

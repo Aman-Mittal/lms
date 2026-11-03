@@ -13,12 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Component, ElementRef, OnDestroy, effect, inject, input, model, signal, untracked, viewChild } from '@angular/core';
+import {
+  Component, ElementRef, OnDestroy, afterNextRender, effect, inject, input, model, signal, untracked, viewChild,
+} from '@angular/core';
 import { Choice, LmsGateway, PickKind } from '../gateway/lms-gateway';
 
 /** A pasted id is taken as it is, without a search. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEBOUNCE_MS = 250;
+const UNMATCHED = 'Choose one of the suggestions, or paste an id.';
 
 /**
  * A search-as-you-type picker for one kind of record. `value` is the chosen
@@ -51,6 +54,7 @@ const DEBOUNCE_MS = 250;
         </ul>
       }
       @if (error()) { <span class="error" role="alert">{{ error() }}</span> }
+      @if (refusal()) { <span class="error" role="alert">{{ refusal() }}</span> }
     </span>
   `,
 })
@@ -71,6 +75,8 @@ export class EntityPicker implements OnDestroy {
   readonly next = signal<string | null>(null);
   readonly open = signal(false);
   readonly error = signal('');
+  /** Why a submit was stopped; kept apart from search errors, which a later search clears. */
+  readonly refusal = signal('');
 
   private readonly box = viewChild.required<ElementRef<HTMLInputElement>>('box');
   private chosen = '';
@@ -78,6 +84,7 @@ export class EntityPicker implements OnDestroy {
   // Numbers each search, so an answer that arrives after a newer one -- or
   // after an id was pasted -- is dropped rather than reopening a stale list.
   private asked = 0;
+  private form: HTMLFormElement | null = null;
 
   constructor() {
     // A value set from outside (an order read back, a form reset) is shown as it is.
@@ -95,16 +102,33 @@ export class EntityPicker implements OnDestroy {
       const shown = this.text();
       this.value();
       this.box().nativeElement.setCustomValidity(
-        shown.trim() && !this.chosen ? 'Choose one of the suggestions, or paste an id.' : '');
+        shown.trim() && !this.chosen ? UNMATCHED : '');
+    });
+    // FormsModule marks forms novalidate, so the browser would send text that
+    // names nothing; stop that submit here and say why, before ngSubmit runs.
+    afterNextRender(() => {
+      this.form = this.box().nativeElement.form;
+      this.form?.addEventListener('submit', this.refuseUnmatched, true);
     });
   }
 
   ngOnDestroy(): void {
     if (this.timer) { clearTimeout(this.timer); }
+    this.form?.removeEventListener('submit', this.refuseUnmatched, true);
   }
+
+  private readonly refuseUnmatched = (event: Event): void => {
+    if (this.text().trim() && !this.chosen) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.open.set(false);
+      this.refusal.set(UNMATCHED);
+    }
+  };
 
   typed(t: string): void {
     this.text.set(t);
+    this.refusal.set('');
     if (this.timer) { clearTimeout(this.timer); }
     const trimmed = t.trim();
     if (UUID.test(trimmed)) {
@@ -134,6 +158,7 @@ export class EntityPicker implements OnDestroy {
   }
 
   pick(choice: Choice): void {
+    this.refusal.set('');
     this.chosen = choice.id;
     this.text.set(choice.label);
     this.value.set(choice.id);

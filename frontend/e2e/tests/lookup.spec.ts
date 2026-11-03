@@ -22,6 +22,8 @@ import { signIn, stubTiles } from './support';
  * around it has finished starting -- what a quick hand or a slow machine does.
  * The value is set through the element's own setter and announced with an
  * input event, as a keystroke would be, so either console sees it as typed.
+ * The test id is watched as well as the element: a picker's input carries it
+ * as a binding, so it is named a moment after it is added.
  */
 async function typeOnArrival(page: Page, testId: string, value: string): Promise<void> {
   await page.evaluate(([id, text]) => {
@@ -33,7 +35,7 @@ async function typeOnArrival(page: Page, testId: string, value: string): Promise
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-testid'] });
   }, [testId, value]);
 }
 
