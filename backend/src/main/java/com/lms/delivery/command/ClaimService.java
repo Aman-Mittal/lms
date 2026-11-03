@@ -80,10 +80,15 @@ public class ClaimService {
             throw new BusinessRuleViolationException("claim-description-invalid",
                     "A description is 1 to " + MAX_TEXT + " characters");
         }
-        boolean exists = jdbc.sql("SELECT 1 FROM consignment WHERE id = :id")
-                .param("id", consignmentId).query(Integer.class).optional().isPresent();
-        if (!exists) {
-            throw new ResourceNotFoundException("Consignment", consignmentId);
+        String status = jdbc.sql("SELECT status FROM consignment WHERE id = :id")
+                .param("id", consignmentId).query(String.class).optional()
+                .orElseThrow(() -> new ResourceNotFoundException("Consignment", consignmentId));
+        // A split consignment carries nothing itself: the loss or damage
+        // happened to one of its parts, on one vehicle, and is claimed there.
+        if ("SPLIT".equals(status)) {
+            throw new BusinessRuleViolationException("claim-against-split-consignment",
+                    "This consignment was split across vehicles; raise the claim against the part "
+                            + "that was lost or damaged");
         }
         if (type.needsProofOfDelivery()) {
             boolean proved = proofs.forConsignment(tenantId, consignmentId)

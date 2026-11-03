@@ -225,6 +225,14 @@ request after a quiet spell pays the start-up cost above.
   cancelling a load left empty. An optional `reason` is recorded in the audit
   log. A part-load line haul still leaves its dockets at the hub and the order
   unfulfilled.
+- A planned full truckload too big for one vehicle can be split into 2 to 500
+  parts whose weights and volumes add up exactly to it. Each part is an ordinary
+  full truckload with its own reference (`<ref>-01`, or `-001` past 99), goes on
+  its own load, and is delivered, proved, claimed against and billed on its own.
+  The original becomes SPLIT for good: it is never loaded, billed or cancelled
+  again, its view and public tracking link count its parts delivered, and its
+  order is fulfilled when the last part is delivered. A docket is not split
+  (`docket-cannot-be-split`).
 - A draft order's header and lines can be edited (replace the lines, remove one).
   A validated order that has no consignments can be amended: it is validated
   again, stays VALIDATED and its before and after are audited. Once freight is

@@ -38,6 +38,9 @@ import { GROUPS, RESOURCES } from './resources';
                 <a [routerLink]="['/', r.key]" routerLinkActive="active"
                    [attr.data-testid]="'nav-' + r.key">{{ r.title }}</a>
               }
+              @if (group === 'Operations' && session.can('LOAD_READ')) {
+                <a routerLink="/consignments" routerLinkActive="active" data-testid="nav-consignments">Consignments</a>
+              }
               @if (group === 'Operations' && session.can('TERMINAL_READ')) {
                 <a routerLink="/map" routerLinkActive="active" data-testid="nav-map">Network map</a>
               }
@@ -61,6 +64,9 @@ import { GROUPS, RESOURCES } from './resources';
               }
               @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE'))) {
                 <a routerLink="/ltl" routerLinkActive="active" data-testid="nav-ltl">LTL rating</a>
+              }
+              @if (group === 'Finance' && session.can('CLIENT_BILLING_READ')) {
+                <a routerLink="/client-billing" routerLinkActive="active" data-testid="nav-client-billing">Client billing</a>
               }
               @if (group === 'Control tower' && session.can('EVENT_DEAD_LETTER_READ')) {
                 <a routerLink="/parked-events" routerLinkActive="active" data-testid="nav-parked-events">Parked events</a>

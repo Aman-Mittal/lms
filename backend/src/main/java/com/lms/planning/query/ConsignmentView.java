@@ -45,5 +45,14 @@ public record ConsignmentView(
          */
         UUID handlingUnitId,
         String handlingUnitNo,
+        /** For a part of a split consignment: the consignment it is a part of. */
+        UUID parentConsignmentId,
+        String parentTrackingRef,
+        /** For a SPLIT consignment: how many parts it became. Null otherwise. */
+        Integer partCount,
+        /** For a SPLIT consignment: how many of its parts have been delivered. */
+        Integer partsDelivered,
+        /** For a SPLIT consignment: how many of its parts have been cancelled. */
+        Integer partsCancelled,
         Instant createdAt) {
 }

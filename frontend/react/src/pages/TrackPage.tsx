@@ -43,6 +43,14 @@ export function TrackPage() {
           <dl>
             <div><dt>Reference</dt><dd data-testid="track-reference">{view.data.reference}</dd></div>
             <div><dt>Status</dt><dd data-testid="track-status">{view.data.status}</dd></div>
+            {view.data.partsTotal !== null && (
+              <div>
+                <dt>Vehicles</dt>
+                <dd data-testid="track-parts">
+                  {view.data.partsDelivered} of {view.data.partsTotal} delivered
+                </dd>
+              </div>
+            )}
             <div><dt>From</dt><dd data-testid="track-origin">{view.data.originName || '—'}</dd></div>
             <div><dt>To</dt><dd data-testid="track-destination">{view.data.destinationName || '—'}</dd></div>
             <div><dt>Requested delivery</dt><dd>{view.data.requestedDeliveryAt || '—'}</dd></div>

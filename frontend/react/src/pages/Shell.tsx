@@ -42,6 +42,9 @@ export function Shell() {
               {RESOURCES.filter((r) => r.group === group && (!r.permission || can(r.permission))).map((r) => (
                 <NavLink key={r.key} to={`/${r.key}`} data-testid={`nav-${r.key}`}>{r.title}</NavLink>
               ))}
+              {group === 'Operations' && can('LOAD_READ') && (
+                <NavLink to="/consignments" data-testid="nav-consignments">Consignments</NavLink>
+              )}
               {group === 'Operations' && can('TERMINAL_READ') && (
                 <NavLink to="/map" data-testid="nav-map">Network map</NavLink>
               )}
@@ -65,6 +68,9 @@ export function Shell() {
               )}
               {group === 'Finance' && (can('INVOICE_READ') || can('TARIFF_MANAGE')) && (
                 <NavLink to="/ltl" data-testid="nav-ltl">LTL rating</NavLink>
+              )}
+              {group === 'Finance' && can('CLIENT_BILLING_READ') && (
+                <NavLink to="/client-billing" data-testid="nav-client-billing">Client billing</NavLink>
               )}
               {group === 'Control tower' && can('EVENT_DEAD_LETTER_READ') && (
                 <NavLink to="/parked-events" data-testid="nav-parked-events">Parked events</NavLink>
