@@ -31,6 +31,7 @@
           enum: [P1, P2, P3]
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
     responses:
       "200":
         description: One page of tickets.
