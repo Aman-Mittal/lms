@@ -19,7 +19,10 @@ import {
   AllocationDetail, ApiProblem, Choice, FreightBillDetail, GUIDE_STRATEGIES, GuideDraft, GuideStrategy, LmsGateway,
   SLAB_RATE_BASES, SlabRateBasis, RoutingGuideDetail, Row, SlabDraft, TariffDraft,
 } from '../gateway/lms-gateway';
+// Rate cards and rail tariffs
+import type { RailTariffDraft, TariffCardDetail, TariffFilter } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { EntityPicker } from './entity-picker';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 export interface Refusal {
@@ -268,7 +271,7 @@ export class TariffsPanel {
 /** Routing guides: who is offered a lane's loads, in what order, and how long each has to answer. */
 @Component({
   selector: 'app-guides-panel',
-  imports: [FormsModule, CommercialTable, RefusalNote],
+  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker],
   template: `
     <section data-testid="guides">
       <h2>Routing guides</h2>
@@ -307,8 +310,8 @@ export class TariffsPanel {
           }
           @if (manage() && d.guide['active']) {
             <form class="inline" (ngSubmit)="addVendor()" data-testid="add-vendor">
-              <input name="vendorPartnerId" aria-label="Vendor" placeholder="Vendor" list="commercial-vendors"
-                     [value]="vendorId()" (input)="vendorId.set($any($event.target).value)" required />
+              <app-entity-picker [kind]="'vendor'" ariaLabel="Vendor" placeholder="Vendor" [required]="true"
+                                 [(value)]="vendorId" />
               <input name="rankNo" aria-label="Rank" placeholder="Rank" inputmode="numeric"
                      [value]="rank()" (input)="rank.set($any($event.target).value)" required />
               <input name="sla" aria-label="Answers within minutes" placeholder="Answers within (min)" inputmode="numeric"
@@ -405,14 +408,14 @@ export class GuidesPanel {
 /** Allocations: a load offered to the vendors its guide names, one at a time, until one accepts. */
 @Component({
   selector: 'app-allocations-panel',
-  imports: [FormsModule, RefusalNote],
+  imports: [FormsModule, RefusalNote, EntityPicker],
   template: `
     <section data-testid="allocations">
       <h2>Allocations</h2>
       @if (act()) {
         <form class="inline" (ngSubmit)="allocate()" data-testid="allocate-load">
-          <input name="loadId" aria-label="Load id to allocate" placeholder="Load id" [value]="loadId()"
-                 (input)="loadId.set($any($event.target).value)" required />
+          <app-entity-picker [kind]="'load'" ariaLabel="Load id to allocate" placeholder="Load" [required]="true"
+                             [(value)]="loadId" />
           <button type="submit">Allocate load</button>
         </form>
         <app-refusal [refusal]="allocateRefusal()" testId="allocate-refusal" />
@@ -423,8 +426,8 @@ export class GuidesPanel {
         <button type="submit">List</button>
       </form>
       <form class="inline" (ngSubmit)="open(typed().trim())" data-testid="open-allocation">
-        <input name="allocationId" aria-label="Allocation id" placeholder="Allocation id" [value]="typed()"
-               (input)="typed.set($any($event.target).value)" required />
+        <app-entity-picker [kind]="'allocation'" ariaLabel="Allocation id" placeholder="Allocation (load no)"
+                           [required]="true" [(value)]="typed" />
         <button type="submit">Open</button>
       </form>
       <app-refusal [refusal]="listRefusal()" testId="allocations-refusal" />
@@ -569,7 +572,7 @@ export class AllocationsPanel implements OnInit {
 /** Freight bills: what the platform computed, what the vendor claimed, and how it settled. */
 @Component({
   selector: 'app-bills-panel',
-  imports: [FormsModule, CommercialTable, RefusalNote],
+  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker],
   template: `
     <section data-testid="freight-bills">
       <h2>Freight bills</h2>
@@ -579,8 +582,7 @@ export class AllocationsPanel implements OnInit {
         <button type="submit">List</button>
       </form>
       <form class="inline" (ngSubmit)="open(typed())" data-testid="open-bill">
-        <input name="billId" aria-label="Bill id" placeholder="Bill id" [value]="typed()"
-               (input)="typed.set($any($event.target).value)" required />
+        <app-entity-picker [kind]="'bill'" ariaLabel="Bill id" placeholder="Bill" [required]="true" [(value)]="typed" />
         <button type="submit">Open</button>
       </form>
       <app-refusal [refusal]="listRefusal()" testId="bills-refusal" />
@@ -756,10 +758,313 @@ export class BillsPanel implements OnInit {
   }
 }
 
+// Rate cards and rail tariffs
+
+const RATE_CARD_STATES: Array<[TariffFilter['state'], string]> = [
+  ['', 'All versions'], ['open', 'In force or upcoming'], ['superseded', 'Superseded'],
+];
+
+/** Every published rate card version, newest first, and one card opened with its weight bands. */
+@Component({
+  selector: 'app-rate-cards-panel',
+  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker],
+  template: `
+    <section data-testid="rate-cards">
+      <h2>Published rate cards</h2>
+      <form class="inline" (ngSubmit)="refresh()" data-testid="rate-card-filter">
+        <app-entity-picker [kind]="'vendor'" ariaLabel="Vendor filter" placeholder="Vendor (blank: all)" [(value)]="vendor" />
+        <select name="rateCardState" aria-label="Versions" [value]="state()" (change)="state.set($any($event.target).value)">
+          @for (s of states; track s[0]) { <option [value]="s[0]">{{ s[1] }}</option> }
+        </select>
+        <button type="submit">List</button>
+      </form>
+      <form class="inline" (ngSubmit)="open(typed())" data-testid="open-rate-card">
+        <input name="rateCardId" aria-label="Rate card id" placeholder="Rate card id" [value]="typed()"
+               (input)="typed.set($any($event.target).value)" required />
+        <button type="submit">Open</button>
+      </form>
+      <app-refusal [refusal]="listRefusal()" testId="rate-cards-refusal" />
+      @if (loaded() && rows().length === 0) {
+        <p class="muted" data-testid="no-rate-cards">No rate card matches.</p>
+      } @else {
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Card</th><th>Vendor</th><th>Lane</th><th>Vehicle</th><th>From</th><th>To</th><th>Bands</th></tr></thead>
+            <tbody>
+              @for (t of rows(); track t['id']) {
+                <tr data-testid="rate-card-row" tabindex="0" [class.selected]="t['id'] === openId()"
+                    (click)="open(t['id'])" (keydown.enter)="open(t['id'])">
+                  <td>{{ t['code'] }}</td><td>{{ t['vendorName'] }}</td>
+                  <td>{{ t['originTerminalCode'] }} → {{ t['destinationTerminalCode'] }}</td>
+                  <td>{{ t['vehicleType'] }}</td><td>{{ t['effectiveFrom'] }}</td><td>{{ t['effectiveTo'] || '—' }}</td>
+                  <td>{{ t['slabCount'] }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+      @if (nextCursor()) { <p><button class="link" data-testid="rate-cards-more" (click)="more()">Load more</button></p> }
+      <app-refusal [refusal]="openRefusal()" testId="rate-card-refusal" />
+      @if (detail(); as d) {
+        <section data-testid="rate-card-panel" aria-label="Rate card">
+          <h3 data-testid="rate-card-code">{{ d.card['code'] }}</h3>
+          <dl class="facts">
+            <div><dt>Vendor</dt><dd data-testid="rate-card-vendor">{{ d.card['vendorName'] }}</dd></div>
+            <div><dt>Lane</dt><dd>{{ d.card['originTerminalCode'] }} → {{ d.card['destinationTerminalCode'] }}</dd></div>
+            <div><dt>Vehicle</dt><dd>{{ d.card['vehicleType'] }}</dd></div>
+            <div><dt>Published under</dt><dd>{{ d.card['orgUnitName'] }}</dd></div>
+            <div><dt>In force</dt><dd data-testid="rate-card-state">{{ d.card['superseded']
+              ? d.card['effectiveFrom'] + ' to ' + d.card['effectiveTo'] : 'from ' + d.card['effectiveFrom'] }}</dd></div>
+            <div><dt>Minimum charge</dt><dd>{{ d.card['minimumCharge'] }} {{ d.card['currency'] }}</dd></div>
+            <div><dt>Free detention hours</dt><dd>{{ d.card['detentionFreeHours'] }}</dd></div>
+            <div><dt>Detention per hour</dt><dd>{{ d.card['detentionHourlyRate'] }}</dd></div>
+            <div><dt>Fee per additional drop</dt><dd>{{ d.card['additionalDropFee'] }}</dd></div>
+          </dl>
+          <h4>Weight bands</h4>
+          @if (d.slabs.length === 0) {
+            <p class="muted" data-testid="rate-card-no-bands">No band: the card prices nothing.</p>
+          } @else {
+            <app-commercial-table [rows]="d.slabs" [columns]="slabColumns" rowTestId="rate-card-band" />
+          }
+        </section>
+      }
+    </section>
+  `,
+})
+export class RateCardsPanel implements OnInit {
+  private readonly gateway = inject(LmsGateway);
+
+  readonly states = RATE_CARD_STATES;
+  readonly slabColumns = SLAB_COLUMNS;
+  readonly vendor = signal('');
+  readonly state = signal<TariffFilter['state']>('');
+  readonly rows = signal<Row[]>([]);
+  readonly nextCursor = signal<string | null>(null);
+  readonly loaded = signal(false);
+  readonly listRefusal = signal<Refusal | null>(null);
+  readonly typed = signal('');
+  readonly openId = signal<string | null>(null);
+  readonly detail = signal<TariffCardDetail | null>(null);
+  readonly openRefusal = signal<Refusal | null>(null);
+
+  ngOnInit(): void {
+    void this.refresh();
+  }
+
+  async refresh(): Promise<void> {
+    this.listRefusal.set(null);
+    try {
+      const page = await this.gateway.tariffs({ vendorPartnerId: this.vendor(), state: this.state() });
+      this.rows.set(page.rows);
+      this.nextCursor.set(page.nextCursor);
+      this.loaded.set(true);
+    } catch (e) {
+      this.listRefusal.set(refusalOf(e));
+    }
+  }
+
+  /** The next page of the same listing, after what is already shown. */
+  async more(): Promise<void> {
+    const cursor = this.nextCursor();
+    if (!cursor) {
+      return;
+    }
+    this.listRefusal.set(null);
+    try {
+      const page = await this.gateway.tariffs({ vendorPartnerId: this.vendor(), state: this.state() }, cursor);
+      this.rows.update((shown) => [...shown, ...page.rows]);
+      this.nextCursor.set(page.nextCursor);
+    } catch (e) {
+      this.listRefusal.set(refusalOf(e));
+    }
+  }
+
+  async open(id: string): Promise<void> {
+    const target = id.trim();
+    this.openId.set(target);
+    this.openRefusal.set(null);
+    try {
+      this.detail.set(await this.gateway.tariffCard(target));
+    } catch (e) {
+      this.detail.set(null);
+      this.openRefusal.set(refusalOf(e));
+    }
+  }
+}
+
+function blankRailTariff(): RailTariffDraft {
+  return {
+    code: '', carrierPartnerId: '', originTerminalId: '', destinationTerminalId: '', effectiveFrom: today(),
+    currency: '', perWagonRate: '', perContainerRate: '', minimumCharge: '',
+  };
+}
+
+/** Rail carriers' rate cards between railheads: every version, newest first. Publishing needs TARIFF_MANAGE. */
+@Component({
+  selector: 'app-rail-tariffs-panel',
+  imports: [FormsModule, RefusalNote],
+  template: `
+    <section data-testid="rail-tariffs">
+      <h2>Rail rate cards</h2>
+      @if (manage()) {
+        <form class="card" (ngSubmit)="publish()" data-testid="publish-rail-tariff">
+          <label>Code <input name="railCode" [value]="draft().code" (input)="set('code', $any($event.target).value)" required /></label>
+          <label>Rail carrier
+            <input name="railCarrier" list="commercial-vendors" [value]="draft().carrierPartnerId"
+                   (input)="set('carrierPartnerId', $any($event.target).value)" required />
+          </label>
+          <label>Origin railhead
+            <input name="railOrigin" list="commercial-terminals" [value]="draft().originTerminalId"
+                   (input)="set('originTerminalId', $any($event.target).value)" required />
+          </label>
+          <label>Destination railhead
+            <input name="railDestination" list="commercial-terminals" [value]="draft().destinationTerminalId"
+                   (input)="set('destinationTerminalId', $any($event.target).value)" required />
+          </label>
+          <label>Effective from
+            <input name="railEffectiveFrom" type="date" [value]="draft().effectiveFrom"
+                   (input)="set('effectiveFrom', $any($event.target).value)" required />
+          </label>
+          <label>Currency <input name="railCurrency" placeholder="INR" [value]="draft().currency" (input)="set('currency', $any($event.target).value)" /></label>
+          <label>Per wagon
+            <input name="railPerWagon" inputmode="decimal" [value]="draft().perWagonRate"
+                   (input)="set('perWagonRate', $any($event.target).value)" />
+          </label>
+          <label>Per container
+            <input name="railPerContainer" inputmode="decimal" [value]="draft().perContainerRate"
+                   (input)="set('perContainerRate', $any($event.target).value)" />
+          </label>
+          <label>Minimum charge
+            <input name="railMinimum" inputmode="decimal" [value]="draft().minimumCharge"
+                   (input)="set('minimumCharge', $any($event.target).value)" />
+          </label>
+          <button type="submit">Publish rail rate card</button>
+        </form>
+        <app-refusal [refusal]="publishRefusal()" testId="rail-tariff-refusal" />
+        @if (published()) { <p data-testid="rail-tariff-published">Rail rate card {{ published() }} published.</p> }
+      }
+      <app-refusal [refusal]="listRefusal()" testId="rail-tariffs-refusal" />
+      @if (loaded() && rows().length === 0) {
+        <p class="muted" data-testid="no-rail-tariffs">No rail rate card yet.</p>
+      } @else {
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Card</th><th>Carrier</th><th>Railheads</th><th>Per wagon</th><th>Per container</th><th>From</th><th>To</th></tr></thead>
+            <tbody>
+              @for (r of rows(); track r['id']) {
+                <tr data-testid="rail-tariff-row" tabindex="0" [class.selected]="r['id'] === openId()"
+                    (click)="open(r['id'])" (keydown.enter)="open(r['id'])">
+                  <td>{{ r['code'] }}</td><td>{{ r['carrierCode'] }}</td>
+                  <td>{{ r['originTerminalCode'] }} → {{ r['destinationTerminalCode'] }}</td>
+                  <td>{{ r['perWagonRate'] || '—' }}</td><td>{{ r['perContainerRate'] || '—' }}</td>
+                  <td>{{ r['effectiveFrom'] }}</td><td>{{ r['effectiveTo'] || '—' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+      @if (nextCursor()) { <p><button class="link" data-testid="rail-tariffs-more" (click)="more()">Load more</button></p> }
+      <app-refusal [refusal]="openRefusal()" testId="rail-tariff-open-refusal" />
+      @if (card(); as c) {
+        <section data-testid="rail-tariff-panel" aria-label="Rail rate card">
+          <h3 data-testid="rail-tariff-code">{{ c['code'] }}</h3>
+          <dl class="facts">
+            <div><dt>Carrier</dt><dd>{{ c['carrierCode'] }}</dd></div>
+            <div><dt>Railheads</dt><dd>{{ c['originTerminalCode'] }} → {{ c['destinationTerminalCode'] }}</dd></div>
+            <div><dt>Per wagon</dt><dd data-testid="rail-per-wagon">{{ c['perWagonRate'] || '—' }}</dd></div>
+            <div><dt>Per container</dt><dd data-testid="rail-per-container">{{ c['perContainerRate'] || '—' }}</dd></div>
+            <div><dt>Minimum charge</dt><dd>{{ c['minimumCharge'] }} {{ c['currency'] }}</dd></div>
+            <div><dt>In force</dt><dd>{{ c['effectiveTo'] ? c['effectiveFrom'] + ' to ' + c['effectiveTo'] : 'from ' + c['effectiveFrom'] }}</dd></div>
+          </dl>
+        </section>
+      }
+    </section>
+  `,
+})
+export class RailTariffsPanel implements OnInit {
+  private readonly gateway = inject(LmsGateway);
+
+  readonly manage = input(false);
+  readonly draft = signal<RailTariffDraft>(blankRailTariff());
+  readonly publishRefusal = signal<Refusal | null>(null);
+  readonly published = signal('');
+  readonly rows = signal<Row[]>([]);
+  readonly nextCursor = signal<string | null>(null);
+  readonly loaded = signal(false);
+  readonly listRefusal = signal<Refusal | null>(null);
+  readonly openId = signal<string | null>(null);
+  readonly card = signal<Row | null>(null);
+  readonly openRefusal = signal<Refusal | null>(null);
+
+  ngOnInit(): void {
+    void this.refresh();
+  }
+
+  set(field: keyof RailTariffDraft, value: string): void {
+    this.draft.update((d) => ({ ...d, [field]: value }));
+  }
+
+  async refresh(): Promise<void> {
+    this.listRefusal.set(null);
+    try {
+      const page = await this.gateway.railTariffs();
+      this.rows.set(page.rows);
+      this.nextCursor.set(page.nextCursor);
+      this.loaded.set(true);
+    } catch (e) {
+      this.listRefusal.set(refusalOf(e));
+    }
+  }
+
+  /** The next page of the listing, after what is already shown. */
+  async more(): Promise<void> {
+    const cursor = this.nextCursor();
+    if (!cursor) {
+      return;
+    }
+    this.listRefusal.set(null);
+    try {
+      const page = await this.gateway.railTariffs(cursor);
+      this.rows.update((shown) => [...shown, ...page.rows]);
+      this.nextCursor.set(page.nextCursor);
+    } catch (e) {
+      this.listRefusal.set(refusalOf(e));
+    }
+  }
+
+  async open(id: string): Promise<void> {
+    this.openId.set(id);
+    this.openRefusal.set(null);
+    try {
+      this.card.set(await this.gateway.railTariff(id));
+    } catch (e) {
+      this.card.set(null);
+      this.openRefusal.set(refusalOf(e));
+    }
+  }
+
+  async publish(): Promise<void> {
+    this.publishRefusal.set(null);
+    this.published.set('');
+    const draft = this.draft();
+    try {
+      const id = await this.gateway.publishRailTariff(draft);
+      this.published.set(draft.code.trim());
+      this.draft.set(blankRailTariff());
+      await this.refresh();
+      await this.open(id);
+    } catch (e) {
+      this.publishRefusal.set(refusalOf(e));
+    }
+  }
+}
+
 /** Rate cards, routing guides, allocations and freight bills: what a lane costs and who carries it. */
 @Component({
   selector: 'app-commercial',
-  imports: [TariffsPanel, GuidesPanel, AllocationsPanel, BillsPanel],
+  imports: [TariffsPanel, GuidesPanel, AllocationsPanel, BillsPanel, RateCardsPanel, RailTariffsPanel],
   template: `
     <h1>Commercial</h1>
     <p class="muted">
@@ -773,6 +1078,9 @@ export class BillsPanel implements OnInit {
       @for (t of terminals(); track t.id) { <option [value]="t.id">{{ t.label }}</option> }
     </datalist>
     @if (session.can('TARIFF_MANAGE') && session.orgUnitId()) { <app-tariffs-panel /> }
+    <!-- Rate cards and rail tariffs -->
+    @if (session.can('TARIFF_MANAGE') || session.can('INVOICE_READ')) { <app-rate-cards-panel /> }
+    @if (session.can('MULTIMODAL_READ')) { <app-rail-tariffs-panel [manage]="session.can('TARIFF_MANAGE')" /> }
     @if (session.can('ROUTING_GUIDE_MANAGE') || session.can('LOAD_ALLOCATE')) {
       <app-guides-panel [manage]="session.can('ROUTING_GUIDE_MANAGE')" />
     }
