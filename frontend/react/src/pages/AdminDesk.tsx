@@ -17,11 +17,15 @@
 import { useState, type FormEvent } from 'react';
 import {
   ACCESS_FREIGHT_MODES, ApiProblem, DOCUMENT_OWNER_TYPES, type AccessFreightMode, type AccessPolicyView,
-  type AdminUser, type DocumentOwnerType, type PolicyEffect, type Row,
+  type AdminUser, type DocumentOwnerType, type PickKind, type PolicyEffect, type Row,
 } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
+
+/** The picker each kind of document owner is chosen with. */
+const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
 
 export type AdminSection = 'users' | 'policies' | 'compliance';
 
@@ -186,8 +190,8 @@ function AttributesForm({ userId, initial }: {
           </label>
         ))}
       </fieldset>
-      <input placeholder="Partner id" aria-label="Partner id" data-testid="attr-partner" value={partnerId}
-        onChange={(e) => setPartnerId(e.target.value)} />
+      <EntityPicker kind="partner" placeholder="Partner" ariaLabel="Partner id" testId="attr-partner"
+        value={partnerId} onChange={setPartnerId} />
       <input placeholder="Approval limit" aria-label="Approval limit" data-testid="attr-limit" inputMode="decimal"
         value={approvalLimit} onChange={(e) => setApprovalLimit(e.target.value)} />
       <button type="submit" data-testid="save-attributes">Save attributes</button>
@@ -439,8 +443,8 @@ function ComplianceSection() {
             onChange={(e) => setOwnerType(e.target.value as DocumentOwnerType)}>
             {DOCUMENT_OWNER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <input placeholder="Id" aria-label="Owner id" data-testid="owner-id" required value={ownerId}
-            onChange={(e) => setOwnerId(e.target.value)} />
+          <EntityPicker key={ownerType} kind={OWNER_PICKS[ownerType]} placeholder="Find one" ariaLabel="Owner id"
+            testId="owner-id" required value={ownerId} onChange={setOwnerId} />
           <button type="submit" data-testid="open-owner">Open</button>
         </form>
         {documents && (documents.length === 0
