@@ -16,8 +16,9 @@
 
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Choice, ClientAgeingView, ClientInvoiceDetail, LmsGateway, Row } from '../gateway/lms-gateway';
+import { ClientAgeingView, ClientInvoiceDetail, LmsGateway, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { EntityPicker } from './entity-picker';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -378,7 +379,7 @@ export class ClientDesk implements OnInit {
 /** Opens a 3PL client's billing desk by its partner id. */
 @Component({
   selector: 'app-client-billing',
-  imports: [FormsModule, ClientDesk],
+  imports: [FormsModule, ClientDesk, EntityPicker],
   template: `
     <h1>Client billing</h1>
     <p class="muted">
@@ -387,11 +388,8 @@ export class ClientDesk implements OnInit {
     </p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="open()" data-testid="open-client">
-      <input name="clientId" placeholder="Client id" aria-label="Client id" data-testid="client-id" list="client-options"
-             [value]="typed()" (input)="typed.set($any($event.target).value)" required />
-      <datalist id="client-options">
-        @for (c of choices(); track c.id) { <option [value]="c.id">{{ c.label }}</option> }
-      </datalist>
+      <app-entity-picker [kind]="'customer'" placeholder="Client" ariaLabel="Client id" testId="client-id"
+                         [required]="true" [(value)]="typed" />
       <button type="submit">Open</button>
     </form>
     @for (id of opened(); track id) {
@@ -399,22 +397,11 @@ export class ClientDesk implements OnInit {
     }
   `,
 })
-export class ClientBilling implements OnInit {
-  private readonly gateway = inject(LmsGateway);
-
+export class ClientBilling {
   readonly typed = signal('');
   readonly clientId = signal('');
   /** The open client as a one-item list, so a new client gets a fresh desk. */
   readonly opened = computed(() => (this.clientId() ? [this.clientId()] : []));
-  readonly choices = signal<Choice[]>([]);
-
-  async ngOnInit(): Promise<void> {
-    try {
-      this.choices.set(await this.gateway.clientChoices());
-    } catch {
-      // The picker is a convenience; an id can still be typed.
-    }
-  }
 
   open(): void {
     this.clientId.set(this.typed().trim().toLowerCase());
