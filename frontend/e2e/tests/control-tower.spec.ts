@@ -133,7 +133,9 @@ test.describe('exception desk', () => {
       await expect(detectors.getByTestId('temperature-excursion')).toHaveText(`${before.temperatureExcursionMinutes} min`);
       await expect(detectors.getByTestId('detector-customised')).toHaveText('Set for this tenant');
 
-      await page.reload();
+      // Away and back: the desk reads the settings again from the server.
+      await page.getByTestId('nav-delivery').click();
+      await openDesk(page);
       await expect(page.getByTestId('detector-settings').getByTestId('eta-slip')).toHaveText(`${changed} min`);
     } finally {
       await restoreDetectorSettings(request, session, before);

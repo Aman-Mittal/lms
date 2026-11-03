@@ -239,7 +239,8 @@ export class TicketPanel {
             <div><dt>Minutes left</dt><dd>{{ p['estimatedMinutesRemaining'] || '—' }}</dd></div>
             <div><dt>Off route</dt><dd>{{ p['offRoute'] || 'No' }}</dd></div>
           </dl>
-        } @else {
+        }
+        @if (!a.progress?.['lastFixAt']) {
           <p class="muted" data-testid="no-progress">No position has been reported for this trip yet.</p>
         }
       }

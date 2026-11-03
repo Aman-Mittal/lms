@@ -428,7 +428,7 @@ function TripPanel({ tripId }: { tripId: string }) {
   return (
     <section data-testid="trip-panel" aria-label="Trip">
       {activity.error && <p className="error" role="alert">{activity.error}</p>}
-      {activity.data && !progress && (
+      {activity.data && !progress?.lastFixAt && (
         <p className="muted" data-testid="no-progress">No position has been reported for this trip yet.</p>
       )}
       {progress && (
