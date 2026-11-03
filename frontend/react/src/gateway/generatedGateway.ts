@@ -33,6 +33,15 @@ import {
   type ClientStatementEntry,
 } from '../api';
 import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lmsGateway';
+// Commercial
+import {
+  type AddSlabRequestRateBasisEnum, type Allocation as CommercialAllocation, type DefineGuideRequestStrategyEnum,
+  type FreightBill as CommercialFreightBill, type FreightBillLine as CommercialFreightBillLine,
+  type Offer as CommercialOffer, type RoutingGuide as CommercialRoutingGuide,
+} from '../api';
+import type {
+  AllocationDetail, FreightBillDetail, GuideDraft, GuideVendorDraft, RoutingGuideDetail, SlabDraft, TariffDraft,
+} from './lmsGateway';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
   ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
@@ -44,6 +53,64 @@ import {
   type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
   type OrderDesk, type OrderHeaderDraft, type OrderLineDraft, type OrderRaiseDraft,
 } from './lmsGateway';
+// Warehouse operations
+import { ListTerminalsCategoryEnum, WarehouseApi } from '../api';
+import type {
+  AsnDraft, DispatchDraft, OutboundDraft, ReceiptCountDraft, SkuDraft, StockMoveDraft, WarehouseDocument,
+} from './lmsGateway';
+// Administration
+import {
+  AccessPoliciesApi, ComplianceApi, UsersApi, type AccessPolicy, type AttachDocumentRequest, type ComplianceDocument,
+  type CreateAccessPolicyRequestEffectEnum, type ReviseAccessPolicyRequestEffectEnum, type SetUserAccessAttributesRequest,
+  type SetUserAccessAttributesRequestFreightModesEnum, type User, type UserAccessAttributes,
+} from '../api';
+import type {
+  AccessAttributesDraft, AccessFreightMode, AccessPolicyChanges, AccessPolicyDraft, AccessPolicyPage,
+  AccessPolicyView, AdminUser, DocumentDraft, DocumentOwnerType, PolicyEffect,
+} from './lmsGateway';
+// Control tower
+import {
+  type Exception as ApiException, type ExceptionCategory, type ListExceptionsSeverityEnum,
+} from '../api';
+import type {
+  DetectorSettingsView, ExceptionDraft, ExceptionFilter, TripActivity, TripWatchDraft, TripWatchView,
+} from './lmsGateway';
+
+/** A ticket as the exception desk lists and opens it. */
+function ticketRow(e: ApiException): Row {
+  return {
+    id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
+    category: text(e.category), description: text(e.description), source: text(e.source),
+    tripId: text(e.tripId), tripNo: text(e.tripNo), registrationNo: text(e.registrationNo),
+    subjectLabel: text(e.subjectLabel), assigneeName: text(e.assigneeName), raisedBy: text(e.raisedBy),
+    raisedAt: text(e.raisedAt), resolution: text(e.resolution), resolvedBy: text(e.resolvedBy),
+    closedBy: text(e.closedBy), suspendsSettlement: e.suspendsSettlement ? 'Yes' : '',
+    positionSource: text(e.positionSource), lat: text(e.lat), lon: text(e.lon),
+  };
+}
+
+/** A typed number, or nothing when the field was left blank. */
+function decimalOrAbsent(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+/** A blank note is no note. */
+function noteOf(note: string): { note: string } | undefined {
+  return note.trim() ? { note: note.trim() } : undefined;
+}
+
+/** The call's result, or null when the API answers 404; any other failure as an ApiProblem. */
+async function absentOn404<T>(call: () => Promise<T>): Promise<T | null> {
+  try {
+    return await guard(call);
+  } catch (e) {
+    if (e instanceof ApiProblem && e.status === 404) {
+      return null;
+    }
+    throw e;
+  }
+}
 
 /** A load as the building screen shows it. */
 function loadRow(l: Load): Row {
@@ -1000,6 +1067,204 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           })),
         };
       }),
+
+    // Warehouse operations
+    ...warehouseVerbs(new WarehouseApi(config), terminals),
+    // Administration
+    ...adminGateway(config),
+
+    // Commercial
+    publishTariff: (orgUnitId: string, draft: TariffDraft) =>
+      guard(async () => text((await freightBills.publishTariff({
+        publishTariffRequest: {
+          orgUnitId, code: draft.code.trim(), vendorPartnerId: draft.vendorPartnerId.trim(),
+          originTerminalId: draft.originTerminalId.trim(), destinationTerminalId: draft.destinationTerminalId.trim(),
+          vehicleType: draft.vehicleType.trim(), effectiveFrom: day(draft.effectiveFrom),
+          currency: commercialBlank(draft.currency), minimumCharge: commercialNumber(draft.minimumCharge),
+          detentionFreeHours: commercialNumber(draft.detentionFreeHours),
+          detentionHourlyRate: commercialNumber(draft.detentionHourlyRate),
+          additionalDropFee: commercialNumber(draft.additionalDropFee),
+        },
+      })).id)),
+    addTariffSlab: (tariffId: string, slab: SlabDraft) =>
+      guard(async () => text((await freightBills.addTariffSlab({
+        id: tariffId,
+        addSlabRequest: {
+          minWeightKg: Number(slab.minWeightKg), maxWeightKg: commercialNumber(slab.maxWeightKg),
+          rateBasis: slab.rateBasis as unknown as AddSlabRequestRateBasisEnum, rateAmount: Number(slab.rateAmount),
+        },
+      })).id)),
+    recordFuelSurcharge: (month: string, surchargePct: number) =>
+      guard(async () => text((await freightBills.recordFuelSurcharge({
+        fuelSurchargeRequest: { month: day(month), surchargePct },
+      })).id)),
+    defineRoutingGuide: (orgUnitId: string, draft: GuideDraft) =>
+      guard(async () => text((await sourcing.defineRoutingGuide({
+        defineGuideRequest: {
+          orgUnitId, originTerminalId: draft.originTerminalId.trim(),
+          destinationTerminalId: draft.destinationTerminalId.trim(), vehicleType: draft.vehicleType.trim(),
+          strategy: draft.strategy as unknown as DefineGuideRequestStrategyEnum,
+        },
+      })).id)),
+    routingGuide: (id: string): Promise<RoutingGuideDetail> =>
+      guard(async () => commercialGuideOf(await sourcing.getRoutingGuide({ id }))),
+    addGuideVendor: (guideId: string, draft: GuideVendorDraft) =>
+      guard(async () => {
+        await sourcing.addRoutingGuideVendor({
+          id: guideId,
+          addVendorRequest: {
+            vendorPartnerId: draft.vendorPartnerId.trim(), rankNo: draft.rankNo,
+            responseSlaMinutes: draft.responseSlaMinutes, agreedRate: commercialNumber(draft.agreedRate),
+          },
+        });
+      }),
+    retireRoutingGuide: (id: string) =>
+      guard(async () => {
+        await sourcing.retireRoutingGuide({ id });
+      }),
+    allocations: (status?: string) =>
+      guard(async () => (await sourcing.listAllocations({ status: status || undefined, limit: 100 }))
+        .items.map(commercialAllocationRow)),
+    allocationDetail: (id: string): Promise<AllocationDetail> =>
+      guard(async () => {
+        const [allocation, offers] = await Promise.all([sourcing.getAllocation({ id }), sourcing.listOffers({ id })]);
+        return { allocation: commercialAllocationRow(allocation), offers: offers.map(commercialOfferRow) };
+      }),
+    allocateLoad: (loadId: string) =>
+      guard(async () => text((await sourcing.allocateLoad({ allocateRequest: { loadId: loadId.trim() } })).id)),
+    acceptOffer: (allocationId: string, vendorPartnerId: string) =>
+      guard(async () => {
+        await sourcing.acceptOffer({ id: allocationId, vendorResponseRequest: { vendorPartnerId } });
+      }),
+    rejectOffer: (allocationId: string, vendorPartnerId: string) =>
+      guard(async () => {
+        await sourcing.rejectOffer({ id: allocationId, vendorResponseRequest: { vendorPartnerId } });
+      }),
+    cancelAllocation: (id: string) =>
+      guard(async () => {
+        await sourcing.cancelAllocation({ id });
+      }),
+    freightBillList: (status?: string) =>
+      guard(async () => (await freightBills.listFreightBills({ status: status || undefined, limit: 100 }))
+        .items.map(commercialBillRow)),
+    freightBill: (id: string): Promise<FreightBillDetail> =>
+      guard(async () => {
+        const [bill, lines] = await Promise.all([
+          freightBills.getFreightBill({ id }), freightBills.getFreightBillLines({ id })]);
+        return { bill: commercialBillRow(bill), lines: lines.map(commercialBillLineRow) };
+      }),
+    matchFreightBill: (id: string, claimedAmount: number) =>
+      guard(async () => text((await freightBills.matchFreightBill({ id, matchRequest: { claimedAmount } })).status)),
+    resolveFreightBill: (id: string, reason: string) =>
+      guard(async () => {
+        await freightBills.resolveDispute({ id, resolveDisputeRequest: { reason } });
+      }),
+
+    // Control tower
+    exceptionTickets: (filter: ExceptionFilter) =>
+      guard(async () => (await controlTower.listExceptions({
+        status: filter.status || undefined, severity: (filter.severity || undefined) as ListExceptionsSeverityEnum | undefined,
+        limit: 50,
+      })).items.map(ticketRow)),
+    exceptionTicket: (id: string) => guard(async () => ticketRow(await controlTower.getException({ id }))),
+    exceptionHistory: (id: string) =>
+      guard(async () => (await controlTower.getExceptionHistory({ id })).map((a) => ({
+        action: text(a.action), fromStatus: text(a.fromStatus), toStatus: text(a.toStatus), note: text(a.note),
+        actor: text(a.actor), occurredAt: text(a.occurredAt),
+      }))),
+    raiseException: (draft: ExceptionDraft) =>
+      guard(async () => text((await controlTower.raiseException({
+        raiseExceptionRequest: {
+          tripId: draft.tripId.trim(), category: draft.category as ExceptionCategory,
+          description: draft.description.trim(),
+        },
+      })).id)),
+    assignException: (id: string, assigneeUserId: string, note: string) =>
+      guard(() => controlTower.assignException({
+        id, assignExceptionRequest: { assigneeUserId: assigneeUserId.trim(), note: note.trim() || undefined },
+      })),
+    investigateException: (id: string, note: string) =>
+      guard(() => controlTower.investigateException({ id, exceptionNoteRequest: noteOf(note) })),
+    resolveException: (id: string, resolution: string) =>
+      guard(() => controlTower.resolveException({ id, resolveExceptionRequest: { resolution: resolution.trim() } })),
+    reopenException: (id: string, reason: string) =>
+      guard(() => controlTower.reopenException({ id, reopenExceptionRequest: { reason: reason.trim() } })),
+    closeException: (id: string, note: string) =>
+      guard(() => controlTower.closeException({ id, exceptionNoteRequest: noteOf(note) })),
+    userChoices: (): Promise<Choice[]> =>
+      guard(async () => (await new UsersApi(config).listUsers()).map((u) => ({
+        id: text(u.id), label: `${text(u.fullName)} · ${text(u.email)}`,
+      }))),
+    detectorSettings: (): Promise<DetectorSettingsView> =>
+      guard(async () => {
+        const d = await controlTower.getDetectorSettings();
+        return {
+          etaSlipMinutes: d.etaSlipMinutes ?? 0, temperatureExcursionMinutes: d.temperatureExcursionMinutes ?? 0,
+          customised: d.customised ?? false,
+        };
+      }),
+    saveDetectorSettings: (etaSlipMinutes: number, temperatureExcursionMinutes: number) =>
+      guard(() => controlTower.setDetectorSettings({
+        setDetectorSettingsRequest: { etaSlipMinutes, temperatureExcursionMinutes },
+      })),
+    tripWatch: (tripId: string): Promise<TripWatchView | null> =>
+      absentOn404(async () => {
+        const w = await controlTower.getTripWatch({ tripId });
+        return {
+          committedArrivalAt: text(w.committedArrivalAt), tempMinC: text(w.tempMinC), tempMaxC: text(w.tempMaxC),
+          outsideRangeSince: text(w.outsideRangeSince), lastReadingAt: text(w.lastReadingAt),
+        };
+      }),
+    setTripWatch: (tripId: string, draft: TripWatchDraft) =>
+      guard(() => controlTower.setTripWatch({
+        tripId,
+        setTripWatchRequest: {
+          committedArrivalAt: draft.committedArrivalAt ? new Date(draft.committedArrivalAt) : undefined,
+          tempMinC: decimalOrAbsent(draft.tempMinC), tempMaxC: decimalOrAbsent(draft.tempMaxC),
+        },
+      })),
+    clearTripWatch: (tripId: string) => guard(() => controlTower.clearTripWatch({ tripId })),
+    tripActivity: (tripId: string): Promise<TripActivity> =>
+      guard(async () => {
+        const [progress, crossings] = await Promise.all([
+          absentOn404(() => telematics.getProgress({ tripId })),
+          telematics.listCrossings({ tripId }),
+        ]);
+        return {
+          progress: progress && {
+            tripNo: text(progress.tripNo), status: text(progress.status), lastFixAt: text(progress.lastFixAt),
+            completionPct: text(progress.completionPct), remainingDistanceM: text(progress.remainingDistanceM),
+            estimatedMinutesRemaining: text(progress.estimatedMinutesRemaining),
+            offRoute: progress.offRoute ? 'Yes' : '', deviationM: text(progress.deviationM),
+          },
+          crossings: crossings.map((c) => ({
+            id: text(c.id), eventType: text(c.eventType), terminalCode: text(c.terminalCode),
+            occurredAt: text(c.occurredAt),
+          })),
+        };
+      }),
+    vehiclePositions: (): Promise<Mapped> =>
+      guard(async () => {
+        const positions = await telematics.listPositions();
+        const rows = positions.map((v) => ({
+          id: text(v.vehicleId), registrationNo: text(v.registrationNo), tripId: text(v.tripId), tripNo: text(v.tripNo),
+          tripStatus: text(v.tripStatus), speedKph: text(v.speedKph), recordedAt: text(v.recordedAt),
+          ageSeconds: text(v.ageSeconds),
+        }));
+        const features: MapFeature[] = positions
+          .filter((v) => v.lat !== undefined && v.lon !== undefined)
+          .map((v) => ({
+            id: text(v.vehicleId), kind: 'vehicle',
+            label: `${text(v.registrationNo)}${v.tripNo ? ` · ${v.tripNo}` : ''}`,
+            points: [{ lat: v.lat as number, lon: v.lon as number }],
+          }));
+        return { rows, features };
+      }),
+    openDeviations: () =>
+      guard(async () => (await telematics.listOpenDeviations()).map((d) => ({
+        id: text(d.id), tripId: text(d.tripId), tripNo: text(d.tripNo), detectedAt: text(d.detectedAt),
+        distanceM: text(d.distanceM), corridorM: text(d.corridorM),
+      }))),
   };
 }
 
@@ -1029,4 +1294,338 @@ async function guard<T>(call: () => Promise<T>): Promise<T> {
     }
     throw new ApiProblem('Could not reach the API. Try again.');
   }
+}
+
+// Warehouse operations
+
+/** A record's scalar fields as display cells; nested lists are mapped by the caller. */
+function flatRow(record: object): Row {
+  return Object.fromEntries(Object.entries(record)
+    .filter(([, v]) => v === null || v === undefined || v instanceof Date || typeof v !== 'object')
+    .map(([k, v]) => [k, text(v)]));
+}
+
+function stockMove(d: StockMoveDraft) {
+  return { binId: d.binId.trim(), skuId: d.skuId.trim(), lotNo: blankAsAbsent(d.lotNo), quantity: Number(d.quantity) };
+}
+
+/** The warehouse verbs of the gateway, over the generated Warehouse client. */
+function warehouseVerbs(warehouse: WarehouseApi, terminals: TerminalsApi) {
+  const document = <T extends object>(header: T, lines: object[] | undefined): WarehouseDocument =>
+    ({ header: flatRow(header), lines: (lines ?? []).map(flatRow) });
+  return {
+    warehouseChoices: (): Promise<Choice[]> =>
+      guard(async () => (await terminals.listTerminals({ category: ListTerminalsCategoryEnum.Warehouse, limit: 200 }))
+        .items.map((t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` }))),
+    warehouseBins: (warehouseId: string) =>
+      guard(async () => (await warehouse.listBins({ warehouseId, limit: 200 })).items.map(flatRow)),
+    createBin: (warehouseId: string, code: string, capacityUnits: number) =>
+      guard(async () => (await warehouse.createBin({
+        warehouseId, createBinRequest: { code: code.trim(), capacityUnits },
+      })).id),
+    skus: () => guard(async () => (await warehouse.listSkus({ limit: 200 })).items.map(flatRow)),
+    createSku: (draft: SkuDraft) =>
+      guard(async () => (await warehouse.createSku({
+        createSkuRequest: {
+          code: draft.code.trim(), description: draft.description.trim(),
+          ownerPartnerId: blankAsAbsent(draft.ownerPartnerId), uom: blankAsAbsent(draft.uom),
+        },
+      })).id),
+    asns: (warehouseId: string) =>
+      guard(async () => (await warehouse.listAsns({ warehouseId, limit: 100 })).items.map(flatRow)),
+    asn: (id: string) => guard(async () => {
+      const a = await warehouse.getAsn({ id });
+      return document(a, a.lines);
+    }),
+    createAsn: (draft: AsnDraft) =>
+      guard(async () => (await warehouse.createAsn({
+        createAsnRequest: {
+          warehouseId: draft.warehouseId, asnNo: draft.asnNo.trim(),
+          supplierPartnerId: blankAsAbsent(draft.supplierPartnerId),
+          lines: draft.lines.map((l) => ({
+            skuId: l.skuId.trim(), lotNo: blankAsAbsent(l.lotNo), quantity: Number(l.quantity),
+          })),
+        },
+      })).id),
+    receiveAsn: (id: string, counts: ReceiptCountDraft[], crossDock: boolean) =>
+      guard(async () => {
+        await warehouse.receiveAsn({
+          id, receiveAsnRequest: {
+            crossDock,
+            lines: counts.map((c) => ({
+              lineNo: c.lineNo, receivedQty: Number(c.receivedQty), damagedQty: Number(c.damagedQty || 0),
+            })),
+          },
+        });
+      }),
+    putaway: (draft: StockMoveDraft) =>
+      guard(async () => { await warehouse.putaway({ putawayRequest: stockMove(draft) }); }),
+    stock: (warehouseId: string) =>
+      guard(async () => (await warehouse.listStock({ warehouseId, limit: 200 })).items.map(flatRow)),
+    stockMovements: (skuId: string) =>
+      guard(async () => (await warehouse.listStockMovements({ skuId, limit: 100 })).items.map(flatRow)),
+    adjustStock: (draft: StockMoveDraft) =>
+      guard(async () => (await warehouse.adjustStock({
+        adjustStockRequest: { ...stockMove(draft), reason: draft.reason.trim() },
+      })).id),
+    releaseQuarantine: (draft: StockMoveDraft) =>
+      guard(async () => (await warehouse.releaseQuarantinedStock({
+        releaseQuarantineRequest: { ...stockMove(draft), reason: draft.reason.trim() },
+      })).id),
+    writeOffQuarantine: (warehouseId: string, draft: StockMoveDraft) =>
+      guard(async () => (await warehouse.writeOffQuarantinedStock({
+        writeOffQuarantineRequest: {
+          warehouseId, skuId: draft.skuId.trim(), lotNo: blankAsAbsent(draft.lotNo), quantity: Number(draft.quantity),
+          reason: draft.reason.trim(),
+        },
+      })).id),
+    outboundOrders: (warehouseId: string) =>
+      guard(async () => (await warehouse.listOutboundOrders({ warehouseId, limit: 100 })).items.map(flatRow)),
+    outboundOrder: (id: string) => guard(async () => {
+      const o = await warehouse.getOutboundOrder({ id });
+      return document(o, o.lines);
+    }),
+    createOutboundOrder: (draft: OutboundDraft) =>
+      guard(async () => (await warehouse.createOutboundOrder({
+        createOutboundOrderRequest: {
+          warehouseId: draft.warehouseId, orderNo: draft.orderNo.trim(), shipTo: blankAsAbsent(draft.shipTo),
+          lines: draft.lines.map((l) => ({ skuId: l.skuId.trim(), quantity: Number(l.quantity) })),
+        },
+      })).id),
+    pickOutboundOrder: (id: string) => guard(async () => { await warehouse.pickOutboundOrder({ id }); }),
+    packOutboundOrder: (id: string) => guard(async () => (await warehouse.packOutboundOrder({ id })).id),
+    cancelBackOrder: (id: string) => guard(async () => { await warehouse.cancelOutboundOrderBackOrder({ id }); }),
+    handlingUnits: (warehouseId: string) =>
+      guard(async () => (await warehouse.listHandlingUnits({ warehouseId, limit: 100 })).items.map(flatRow)),
+    handlingUnit: (id: string) => guard(async () => {
+      const u = await warehouse.getHandlingUnit({ id });
+      return document(u, u.contents);
+    }),
+    dispatchHandlingUnit: (id: string, draft: DispatchDraft) =>
+      guard(async () => {
+        await warehouse.dispatchHandlingUnit({
+          id, dispatchRequest: {
+            reference: blankAsAbsent(draft.reference), destinationTerminalId: blankAsAbsent(draft.destinationTerminalId),
+            consigneePartnerId: blankAsAbsent(draft.consigneePartnerId), grossWeightKg: numberOrAbsent(draft.grossWeightKg),
+          },
+        });
+      }),
+    pickWaves: (warehouseId: string) =>
+      guard(async () => (await warehouse.listPickWaves({ warehouseId, limit: 100 })).items.map(flatRow)),
+    pickWave: (id: string) => guard(async () => {
+      const w = await warehouse.getPickWave({ id });
+      return document(w, w.orders);
+    }),
+    releasePickWave: (warehouseId: string, orderIds: string[]) =>
+      guard(async () => (await warehouse.releasePickWave({ releasePickWaveRequest: { warehouseId, orderIds } })).id),
+    pickPickWave: (id: string) => guard(async () => { await warehouse.pickPickWave({ id }); }),
+  };
+}
+
+// Administration
+
+type AdminVerbs = Pick<LmsGateway, 'adminUsers' | 'userPermissions' | 'accessAttributes' | 'setAccessAttributes'
+  | 'accessPolicies' | 'createAccessPolicy' | 'reviseAccessPolicy' | 'deleteAccessPolicy' | 'expiringDocuments'
+  | 'ownerDocuments' | 'attachDocument'>;
+
+/** The administration desk's verbs, over the same configuration as the rest of the gateway. */
+function adminGateway(config: Configuration): AdminVerbs {
+  const users = new UsersApi(config);
+  const policies = new AccessPoliciesApi(config);
+  const compliance = new ComplianceApi(config);
+  const partners = new PartnersApi(config);
+  const vehicles = new VehiclesApi(config);
+  const drivers = new DriversApi(config);
+  return {
+    adminUsers: () => guard(async () => (await users.listUsers()).map(adminUserOf)),
+    userPermissions: (userId: string) =>
+      guard(async () => [...(await users.getUserPermissions({ id: userId }))].sort()),
+    accessAttributes: (userId: string) =>
+      guard(async () => adminAttributesOf(await policies.getUserAccessAttributes({ id: userId }))),
+    setAccessAttributes: (userId: string, draft: AccessAttributesDraft) =>
+      guard(async () => {
+        await policies.setUserAccessAttributes({ id: userId, setUserAccessAttributesRequest: adminAttributesRequest(draft) });
+      }),
+    accessPolicies: (cursor?: string): Promise<AccessPolicyPage> =>
+      guard(async () => {
+        const page = await policies.listAccessPolicies({ cursor, limit: 100 });
+        return { policies: page.items.map(adminPolicyOf), nextCursor: page.hasMore ? page.nextCursor ?? null : null };
+      }),
+    createAccessPolicy: async (draft: AccessPolicyDraft) => {
+      const condition = adminConditionOf(draft.condition);
+      return guard(async () => (await policies.createAccessPolicy({
+        createAccessPolicyRequest: {
+          code: draft.code.trim(), action: draft.action.trim(),
+          effect: draft.effect as CreateAccessPolicyRequestEffectEnum, description: draft.description.trim(),
+          condition, enabled: draft.enabled,
+        },
+      })).id);
+    },
+    reviseAccessPolicy: async (id: string, changes: AccessPolicyChanges) => {
+      const condition = adminConditionOf(changes.condition);
+      return guard(async () => {
+        await policies.reviseAccessPolicy({
+          id,
+          reviseAccessPolicyRequest: {
+            effect: changes.effect as ReviseAccessPolicyRequestEffectEnum, description: changes.description.trim(),
+            condition, enabled: changes.enabled,
+          },
+        });
+      });
+    },
+    deleteAccessPolicy: (id: string) =>
+      guard(async () => {
+        await policies.deleteAccessPolicy({ id });
+      }),
+    expiringDocuments: (withinDays: number) =>
+      guard(async () => (await compliance.listExpiringDocuments({ withinDays })).map(adminDocumentRow)),
+    ownerDocuments: (ownerType: DocumentOwnerType, ownerId: string) =>
+      guard(async () => {
+        const id = ownerId.trim();
+        const docs = ownerType === 'PARTNER' ? await partners.listPartnerDocuments({ id })
+          : ownerType === 'VEHICLE' ? await vehicles.listVehicleDocuments({ id })
+            : await drivers.listDriverDocuments({ id });
+        return docs.map(adminDocumentRow);
+      }),
+    attachDocument: (ownerType: DocumentOwnerType, ownerId: string, draft: DocumentDraft) =>
+      guard(async () => {
+        const id = ownerId.trim();
+        const attachDocumentRequest = adminDocumentRequest(draft);
+        const made = ownerType === 'PARTNER' ? await partners.attachPartnerDocument({ id, attachDocumentRequest })
+          : ownerType === 'VEHICLE' ? await vehicles.attachVehicleDocument({ id, attachDocumentRequest })
+            : await drivers.attachDriverDocument({ id, attachDocumentRequest });
+        return text(made.id);
+      }),
+  };
+}
+
+function adminUserOf(u: User): AdminUser {
+  return {
+    id: text(u.id), email: text(u.email), fullName: text(u.fullName), status: text(u.status),
+    orgName: text(u.orgName), lastLoginAt: text(u.lastLoginAt),
+  };
+}
+
+function adminAttributesOf(a: UserAccessAttributes): AccessAttributesDraft {
+  return {
+    region: text(a.region), freightModes: (a.freightModes ?? []).map((m) => m as AccessFreightMode),
+    partnerId: text(a.partnerId), approvalLimit: text(a.approvalLimit),
+  };
+}
+
+/** An empty set of modes is left out rather than sent: absent means unrestricted, `[]` would mean none. */
+function adminAttributesRequest(d: AccessAttributesDraft): SetUserAccessAttributesRequest {
+  return {
+    region: blankAsAbsent(d.region),
+    freightModes: d.freightModes.length > 0
+      ? d.freightModes.map((m) => m as SetUserAccessAttributesRequestFreightModesEnum) : undefined,
+    partnerId: blankAsAbsent(d.partnerId), approvalLimit: numberOrAbsent(d.approvalLimit),
+  };
+}
+
+function adminPolicyOf(p: AccessPolicy): AccessPolicyView {
+  return {
+    id: text(p.id), code: text(p.code), action: text(p.action), effect: text(p.effect) as PolicyEffect,
+    description: text(p.description), condition: JSON.stringify(p.condition ?? {}, null, 2),
+    enabled: p.enabled === true, updatedAt: text(p.updatedAt),
+  };
+}
+
+/** The condition a desk typed, as the object the API takes; anything but a JSON object is refused here. */
+function adminConditionOf(condition: string): { [key: string]: unknown } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(condition);
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ApiProblem('The condition must be a JSON object, such as {"attr": "subject.region", "op": "present"}.',
+      undefined, {}, 'condition-not-json');
+  }
+  return parsed as { [key: string]: unknown };
+}
+
+/** `state` reads Expired, Expiring (within 30 days), Valid, or No expiry. */
+function adminDocumentRow(d: ComplianceDocument): Row {
+  const days = d.daysToExpiry;
+  const state = d.expired ? 'Expired' : days === undefined || days === null ? 'No expiry'
+    : days <= 30 ? 'Expiring' : 'Valid';
+  return {
+    id: text(d.id), ownerType: text(d.ownerType), ownerLabel: text(d.ownerLabel),
+    documentType: text(d.documentType), documentNo: text(d.documentNo), issuingAuthority: text(d.issuingAuthority),
+    issuedOn: text(d.issuedOn), expiresOn: text(d.expiresOn), daysToExpiry: text(days), state,
+  };
+}
+
+function adminDocumentRequest(d: DocumentDraft): AttachDocumentRequest {
+  return {
+    documentType: d.documentType.trim(), documentNo: d.documentNo.trim(),
+    issuingAuthority: blankAsAbsent(d.issuingAuthority),
+    issuedOn: d.issuedOn.trim() ? day(d.issuedOn.trim()) : undefined,
+    expiresOn: d.expiresOn.trim() ? day(d.expiresOn.trim()) : undefined,
+  };
+}
+
+// Commercial
+
+/** A blank optional text left out of a request. */
+function commercialBlank(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** A blank optional figure left out of a request. */
+function commercialNumber(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+function commercialGuideOf(g: CommercialRoutingGuide): RoutingGuideDetail {
+  return {
+    guide: {
+      id: text(g.id), originTerminalCode: text(g.originTerminalCode), destinationTerminalCode: text(g.destinationTerminalCode),
+      vehicleType: text(g.vehicleType), strategy: text(g.strategy), active: g.active ? 'Yes' : '',
+    },
+    entries: (g.entries ?? []).map((e) => ({
+      rankNo: text(e.rankNo), vendorPartnerId: text(e.vendorPartnerId), vendorName: text(e.vendorName),
+      responseSlaMinutes: text(e.responseSlaMinutes), agreedRate: text(e.agreedRate),
+    })),
+  };
+}
+
+function commercialAllocationRow(a: CommercialAllocation): Row {
+  return {
+    id: text(a.id), loadId: text(a.loadId), loadNo: text(a.loadNo), strategy: text(a.strategy), status: text(a.status),
+    pendingVendorName: text(a.pendingVendorName), respondsBy: text(a.respondsBy),
+    awardedVendorName: text(a.awardedVendorName), awardedAt: text(a.awardedAt), currentRank: text(a.currentRank),
+    offersMade: text(a.offersMade), appliedRuleName: text(a.appliedRuleName), createdAt: text(a.createdAt),
+  };
+}
+
+function commercialOfferRow(o: CommercialOffer): Row {
+  return {
+    id: text(o.id), rankNo: text(o.rankNo), vendorPartnerId: text(o.vendorPartnerId), vendorName: text(o.vendorName),
+    outcome: text(o.outcome), offeredAt: text(o.offeredAt), respondsBy: text(o.respondsBy),
+    respondedAt: text(o.respondedAt),
+  };
+}
+
+function commercialBillRow(b: CommercialFreightBill): Row {
+  return {
+    id: text(b.id), billNo: text(b.billNo), status: text(b.status), source: text(b.source), currency: text(b.currency),
+    tripNo: text(b.tripNo), loadNo: text(b.loadNo), vendorName: text(b.vendorName), tariffCode: text(b.tariffCode),
+    pricedOn: text(b.pricedOn), chargeableWeightKg: text(b.chargeableWeightKg), baseFreight: text(b.baseFreight),
+    detentionAmount: text(b.detentionAmount), multiDropAmount: text(b.multiDropAmount),
+    fuelSurchargeAmount: text(b.fuelSurchargeAmount), computedAmount: text(b.computedAmount),
+    claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount), variancePct: text(b.variancePct),
+    resolution: text(b.resolution), matchedAt: text(b.matchedAt), settlementHeldBy: text(b.settlementHeldBy),
+  };
+}
+
+function commercialBillLineRow(l: CommercialFreightBillLine): Row {
+  return {
+    lineNo: text(l.lineNo), chargeType: text(l.chargeType), narrative: text(l.narrative), quantity: text(l.quantity),
+    unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+  };
 }
