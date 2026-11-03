@@ -18,6 +18,9 @@ import {
   ApiProblem, GUIDE_STRATEGIES, SLAB_RATE_BASES, type AllocationDetail, type FreightBillDetail, type GuideDraft,
   type GuideStrategy, type SlabRateBasis, type RoutingGuideDetail, type Row, type SlabDraft, type TariffDraft,
 } from '../gateway/lmsGateway';
+// Rate cards and rail tariffs
+import type { RailTariffDraft, TariffCardDetail, TariffFilter } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 
@@ -110,6 +113,9 @@ export function Commercial() {
         {(terminals.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
       </datalist>
       {can('TARIFF_MANAGE') && auth?.orgUnitId && <TariffsPanel orgUnitId={auth.orgUnitId} />}
+      {/* Rate cards and rail tariffs */}
+      {(can('TARIFF_MANAGE') || can('INVOICE_READ')) && <RateCardsPanel />}
+      {can('MULTIMODAL_READ') && <RailTariffsPanel manage={can('TARIFF_MANAGE')} />}
       {(can('ROUTING_GUIDE_MANAGE') || can('LOAD_ALLOCATE')) && (
         <GuidesPanel manage={can('ROUTING_GUIDE_MANAGE')} orgUnitId={auth?.orgUnitId ?? ''} />
       )}
@@ -348,8 +354,8 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
           {manage && detail.guide.active && (
             <>
               <form className="inline" onSubmit={addVendor} data-testid="add-vendor">
-                <input aria-label="Vendor" placeholder="Vendor" list="commercial-vendors" value={vendorId}
-                  onChange={(e) => setVendorId(e.target.value)} required />
+                <EntityPicker kind="vendor" ariaLabel="Vendor" placeholder="Vendor" value={vendorId}
+                  onChange={setVendorId} required />
                 <input aria-label="Rank" placeholder="Rank" inputMode="numeric" value={rank}
                   onChange={(e) => setRank(e.target.value)} required />
                 <input aria-label="Answers within minutes" placeholder="Answers within (min)" inputMode="numeric"
@@ -445,8 +451,8 @@ function AllocationsPanel({ act }: { act: boolean }) {
       {act && (
         <>
           <form className="inline" onSubmit={allocate} data-testid="allocate-load">
-            <input aria-label="Load id to allocate" placeholder="Load id" value={loadId}
-              onChange={(e) => setLoadId(e.target.value)} required />
+            <EntityPicker kind="load" ariaLabel="Load id to allocate" placeholder="Load" value={loadId}
+              onChange={setLoadId} required />
             <button type="submit">Allocate load</button>
           </form>
           <RefusalNote refusal={allocateRefusal} testId="allocate-refusal" />
@@ -457,7 +463,8 @@ function AllocationsPanel({ act }: { act: boolean }) {
         <button type="submit">List</button>
       </form>
       <form className="inline" data-testid="open-allocation" onSubmit={(e) => { e.preventDefault(); void open(typed.trim()); }}>
-        <input aria-label="Allocation id" placeholder="Allocation id" value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="allocation" ariaLabel="Allocation id" placeholder="Allocation (load no)" value={typed}
+          onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       <RefusalNote refusal={listRefusal} testId="allocations-refusal" />
@@ -616,7 +623,7 @@ function BillsPanel({ approve }: { approve: boolean }) {
         <button type="submit">List</button>
       </form>
       <form className="inline" data-testid="open-bill" onSubmit={(e) => { e.preventDefault(); void open(typed); }}>
-        <input aria-label="Bill id" placeholder="Bill id" value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="bill" ariaLabel="Bill id" placeholder="Bill" value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       <RefusalNote refusal={listRefusal} testId="bills-refusal" />
@@ -689,6 +696,281 @@ function BillsPanel({ approve }: { approve: boolean }) {
         </section>
       )}
       <RefusalNote refusal={actRefusal} testId="bill-refusal" />
+    </section>
+  );
+}
+
+// Rate cards and rail tariffs
+
+const RATE_CARD_STATES: Array<[TariffFilter['state'], string]> = [
+  ['', 'All versions'], ['open', 'In force or upcoming'], ['superseded', 'Superseded'],
+];
+
+/** Every published rate card version, newest first, and one card opened with its weight bands. */
+function RateCardsPanel() {
+  const { gateway } = useSession();
+  const [filter, setFilter] = useState<TariffFilter>({ vendorPartnerId: '', state: '' });
+  const [rows, setRows] = useState<Row[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [listRefusal, setListRefusal] = useState<Refusal | null>(null);
+  const [typed, setTyped] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<TariffCardDetail | null>(null);
+  const [openRefusal, setOpenRefusal] = useState<Refusal | null>(null);
+
+  async function refresh(which = filter) {
+    setListRefusal(null);
+    try {
+      const page = await gateway.tariffs(which);
+      setRows(page.rows);
+      setNextCursor(page.nextCursor);
+      setLoaded(true);
+    } catch (e) {
+      setListRefusal(refusalOf(e));
+    }
+  }
+
+  /** The next page of the same listing, after what is already shown. */
+  async function more() {
+    if (!nextCursor) {
+      return;
+    }
+    setListRefusal(null);
+    try {
+      const page = await gateway.tariffs(filter, nextCursor);
+      setRows((shown) => [...shown, ...page.rows]);
+      setNextCursor(page.nextCursor);
+    } catch (e) {
+      setListRefusal(refusalOf(e));
+    }
+  }
+
+  useEffect(() => {
+    void refresh({ vendorPartnerId: '', state: '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function open(id: string) {
+    const target = id.trim();
+    setOpenId(target);
+    setOpenRefusal(null);
+    try {
+      setDetail(await gateway.tariffCard(target));
+    } catch (e) {
+      setDetail(null);
+      setOpenRefusal(refusalOf(e));
+    }
+  }
+
+  const card = detail?.card;
+  return (
+    <section data-testid="rate-cards">
+      <h2>Published rate cards</h2>
+      <form className="inline" data-testid="rate-card-filter" onSubmit={(e) => { e.preventDefault(); void refresh(); }}>
+        <EntityPicker kind="vendor" ariaLabel="Vendor filter" placeholder="Vendor (blank: all)"
+          value={filter.vendorPartnerId} onChange={(id) => setFilter((f) => ({ ...f, vendorPartnerId: id }))} />
+        <select aria-label="Versions" value={filter.state}
+          onChange={(e) => setFilter((f) => ({ ...f, state: e.target.value as TariffFilter['state'] }))}>
+          {RATE_CARD_STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <button type="submit">List</button>
+      </form>
+      <form className="inline" data-testid="open-rate-card" onSubmit={(e) => { e.preventDefault(); void open(typed); }}>
+        <input aria-label="Rate card id" placeholder="Rate card id" value={typed}
+          onChange={(e) => setTyped(e.target.value)} required />
+        <button type="submit">Open</button>
+      </form>
+      <RefusalNote refusal={listRefusal} testId="rate-cards-refusal" />
+      {loaded && rows.length === 0 ? (
+        <p className="muted" data-testid="no-rate-cards">No rate card matches.</p>
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Card</th><th>Vendor</th><th>Lane</th><th>Vehicle</th><th>From</th><th>To</th><th>Bands</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((t) => (
+                <tr key={t.id} data-testid="rate-card-row" tabIndex={0} className={t.id === openId ? 'selected' : undefined}
+                  onClick={() => void open(t.id)} onKeyDown={(e) => { if (e.key === 'Enter') { void open(t.id); } }}>
+                  <td>{t.code}</td><td>{t.vendorName}</td><td>{t.originTerminalCode} → {t.destinationTerminalCode}</td>
+                  <td>{t.vehicleType}</td><td>{t.effectiveFrom}</td><td>{t.effectiveTo || '—'}</td><td>{t.slabCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {nextCursor && <p><button className="link" data-testid="rate-cards-more" onClick={() => void more()}>Load more</button></p>}
+      <RefusalNote refusal={openRefusal} testId="rate-card-refusal" />
+      {card && detail && (
+        <section data-testid="rate-card-panel" aria-label="Rate card">
+          <h3 data-testid="rate-card-code">{card.code}</h3>
+          <dl className="facts">
+            <div><dt>Vendor</dt><dd data-testid="rate-card-vendor">{card.vendorName}</dd></div>
+            <div><dt>Lane</dt><dd>{card.originTerminalCode} → {card.destinationTerminalCode}</dd></div>
+            <div><dt>Vehicle</dt><dd>{card.vehicleType}</dd></div>
+            <div><dt>Published under</dt><dd>{card.orgUnitName}</dd></div>
+            <div><dt>In force</dt><dd data-testid="rate-card-state">
+              {card.superseded ? `${card.effectiveFrom} to ${card.effectiveTo}` : `from ${card.effectiveFrom}`}</dd></div>
+            <div><dt>Minimum charge</dt><dd>{card.minimumCharge} {card.currency}</dd></div>
+            <div><dt>Free detention hours</dt><dd>{card.detentionFreeHours}</dd></div>
+            <div><dt>Detention per hour</dt><dd>{card.detentionHourlyRate}</dd></div>
+            <div><dt>Fee per additional drop</dt><dd>{card.additionalDropFee}</dd></div>
+          </dl>
+          <h4>Weight bands</h4>
+          {detail.slabs.length === 0
+            ? <p className="muted" data-testid="rate-card-no-bands">No band: the card prices nothing.</p>
+            : <Table rows={detail.slabs} columns={SLAB_COLUMNS} rowTestId="rate-card-band" />}
+        </section>
+      )}
+    </section>
+  );
+}
+
+function blankRailTariff(): RailTariffDraft {
+  return {
+    code: '', carrierPartnerId: '', originTerminalId: '', destinationTerminalId: '', effectiveFrom: today(),
+    currency: '', perWagonRate: '', perContainerRate: '', minimumCharge: '',
+  };
+}
+
+/** Rail carriers' rate cards between railheads: every version, newest first. Publishing needs TARIFF_MANAGE. */
+function RailTariffsPanel({ manage }: { manage: boolean }) {
+  const { gateway } = useSession();
+  const [draft, setDraft] = useState<RailTariffDraft>(blankRailTariff());
+  const [publishRefusal, setPublishRefusal] = useState<Refusal | null>(null);
+  const [published, setPublished] = useState('');
+  const [rows, setRows] = useState<Row[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [listRefusal, setListRefusal] = useState<Refusal | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [card, setCard] = useState<Row | null>(null);
+  const [openRefusal, setOpenRefusal] = useState<Refusal | null>(null);
+
+  const field = (name: keyof RailTariffDraft) => ({
+    value: draft[name],
+    onChange: (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [name]: e.target.value })),
+  });
+
+  async function refresh() {
+    setListRefusal(null);
+    try {
+      const page = await gateway.railTariffs();
+      setRows(page.rows);
+      setNextCursor(page.nextCursor);
+      setLoaded(true);
+    } catch (e) {
+      setListRefusal(refusalOf(e));
+    }
+  }
+
+  /** The next page of the listing, after what is already shown. */
+  async function more() {
+    if (!nextCursor) {
+      return;
+    }
+    setListRefusal(null);
+    try {
+      const page = await gateway.railTariffs(nextCursor);
+      setRows((shown) => [...shown, ...page.rows]);
+      setNextCursor(page.nextCursor);
+    } catch (e) {
+      setListRefusal(refusalOf(e));
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function open(id: string) {
+    setOpenId(id);
+    setOpenRefusal(null);
+    try {
+      setCard(await gateway.railTariff(id));
+    } catch (e) {
+      setCard(null);
+      setOpenRefusal(refusalOf(e));
+    }
+  }
+
+  async function publish(event: FormEvent) {
+    event.preventDefault();
+    setPublishRefusal(null);
+    setPublished('');
+    try {
+      const id = await gateway.publishRailTariff(draft);
+      setPublished(draft.code.trim());
+      setDraft(blankRailTariff());
+      await refresh();
+      await open(id);
+    } catch (e) {
+      setPublishRefusal(refusalOf(e));
+    }
+  }
+
+  return (
+    <section data-testid="rail-tariffs">
+      <h2>Rail rate cards</h2>
+      {manage && (
+        <>
+          <form className="card" onSubmit={publish} data-testid="publish-rail-tariff">
+            <label>Code <input {...field('code')} required /></label>
+            <label>Rail carrier <input list="commercial-vendors" {...field('carrierPartnerId')} required /></label>
+            <label>Origin railhead <input list="commercial-terminals" {...field('originTerminalId')} required /></label>
+            <label>Destination railhead <input list="commercial-terminals" {...field('destinationTerminalId')} required /></label>
+            <label>Effective from <input type="date" {...field('effectiveFrom')} required /></label>
+            <label>Currency <input placeholder="INR" {...field('currency')} /></label>
+            <label>Per wagon <input inputMode="decimal" {...field('perWagonRate')} /></label>
+            <label>Per container <input inputMode="decimal" {...field('perContainerRate')} /></label>
+            <label>Minimum charge <input inputMode="decimal" {...field('minimumCharge')} /></label>
+            <button type="submit">Publish rail rate card</button>
+          </form>
+          <RefusalNote refusal={publishRefusal} testId="rail-tariff-refusal" />
+          {published && <p data-testid="rail-tariff-published">Rail rate card {published} published.</p>}
+        </>
+      )}
+      <RefusalNote refusal={listRefusal} testId="rail-tariffs-refusal" />
+      {loaded && rows.length === 0 ? (
+        <p className="muted" data-testid="no-rail-tariffs">No rail rate card yet.</p>
+      ) : (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Card</th><th>Carrier</th><th>Railheads</th><th>Per wagon</th><th>Per container</th><th>From</th><th>To</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} data-testid="rail-tariff-row" tabIndex={0} className={r.id === openId ? 'selected' : undefined}
+                  onClick={() => void open(r.id)} onKeyDown={(e) => { if (e.key === 'Enter') { void open(r.id); } }}>
+                  <td>{r.code}</td><td>{r.carrierCode}</td><td>{r.originTerminalCode} → {r.destinationTerminalCode}</td>
+                  <td>{r.perWagonRate || '—'}</td><td>{r.perContainerRate || '—'}</td><td>{r.effectiveFrom}</td>
+                  <td>{r.effectiveTo || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {nextCursor && <p><button className="link" data-testid="rail-tariffs-more" onClick={() => void more()}>Load more</button></p>}
+      <RefusalNote refusal={openRefusal} testId="rail-tariff-open-refusal" />
+      {card && (
+        <section data-testid="rail-tariff-panel" aria-label="Rail rate card">
+          <h3 data-testid="rail-tariff-code">{card.code}</h3>
+          <dl className="facts">
+            <div><dt>Carrier</dt><dd>{card.carrierCode}</dd></div>
+            <div><dt>Railheads</dt><dd>{card.originTerminalCode} → {card.destinationTerminalCode}</dd></div>
+            <div><dt>Per wagon</dt><dd data-testid="rail-per-wagon">{card.perWagonRate || '—'}</dd></div>
+            <div><dt>Per container</dt><dd data-testid="rail-per-container">{card.perContainerRate || '—'}</dd></div>
+            <div><dt>Minimum charge</dt><dd>{card.minimumCharge} {card.currency}</dd></div>
+            <div><dt>In force</dt><dd>{card.effectiveTo ? `${card.effectiveFrom} to ${card.effectiveTo}` : `from ${card.effectiveFrom}`}</dd></div>
+          </dl>
+        </section>
+      )}
     </section>
   );
 }
