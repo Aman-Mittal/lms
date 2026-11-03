@@ -289,10 +289,15 @@ public class PlanningQueryService {
      * <p>A portal user sees only the consignments their own partner is the
      * customer of, as on the hub queue; staff, with no partner, see them all.
      *
+     * <p>Open to each desk that picks from it, not only to planners: proving
+     * a delivery ({@code POD_READ}), raising a claim ({@code CLAIM_READ}) and
+     * sending a tracking link ({@code TRACKING_LINK_MANAGE}) all start from a
+     * consignment, and a clerk with only that right still needs to find it.
+     *
      * @param status optional; null means every status
      * @param q      optional; narrows to references containing it, ignoring case
      */
-    @PreAuthorize("hasAuthority('LOAD_READ')")
+    @PreAuthorize("hasAnyAuthority('LOAD_READ', 'POD_READ', 'CLAIM_READ', 'TRACKING_LINK_MANAGE')")
     public Slice<ConsignmentView> listConsignments(String status, String cursor, Integer limit,
                                                    String q) {
         int pageSize = Slice.clampLimit(limit);

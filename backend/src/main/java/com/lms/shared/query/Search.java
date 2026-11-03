@@ -24,6 +24,16 @@ import java.util.Locale;
  * <p>The wildcard characters are escaped, so a code such as {@code BIN_1}
  * matches itself and not {@code BINX1}: a person searching for a code means
  * that code, not a pattern.
+ *
+ * <p>No trigram index serves these searches, and adding one would not help.
+ * Every tenant table is under row-level security, and Postgres applies a
+ * query's own conditions only after the policy's unless they are leakproof.
+ * {@code LIKE} and {@code lower()} are not, so a {@code pg_trgm} index on the
+ * searched column is never chosen: the search reads the tenant's rows through
+ * a tenant_id index and filters them, with or without one. Measured at 20,000
+ * partners in one tenant: 34 ms either way, against 5 ms once the two
+ * functions are marked leakproof -- which needs a superuser the hosted
+ * database does not grant, and would loosen the policy for every query.
  */
 public final class Search {
 

@@ -173,9 +173,10 @@
     summary: Every consignment, by tracking reference
     description: |
       Consignments in any state, keyed on the tracking reference: what a desk
-      picks from when it acts on one that has already moved. Requires
-      `LOAD_READ`; a portal user sees only the consignments their partner is
-      the customer of.
+      picks from when it acts on one that has already moved. Requires any of
+      `LOAD_READ`, `POD_READ`, `CLAIM_READ` or `TRACKING_LINK_MANAGE`, so the
+      delivery, claims and tracking desks can find a consignment; a portal user
+      sees only the consignments their partner is the customer of.
     parameters:
       - $ref: "#/components/parameters/status"
       - $ref: "#/components/parameters/cursor"
