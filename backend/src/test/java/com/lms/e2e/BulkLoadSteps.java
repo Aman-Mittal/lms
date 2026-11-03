@@ -127,7 +127,7 @@ public class BulkLoadSteps {
 
     @Then("the bulk-load queue for the order lists {int} consignments")
     public void queueLists(int count) {
-        List<Consignment> queue = planning().listUnassignedConsignments(null, 200, orderId).getItems();
+        List<Consignment> queue = planning().listUnassignedConsignments(null, 200, orderId, null).getItems();
         assertThat(queue).hasSize(count);
         assertThat(queue).extracting(Consignment::getId).containsExactlyInAnyOrderElementsOf(consignments);
     }
@@ -163,7 +163,7 @@ public class BulkLoadSteps {
         assertThat(load.getPlannedWeightKg()).isEqualByComparingTo(BigDecimal.valueOf(weightKg));
         assertThat(planning().listLoadConsignments(loadId)).extracting(Consignment::getId)
                 .containsExactlyElementsOf(boarded);
-        assertThat(planning().listUnassignedConsignments(null, 200, orderId).getItems()).isEmpty();
+        assertThat(planning().listUnassignedConsignments(null, 200, orderId, null).getItems()).isEmpty();
     }
 
     @When("the bulk load is planned, awarded, dispatched and its trip completed")

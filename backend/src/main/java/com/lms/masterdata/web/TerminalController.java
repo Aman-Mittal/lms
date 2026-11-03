@@ -69,8 +69,9 @@ public class TerminalController {
     @GetMapping
     public Slice<TerminalView> list(@RequestParam(required = false) String category,
                                     @RequestParam(required = false) String cursor,
-                                    @RequestParam(required = false) Integer limit) {
-        return masterData.listTerminals(category, cursor, limit);
+                                    @RequestParam(required = false) Integer limit,
+                                    @RequestParam(required = false) String q) {
+        return masterData.listTerminals(category, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

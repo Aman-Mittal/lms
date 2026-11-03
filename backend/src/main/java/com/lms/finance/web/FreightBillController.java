@@ -61,8 +61,9 @@ public class FreightBillController {
     @GetMapping
     public Slice<FreightBillView> list(@RequestParam(required = false) String status,
                                        @RequestParam(required = false) String cursor,
-                                       @RequestParam(required = false) Integer limit) {
-        return finance.list(status, cursor, limit);
+                                       @RequestParam(required = false) Integer limit,
+                                       @RequestParam(required = false) String q) {
+        return finance.list(status, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

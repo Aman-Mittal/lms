@@ -22,6 +22,7 @@ import {
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { MapView } from './map-view';
+import { EntityPicker } from './entity-picker';
 
 /** A refusal's message, and its problem code when it had one. */
 interface Refusal {
@@ -355,7 +356,7 @@ export class TripPanel {
  */
 @Component({
   selector: 'app-exception-desk',
-  imports: [FormsModule, MapView, RefusalNote, TicketPanel, TripPanel],
+  imports: [FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker],
   template: `
     <h1>Exception desk</h1>
     <p class="muted">
@@ -366,8 +367,8 @@ export class TripPanel {
     <section data-testid="ticket-list">
       <h2>Tickets</h2>
       <form class="inline" (ngSubmit)="openTicket(typedTicket())" data-testid="open-ticket">
-        <input name="ticketId" placeholder="Ticket id" aria-label="Ticket id" data-testid="ticket-id" required
-               [value]="typedTicket()" (input)="typedTicket.set($any($event.target).value)" />
+        <app-entity-picker [kind]="'ticket'" placeholder="Ticket" ariaLabel="Ticket id" testId="ticket-id" [required]="true"
+                           [(value)]="typedTicket" />
         <button type="submit">Open</button>
       </form>
       <div class="inline">
@@ -410,8 +411,8 @@ export class TripPanel {
       <section>
         <h2>Raise a ticket</h2>
         <form class="inline" (ngSubmit)="raise()" data-testid="raise-ticket">
-          <input name="raiseTrip" placeholder="Trip id" aria-label="Trip id of the ticket" required
-                 [value]="raiseTrip()" (input)="raiseTrip.set($any($event.target).value)" />
+          <app-entity-picker [kind]="'trip'" placeholder="Trip" ariaLabel="Trip id of the ticket" [required]="true"
+                             [(value)]="raiseTrip" />
           <select name="category" aria-label="Category" [value]="category()" (change)="category.set($any($event.target).value)">
             @for (c of categories; track c) { <option [value]="c">{{ c }}</option> }
           </select>
@@ -453,8 +454,8 @@ export class TripPanel {
     <section data-testid="trip-desk">
       <h2>Trip watch</h2>
       <form class="inline" (ngSubmit)="tripId.set(typedTrip().trim().toLowerCase())" data-testid="open-trip">
-        <input name="watchTrip" placeholder="Trip id" aria-label="Trip id to watch" data-testid="watch-trip-id" required
-               [value]="typedTrip()" (input)="typedTrip.set($any($event.target).value)" />
+        <app-entity-picker [kind]="'trip'" placeholder="Trip" ariaLabel="Trip id to watch" testId="watch-trip-id" [required]="true"
+                           [(value)]="typedTrip" />
         <button type="submit">Open trip</button>
       </form>
       @if (tripId()) { <app-trip-panel [tripId]="tripId()" /> }

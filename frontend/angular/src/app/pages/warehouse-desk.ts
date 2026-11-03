@@ -17,10 +17,11 @@
 import { Component, OnInit, WritableSignal, computed, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  ApiProblem, AsnLineDraft, Choice, LmsGateway, OutboundLineDraft, Row, StockMoveDraft, WarehouseDocument,
+  ApiProblem, AsnLineDraft, LmsGateway, OutboundLineDraft, Row, StockMoveDraft, WarehouseDocument,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { Qr } from './qr';
+import { EntityPicker } from './entity-picker';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 type Columns = Array<[string, string]>;
@@ -102,16 +103,10 @@ export class WhTable {
  */
 @Component({
   selector: 'app-warehouse-floor',
-  imports: [FormsModule, WhTable, Qr],
+  imports: [FormsModule, WhTable, Qr, EntityPicker],
   template: `
     <section data-testid="warehouse-desk">
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-      <datalist id="bin-options">
-        @for (b of bins(); track b['id']) { <option [value]="b['id']">{{ b['code'] }}</option> }
-      </datalist>
-      <datalist id="sku-options">
-        @for (s of skus(); track s['id']) { <option [value]="s['id']">{{ s['code'] }} · {{ s['description'] }}</option> }
-      </datalist>
       <nav class="inline" aria-label="Warehouse sections">
         @for (t of tabs; track t[0]) {
           <button [class.link]="tab() !== t[0]" [attr.aria-pressed]="tab() === t[0]"
@@ -158,13 +153,13 @@ export class WhTable {
               <div class="inline">
                 <input name="asnNo" aria-label="ASN number" placeholder="ASN number"
                        [value]="asnNo()" (input)="asnNo.set($any($event.target).value)" required />
-                <input name="supplier" aria-label="Supplier id" placeholder="Supplier id (optional)"
-                       [value]="supplier()" (input)="supplier.set($any($event.target).value)" />
+                <app-entity-picker [kind]="'vendor'" ariaLabel="Supplier id" placeholder="Supplier (optional)"
+                                   [(value)]="supplier" />
               </div>
               @for (l of asnLines(); track $index; let i = $index) {
                 <div class="inline">
-                  <input [name]="'asnSku' + i" [attr.aria-label]="'Line ' + (i + 1) + ' SKU'" placeholder="SKU id" list="sku-options"
-                         [value]="l.skuId" (input)="setLine(asnLines, i, 'skuId', $any($event.target).value)" required />
+                  <app-entity-picker [kind]="'sku'" [ariaLabel]="'Line ' + (i + 1) + ' SKU'" placeholder="SKU" [required]="true"
+                                     [value]="l.skuId" (valueChange)="setLine(asnLines, i, 'skuId', $event)" />
                   <input [name]="'asnLot' + i" [attr.aria-label]="'Line ' + (i + 1) + ' lot'" placeholder="Lot (optional)"
                          [value]="l.lotNo" (input)="setLine(asnLines, i, 'lotNo', $any($event.target).value)" />
                   <input [name]="'asnQty' + i" [attr.aria-label]="'Line ' + (i + 1) + ' quantity'" placeholder="Quantity"
@@ -177,10 +172,10 @@ export class WhTable {
             </form>
             <h3>Put away</h3>
             <form class="inline" (ngSubmit)="putaway()" data-testid="putaway">
-              <input name="putBin" aria-label="Bin" placeholder="Bin id" list="bin-options"
-                     [value]="put().binId" (input)="setMove(put, 'binId', $any($event.target).value)" required />
-              <input name="putSku" aria-label="SKU" placeholder="SKU id" list="sku-options"
-                     [value]="put().skuId" (input)="setMove(put, 'skuId', $any($event.target).value)" required />
+              <app-entity-picker [kind]="'bin'" [warehouseId]="warehouseId()" ariaLabel="Bin" placeholder="Bin" [required]="true"
+                                 [value]="put().binId" (valueChange)="setMove(put, 'binId', $event)" />
+              <app-entity-picker [kind]="'sku'" ariaLabel="SKU" placeholder="SKU" [required]="true"
+                                 [value]="put().skuId" (valueChange)="setMove(put, 'skuId', $event)" />
               <input name="putLot" aria-label="Lot" placeholder="Lot (optional)"
                      [value]="put().lotNo" (input)="setMove(put, 'lotNo', $any($event.target).value)" />
               <input name="putQty" aria-label="Quantity" placeholder="Quantity" inputmode="numeric"
@@ -199,8 +194,8 @@ export class WhTable {
           }
           <h3>Movements</h3>
           <form class="inline" (ngSubmit)="showMovements()" data-testid="movements">
-            <input name="movementSku" aria-label="SKU for movements" placeholder="SKU id" list="sku-options"
-                   [value]="movementSku()" (input)="movementSku.set($any($event.target).value)" required />
+            <app-entity-picker [kind]="'sku'" ariaLabel="SKU for movements" placeholder="SKU" [required]="true"
+                               [(value)]="movementSku" />
             <button type="submit">Show movements</button>
           </form>
           @if (movementsShown()) {
@@ -211,11 +206,11 @@ export class WhTable {
               <h3>{{ m.title }}</h3>
               <form class="inline" (ngSubmit)="stockMove(m.kind)" [attr.data-testid]="m.testId">
                 @if (m.kind !== 'write-off') {
-                  <input [name]="m.kind + 'Bin'" aria-label="Bin" placeholder="Bin id" list="bin-options"
-                         [value]="m.draft().binId" (input)="setMove(m.draft, 'binId', $any($event.target).value)" required />
+                  <app-entity-picker [kind]="'bin'" [warehouseId]="warehouseId()" ariaLabel="Bin" placeholder="Bin" [required]="true"
+                                     [value]="m.draft().binId" (valueChange)="setMove(m.draft, 'binId', $event)" />
                 }
-                <input [name]="m.kind + 'Sku'" aria-label="SKU" placeholder="SKU id" list="sku-options"
-                       [value]="m.draft().skuId" (input)="setMove(m.draft, 'skuId', $any($event.target).value)" required />
+                <app-entity-picker [kind]="'sku'" ariaLabel="SKU" placeholder="SKU" [required]="true"
+                                   [value]="m.draft().skuId" (valueChange)="setMove(m.draft, 'skuId', $event)" />
                 <input [name]="m.kind + 'Lot'" aria-label="Lot" placeholder="Lot (optional)"
                        [value]="m.draft().lotNo" (input)="setMove(m.draft, 'lotNo', $any($event.target).value)" />
                 <input [name]="m.kind + 'Qty'" aria-label="Quantity" placeholder="Quantity" inputmode="numeric"
@@ -286,8 +281,8 @@ export class WhTable {
               </div>
               @for (l of outLines(); track $index; let i = $index) {
                 <div class="inline">
-                  <input [name]="'outSku' + i" [attr.aria-label]="'Line ' + (i + 1) + ' SKU'" placeholder="SKU id" list="sku-options"
-                         [value]="l.skuId" (input)="setLine(outLines, i, 'skuId', $any($event.target).value)" required />
+                  <app-entity-picker [kind]="'sku'" [ariaLabel]="'Line ' + (i + 1) + ' SKU'" placeholder="SKU" [required]="true"
+                                     [value]="l.skuId" (valueChange)="setLine(outLines, i, 'skuId', $event)" />
                   <input [name]="'outQty' + i" [attr.aria-label]="'Line ' + (i + 1) + ' quantity'" placeholder="Quantity"
                          inputmode="numeric" [value]="l.quantity"
                          (input)="setLine(outLines, i, 'quantity', $any($event.target).value)" required />
@@ -332,13 +327,10 @@ export class WhTable {
                   <div class="inline">
                     <input name="reference" aria-label="Dispatch reference" placeholder="Dispatch reference"
                            [value]="dispatchRef()" (input)="dispatchRef.set($any($event.target).value)" />
-                    <input name="destination" aria-label="Destination terminal" placeholder="Destination terminal (optional)"
-                           list="terminal-options" [value]="destination()" (input)="destination.set($any($event.target).value)" />
-                    <datalist id="terminal-options">
-                      @for (t of terminals(); track t.id) { <option [value]="t.id">{{ t.label }}</option> }
-                    </datalist>
-                    <input name="consignee" aria-label="Consignee id" placeholder="Consignee id (optional)"
-                           [value]="consignee()" (input)="consignee.set($any($event.target).value)" />
+                    <app-entity-picker [kind]="'terminal'" ariaLabel="Destination terminal" placeholder="Destination terminal (optional)"
+                                       [(value)]="destination" />
+                    <app-entity-picker [kind]="'partner'" ariaLabel="Consignee id" placeholder="Consignee (optional)"
+                                       [(value)]="consignee" />
                     <input name="weight" aria-label="Gross weight kg" placeholder="Gross kg (optional)" inputmode="decimal"
                            [value]="weight()" (input)="weight.set($any($event.target).value)" />
                   </div>
@@ -410,8 +402,8 @@ export class WhTable {
                      [value]="skuCode()" (input)="skuCode.set($any($event.target).value)" required />
               <input name="skuDescription" aria-label="SKU description" placeholder="Description"
                      [value]="skuDescription()" (input)="skuDescription.set($any($event.target).value)" required />
-              <input name="skuOwner" aria-label="Owner id" placeholder="Owner client id (optional)"
-                     [value]="skuOwner()" (input)="skuOwner.set($any($event.target).value)" />
+              <app-entity-picker [kind]="'customer'" ariaLabel="Owner id" placeholder="Owner client (optional)"
+                                 [(value)]="skuOwner" />
               <input name="skuUom" aria-label="Unit of measure" placeholder="Unit (optional)"
                      [value]="skuUom()" (input)="skuUom.set($any($event.target).value)" />
               <button type="submit">Create SKU</button>
@@ -467,7 +459,6 @@ export class WarehouseFloor implements OnInit {
   readonly orders = signal<Row[]>([]);
   readonly units = signal<Row[]>([]);
   readonly waves = signal<Row[]>([]);
-  readonly terminals = signal<Choice[]>([]);
   readonly openOrders = computed(() => this.orders().filter((o) => o['status'] === 'OPEN'));
 
   readonly asnId = signal<string | null>(null);
@@ -518,7 +509,6 @@ export class WarehouseFloor implements OnInit {
 
   ngOnInit(): void {
     void this.refresh();
-    this.gateway.terminalChoices().then((t) => this.terminals.set(t), () => undefined);
   }
 
   /** Reads the warehouse again, and whatever record is open. */
@@ -794,17 +784,14 @@ export class WarehouseFloor implements OnInit {
 /** Opens a warehouse's floor by its terminal id. */
 @Component({
   selector: 'app-warehouse-desk',
-  imports: [FormsModule, WarehouseFloor],
+  imports: [FormsModule, WarehouseFloor, EntityPicker],
   template: `
     <h1>Warehouse operations</h1>
     <p class="muted">Open a warehouse to receive, store, pick, pack and dispatch its goods.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="open()" data-testid="open-warehouse">
-      <input name="warehouseId" placeholder="Warehouse id" aria-label="Warehouse id" data-testid="warehouse-id"
-             list="warehouse-options" [value]="typed()" (input)="typed.set($any($event.target).value)" required />
-      <datalist id="warehouse-options">
-        @for (c of choices(); track c.id) { <option [value]="c.id">{{ c.label }}</option> }
-      </datalist>
+      <app-entity-picker [kind]="'warehouse'" placeholder="Warehouse" ariaLabel="Warehouse id" testId="warehouse-id"
+                         [required]="true" [(value)]="typed" />
       <button type="submit">Open</button>
     </form>
     @for (id of opened(); track id) {
@@ -812,22 +799,11 @@ export class WarehouseFloor implements OnInit {
     }
   `,
 })
-export class WarehouseDesk implements OnInit {
-  private readonly gateway = inject(LmsGateway);
-
+export class WarehouseDesk {
   readonly typed = signal('');
   readonly warehouseId = signal('');
   /** The open warehouse as a one-item list, so a new warehouse gets a fresh floor. */
   readonly opened = computed(() => (this.warehouseId() ? [this.warehouseId()] : []));
-  readonly choices = signal<Choice[]>([]);
-
-  async ngOnInit(): Promise<void> {
-    try {
-      this.choices.set(await this.gateway.warehouseChoices());
-    } catch {
-      // The picker is a convenience; an id can still be typed.
-    }
-  }
 
   open(): void {
     this.warehouseId.set(this.typed().trim().toLowerCase());

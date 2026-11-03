@@ -21,34 +21,63 @@ import java.util.UUID;
 
 import com.lms.finance.command.TariffCommandService;
 import com.lms.finance.command.domain.TariffSlab;
+import com.lms.finance.query.TariffCardView;
+import com.lms.finance.query.TariffQueryService;
+import com.lms.finance.query.TariffView;
+import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Publishing rate cards (vision document 3.9.1).
+ * Publishing rate cards (vision document 3.9.1), and reading them back.
  *
- * <p>POST only, and that is the contract rather than an omission. A rate card
- * is a version: correcting one means publishing a successor, which closes the
- * incumbent. A PUT or PATCH here would offer an operation the database refuses
- * by trigger, so the API does not offer it either.
+ * <p>No PUT or PATCH, and that is the contract rather than an omission. A rate
+ * card is a version: correcting one means publishing a successor, which closes
+ * the incumbent. An edit here would offer an operation the database refuses by
+ * trigger, so the API does not offer it either.
  */
 @RestController
 @RequestMapping("/api/v1/tariffs")
 public class TariffController {
 
     private final TariffCommandService tariffs;
+    private final TariffQueryService queries;
 
-    public TariffController(TariffCommandService tariffs) {
+    public TariffController(TariffCommandService tariffs, TariffQueryService queries) {
         this.tariffs = tariffs;
+        this.queries = queries;
+    }
+
+    /** Card versions, newest first, optionally narrowed to a vendor, lane or vehicle type. */
+    @GetMapping
+    public Slice<TariffView> list(@RequestParam(required = false) UUID vendorPartnerId,
+                                  @RequestParam(required = false) UUID originTerminalId,
+                                  @RequestParam(required = false) UUID destinationTerminalId,
+                                  @RequestParam(required = false) String vehicleType,
+                                  @RequestParam(required = false) Boolean superseded,
+                                  @RequestParam(required = false) String cursor,
+                                  @RequestParam(required = false) Integer limit) {
+        return queries.list(vendorPartnerId, originTerminalId, destinationTerminalId,
+                vehicleType, superseded, cursor, limit);
+    }
+
+    /** One card version with its weight bands. */
+    @GetMapping("/{id}")
+    public TariffCardView get(@PathVariable UUID id) {
+        return queries.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Tariff", id));
     }
 
     @PostMapping

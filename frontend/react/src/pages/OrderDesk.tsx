@@ -19,6 +19,7 @@ import {
   ApiProblem, MATERIAL_CLASSES, type OrderDesk as Desk, type OrderHeaderDraft, type OrderLineDraft,
   type OrderLineView, type OrderRaiseDraft,
 } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 
@@ -93,8 +94,8 @@ export function OrderDesk() {
         are cut from it.
       </p>
       <form className="inline" onSubmit={open} data-testid="open-order">
-        <input placeholder="Order id" aria-label="Order id" data-testid="order-id"
-          value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="order" placeholder="Order" ariaLabel="Order id" testId="order-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       {can('ORDER_CREATE') && auth?.orgUnitId && (
@@ -134,10 +135,10 @@ function RaiseOrder({ orgUnitId, onRaised }: { orgUnitId: string; onRaised: (id:
     <form className="inline" onSubmit={raise} data-testid="raise-order">
       <input placeholder="Order number" aria-label="Order number" value={draft.orderNo}
         onChange={(e) => set('orderNo')(e.target.value)} required />
-      <input placeholder="Customer id" aria-label="New order customer id" value={draft.customerPartnerId}
-        onChange={(e) => set('customerPartnerId')(e.target.value)} required />
-      <input placeholder="Origin terminal id" aria-label="New order origin terminal id" value={draft.originTerminalId}
-        onChange={(e) => set('originTerminalId')(e.target.value)} required />
+      <EntityPicker kind="customer" placeholder="Customer" ariaLabel="New order customer id"
+        value={draft.customerPartnerId} onChange={set('customerPartnerId')} required />
+      <EntityPicker kind="terminal" placeholder="Origin terminal" ariaLabel="New order origin terminal id"
+        value={draft.originTerminalId} onChange={set('originTerminalId')} required />
       <input placeholder="Pickup (ISO time, optional)" aria-label="New order pickup" value={draft.requestedPickupAt}
         onChange={(e) => set('requestedPickupAt')(e.target.value)} />
       <button type="submit">Raise order</button>
@@ -267,10 +268,10 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
             </p>
           )}
           <div className="inline" data-testid="header-editor">
-            <input aria-label="Customer id" placeholder="Customer id" value={header.customerPartnerId}
-              onChange={(e) => setHeaderField('customerPartnerId')(e.target.value)} />
-            <input aria-label="Origin terminal id" placeholder="Origin terminal id" value={header.originTerminalId}
-              onChange={(e) => setHeaderField('originTerminalId')(e.target.value)} />
+            <EntityPicker kind="customer" ariaLabel="Customer id" placeholder="Customer"
+              value={header.customerPartnerId} onChange={setHeaderField('customerPartnerId')} />
+            <EntityPicker kind="terminal" ariaLabel="Origin terminal id" placeholder="Origin terminal"
+              value={header.originTerminalId} onChange={setHeaderField('originTerminalId')} />
             <input aria-label="Pickup" placeholder="Pickup (ISO time)" value={header.requestedPickupAt}
               onChange={(e) => setHeaderField('requestedPickupAt')(e.target.value)} />
             <input aria-label="Delivery" placeholder="Delivery (ISO time)" value={header.requestedDeliveryAt}
@@ -279,7 +280,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
           <div className="table-scroll">
             <table data-testid="lines-editor">
               <thead>
-                <tr><th>#</th><th>Code</th><th>Description</th><th>Class</th><th>Qty</th><th>UoM</th><th>Weight kg</th><th>L</th><th>W</th><th>H</th><th>Consignee id</th><th>Destination id</th><th /></tr>
+                <tr><th>#</th><th>Code</th><th>Description</th><th>Class</th><th>Qty</th><th>UoM</th><th>Weight kg</th><th>L</th><th>W</th><th>H</th><th>Consignee</th><th>Destination</th><th /></tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => (
@@ -307,10 +308,10 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
                       onChange={(e) => setLine(i, 'widthM', e.target.value)} /></td>
                     <td><input aria-label={`Line ${l.lineNo} height m`} value={l.heightM} size={4}
                       onChange={(e) => setLine(i, 'heightM', e.target.value)} /></td>
-                    <td><input aria-label={`Line ${l.lineNo} consignee id`} value={l.consigneePartnerId}
-                      onChange={(e) => setLine(i, 'consigneePartnerId', e.target.value)} /></td>
-                    <td><input aria-label={`Line ${l.lineNo} destination id`} value={l.destinationTerminalId}
-                      onChange={(e) => setLine(i, 'destinationTerminalId', e.target.value)} /></td>
+                    <td><EntityPicker kind="partner" ariaLabel={`Line ${l.lineNo} consignee id`}
+                      value={l.consigneePartnerId} onChange={(id) => setLine(i, 'consigneePartnerId', id)} /></td>
+                    <td><EntityPicker kind="terminal" ariaLabel={`Line ${l.lineNo} destination id`}
+                      value={l.destinationTerminalId} onChange={(id) => setLine(i, 'destinationTerminalId', id)} /></td>
                     <td>
                       {lines.length > 1 && (
                         <button type="button" className="link" aria-label={`Drop line ${l.lineNo}`}

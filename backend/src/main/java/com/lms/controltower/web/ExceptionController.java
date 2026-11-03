@@ -79,8 +79,9 @@ public class ExceptionController {
     public Slice<ExceptionView> list(@RequestParam(required = false) String status,
                                      @RequestParam(required = false) String severity,
                                      @RequestParam(required = false) String cursor,
-                                     @RequestParam(required = false) Integer limit) {
-        return queries.list(status, severity, cursor, limit);
+                                     @RequestParam(required = false) Integer limit,
+                                     @RequestParam(required = false) String q) {
+        return queries.list(status, severity, cursor, limit, q);
     }
 
     @GetMapping("/summary")

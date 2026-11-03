@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -101,6 +102,11 @@ public class OrderQueryService {
      * @param cursor the {@code order_no} of the last row of the previous page
      */
     public Slice<OrderView> list(String status, String cursor, Integer limit) {
+        return list(status, cursor, limit, null);
+    }
+
+    /** As {@link #list(String, String, Integer)}, narrowed to order numbers containing {@code q}. */
+    public Slice<OrderView> list(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         // Both parameters are bound with an explicit cast. A bind used only
@@ -110,6 +116,7 @@ public class OrderQueryService {
         List<OrderView> rows = jdbc.sql(SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR o.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR o.order_no > CAST(:cursor AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(o.order_no) LIKE CAST(:q AS text))
                         """ + PARTNER_SCOPE + """
                          ORDER BY o.order_no
                          LIMIT :limit
@@ -117,6 +124,7 @@ public class OrderQueryService {
                 .param("status", status)
                 .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
+                .param("q", Search.containsPattern(q))
                 // One more than asked for: that extra row is how "is there
                 // another page" is answered without a second count query.
                 .param("limit", pageSize + 1)

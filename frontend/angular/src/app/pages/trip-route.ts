@@ -19,18 +19,19 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { LmsGateway, TripRoute as Route } from '../gateway/lms-gateway';
 import { MapView } from './map-view';
+import { EntityPicker } from './entity-picker';
 
 /** A trip's track so far and where it is now. */
 @Component({
   selector: 'app-trip-route',
-  imports: [FormsModule, MapView],
+  imports: [FormsModule, MapView, EntityPicker],
   template: `
     <h1>Trip route</h1>
     <p class="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="lookUp()" data-testid="trip-lookup">
-      <input name="tripId" placeholder="Trip id" aria-label="Trip id" data-testid="trip-id"
-             [value]="typed()" (input)="typed.set($any($event.target).value)" required />
+      <app-entity-picker [kind]="'trip'" placeholder="Trip" ariaLabel="Trip id" testId="trip-id" [required]="true"
+                         [(value)]="typed" />
       <button type="submit">Show route</button>
     </form>
     @if (loading()) { <p class="muted">Loading…</p> }

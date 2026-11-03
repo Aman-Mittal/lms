@@ -21,11 +21,12 @@ import {
   RuleDraft, RuleEvaluation,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { EntityPicker } from './entity-picker';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 @Component({
   selector: 'app-allocation-rules',
-  imports: [FormsModule],
+  imports: [FormsModule, EntityPicker],
   template: `
     <h1>Allocation rules</h1>
     @if (!read()) {
@@ -133,8 +134,8 @@ import { Session } from '../session';
         <h2>Dry run</h2>
         <p class="muted">Which rule would fire for a load, and who would be asked first. Nothing is offered.</p>
         <form class="inline" (ngSubmit)="evaluate()">
-          <input name="loadId" placeholder="Load id" aria-label="Load id" data-testid="dry-run-load"
-                 [(ngModel)]="loadId" required />
+          <app-entity-picker [kind]="'load'" placeholder="Load" ariaLabel="Load id" testId="dry-run-load" [required]="true"
+                             [value]="loadId" (valueChange)="loadId = $event" />
           <button type="submit" data-testid="dry-run-go">Evaluate</button>
         </form>
         @if (dryRunError()) { <p class="error" role="alert">{{ dryRunError() }}</p> }
@@ -157,8 +158,8 @@ import { Session } from '../session';
       <section data-testid="allocation-lookup">
         <h2>What decided an allocation</h2>
         <form class="inline" (ngSubmit)="lookUp()">
-          <input name="allocationId" placeholder="Allocation id" aria-label="Allocation id" data-testid="allocation-id"
-                 [(ngModel)]="allocationId" required />
+          <app-entity-picker [kind]="'allocation'" placeholder="Allocation" ariaLabel="Allocation id" testId="allocation-id" [required]="true"
+                             [value]="allocationId" (valueChange)="allocationId = $event" />
           <button type="submit" data-testid="allocation-go">Look up</button>
         </form>
         @if (lookUpError()) { <p class="error" role="alert">{{ lookUpError() }}</p> }

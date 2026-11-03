@@ -70,8 +70,9 @@ public class TripController {
     @GetMapping
     public Slice<TripView> list(@RequestParam(required = false) String status,
                                 @RequestParam(required = false) String cursor,
-                                @RequestParam(required = false) Integer limit) {
-        return tripQueries.list(status, cursor, limit);
+                                @RequestParam(required = false) Integer limit,
+                                @RequestParam(required = false) String q) {
+        return tripQueries.list(status, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

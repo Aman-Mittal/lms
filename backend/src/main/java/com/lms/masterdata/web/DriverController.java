@@ -55,8 +55,9 @@ public class DriverController {
     @GetMapping
     public Slice<DriverView> list(@RequestParam(required = false) String status,
                                   @RequestParam(required = false) String cursor,
-                                  @RequestParam(required = false) Integer limit) {
-        return masterData.listDrivers(status, cursor, limit);
+                                  @RequestParam(required = false) Integer limit,
+                                  @RequestParam(required = false) String q) {
+        return masterData.listDrivers(status, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

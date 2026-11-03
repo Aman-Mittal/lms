@@ -427,7 +427,7 @@ public class MilkRunReadSteps {
     public void ticket() {
         List<Exception> tickets = HttpWorld.eventually("the skipped-stop ticket", () -> {
             List<Exception> found = world.api(ControlTowerApi.class)
-                    .listExceptions(null, null, null, 200).getItems().stream()
+                    .listExceptions(null, null, null, 200, null).getItems().stream()
                     .filter(t -> circuitId.equals(t.getSubjectId()))
                     .toList();
             assertThat(found).isNotEmpty();

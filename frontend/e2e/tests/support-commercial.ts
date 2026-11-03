@@ -180,3 +180,60 @@ export async function deliveredTrip(request: APIRequestContext, session: Session
   }, { message: `the freight bill of ${tripNo}`, timeout: 30_000 }).not.toBe('');
   return { tripNo, billId, billNo };
 }
+
+// Rate cards and rail tariffs
+
+/** A rate card on its own lane with two weight bands: 4 a kilogram up to 10 000 kg, then a flat 45 000. */
+export async function commercialRateCard(
+  request: APIRequestContext, session: Session, salt: string,
+): Promise<{ id: string; code: string; vendor: Place }> {
+  const { origin, destination } = await commercialLane(request, session, `RC-${salt}`);
+  const vendor = await commercialVendor(request, session, `ZZ-CM-RCV-${salt}`);
+  const code = `ZZ-CM-RC-${salt}`;
+  const card = await call(request, session, '/api/v1/tariffs', {
+    orgUnitId: session.orgUnitId, code, vendorPartnerId: vendor.id, originTerminalId: origin.id,
+    destinationTerminalId: destination.id, vehicleType: 'RIGID', currency: 'INR', effectiveFrom: day(-1),
+    minimumCharge: 5000,
+  });
+  await call(request, session, `/api/v1/tariffs/${card.id}/slabs`, {
+    minWeightKg: 10000, rateBasis: 'FLAT', rateAmount: 45000,
+  });
+  await call(request, session, `/api/v1/tariffs/${card.id}/slabs`, {
+    minWeightKg: 0, maxWeightKg: 10000, rateBasis: 'PER_KG', rateAmount: 4,
+  });
+  return { id: card.id as string, code, vendor };
+}
+
+/** Two railheads far apart and an active rail carrier: what a rail rate card is published for. */
+export async function commercialRailheads(
+  request: APIRequestContext, session: Session, salt: string,
+): Promise<{ from: Place; to: Place; carrier: Place }> {
+  const railhead = async (name: string): Promise<Place> => {
+    const code = `ZZ-CM-RH-${name}-${salt}`;
+    const made = await call(request, session, '/api/v1/terminals/point-radius', {
+      orgUnitId: session.orgUnitId, code, name: `Railhead ${name} ${salt}`, category: 'RAILHEAD',
+      centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 750, dockCount: 2, avgDwellMinutes: 45,
+    });
+    return { id: made.id as string, code };
+  };
+  return {
+    from: await railhead('FROM'), to: await railhead('TO'),
+    carrier: await commercialVendor(request, session, `ZZ-CM-RAIL-${salt}`),
+  };
+}
+
+/** `count` rate cards of one vendor on one lane, one per vehicle type: more than a page of the listing. */
+export async function commercialRateCards(
+  request: APIRequestContext, session: Session, salt: string, count: number,
+): Promise<Place> {
+  const { origin, destination } = await commercialLane(request, session, `RM-${salt}`);
+  const vendor = await commercialVendor(request, session, `ZZ-CM-RMV-${salt}`);
+  for (let start = 0; start < count; start += 10) {
+    await Promise.all(Array.from({ length: Math.min(10, count - start) }, (_, i) => call(request, session, '/api/v1/tariffs', {
+      orgUnitId: session.orgUnitId, code: `ZZ-CM-RM-${salt}-${start + i + 1}`, vendorPartnerId: vendor.id,
+      originTerminalId: origin.id, destinationTerminalId: destination.id, vehicleType: `RIGID-${start + i + 1}`,
+      effectiveFrom: day(-1),
+    })));
+  }
+  return vendor;
+}

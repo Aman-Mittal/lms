@@ -18,10 +18,13 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import {
   ACCESS_FREIGHT_MODES, AccessFreightMode, AccessPolicyView, AdminUser, ApiProblem, DOCUMENT_OWNER_TYPES,
-  DocumentOwnerType, LmsGateway, PolicyEffect, Row,
+  DocumentOwnerType, LmsGateway, PickKind, PolicyEffect, Row,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { RowTable } from './row-table';
+import { EntityPicker } from './entity-picker';
+
+const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
 
 export type AdminSection = 'users' | 'policies' | 'compliance';
 
@@ -59,7 +62,7 @@ function inDays(days: number): string {
  */
 @Component({
   selector: 'app-admin-desk',
-  imports: [RowTable],
+  imports: [RowTable, EntityPicker],
   template: `
     <h1>{{ title }}</h1>
     @if (refusal(); as r) {
@@ -100,8 +103,8 @@ function inDays(days: number): string {
                 </label>
               }
             </fieldset>
-            <input placeholder="Partner id" aria-label="Partner id" data-testid="attr-partner"
-                   [value]="partnerId()" (input)="partnerId.set(valueOf($event))" />
+            <app-entity-picker [kind]="'partner'" placeholder="Partner" ariaLabel="Partner id" testId="attr-partner"
+                               [(value)]="partnerId" />
             <input placeholder="Approval limit" aria-label="Approval limit" data-testid="attr-limit" inputmode="decimal"
                    [value]="approvalLimit()" (input)="approvalLimit.set(valueOf($event))" />
             <button type="submit" data-testid="save-attributes">Save attributes</button>
@@ -196,8 +199,8 @@ function inDays(days: number): string {
                   (change)="ownerType.set($any(valueOf($event)))">
             @for (t of ownerTypes; track t) { <option [value]="t">{{ t }}</option> }
           </select>
-          <input placeholder="Id" aria-label="Owner id" data-testid="owner-id" required
-                 [value]="ownerId()" (input)="ownerId.set(valueOf($event))" />
+          <app-entity-picker [kind]="ownerKind()" placeholder="Find one" ariaLabel="Owner id" testId="owner-id"
+                             [required]="true" [(value)]="ownerId" />
           <button type="submit" data-testid="open-owner">Open</button>
         </form>
         @if (ownerOpened()) {
@@ -278,6 +281,8 @@ export class AdminDesk implements OnInit {
   readonly withinDays = signal('30');
   readonly expiring = signal<Row[]>([]);
   readonly ownerType = signal<DocumentOwnerType>('VEHICLE');
+  /** The picker each kind of document owner is chosen with. */
+  readonly ownerKind = computed((): PickKind => OWNER_PICKS[this.ownerType()]);
   readonly ownerId = signal('');
   readonly ownerOpened = signal(false);
   readonly ownerDocuments = signal<Row[]>([]);

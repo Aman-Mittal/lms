@@ -32,6 +32,13 @@ import type {
   AllocationDetail, FreightBillDetail, GuideDraft, GuideVendorDraft, RoutingGuideDetail, SlabDraft, TariffDraft,
 } from './lms-gateway';
 import type { DemoResetOutcome } from './lms-gateway';
+// Rate cards and rail tariffs
+import {
+  RailTariff as RailRateCard, Tariff as RateCard, TariffCard as RateCardWithBands, TariffSlab as RateCardBand,
+} from '../api';
+import type { RailTariffDraft, RateCardPage, TariffCardDetail, TariffFilter } from './lms-gateway';
+// Pickers
+import type { PickPage, PickQuery } from './lms-gateway';
 import {
   AllocationRule, AllocationRuleAction, AllocationRuleRequest, AllocationRuleRequestMaterialClassEnum,
   AllocationRulesService, AuthenticationService, ControlTowerService, CustomFieldDefinition, CustomFieldEntityType,
@@ -1330,6 +1337,41 @@ export class GeneratedLmsGateway extends LmsGateway {
     })));
   }
 
+  // Rate cards and rail tariffs
+  tariffs(filter: TariffFilter, cursor?: string): Promise<RateCardPage> {
+    return this.call(this.freightBills.listTariffs({
+      vendorPartnerId: filter.vendorPartnerId.trim() || undefined,
+      superseded: filter.state === '' ? undefined : filter.state === 'superseded',
+      cursor, limit: RATE_CARD_PAGE,
+    }), (s) => ({ rows: s.items.map(rateCardRow), nextCursor: s.nextCursor ?? null }));
+  }
+
+  tariffCard(id: string): Promise<TariffCardDetail> {
+    return this.call(this.freightBills.getTariff({ id }), rateCardDetailOf);
+  }
+
+  railTariffs(cursor?: string): Promise<RateCardPage> {
+    return this.call(this.multimodal.listRailTariffs({ cursor, limit: RATE_CARD_PAGE }),
+      (s) => ({ rows: (s.items ?? []).map(railRateCardRow), nextCursor: s.nextCursor ?? null }));
+  }
+
+  railTariff(id: string): Promise<Row> {
+    return this.call(this.multimodal.getRailTariff({ id }), railRateCardRow);
+  }
+
+  publishRailTariff(draft: RailTariffDraft): Promise<string> {
+    const figure = (value: string): number | undefined => (value.trim() ? Number(value.trim()) : undefined);
+    return this.call(this.multimodal.publishRailTariff({
+      publishRailTariffRequest: {
+        code: draft.code.trim(), carrierPartnerId: draft.carrierPartnerId.trim(),
+        originTerminalId: draft.originTerminalId.trim(), destinationTerminalId: draft.destinationTerminalId.trim(),
+        effectiveFrom: draft.effectiveFrom, currency: draft.currency.trim() || undefined,
+        perWagonRate: figure(draft.perWagonRate), perContainerRate: figure(draft.perContainerRate),
+        minimumCharge: figure(draft.minimumCharge),
+      },
+    }), (r) => text(r.id));
+  }
+
   /** Each distinct terminal named, read once. */
   private async terminalsById(ids: Array<string | null | undefined>): Promise<Map<string, Terminal>> {
     const distinct = [...new Set(ids.filter((id): id is string => !!id))];
@@ -1352,6 +1394,70 @@ export class GeneratedLmsGateway extends LmsGateway {
           e.status, body?.errors ?? {}, body?.code ?? '');
       }
       throw e;
+    }
+  }
+
+  // Pickers
+  pick({ kind, q, cursor, warehouseId }: PickQuery): Promise<PickPage> {
+    const search = q.trim() || undefined;
+    const at = cursor || undefined;
+    const limit = 20;
+    const page = <T>(items: T[], nextCursor: string | null | undefined, label: (item: T) => Choice): PickPage =>
+      ({ items: items.map(label), nextCursor: nextCursor ?? null });
+    switch (kind) {
+      case 'partner':
+      case 'customer':
+      case 'vendor':
+        return this.call(this.partners.listPartners({
+          partnerType: kind === 'partner' ? undefined : kind === 'customer' ? 'CUSTOMER' : 'VENDOR',
+          q: search, cursor: at, limit,
+        }), (s) => page(s.items, s.nextCursor, (p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` })));
+      case 'terminal':
+      case 'warehouse':
+        return this.call(this.terminals.listTerminals({
+          category: kind === 'warehouse' ? 'WAREHOUSE' : undefined, q: search, cursor: at, limit,
+        }), (s) => page(s.items, s.nextCursor, (t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` })));
+      case 'vehicle':
+        return this.call(this.vehicles.listVehicles({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (v) => ({ id: text(v.id), label: `${text(v.registrationNo)} · ${text(v.vehicleType)}` })));
+      case 'driver':
+        return this.call(this.drivers.listDrivers({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (d) => ({ id: text(d.id), label: `${text(d.licenceNo)} · ${text(d.fullName)}` })));
+      case 'sku':
+        return this.call(this.warehouse.listSkus({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (k) => ({ id: text(k.id), label: `${text(k.code)} · ${text(k.description)}` })));
+      case 'bin':
+        if (!warehouseId) {
+          return Promise.resolve({ items: [], nextCursor: null });
+        }
+        return this.call(this.warehouse.listBins({ warehouseId, q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (b) => ({ id: text(b.id), label: text(b.code) })));
+      case 'order':
+        return this.call(this.orders.listOrders({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (o) => ({ id: text(o.id), label: `${text(o.orderNo)} · ${text(o.status)}` })));
+      case 'load':
+        return this.call(this.loads.listLoads({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (l) => ({ id: text(l.id), label: `${text(l.loadNo)} · ${text(l.status)}` })));
+      case 'trip':
+        return this.call(this.trips.listTrips({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (t) => ({ id: text(t.id), label: `${text(t.tripNo)} · ${text(t.status)}` })));
+      case 'ticket':
+        return this.call(this.controlTower.listExceptions({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (x) => ({
+            id: text(x.id), label: `${text(x.ticketNo)} · ${text(x.category)} · ${text(x.status)}`,
+          })));
+      case 'allocation':
+        return this.call(this.sourcing.listAllocations({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (a) => ({ id: text(a.id), label: `${text(a.loadNo)} · ${text(a.status)}` })));
+      case 'bill':
+        return this.call(this.freightBills.listFreightBills({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (b) => ({ id: text(b.id), label: `${text(b.billNo)} · ${text(b.status)}` })));
+      case 'consignment':
+        return this.call(this.loads.listConsignments({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (c) => ({ id: text(c.id), label: `${text(c.trackingRef)} · ${text(c.status)}` })));
+      case 'unassigned':
+        return this.call(this.loads.listUnassignedConsignments({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (c) => ({ id: text(c.id), label: `${text(c.trackingRef)} · ${text(c.status)}` })));
     }
   }
 
@@ -1688,5 +1794,41 @@ function commercialBillLineRow(l: CommercialFreightBillLine): Row {
   return {
     lineNo: text(l.lineNo), chargeType: text(l.chargeType), narrative: text(l.narrative), quantity: text(l.quantity),
     unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+  };
+}
+
+// Rate cards and rail tariffs
+
+/** Rate cards read a page at a time; the desk follows the cursor for more. */
+const RATE_CARD_PAGE = 50;
+
+function rateCardRow(t: RateCard | RateCardWithBands): Row {
+  return {
+    id: text(t.id), code: text(t.code), orgUnitName: text(t.orgUnitName), vendorCode: text(t.vendorCode),
+    vendorName: text(t.vendorName), originTerminalCode: text(t.originTerminalCode),
+    destinationTerminalCode: text(t.destinationTerminalCode), vehicleType: text(t.vehicleType),
+    currency: text(t.currency), effectiveFrom: text(t.effectiveFrom), effectiveTo: text(t.effectiveTo),
+    superseded: t.superseded ? 'Yes' : '', minimumCharge: text(t.minimumCharge),
+    detentionFreeHours: text(t.detentionFreeHours), detentionHourlyRate: text(t.detentionHourlyRate),
+    additionalDropFee: text(t.additionalDropFee), slabCount: text(t.slabCount),
+  };
+}
+
+function rateCardDetailOf(t: RateCardWithBands): TariffCardDetail {
+  return {
+    card: rateCardRow(t),
+    slabs: (t.slabs ?? []).map((b: RateCardBand) => ({
+      minWeightKg: text(b.minWeightKg), maxWeightKg: b.maxWeightKg === undefined || b.maxWeightKg === null ? '—' : text(b.maxWeightKg),
+      rateBasis: text(b.rateBasis), rateAmount: text(b.rateAmount),
+    })),
+  };
+}
+
+function railRateCardRow(r: RailRateCard): Row {
+  return {
+    id: text(r.id), code: text(r.code), carrierCode: text(r.carrierCode), originTerminalCode: text(r.originTerminalCode),
+    destinationTerminalCode: text(r.destinationTerminalCode), currency: text(r.currency),
+    perWagonRate: text(r.perWagonRate), perContainerRate: text(r.perContainerRate), minimumCharge: text(r.minimumCharge),
+    effectiveFrom: text(r.effectiveFrom), effectiveTo: text(r.effectiveTo),
   };
 }

@@ -64,3 +64,12 @@ form.inline input, form.inline select { width:auto; margin:0; }
 .table-scroll { max-height:60vh; overflow-y:auto; border-radius:12px; margin:.5rem 0 1rem; }
 .table-scroll table { border-radius:0; }
 .table-scroll thead th { position:sticky; top:0; background:var(--card); z-index:1; }
+
+/* Pickers */
+.picker { position:relative; display:inline-block; min-width:14rem; }
+.picker-options { position:absolute; z-index:20; left:0; right:0; margin:.15rem 0 0; padding:.25rem 0; list-style:none; max-height:16rem; overflow-y:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 18px rgb(16 26 43 / 12%); }
+.picker-options li { margin:0; }
+.picker-options li.muted { padding:.35rem .6rem; }
+.picker-options button { display:block; width:100%; text-align:left; padding:.35rem .6rem; border:0; border-radius:0; background:none; color:var(--ink); font:inherit; cursor:pointer; }
+.picker-options button:hover, .picker-options button[aria-selected="true"] { background:var(--accent-soft); }
+.picker-options button.more { color:var(--accent); }

@@ -152,7 +152,7 @@ public class DirectoryMasterDataSteps {
     @Then("directory partners page two at a time from the cursor in code order")
     public void partnersPage() {
         PartnersApi api = world.api(PartnersApi.class);
-        PartnerSlice first = api.listPartners(null, null, partnerCursor, 2);
+        PartnerSlice first = api.listPartners(null, null, partnerCursor, 2, null);
         assertThat(first.getItems()).extracting(Partner::getCode)
                 .containsExactly(partnerCodes.get(0), partnerCodes.get(1));
         assertThat(first.getItems()).extracting(Partner::getId)
@@ -160,10 +160,10 @@ public class DirectoryMasterDataSteps {
         assertThat(first.getHasMore()).as("the third partner is still to come").isTrue();
         assertThat(first.getNextCursor()).isEqualTo(partnerCodes.get(1));
 
-        PartnerSlice second = api.listPartners(null, null, first.getNextCursor(), 2);
+        PartnerSlice second = api.listPartners(null, null, first.getNextCursor(), 2, null);
         assertThat(second.getItems().get(0).getCode()).isEqualTo(partnerCodes.get(2));
 
-        PartnerSlice single = api.listPartners(null, null, partnerCursor, 1);
+        PartnerSlice single = api.listPartners(null, null, partnerCursor, 1, null);
         assertThat(single.getItems()).hasSize(1);
         assertThat(single.getHasMore()).isTrue();
         assertThat(single.getNextCursor()).isEqualTo(partnerCodes.get(0));
@@ -172,13 +172,13 @@ public class DirectoryMasterDataSteps {
     @Then("directory partner filters by type and status pick out exactly the right one of the three")
     public void partnerFilters() {
         PartnersApi api = world.api(PartnersApi.class);
-        assertThat(api.listPartners("VENDOR", "ACTIVE", partnerCursor, 1).getItems())
+        assertThat(api.listPartners("VENDOR", "ACTIVE", partnerCursor, 1, null).getItems())
                 .extracting(Partner::getId).containsExactly(partners.get(2));
-        assertThat(api.listPartners("VENDOR", "DRAFT", partnerCursor, 1).getItems())
+        assertThat(api.listPartners("VENDOR", "DRAFT", partnerCursor, 1, null).getItems())
                 .extracting(Partner::getId).containsExactly(partners.get(1));
-        assertThat(api.listPartners("CUSTOMER", null, partnerCursor, 1).getItems())
+        assertThat(api.listPartners("CUSTOMER", null, partnerCursor, 1, null).getItems())
                 .extracting(Partner::getId).containsExactly(partners.get(0));
-        assertThat(api.listPartners(null, "BLACKLISTED", partnerCursor, 5).getItems())
+        assertThat(api.listPartners(null, "BLACKLISTED", partnerCursor, 5, null).getItems())
                 .extracting(Partner::getId).doesNotContainAnyElementsOf(partners);
     }
 
@@ -199,22 +199,22 @@ public class DirectoryMasterDataSteps {
     @Then("another tenant's directory does not list these partners but lists its own")
     public void partnersAreTenantScoped() {
         PartnersApi theirs = world.client(cast.otherAdmin().getAccessToken(), PartnersApi.class);
-        List<String> theirCodes = theirs.listPartners(null, null, null, 200).getItems().stream()
+        List<String> theirCodes = theirs.listPartners(null, null, null, 200, null).getItems().stream()
                 .map(Partner::getCode).toList();
         assertThat(theirCodes).contains("THEIRS-" + world.salt).doesNotContainAnyElementsOf(partnerCodes);
-        assertThat(world.api(PartnersApi.class).listPartners(null, null, "THEIRS-", 5).getItems())
+        assertThat(world.api(PartnersApi.class).listPartners(null, null, "THEIRS-", 5, null).getItems())
                 .extracting(Partner::getCode).doesNotContain("THEIRS-" + world.salt);
     }
 
     @Then("directory partners are refused as 403 to a user with no permissions and readable by a read-only user")
     public void partnerPermissions() {
         PartnersApi nobody = world.client(cast.nobody().getAccessToken(), PartnersApi.class);
-        refusedWith(403, "access-denied", () -> nobody.listPartners(null, null, null, null));
+        refusedWith(403, "access-denied", () -> nobody.listPartners(null, null, null, null, null));
         refusedWith(403, "access-denied", () -> nobody.getPartner(partners.get(0)));
 
         PartnersApi reader = world.client(cast.reader().getAccessToken(), PartnersApi.class);
         assertThat(reader.getPartner(partners.get(0)).getCode()).isEqualTo(partnerCodes.get(0));
-        assertThat(reader.listPartners(null, null, partnerCursor, 1).getItems())
+        assertThat(reader.listPartners(null, null, partnerCursor, 1, null).getItems())
                 .extracting(Partner::getId).containsExactly(partners.get(0));
     }
 
@@ -257,20 +257,20 @@ public class DirectoryMasterDataSteps {
     @Then("the directory lists the two lorries in registration order, pages them and filters them by status")
     public void vehicleListing() {
         VehiclesApi api = world.api(VehiclesApi.class);
-        VehicleSlice both = api.listVehicles(null, vehicleCursor, 2);
+        VehicleSlice both = api.listVehicles(null, vehicleCursor, 2, null);
         assertThat(both.getItems()).extracting(Vehicle::getRegistrationNo).containsExactly(regA, regB);
 
-        VehicleSlice first = api.listVehicles(null, vehicleCursor, 1);
+        VehicleSlice first = api.listVehicles(null, vehicleCursor, 1, null);
         assertThat(first.getItems()).extracting(Vehicle::getId).containsExactly(lorryA);
         assertThat(first.getHasMore()).isTrue();
         assertThat(first.getNextCursor()).isEqualTo(regA);
-        assertThat(api.listVehicles(null, first.getNextCursor(), 1).getItems())
+        assertThat(api.listVehicles(null, first.getNextCursor(), 1, null).getItems())
                 .extracting(Vehicle::getId).containsExactly(lorryB);
 
         Vehicle.StatusEnum status = api.getVehicle(lorryA).getStatus();
-        assertThat(api.listVehicles(status.getValue(), vehicleCursor, 2).getItems())
+        assertThat(api.listVehicles(status.getValue(), vehicleCursor, 2, null).getItems())
                 .extracting(Vehicle::getId).containsExactly(lorryA, lorryB);
-        assertThat(api.listVehicles("RETIRED", vehicleCursor, 2).getItems())
+        assertThat(api.listVehicles("RETIRED", vehicleCursor, 2, null).getItems())
                 .extracting(Vehicle::getId).doesNotContain(lorryA, lorryB);
     }
 
@@ -308,12 +308,12 @@ public class DirectoryMasterDataSteps {
 
         refusedWith(404, "not-found", () -> api.getVehicle(UUID.randomUUID()));
         refusedWith(404, "not-found", () -> api.getVehicle(theirs));
-        assertThat(api.listVehicles(null, "THEIRS-", 5).getItems())
+        assertThat(api.listVehicles(null, "THEIRS-", 5, null).getItems())
                 .extracting(Vehicle::getId).doesNotContain(theirs);
         assertThat(api.listVehicleDocuments(theirs)).as("another tenant's owner shows nothing").isEmpty();
 
         VehiclesApi nobody = world.client(cast.nobody().getAccessToken(), VehiclesApi.class);
-        refusedWith(403, "access-denied", () -> nobody.listVehicles(null, null, null));
+        refusedWith(403, "access-denied", () -> nobody.listVehicles(null, null, null, null));
         refusedWith(403, "access-denied", () -> nobody.getVehicle(lorryA));
         refusedWith(403, "access-denied", () -> nobody.listVehicleDocuments(lorryA));
 
@@ -367,20 +367,20 @@ public class DirectoryMasterDataSteps {
     @Then("the directory lists the two drivers in licence order, pages them and filters them by status")
     public void driverListing() {
         DriversApi api = world.api(DriversApi.class);
-        DriverSlice both = api.listDrivers(null, driverCursor, 2);
+        DriverSlice both = api.listDrivers(null, driverCursor, 2, null);
         assertThat(both.getItems()).extracting(Driver::getLicenceNo).containsExactly(licenceA, licenceB);
 
-        DriverSlice first = api.listDrivers(null, driverCursor, 1);
+        DriverSlice first = api.listDrivers(null, driverCursor, 1, null);
         assertThat(first.getItems()).extracting(Driver::getId).containsExactly(driverA);
         assertThat(first.getHasMore()).isTrue();
         assertThat(first.getNextCursor()).isEqualTo(licenceA);
-        assertThat(api.listDrivers(null, first.getNextCursor(), 1).getItems())
+        assertThat(api.listDrivers(null, first.getNextCursor(), 1, null).getItems())
                 .extracting(Driver::getId).containsExactly(driverB);
 
         Driver.StatusEnum status = api.getDriver(driverA).getStatus();
-        assertThat(api.listDrivers(status.getValue(), driverCursor, 2).getItems())
+        assertThat(api.listDrivers(status.getValue(), driverCursor, 2, null).getItems())
                 .extracting(Driver::getId).contains(driverA);
-        assertThat(api.listDrivers("INACTIVE", driverCursor, 2).getItems())
+        assertThat(api.listDrivers("INACTIVE", driverCursor, 2, null).getItems())
                 .extracting(Driver::getId).doesNotContain(driverA, driverB);
         assertThat(api.listDriverDocuments(driverA)).as("nothing filed yet").isEmpty();
     }
@@ -396,11 +396,11 @@ public class DirectoryMasterDataSteps {
 
         refusedWith(404, "not-found", () -> api.getDriver(UUID.randomUUID()));
         refusedWith(404, "not-found", () -> api.getDriver(theirs));
-        assertThat(api.listDrivers(null, "THEIRS-", 5).getItems())
+        assertThat(api.listDrivers(null, "THEIRS-", 5, null).getItems())
                 .extracting(Driver::getId).doesNotContain(theirs);
 
         DriversApi nobody = world.client(cast.nobody().getAccessToken(), DriversApi.class);
-        refusedWith(403, "access-denied", () -> nobody.listDrivers(null, null, null));
+        refusedWith(403, "access-denied", () -> nobody.listDrivers(null, null, null, null));
         refusedWith(403, "access-denied", () -> nobody.getDriver(driverA));
         // A driver's documents are read under the vehicle permission.
         refusedWith(403, "access-denied", () -> nobody.listDriverDocuments(driverA));
@@ -473,20 +473,20 @@ public class DirectoryMasterDataSteps {
     @Then("the directory lists terminals by category from a cursor and pages them")
     public void terminalListing() {
         TerminalsApi api = world.api(TerminalsApi.class);
-        TerminalSlice hubs = api.listTerminals("HUB", "MDT-POLY-", 1);
+        TerminalSlice hubs = api.listTerminals("HUB", "MDT-POLY-", 1, null);
         assertThat(hubs.getItems()).extracting(Terminal::getId).containsExactly(polygonTerminal);
-        assertThat(api.listTerminals("CUSTOMER_SITE", "MDT-PT-", 1).getItems())
+        assertThat(api.listTerminals("CUSTOMER_SITE", "MDT-PT-", 1, null).getItems())
                 .extracting(Terminal::getId).containsExactly(pointTerminal);
-        assertThat(api.listTerminals("HUB", null, 200).getItems())
+        assertThat(api.listTerminals("HUB", null, 200, null).getItems())
                 .extracting(Terminal::getId).doesNotContain(pointTerminal);
-        assertThat(api.listTerminals("PORT", "MDT-", 200).getItems())
+        assertThat(api.listTerminals("PORT", "MDT-", 200, null).getItems())
                 .extracting(Terminal::getId).doesNotContain(pointTerminal, polygonTerminal);
 
-        TerminalSlice window = api.listTerminals(null, "MDT-P", 1);
+        TerminalSlice window = api.listTerminals(null, "MDT-P", 1, null);
         assertThat(window.getItems()).extracting(Terminal::getCode).containsExactly(polygonCode);
         assertThat(window.getHasMore()).isTrue();
         assertThat(window.getNextCursor()).isEqualTo(polygonCode);
-        assertThat(api.listTerminals(null, window.getNextCursor(), 1).getItems())
+        assertThat(api.listTerminals(null, window.getNextCursor(), 1, null).getItems())
                 .extracting(Terminal::getCode).containsExactly(pointCode);
     }
 
@@ -546,7 +546,7 @@ public class DirectoryMasterDataSteps {
         refusedWith(404, "not-found", () -> ours.getTerminal(theirHub));
         refusedWith(404, "not-found", () -> theirs.getTerminal(polygonTerminal));
         refusedWith(404, "not-found", () -> ours.getTerminal(UUID.randomUUID()));
-        assertThat(theirs.listTerminals(null, null, 200).getItems())
+        assertThat(theirs.listTerminals(null, null, 200, null).getItems())
                 .extracting(Terminal::getId).contains(theirHub).doesNotContain(polygonTerminal, pointTerminal);
         assertThat(ours.getTerminal(polygonTerminal).getName()).isEqualTo("Hub " + polygonCode);
     }
@@ -555,13 +555,13 @@ public class DirectoryMasterDataSteps {
     public void terminalPermissions() {
         TerminalsApi reader = world.client(cast.reader().getAccessToken(), TerminalsApi.class);
         assertThat(reader.getTerminal(polygonTerminal).getCode()).isEqualTo(polygonCode);
-        assertThat(reader.listTerminals("HUB", "MDT-POLY-", 1).getItems())
+        assertThat(reader.listTerminals("HUB", "MDT-POLY-", 1, null).getItems())
                 .extracting(Terminal::getId).containsExactly(polygonTerminal);
         refusedWith(403, "access-denied", () -> reader.registerPolygonTerminal(polygon(
                 world.code("MDT-READER"), RegisterPolygonTerminalRequest.CategoryEnum.HUB, 43.10, lon0), null));
 
         TerminalsApi nobody = world.client(cast.nobody().getAccessToken(), TerminalsApi.class);
-        refusedWith(403, "access-denied", () -> nobody.listTerminals(null, null, null));
+        refusedWith(403, "access-denied", () -> nobody.listTerminals(null, null, null, null));
         refusedWith(403, "access-denied", () -> nobody.getTerminal(polygonTerminal));
     }
 }

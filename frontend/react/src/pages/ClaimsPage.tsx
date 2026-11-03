@@ -16,6 +16,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { CLAIM_TYPES, type ClaimTarget, type ClaimType } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
@@ -47,8 +48,8 @@ export function ClaimsPage() {
       <div className="list">
         <h1>Claims</h1>
         <form className="inline" onSubmit={filter} data-testid="claims-filter">
-          <input placeholder="Consignment id" aria-label="Filter by consignment"
-            data-testid="claims-filter-consignment" value={typed} onChange={(e) => setTyped(e.target.value)} />
+          <EntityPicker kind="consignment" placeholder="Consignment" ariaLabel="Filter by consignment" testId="claims-filter-consignment"
+          value={typed} onChange={setTyped} />
           <button type="submit">Filter</button>
         </form>
         {error && <p className="error" role="alert">{error}</p>}
@@ -115,8 +116,8 @@ function RaiseClaim({ onDone }: { onDone: () => void }) {
     <>
       <h2>Raise a claim</h2>
       <form className="inline" onSubmit={submit} data-testid="raise-claim">
-        <input placeholder="Consignment id" aria-label="Consignment id" value={consignmentId}
-          onChange={(e) => setConsignmentId(e.target.value)} required />
+        <EntityPicker kind="consignment" placeholder="Consignment" ariaLabel="Consignment id"
+          value={consignmentId} onChange={setConsignmentId} required />
         <select aria-label="Claim type" value={claimType}
           onChange={(e) => setClaimType(e.target.value as ClaimType)}>
           {CLAIM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
