@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -98,11 +99,17 @@ public class TripQueryService {
 
     /** A page of trips, keyed on the trip number, which is unique per tenant. */
     public Slice<TripView> list(String status, String cursor, Integer limit) {
+        return list(status, cursor, limit, null);
+    }
+
+    /** As {@link #list(String, String, Integer)}, narrowed to trip numbers containing {@code q}. */
+    public Slice<TripView> list(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<TripView> rows = jdbc.sql(SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR t.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR t.trip_no > CAST(:cursor AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(t.trip_no) LIKE CAST(:q AS text))
                         """ + PARTNER_SCOPE + """
                          ORDER BY t.trip_no
                          LIMIT :limit
@@ -110,6 +117,7 @@ public class TripQueryService {
                 .param("status", status)
                 .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
+                .param("q", Search.containsPattern(q))
                 .param("limit", pageSize + 1)
                 .query(TripView.class)
                 .list();

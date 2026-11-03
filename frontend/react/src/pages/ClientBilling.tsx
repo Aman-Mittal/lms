@@ -16,6 +16,7 @@
 
 import { useState, type FormEvent } from 'react';
 import type { Row } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 
@@ -38,10 +39,8 @@ function lastMonth(): string {
  * and the ageing.
  */
 export function ClientBilling() {
-  const { gateway } = useSession();
   const [typed, setTyped] = useState('');
   const [clientId, setClientId] = useState('');
-  const choices = useLoad(() => gateway.clientChoices(), 'clients');
 
   function open(event: FormEvent) {
     event.preventDefault();
@@ -56,11 +55,8 @@ export function ClientBilling() {
         what it owes.
       </p>
       <form className="inline" onSubmit={open} data-testid="open-client">
-        <input placeholder="Client id" aria-label="Client id" data-testid="client-id" list="client-options"
-          value={typed} onChange={(e) => setTyped(e.target.value)} required />
-        <datalist id="client-options">
-          {(choices.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-        </datalist>
+        <EntityPicker kind="customer" placeholder="Client" ariaLabel="Client id" testId="client-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
       {clientId && <ClientDesk key={clientId} clientId={clientId} />}
