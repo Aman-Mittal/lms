@@ -238,7 +238,7 @@ class MilkRunApiTest {
         // Finance heard the completion and raised the carrier's payable: on the
         // same listing as trip bills, and matched by the same rule.
         SettlementApi settlement = settlementClient();
-        FreightBill bill = settlement.listFreightBills(null, null, null).getItems().stream()
+        FreightBill bill = settlement.listFreightBills(null, null, null, null).getItems().stream()
                 .filter(candidate -> runId.equals(candidate.getCircuitRunId()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("The circuit raised no payable"));
