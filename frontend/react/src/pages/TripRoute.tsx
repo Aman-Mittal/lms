@@ -16,6 +16,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
@@ -39,8 +40,8 @@ export function TripRoute() {
       <h1>Trip route</h1>
       <p className="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
       <form className="inline" onSubmit={lookUp} data-testid="trip-lookup">
-        <input placeholder="Trip id" aria-label="Trip id" data-testid="trip-id"
-          value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="trip" placeholder="Trip" ariaLabel="Trip id" testId="trip-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Show route</button>
       </form>
       {tripId && route.loading && <p className="muted">Loading…</p>}

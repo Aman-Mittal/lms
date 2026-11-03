@@ -180,7 +180,7 @@ public class MilkRunCircuitSteps {
     public void billRaised(int amount) {
         FreightBill bill = HttpWorld.eventually("the circuit's freight bill", () -> {
             SettlementApi settlement = world.api(SettlementApi.class);
-            return settlement.listFreightBills(null, null, 200).getItems().stream()
+            return settlement.listFreightBills(null, null, 200, null).getItems().stream()
                     .filter(b -> circuitId.equals(b.getCircuitRunId()))
                     .findFirst()
                     .map(b -> settlement.getFreightBill(b.getId()))
