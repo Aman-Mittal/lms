@@ -195,6 +195,38 @@ class OrderEditingApiTest {
     }
 
     @Test
+    @DisplayName("a read carries what an edit restates, so lines sent back keep their measurements")
+    void aReadRestatesWhatAnEditSends() {
+        OrdersApi orders = client(OrdersApi.class);
+        UUID id = orders.raiseOrder(raise("ED-HTTP-5"), null).getId();
+        orders.addOrderLine(id, line(1, "1000").lengthM(new BigDecimal("1.2")).widthM(new BigDecimal("0.8"))
+                .heightM(new BigDecimal("1.5")).volumetricDivisor(new BigDecimal("5000")), null);
+
+        Order read = orders.getOrder(id);
+        assertThat(read.getOriginTerminalId()).isEqualTo(origin);
+        assertThat(read.getOriginHubTerminalId()).isNull();
+        assertThat(read.getFreightMode()).isEqualTo("FTL");
+        OrderLine measured = orders.listOrderLines(id).getFirst();
+        assertThat(measured.getDestinationTerminalId()).isEqualTo(destination);
+        assertThat(measured.getLengthM()).isEqualByComparingTo("1.2");
+
+        // A console restates the line set from the read: nothing measured is lost.
+        orders.replaceOrderLines(versionOf(orders, id), id, new ReplaceOrderLinesRequest().lines(List.of(
+                new AddOrderLineRequest().lineNo(1).materialCode(measured.getMaterialCode())
+                        .materialDescription(measured.getMaterialDescription())
+                        .materialClass(measured.getMaterialClass()).quantity(measured.getQuantity())
+                        .uom(measured.getUom()).deadWeightKg(new BigDecimal("900"))
+                        .lengthM(measured.getLengthM()).widthM(measured.getWidthM())
+                        .heightM(measured.getHeightM()).volumetricDivisor(measured.getVolumetricDivisor())
+                        .consigneePartnerId(measured.getConsigneePartnerId())
+                        .destinationTerminalId(measured.getDestinationTerminalId()))), null);
+        OrderLine kept = orders.listOrderLines(id).getFirst();
+        assertThat(kept.getDeadWeightKg()).isEqualByComparingTo("900");
+        assertThat(kept.getHeightM()).isEqualByComparingTo("1.5");
+        assertThat(kept.getVolumetricDivisor()).isEqualByComparingTo("5000");
+    }
+
+    @Test
     @DisplayName("a line without a material description is a 400 problem document, not a 500")
     void lineWithoutDescriptionIsRejected() {
         OrdersApi orders = client(OrdersApi.class);

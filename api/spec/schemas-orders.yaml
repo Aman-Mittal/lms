@@ -24,6 +24,14 @@ Order:
     customerPartnerId: { type: string, format: uuid }
     customerName: { type: string }
     originTerminalCode: { type: string }
+    originTerminalId:
+      type: string
+      format: uuid
+      description: What an edit of the header restates, with the two hubs.
+    originHubTerminalId: { type: string, format: uuid, description: The part-load origin hub; null for FTL. }
+    destinationHubTerminalId: { type: string, format: uuid, description: The part-load destination hub; null for FTL. }
+    freightMode: { type: string }
+    plannedLineCount: { type: integer }
     totalDeadWeightKg: { type: number }
     totalChargeableWeightKg:
       type: number
@@ -55,7 +63,17 @@ OrderLine:
     volumetricWeightKg: { type: number }
     chargeableWeightKg: { type: number }
     consigneePartnerId: { type: string, format: uuid }
+    consigneeName: { type: string }
+    destinationTerminalId: { type: string, format: uuid }
     destinationTerminalCode: { type: string }
+    planned: { type: boolean }
+    lengthM:
+      type: number
+      description: The measurements, null together when never taken. An edit
+        that restates the line set sends them back, or they are cleared.
+    widthM: { type: number }
+    heightM: { type: number }
+    volumetricDivisor: { type: number }
 
 CancelOrderRequest:
   type: object

@@ -21,6 +21,7 @@ import {
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
   type AllocationRule, type AllocationRuleAction, type Load, type AllocationRuleRequest,
+  type AddOrderLineRequest, type Order, type OrderLine, type UpdateOrderRequest,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
   type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
@@ -41,6 +42,7 @@ import {
   type GeoPoint, type MapFeature, type Mapped, type MappedDetail, type TrackingLinkView, type TripRoute,
   type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
   type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
+  type OrderDesk, type OrderHeaderDraft, type OrderLineDraft, type OrderRaiseDraft,
 } from './lmsGateway';
 
 /** A load as the building screen shows it. */
@@ -243,6 +245,77 @@ function deliveryRow(d: WebhookDelivery): Row {
     id: text(d.id), eventType: text(d.eventType), status: text(d.status), attempts: text(d.attempts),
     lastStatusCode: text(d.lastStatusCode), lastError: text(d.lastError), nextAttemptAt: text(d.nextAttemptAt),
     deliveredAt: text(d.deliveredAt), createdAt: text(d.createdAt),
+  };
+}
+
+/** A draft's optional value, left out of the request when blank. */
+function blankAsAbsent(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function numberOrAbsent(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+function instantOrAbsent(value: string): Date | undefined {
+  const trimmed = value.trim();
+  return trimmed ? new Date(trimmed) : undefined;
+}
+
+/** An instant as a draft holds it, to the second, or blank. */
+function isoOf(d: Date | null | undefined): string {
+  return d ? d.toISOString().replace(/\.\d{3}Z$/, 'Z') : '';
+}
+
+function headerRequest(h: OrderHeaderDraft): UpdateOrderRequest {
+  return {
+    customerPartnerId: h.customerPartnerId.trim(), originTerminalId: h.originTerminalId.trim(),
+    requestedPickupAt: instantOrAbsent(h.requestedPickupAt),
+    requestedDeliveryAt: instantOrAbsent(h.requestedDeliveryAt),
+    originHubTerminalId: blankAsAbsent(h.originHubTerminalId),
+    destinationHubTerminalId: blankAsAbsent(h.destinationHubTerminalId),
+  };
+}
+
+function lineRequest(l: OrderLineDraft): AddOrderLineRequest {
+  return {
+    lineNo: l.lineNo, materialCode: l.materialCode.trim(), materialDescription: l.materialDescription.trim(),
+    materialClass: l.materialClass, hazmatUnCode: blankAsAbsent(l.hazmatUnCode), quantity: Number(l.quantity),
+    uom: l.uom.trim(), deadWeightKg: Number(l.deadWeightKg), lengthM: numberOrAbsent(l.lengthM),
+    widthM: numberOrAbsent(l.widthM), heightM: numberOrAbsent(l.heightM),
+    volumetricDivisor: numberOrAbsent(l.volumetricDivisor), consigneePartnerId: blankAsAbsent(l.consigneePartnerId),
+    destinationTerminalId: l.destinationTerminalId.trim(),
+  };
+}
+
+/** An order and its lines as the desk shows them, each line ready to be restated by an edit. */
+function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
+  return {
+    order: {
+      id: text(o.id), orderNo: text(o.orderNo), status: text(o.status), customerName: text(o.customerName),
+      originTerminalCode: text(o.originTerminalCode), freightMode: text(o.freightMode),
+      lineCount: text(o.lineCount), plannedLineCount: text(o.plannedLineCount),
+      totalDeadWeightKg: text(o.totalDeadWeightKg), containsHazmat: o.containsHazmat ? 'Yes' : '',
+      requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
+    },
+    version: text(o.version),
+    header: {
+      customerPartnerId: text(o.customerPartnerId), originTerminalId: text(o.originTerminalId),
+      requestedPickupAt: isoOf(o.requestedPickupAt), requestedDeliveryAt: isoOf(o.requestedDeliveryAt),
+      originHubTerminalId: text(o.originHubTerminalId), destinationHubTerminalId: text(o.destinationHubTerminalId),
+    },
+    lines: lines.map((l) => ({
+      id: text(l.id), lineNo: l.lineNo ?? 0, materialCode: text(l.materialCode),
+      materialDescription: text(l.materialDescription), materialClass: text(l.materialClass),
+      hazmatUnCode: text(l.hazmatUnCode), quantity: text(l.quantity), uom: text(l.uom),
+      deadWeightKg: text(l.deadWeightKg), lengthM: text(l.lengthM), widthM: text(l.widthM),
+      heightM: text(l.heightM), volumetricDivisor: text(l.volumetricDivisor),
+      consigneePartnerId: text(l.consigneePartnerId), destinationTerminalId: text(l.destinationTerminalId),
+      consigneeName: text(l.consigneeName), destinationTerminalCode: text(l.destinationTerminalCode),
+      planned: l.planned ?? false,
+    })),
   };
 }
 
@@ -826,6 +899,53 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         await loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } });
       }),
+    orderDesk: (orderId: string): Promise<OrderDesk> =>
+      guard(async () => {
+        const [order, lines] = await Promise.all([
+          orders.getOrder({ id: orderId }), orders.listOrderLines({ id: orderId })]);
+        return orderDeskOf(order, lines);
+      }),
+    raiseOrder: (orgUnitId: string, draft: OrderRaiseDraft) =>
+      guard(async () => text((await orders.raiseOrder({
+        raiseOrderRequest: {
+          orgUnitId, orderNo: draft.orderNo.trim(), customerPartnerId: draft.customerPartnerId.trim(),
+          originTerminalId: draft.originTerminalId.trim(), requestedPickupAt: instantOrAbsent(draft.requestedPickupAt),
+          requestedDeliveryAt: instantOrAbsent(draft.requestedDeliveryAt),
+        },
+      })).id)),
+    reviseOrderHeader: (orderId: string, version: string, header: OrderHeaderDraft) =>
+      guard(async () => {
+        await orders.updateOrder({ id: orderId, ifMatch: version, updateOrderRequest: headerRequest(header) });
+      }),
+    replaceOrderLines: (orderId: string, version: string, lines: OrderLineDraft[]) =>
+      guard(async () => {
+        await orders.replaceOrderLines({
+          id: orderId, ifMatch: version, replaceOrderLinesRequest: { lines: lines.map(lineRequest) },
+        });
+      }),
+    removeOrderLine: (orderId: string, version: string, lineId: string) =>
+      guard(async () => {
+        await orders.removeOrderLine({ id: orderId, ifMatch: version, lineId });
+      }),
+    amendOrder: (orderId: string, version: string, header: OrderHeaderDraft | null, lines: OrderLineDraft[] | null) =>
+      guard(async () => {
+        await orders.amendOrder({
+          id: orderId, ifMatch: version,
+          amendOrderRequest: {
+            header: header ? headerRequest(header) : undefined, lines: lines ? lines.map(lineRequest) : undefined,
+          },
+        });
+      }),
+    validateOrder: (orderId: string) =>
+      guard(async () => {
+        await orders.validateOrder({ id: orderId });
+      }),
+    cancelOrder: (orderId: string, reason: string) =>
+      guard(async () => {
+        await orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } });
+      }),
+    generateConsignments: (orderId: string) =>
+      guard(async () => (await loads.generateConsignments({ id: orderId })).length),
 
     clientChoices: (): Promise<Choice[]> =>
       guard(async () => (await partners.listPartners({
@@ -891,11 +1011,15 @@ async function guard<T>(call: () => Promise<T>): Promise<T> {
     if (e instanceof ResponseError) {
       const status = e.response.status;
       try {
-        const body = (await e.response.clone().json()) as { detail?: string; errors?: Record<string, string> };
+        const body = (await e.response.clone().json()) as {
+          detail?: string; code?: string; errors?: Record<string, string>;
+        };
         if (body.errors && status !== 409) {
-          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status, body.errors);
+          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status, body.errors,
+            body.code ?? '');
         }
-        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status, body.errors ?? {});
+        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status, body.errors ?? {},
+          body.code ?? '');
       } catch (inner) {
         if (inner instanceof ApiProblem) {
           throw inner;

@@ -57,6 +57,9 @@ export function Shell() {
               {group === 'Multimodal' && can('MILKRUN_READ') && (
                 <NavLink to="/milk-runs" data-testid="nav-milk-runs">Milk runs</NavLink>
               )}
+              {group === 'Operations' && can('ORDER_READ') && (
+                <NavLink to="/order-desk" data-testid="nav-order-desk">Order desk</NavLink>
+              )}
               {group === 'Operations' && can('LOAD_READ') && (
                 <NavLink to="/load-building" data-testid="nav-load-building">Load building</NavLink>
               )}

@@ -48,7 +48,8 @@ public class OrderQueryService {
     private static final String SELECT = """
             SELECT o.id, o.order_no, o.status,
                    o.customer_partner_id, c.legal_name AS customer_name,
-                   t.code AS origin_terminal_code,
+                   t.code AS origin_terminal_code, o.origin_terminal_id,
+                   o.origin_hub_terminal_id, o.destination_hub_terminal_id,
                    o.requested_pickup_at, o.requested_delivery_at,
                    agg.line_count, agg.planned_line_count,
                    agg.total_dead_weight_kg, agg.contains_hazmat,
@@ -133,7 +134,8 @@ public class OrderQueryService {
                                l.quantity, l.uom, l.dead_weight_kg,
                                l.planned,
                                l.consignee_partner_id, cn.legal_name AS consignee_name,
-                               l.destination_terminal_id, dt.code AS destination_terminal_code
+                               l.destination_terminal_id, dt.code AS destination_terminal_code,
+                               l.length_m, l.width_m, l.height_m, l.volumetric_divisor
                           FROM order_line l
                           JOIN business_partner cn ON cn.id = l.consignee_partner_id
                           JOIN terminal dt ON dt.id = l.destination_terminal_id

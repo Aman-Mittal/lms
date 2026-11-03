@@ -568,6 +568,83 @@ export async function newSite(
   return siteAt(request, session, code, category, between(10, 30), between(70, 90));
 }
 
+// ------------------------------------------------------------ order desk
+
+export interface DeskOrder {
+  /** Empty when no order was raised. */
+  orderId: string;
+  orderNo: string;
+  originId: string;
+  destinationId: string;
+  consigneeId: string;
+  /** Two customers, so an edit can move the order from one to the other. */
+  customers: Array<{ id: string; name: string }>;
+}
+
+/**
+ * Two customers, an origin and a destination, and a consignee; and, unless `state` is NONE,
+ * an order between them with one measured line, left a draft or validated.
+ */
+export async function newDeskOrder(
+  request: APIRequestContext, session: Session, salt: string, state: 'NONE' | 'DRAFT' | 'VALIDATED' = 'DRAFT',
+): Promise<DeskOrder> {
+  const org = session.orgUnitId;
+  const site = (name: string) => post(request, session, '/api/v1/terminals/point-radius', {
+    orgUnitId: org, code: `ZZ-OD-${name}-${salt}`, name: `Desk ${name} ${salt}`, category: 'CUSTOMER_SITE',
+    centre: { lat: between(24, 60), lon: between(10, 170) }, radiusMetres: 500, dockCount: 2, avgDwellMinutes: 45,
+  });
+  const partner = (code: string, legalName: string, partnerType: string) => post(request, session, '/api/v1/partners', {
+    orgUnitId: org, code: `ZZ-OD-${code}-${salt}`, legalName, partnerType, taxId: `TAX-${uuid()}`,
+  });
+  const origin = await site('ORIG');
+  const destination = await site('DEST');
+  const first = `Desk customer one ${salt}`;
+  const second = `Desk customer two ${salt}`;
+  const customers = [
+    { id: (await partner('C1', first, 'CUSTOMER')).id as string, name: first },
+    { id: (await partner('C2', second, 'CUSTOMER')).id as string, name: second },
+  ];
+  const consignee = await partner('N', `Desk consignee ${salt}`, 'CONSIGNEE');
+  const made: DeskOrder = {
+    orderId: '', orderNo: `ZZ-OD-SO-${salt}`, originId: origin.id, destinationId: destination.id,
+    consigneeId: consignee.id, customers,
+  };
+  if (state === 'NONE') {
+    return made;
+  }
+  const order = await post(request, session, '/api/v1/orders', {
+    orgUnitId: org, customerPartnerId: customers[0].id, orderNo: made.orderNo, originTerminalId: origin.id,
+  });
+  await post(request, session, `/api/v1/orders/${order.id}/lines`, {
+    lineNo: 1, materialCode: 'COIL-1', materialDescription: 'Steel coil', materialClass: 'GENERAL', quantity: 1,
+    uom: 'EA', deadWeightKg: 500, lengthM: 1.2, widthM: 0.8, heightM: 1.5,
+    consigneePartnerId: consignee.id, destinationTerminalId: destination.id,
+  });
+  if (state === 'VALIDATED') {
+    await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
+  }
+  return { ...made, orderId: order.id };
+}
+
+/** Moves a draft order to another customer through the API, as a second editor would. */
+export async function editOrderElsewhere(
+  request: APIRequestContext, session: Session, order: DeskOrder, customerId: string,
+): Promise<void> {
+  const headers = { Authorization: `Bearer ${session.token}` };
+  const read = await request.get(`${API}/api/v1/orders/${order.orderId}`, { headers });
+  expect(read.ok(), `GET order: ${read.status()}`).toBeTruthy();
+  const edit = await request.put(`${API}/api/v1/orders/${order.orderId}`, {
+    headers: { ...headers, 'If-Match': read.headers()['etag'] },
+    data: { customerPartnerId: customerId, originTerminalId: order.originId },
+  });
+  expect(edit.status(), `PUT order: ${await edit.text()}`).toBe(204);
+}
+
+/** Cuts an order's consignments through the API, as another planner would. */
+export async function cutConsignments(request: APIRequestContext, session: Session, orderId: string): Promise<void> {
+  await post(request, session, `/api/v1/orders/${orderId}/consignments`, {});
+}
+
 // ---------------------------------------------------------------- client billing
 
 /** A `YYYY-MM-DD` day, UTC, offset from today by whole months, on the given day of that month. */

@@ -53,6 +53,9 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Multimodal' && session.can('MILKRUN_READ')) {
                 <a routerLink="/milk-runs" routerLinkActive="active" data-testid="nav-milk-runs">Milk runs</a>
               }
+              @if (group === 'Operations' && session.can('ORDER_READ')) {
+                <a routerLink="/order-desk" routerLinkActive="active" data-testid="nav-order-desk">Order desk</a>
+              }
               @if (group === 'Operations' && session.can('LOAD_READ')) {
                 <a routerLink="/load-building" routerLinkActive="active" data-testid="nav-load-building">Load building</a>
               }
