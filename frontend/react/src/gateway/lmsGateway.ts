@@ -836,6 +836,21 @@ export interface LmsGateway {
   vehiclePositions(): Promise<Mapped>;
   /** Trips currently off their planned corridor. */
   openDeviations(): Promise<Row[]>;
+
+  // Rate cards and rail tariffs
+  /** One page of rate card versions, newest first, narrowed by the filter's non-blank fields; pass `cursor` for the next. */
+  tariffs(filter: TariffFilter, cursor?: string): Promise<RateCardPage>;
+  /** A rate card version and its weight bands, lightest first. Rejects with a 404 problem when not found. */
+  tariffCard(id: string): Promise<TariffCardDetail>;
+  /** One page of rail rate card versions, newest first; pass `cursor` for the next. */
+  railTariffs(cursor?: string): Promise<RateCardPage>;
+  /** One rail rate card version. Rejects with a 404 problem when not found. */
+  railTariff(id: string): Promise<Row>;
+  /** Publishes a rail rate card version for a railhead pair; resolves to its id. */
+  publishRailTariff(draft: RailTariffDraft): Promise<string>;
+  // Pickers
+  /** One page of what a picker offers for the typed text; a blank `q` lists from the start. */
+  pick(query: PickQuery): Promise<PickPage>;
 }
 
 // Warehouse operations
@@ -1090,4 +1105,66 @@ export interface TripActivity {
   /** Null when no position has been reported for the trip yet. */
   progress: Row | null;
   crossings: Row[];
+}
+
+// Rate cards and rail tariffs
+
+/** Which rate card versions to list; blank fields do not narrow. */
+export interface TariffFilter {
+  vendorPartnerId: string;
+  /** `open` for versions still in force, `superseded` for closed ones, blank for both. */
+  state: '' | 'open' | 'superseded';
+}
+
+/** One page of rate cards, road or rail. */
+export interface RateCardPage {
+  rows: Row[];
+  /** Pass to read the next page; null on the last. */
+  nextCursor: string | null;
+}
+
+/** A rate card version and its weight bands. `card.superseded` reads Yes or nothing. */
+export interface TariffCardDetail {
+  card: Row;
+  slabs: Row[];
+}
+
+/** A rail rate card to publish; blank optional figures are left out. */
+export interface RailTariffDraft {
+  code: string;
+  carrierPartnerId: string;
+  originTerminalId: string;
+  destinationTerminalId: string;
+  /** A `YYYY-MM-DD` day. */
+  effectiveFrom: string;
+  currency: string;
+  perWagonRate: string;
+  perContainerRate: string;
+  minimumCharge: string;
+}
+// Pickers
+/**
+ * What a picker looks up. `customer` and `vendor` are partners of that type,
+ * `warehouse` is a terminal of that category, and `bin` needs the warehouse
+ * it belongs to. `consignment` is any consignment in any state; `unassigned`
+ * only those still waiting for a load.
+ */
+export type PickKind =
+  | 'partner' | 'customer' | 'vendor' | 'terminal' | 'warehouse' | 'vehicle' | 'driver' | 'sku' | 'bin'
+  | 'order' | 'load' | 'trip' | 'ticket' | 'allocation' | 'bill' | 'consignment' | 'unassigned';
+
+export interface PickQuery {
+  kind: PickKind;
+  /** The typed text; blank lists from the start. */
+  q: string;
+  /** The `nextCursor` of the page before; absent for the first page. */
+  cursor?: string | null;
+  /** Required for `bin`. */
+  warehouseId?: string;
+}
+
+export interface PickPage {
+  items: Choice[];
+  /** Null on the last page. */
+  nextCursor: string | null;
 }
