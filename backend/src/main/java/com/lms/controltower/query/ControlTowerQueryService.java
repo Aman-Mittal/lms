@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -80,6 +81,15 @@ public class ControlTowerQueryService {
      */
     public Slice<ExceptionView> list(String status, String severity, String cursor,
                                      Integer limit) {
+        return list(status, severity, cursor, limit, null);
+    }
+
+    /**
+     * As {@link #list(String, String, String, Integer)}, narrowed to tickets
+     * whose number or trip number contains {@code q}.
+     */
+    public Slice<ExceptionView> list(String status, String severity, String cursor,
+                                     Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
         Cursor after = Cursor.parse(cursor);
 
@@ -87,6 +97,8 @@ public class ControlTowerQueryService {
                          WHERE (CAST(:status AS text) IS NULL OR x.status = CAST(:status AS text))
                            AND (CAST(:severity AS text) IS NULL
                                 OR x.severity = CAST(:severity AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(x.ticket_no) LIKE CAST(:q AS text)
+                                OR lower(coalesce(x.trip_no, '')) LIKE CAST(:q AS text))
                            AND (CAST(:afterAt AS timestamptz) IS NULL
                                 OR (x.raised_at, x.id) < (CAST(:afterAt AS timestamptz),
                                                           CAST(:afterId AS uuid)))
@@ -95,6 +107,7 @@ public class ControlTowerQueryService {
                         """)
                 .param("status", status)
                 .param("severity", severity)
+                .param("q", Search.containsPattern(q))
                 .param("afterAt", after == null ? null : after.raisedAt())
                 .param("afterId", after == null ? null : after.id())
                 .param("limit", pageSize + 1)
