@@ -36,7 +36,9 @@ public record ClientContractView(
         BigDecimal transportTaxRatePct,
         BigDecimal warehouseTaxRatePct,
         int storageUnitsPerPallet,
-        List<ServiceRate> valueAddedServices) {
+        List<ServiceRate> valueAddedServices,
+        /** True when trip transport is invoiceable on dispatch rather than on proof. */
+        boolean billOnDispatch) {
 
     public ClientContractView {
         valueAddedServices = valueAddedServices == null ? List.of() : List.copyOf(valueAddedServices);

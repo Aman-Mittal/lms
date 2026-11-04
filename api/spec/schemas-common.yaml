@@ -94,3 +94,53 @@ MilestoneRequest:
     correction entered an hour later must be able to.
   properties:
     at: { type: string, format: date-time }
+
+HistoryEntry:
+  type: object
+  description: One recorded transition of a record, from its audit trail.
+  properties:
+    id: { type: string, format: uuid }
+    action:
+      type: string
+      description: What happened, for example `ORDER_RAISED` or `LOAD_DISPATCHED`.
+    actorKind:
+      type: string
+      enum: [PLATFORM, YOU, USER]
+      description: |
+        `PLATFORM` when no user took the step (a sweep or a listener), `YOU`
+        when the caller did, `USER` when someone else did.
+    actorId:
+      type: string
+      format: uuid
+      description: The user who did it; null when the platform did. Withheld
+        (null) from a customer- or vendor-portal caller unless it was the caller.
+    actorName:
+      type: string
+      description: That user's name. Always null for a customer- or
+        vendor-portal caller, so the tenant's staff are never named to one.
+    correlationId:
+      type: string
+      description: The request that made the change, as logged.
+    occurredAt: { type: string, format: date-time }
+    before:
+      type: object
+      additionalProperties: true
+      description: The record's state before the change; null for a creation.
+    after:
+      type: object
+      additionalProperties: true
+      description: The record's state after the change.
+  required: [id, action, actorKind, occurredAt]
+
+HistorySlice:
+  type: object
+  description: One page of a record's history, newest first.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/HistoryEntry" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next (older) page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
