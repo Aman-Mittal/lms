@@ -18,10 +18,10 @@ WebhookEventType:
     What a subscription can ask for. `PING` cannot be subscribed to; it is what
     the ping action sends.
   enum: [ORDER_VALIDATED,
-         ORDER_RAISED, ORDER_AMENDED, ORDER_CANCELLED, ORDER_FULFILLED,
+         ORDER_RAISED, ORDER_AMENDED, ORDER_CANCELLED, ORDER_FULFILLED, ORDER_CLOSED,
          CONSIGNMENTS_GENERATED, CONSIGNMENT_SPLIT, TRIP_DISPATCHED, TRIP_COMPLETED, TRIP_CANCELLED,
          DELIVERY_PROOF_RECORDED, CLAIM_RAISED, CLAIM_STATUS_CHANGED, CONSIGNMENT_IN_TRANSIT,
-         CONSIGNMENT_DELIVERED, PING]
+         CONSIGNMENT_DELIVERED, CONSIGNMENT_CANCELLED, PING]
 
 WebhookSubscriptionRequest:
   type: object
@@ -130,6 +130,7 @@ WebhookEnvelope:
     - `ORDER_AMENDED`: orderId, orderNo, version, lineCount, totalChargeableWeightKg
     - `ORDER_CANCELLED`: orderId, orderNo, previousStatus, reason
     - `ORDER_FULFILLED`: orderId, orderNo
+    - `ORDER_CLOSED`: orderId, orderNo, previousStatus, closeKind (NORMAL, SHORT, FORCE or AUTO), reason, linesClosed
     - `CONSIGNMENTS_GENERATED`: orderId, consignmentIds, trackingRefs, freightMode
     - `CONSIGNMENT_SPLIT`: consignmentId, trackingRef, orderId, partIds, partTrackingRefs
     - `TRIP_DISPATCHED`: tripId, tripNo, loadId, originTerminalId, destinationTerminalId, payloadWeightKg, dispatchedAt
@@ -141,6 +142,9 @@ WebhookEnvelope:
     - `CONSIGNMENT_IN_TRANSIT`: consignmentId, trackingRef, loadId -- one per consignment leaving on a dispatched load
     - `CONSIGNMENT_DELIVERED`: consignmentId, trackingRef, loadId (absent when a proof delivered it), trigger
       (TRIP_COMPLETED or PROOF_OF_DELIVERY), deliveredAt
+    - `CONSIGNMENT_CANCELLED`: consignmentId, trackingRef, orderId, loadId (absent when it was on no
+      load), reason -- one consignment cancelled on its own or with its order line; a consignment
+      cancelled with its whole order is announced as `ORDER_CANCELLED`
     - `PING`: subscriptionId, message
 
     Ids and times are strings (UUIDs and ISO-8601 instants); amounts and weights are numbers.

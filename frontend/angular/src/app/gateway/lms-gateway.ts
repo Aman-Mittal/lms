@@ -190,6 +190,32 @@ export interface ConsignmentCard {
   proofStatus: string;
   /** CLEAN, SHORTAGE or DAMAGE once a proof exists; empty before. */
   proofCondition: string;
+  /** The warehouse handling unit carried, for one handed off by a warehouse; empty otherwise. */
+  handlingUnitNo: string;
+  /** The version read: what an amendment sends back as If-Match. */
+  version: string;
+  /** The particulars below are empty until stated; the window is ISO-8601 instants. */
+  contactName: string;
+  contactPhone: string;
+  consigneeReference: string;
+  clientReference: string;
+  deliveryWindowFrom: string;
+  deliveryWindowTo: string;
+  remarks: string;
+}
+
+/**
+ * What a planner may say about a consignment after it is cut: every field is sent, and an empty
+ * one is cleared. The window is two ISO-8601 instants, such as 2026-12-01T06:00:00Z.
+ */
+export interface ConsignmentParticularsDraft {
+  contactName: string;
+  contactPhone: string;
+  consigneeReference: string;
+  clientReference: string;
+  deliveryWindowFrom: string;
+  deliveryWindowTo: string;
+  remarks: string;
 }
 
 /** One part of a split as the planner states it, in kilograms and cubic metres. */
@@ -406,10 +432,10 @@ export interface ParkedEventDetail {
 /** What a subscription can ask for. `PING` is what a test ping sends and cannot be subscribed to. */
 export const WEBHOOK_EVENT_TYPES = [
   'ORDER_VALIDATED',
-  'ORDER_RAISED', 'ORDER_AMENDED', 'ORDER_CANCELLED', 'ORDER_FULFILLED',
+  'ORDER_RAISED', 'ORDER_AMENDED', 'ORDER_CANCELLED', 'ORDER_FULFILLED', 'ORDER_CLOSED',
   'CONSIGNMENTS_GENERATED', 'CONSIGNMENT_SPLIT', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
   'DELIVERY_PROOF_RECORDED', 'CLAIM_RAISED', 'CLAIM_STATUS_CHANGED',
-  'CONSIGNMENT_IN_TRANSIT', 'CONSIGNMENT_DELIVERED',
+  'CONSIGNMENT_IN_TRANSIT', 'CONSIGNMENT_DELIVERED', 'CONSIGNMENT_CANCELLED',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
@@ -516,7 +542,14 @@ export interface OrderLineView extends OrderLineDraft {
   consigneeName: string;
   destinationTerminalCode: string;
   planned: boolean;
+  /** How the line was closed (NORMAL, SHORT, FORCE or AUTO); empty while it is open. */
+  closeKind: string;
+  /** Cancelled on its own: no longer demand, and neither closed nor closable. */
+  cancelled: boolean;
 }
+
+/** How a person may close an order or a line; AUTO is the platform's own. */
+export type CloseKindChoice = 'NORMAL' | 'SHORT' | 'FORCE';
 
 /** An order as the desk shows it, with the version every edit must send back. */
 export interface OrderDesk {
@@ -624,6 +657,17 @@ export abstract class LmsGateway {
   /** Every part of a split consignment, in reference order (at most 500). */
   abstract consignmentParts(id: string): Promise<ConsignmentCard[]>;
   abstract splitConsignment(id: string, parts: SplitPartDraft[]): Promise<SplitPart[]>;
+  /**
+   * Amends the particulars of a PLANNED consignment, sending `version` as If-Match. Refused with a
+   * problem whose code is `consignment-not-amendable`, `consignment-amendment-invalid` (with each
+   * field named in `errors`), `client-reference-taken` or `concurrent-modification`.
+   */
+  abstract amendConsignment(id: string, version: string, particulars: ConsignmentParticularsDraft): Promise<void>;
+  /**
+   * Cancels one consignment, taking it off its load first. Refused with a problem whose code says
+   * why, such as `consignment-from-warehouse` or `consignment-dispatched`.
+   */
+  abstract cancelConsignment(id: string, reason: string): Promise<void>;
 
   /** Shown once: the token in the result cannot be read again. */
   abstract issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink>;
@@ -693,6 +737,14 @@ export abstract class LmsGateway {
    * ApiProblem whose `errors` name each consignment that cannot board, by tracking reference.
    */
   abstract assignConsignments(loadId: string, consignmentIds: string[]): Promise<void>;
+  /**
+   * The load changes below send `version` as If-Match: the load's version as last read (its
+   * `version` field). A stale one is refused with `concurrent-modification`; every other
+   * refusal is an ApiProblem whose `code` names it, such as `load-awarded`.
+   */
+  abstract removeFromLoad(loadId: string, version: string, consignmentId: string): Promise<void>;
+  abstract unplanLoad(loadId: string, version: string): Promise<void>;
+  abstract cancelLoad(loadId: string, version: string, reason: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   abstract orderDesk(orderId: string): Promise<OrderDesk>;
@@ -710,6 +762,14 @@ export abstract class LmsGateway {
     lines: OrderLineDraft[] | null): Promise<void>;
   abstract validateOrder(orderId: string): Promise<void>;
   abstract cancelOrder(orderId: string, reason: string): Promise<void>;
+  /**
+   * Closes the order: NORMAL needs everything delivered, SHORT and FORCE need a reason, FORCE
+   * needs ORDER_FORCE_CLOSE. A refusal is an ApiProblem whose code says why (`order-not-complete`,
+   * `order-freight-pending`, `close-reason-required`, `order-already-closed`, ...).
+   */
+  abstract closeOrder(orderId: string, kind: CloseKindChoice, reason: string): Promise<void>;
+  /** Closes one line by the same rules; the order follows once nothing else is open. */
+  abstract closeOrderLine(orderId: string, lineId: string, kind: CloseKindChoice, reason: string): Promise<void>;
   /** The order's history, newest first; a 404 problem for an order the caller cannot read. */
   abstract orderHistory(orderId: string, cursor?: string): Promise<HistoryPage>;
   /** Resolves to how many consignments were cut. */
@@ -907,6 +967,27 @@ export abstract class LmsGateway {
   abstract partnerCreditLimitChanges(partnerId: string): Promise<Row[]>;
   abstract approveCreditLimitChange(id: string, note: string): Promise<void>;
   abstract rejectCreditLimitChange(id: string, note: string): Promise<void>;
+  // Number series
+  /** The tenant's series, in code order, only one document type's when one is given. Needs NUMBER_SERIES_MANAGE. */
+  abstract numberSeries(documentType?: NumberedDocumentType): Promise<NumberSeriesView[]>;
+  /** The units a series can be scoped to: the caller's own and those beneath it. */
+  abstract numberSeriesScopes(): Promise<NumberSeriesScope[]>;
+  /** Resolves to the new series' id. */
+  abstract createNumberSeries(draft: NumberSeriesDraft): Promise<string>;
+  abstract setNumberSeriesActive(id: string, active: boolean): Promise<void>;
+  /** Only a series that never issued a number can be deleted (`number-series-in-use`). */
+  abstract deleteNumberSeries(id: string): Promise<void>;
+  /** What numbers in a proposed format look like; rejects a format that could not be saved. */
+  abstract previewNumberFormat(format: NumberFormatDraft): Promise<NumberFormatSample>;
+  /** The number the series would issue next, without issuing it. */
+  abstract nextNumber(id: string): Promise<string>;
+  /** Issues the next number for a document made outside the platform. */
+  abstract issueNumber(id: string): Promise<string>;
+  /** Gives a number back to its series, with a reason. */
+  abstract releaseNumber(id: string, number: string, reason: string): Promise<void>;
+  /** The numbers given back to a series, newest first. */
+  abstract numberReleases(id: string): Promise<Row[]>;
+  abstract verifyNumber(documentType: NumberedDocumentType, number: string): Promise<NumberVerdict>;
 }
 
 // Warehouse operations
@@ -1284,3 +1365,84 @@ export interface CreditLimitChangeDraft {
 
 export const CREDIT_CHANGE_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
 export type CreditChangeStatus = (typeof CREDIT_CHANGE_STATUSES)[number];
+
+// Number series
+
+export const NUMBERED_DOCUMENT_TYPES = ['ORDER', 'CONSIGNMENT_NOTE', 'DOCKET', 'TRIP', 'GATE_PASS', 'LOAD', 'INVOICE'] as const;
+/** The kinds of document a number series can number. */
+export type NumberedDocumentType = (typeof NUMBERED_DOCUMENT_TYPES)[number];
+
+export const NUMBER_YEAR_CODES = ['NONE', 'START_YEAR', 'SPAN'] as const;
+/** How the financial year appears in a number: not at all, `2026`, or `2627`. */
+export type NumberYearCode = (typeof NUMBER_YEAR_CODES)[number];
+
+/** How a series spells its numbers. */
+export interface NumberFormatDraft {
+  prefix: string;
+  yearCode: NumberYearCode;
+  /** One of '-', '/', '_', '.', or empty for none. */
+  separator: string;
+  counterLength: number;
+  /** 1-12; the financial year starts on the first of this month. */
+  yearStartMonth: number;
+  /** An IANA zone id; blank for UTC. */
+  timeZone: string;
+}
+
+/** A new series. A blank `orgUnitId` numbers the whole tenant. */
+export interface NumberSeriesDraft extends NumberFormatDraft {
+  code: string;
+  documentType: NumberedDocumentType;
+  orgUnitId: string;
+  reuseReleased: boolean;
+  active: boolean;
+  description: string;
+}
+
+/** A series as the administration desk lists it; counts are for the current financial year. */
+export interface NumberSeriesView {
+  id: string;
+  code: string;
+  documentType: NumberedDocumentType;
+  orgUnitId: string;
+  /** The unit's name, or "Whole tenant". */
+  scope: string;
+  prefix: string;
+  yearCode: NumberYearCode;
+  separator: string;
+  counterLength: string;
+  yearStartMonth: string;
+  timeZone: string;
+  reuseReleased: boolean;
+  active: boolean;
+  description: string;
+  financialYear: string;
+  issuedThisYear: string;
+  lastIssued: string;
+  releasedAvailable: string;
+  sample: string;
+}
+
+/** An organisational unit a series can be scoped to. */
+export interface NumberSeriesScope {
+  id: string;
+  name: string;
+  path: string;
+  unitType: string;
+}
+
+/** The first number of this financial year and of the next, in a proposed format. */
+export interface NumberFormatSample {
+  sample: string;
+  nextYearSample: string;
+}
+
+/** Whether a number belongs to a series, and where it stands; blank fields when it belongs to none. */
+export interface NumberVerdict {
+  belongs: boolean;
+  seriesCode: string;
+  financialYear: string;
+  counter: string;
+  /** ISSUED, RELEASED or NOT_ISSUED. */
+  status: string;
+}
