@@ -183,6 +183,20 @@ export async function trackingRefOf(
   return (await read.json()).trackingRef as string;
 }
 
+/** Amends a consignment's particulars through the API, at the version it reads now. */
+export async function amendParticulars(
+  request: APIRequestContext, session: Session, consignmentId: string, changes: Record<string, string | null>,
+): Promise<void> {
+  const headers = { Authorization: `Bearer ${session.token}` };
+  const read = await request.get(`${API}/api/v1/consignments/${consignmentId}`, { headers });
+  expect(read.ok(), `GET consignment: ${read.status()}`).toBeTruthy();
+  const response = await request.patch(`${API}/api/v1/consignments/${consignmentId}`, {
+    headers: { ...headers, 'If-Match': read.headers()['etag'] ?? '' },
+    data: changes,
+  });
+  expect(response.ok(), `PATCH consignment: ${response.status()} ${await response.text()}`).toBeTruthy();
+}
+
 /** Splits a consignment through the API into equal parts and returns the parts. */
 export async function splitEvenly(
   request: APIRequestContext, session: Session, consignmentId: string, count: number, eachKg: number,
@@ -415,6 +429,24 @@ export async function assignToLoad(
   await post(request, session, `/api/v1/loads/${loadId}/consignments`, { consignmentId });
 }
 
+/** Closes a load to further building through the API, as another planner would. */
+export async function planLoad(request: APIRequestContext, session: Session, loadId: string): Promise<void> {
+  await post(request, session, `/api/v1/loads/${loadId}/plan`, {});
+}
+
+/** Takes a consignment off a load through the API at its current version, as a second planner would. */
+export async function removeFromLoadElsewhere(
+  request: APIRequestContext, session: Session, loadId: string, consignmentId: string,
+): Promise<void> {
+  const headers = { Authorization: `Bearer ${session.token}` };
+  const read = await request.get(`${API}/api/v1/loads/${loadId}`, { headers });
+  expect(read.ok(), `GET load: ${read.status()}`).toBeTruthy();
+  const removed = await request.delete(`${API}/api/v1/loads/${loadId}/consignments/${consignmentId}`, {
+    headers: { ...headers, 'If-Match': read.headers()['etag'] },
+  });
+  expect(removed.status(), `DELETE from load: ${await removed.text()}`).toBe(204);
+}
+
 /** Offers a load for sourcing, which is when a rule fires; returns the allocation's id. */
 export async function offerLoad(request: APIRequestContext, session: Session, loadId: string): Promise<string> {
   return (await post(request, session, '/api/v1/allocations', { loadId })).id as string;
@@ -587,6 +619,7 @@ export interface DeskOrder {
  */
 export async function newDeskOrder(
   request: APIRequestContext, session: Session, salt: string, state: 'NONE' | 'DRAFT' | 'VALIDATED' = 'DRAFT',
+  lineCount = 1,
 ): Promise<DeskOrder> {
   const org = session.orgUnitId;
   const site = (name: string) => post(request, session, '/api/v1/terminals/point-radius', {
@@ -620,6 +653,12 @@ export async function newDeskOrder(
     uom: 'EA', deadWeightKg: 500, lengthM: 1.2, widthM: 0.8, heightM: 1.5,
     consigneePartnerId: consignee.id, destinationTerminalId: destination.id,
   });
+  for (let lineNo = 2; lineNo <= lineCount; lineNo += 1) {
+    await post(request, session, `/api/v1/orders/${order.id}/lines`, {
+      lineNo, materialCode: `COIL-${lineNo}`, materialDescription: 'Steel coil', materialClass: 'GENERAL', quantity: 1,
+      uom: 'EA', deadWeightKg: 400, consigneePartnerId: consignee.id, destinationTerminalId: destination.id,
+    });
+  }
   if (state === 'VALIDATED') {
     await post(request, session, `/api/v1/orders/${order.id}/validate`, {});
   }
