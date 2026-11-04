@@ -147,6 +147,15 @@ public class ExecutionSteps {
         });
     }
 
+    @When("trip {string} gates in at {word} at depot {string}")
+    public void gateInAt(String tripNo, String time, String depot) {
+        Trip trip = trip(tripNo);
+        attempt(() -> {
+            tripCommands.gateIn(trip.id(), world.ref(depot), at(time), null);
+            return null;
+        });
+    }
+
     @When("trip {string} is weighed {int} kg empty")
     public void weighEmpty(String tripNo, int weightKg) {
         weigh(tripNo, WeighbridgeReading.ReadingType.TARE, weightKg);
@@ -246,6 +255,26 @@ public class ExecutionSteps {
     public void tripGateEvents(String tripNo, int expected) {
         assertThat(inTransaction(() -> tripQueries.findGateLog(world.ref("trip:" + tripNo))))
                 .hasSize(expected);
+    }
+
+    @Then("gating in is refused with {string}")
+    public void gateInRefusedWith(String code) {
+        assertRefusalCode(code);
+    }
+
+    @Then("dispatching again is refused with {string}")
+    public void dispatchRefusedWith(String code) {
+        assertRefusalCode(code);
+    }
+
+    @Then("trip {string} was gated in at {word}")
+    public void gatedInAt(String tripNo, String time) {
+        assertThat(trip(tripNo).gateInAt()).isEqualTo(at(time));
+    }
+
+    @Then("trip {string} was dispatched at {word}")
+    public void dispatchedAt(String tripNo, String time) {
+        assertThat(trip(tripNo).dispatchedAt()).isEqualTo(at(time));
     }
 
     @Then("dispatch is refused mentioning {string}")
@@ -371,6 +400,13 @@ public class ExecutionSteps {
 
     private Trip trip(String tripNo) {
         return inTransaction(() -> trips.findById(world.ref("trip:" + tripNo)).orElseThrow());
+    }
+
+    private void assertRefusalCode(String code) {
+        assertThat(failure)
+                .as("expected a refusal coded '%s' but the operation succeeded", code)
+                .isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                        e -> assertThat(e.code()).isEqualTo(code));
     }
 
     private void assertRefusal(String fragment) {

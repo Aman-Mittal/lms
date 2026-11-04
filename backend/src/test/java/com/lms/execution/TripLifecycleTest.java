@@ -271,6 +271,80 @@ class TripLifecycleTest {
     }
 
     @Nested
+    @DisplayName("a milestone is recorded once")
+    class Repeats {
+
+        private void refused(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, String code) {
+            assertThatThrownBy(call).isInstanceOfSatisfying(BusinessRuleViolationException.class,
+                    e -> assertThat(e.code()).isEqualTo(code));
+        }
+
+        @Test
+        @DisplayName("a second gate-in is refused, and so is gate-in after the trip has moved on")
+        void gateInOnce() {
+            Trip atOrigin = planned().assign(UUID.randomUUID(), UUID.randomUUID()).gateIn(T0);
+
+            // Before the fix this returned the trip with gateInAt overwritten,
+            // which re-dated the dwell that detention is billed from.
+            refused(() -> atOrigin.gateIn(T0.plusSeconds(3600)), "trip-already-gated-in");
+            refused(() -> readyToDispatch().gateIn(T0), "trip-already-gated-in");
+            refused(() -> readyToDispatch().dispatch(T0.plusSeconds(7200)).gateIn(T0),
+                    "trip-already-gated-in");
+            assertThat(atOrigin.gateInAt()).isEqualTo(T0);
+        }
+
+        @Test
+        @DisplayName("gate-in is refused at any terminal but the origin")
+        void gateInAtTheOrigin() {
+            UUID originTerminal = UUID.randomUUID();
+            Trip assigned = Trip.raise(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                            UUID.randomUUID(), "TRIP-2", UUID.randomUUID(), originTerminal,
+                            UUID.randomUUID(), T0)
+                    .assign(UUID.randomUUID(), UUID.randomUUID());
+
+            refused(() -> assigned.gateIn(UUID.randomUUID(), T0), "trip-gate-in-elsewhere");
+            assertThat(assigned.gateIn(originTerminal, T0).status()).isEqualTo(TripStatus.AT_ORIGIN);
+        }
+
+        @Test
+        @DisplayName("loaded, dispatched and completed are each recorded once")
+        void laterMilestonesOnce() {
+            Trip loaded = readyToDispatch();
+            Trip dispatched = loaded.dispatch(T0.plusSeconds(7200));
+            Trip completed = dispatched.beginTransit().arrive(T0.plusSeconds(20_000))
+                    .complete(T0.plusSeconds(21_000));
+
+            refused(() -> loaded.markLoaded(T0.plusSeconds(6000)), "trip-already-loaded");
+            refused(() -> dispatched.dispatch(T0.plusSeconds(8000)), "trip-already-dispatched");
+            refused(dispatched::requireNotDispatched, "trip-already-dispatched");
+            refused(() -> completed.complete(T0.plusSeconds(22_000)), "trip-already-completed");
+            assertThat(dispatched.dispatchedAt()).isEqualTo(T0.plusSeconds(7200));
+        }
+
+        @Test
+        @DisplayName("arriving again while at the destination is a repeat; arriving after driving back out is not")
+        void arrivalAfterLeavingTheGeofence() {
+            Trip arrived = readyToDispatch().dispatch(T0.plusSeconds(7200)).beginTransit()
+                    .arrive(T0.plusSeconds(20_000));
+
+            refused(() -> arrived.arrive(T0.plusSeconds(20_100)), "trip-already-arrived");
+
+            // Clipped the destination geofence and drove on: a real second arrival.
+            Trip again = arrived.transitionTo(TripStatus.IN_TRANSIT).arrive(T0.plusSeconds(21_000));
+            assertThat(again.status()).isEqualTo(TripStatus.AT_DESTINATION);
+            assertThat(again.arrivedAt()).isEqualTo(T0.plusSeconds(21_000));
+        }
+
+        @Test
+        @DisplayName("moving into transit twice stays harmless: telematics repeats geofence exits")
+        void transitStaysTolerant() {
+            Trip moving = readyToDispatch().dispatch(T0.plusSeconds(7200)).beginTransit();
+
+            assertThat(moving.beginTransit().status()).isEqualTo(TripStatus.IN_TRANSIT);
+        }
+    }
+
+    @Nested
     @DisplayName("detention dwell")
     class Dwell {
 

@@ -193,6 +193,42 @@ Feature: Getting the lorry out of the yard, and only when it should be
     When trip "TRIP-13" is dispatched at 10:00
     Then trip "TRIP-13" has 2 gate events
 
+  Scenario: A second gate-in is refused and the first time stands
+    Given an awarded load "LOAD-E31" of 5000 kg from "ORIGIN" to "CONS-A" at "DEST-A" on lorry "MH-01-EX-0001" for "VENDOR-1"
+    And a trip "TRIP-31" is raised against load "LOAD-E31"
+    And trip "TRIP-31" is assigned lorry "MH-01-EX-0001" and driver "Ravi"
+    And trip "TRIP-31" gates in at 08:00
+    When trip "TRIP-31" gates in at 09:00
+    Then gating in is refused with "trip-already-gated-in"
+    And trip "TRIP-31" was gated in at 08:00
+    And trip "TRIP-31" has 1 gate events
+
+  Scenario: A trip is gated in at its origin and nowhere else
+    Given an awarded load "LOAD-E32" of 5000 kg from "ORIGIN" to "CONS-A" at "DEST-A" on lorry "MH-01-EX-0001" for "VENDOR-1"
+    And a trip "TRIP-32" is raised against load "LOAD-E32"
+    And trip "TRIP-32" is assigned lorry "MH-01-EX-0001" and driver "Ravi"
+    When trip "TRIP-32" gates in at 08:00 at depot "DEST-A"
+    Then gating in is refused with "trip-gate-in-elsewhere"
+    And trip "TRIP-32" is "ASSIGNED"
+    And trip "TRIP-32" has 0 gate events
+
+  Scenario: A second dispatch is refused and announces nothing
+    Given an awarded load "LOAD-E33" of 5000 kg from "ORIGIN" to "CONS-A" at "DEST-A" on lorry "MH-01-EX-0001" for "VENDOR-1"
+    And a trip "TRIP-33" is raised against load "LOAD-E33"
+    And trip "TRIP-33" is assigned lorry "MH-01-EX-0001" and driver "Ravi"
+    And trip "TRIP-33" gates in at 08:00
+    And trip "TRIP-33" is weighed 6000 kg empty
+    And trip "TRIP-33" is weighed 11000 kg laden
+    And trip "TRIP-33" is marked loaded
+    And trip "TRIP-33" carries a "CONSIGNMENT_NOTE" numbered "LR-0033"
+    And trip "TRIP-33" carries an "EWAY_BILL" numbered "EW-0033"
+    And trip "TRIP-33" is dispatched at 10:00
+    When trip "TRIP-33" is dispatched at 11:00
+    Then dispatching again is refused with "trip-already-dispatched"
+    And trip "TRIP-33" was dispatched at 10:00
+    And trip "TRIP-33" has 2 gate events
+    And the audit trail for trip "TRIP-33" has 1 "TRIP_DISPATCHED" entries
+
   Scenario: A trip is cancelled before dispatch and gives its load back
     # Cancelling stops the trip holding the load, not the vendor's award: the
     # load stays AWARDED and a replacement trip can be raised against it.
