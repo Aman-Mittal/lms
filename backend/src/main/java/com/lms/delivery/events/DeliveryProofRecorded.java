@@ -23,11 +23,20 @@ import java.util.UUID;
  *
  * <p>Carries no recipient name: a listener that needs who signed reads the
  * proof under its own permissions, and an event copied to an outside system
- * should not carry a person's name by default.
+ * should not carry a person's name by default -- nor the free-text remark.
+ *
+ * @param goodsCondition CLEAN, SHORTAGE or DAMAGE, by name: whether the goods
+ *                       arrived whole. Settlement waits on anything but CLEAN.
  */
 public record DeliveryProofRecorded(
         UUID tenantId,
         UUID consignmentId,
         Instant deliveredAt,
-        Instant occurredAt) {
+        Instant occurredAt,
+        String goodsCondition) {
+
+    /** Whether the goods were received with nothing short or damaged. */
+    public boolean clean() {
+        return goodsCondition == null || "CLEAN".equals(goodsCondition);
+    }
 }
