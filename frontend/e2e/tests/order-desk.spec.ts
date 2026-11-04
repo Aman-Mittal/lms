@@ -151,6 +151,41 @@ test.describe('order desk', () => {
     await expect(page.getByTestId('order-weight')).toHaveText('450');
   });
 
+  test('an order raised without a number takes the next in sequence, and its history reads newest first', async ({ page, request }, info) => {
+    const order = await newDeskOrder(request, await apiSession(request), tag(info), 'NONE');
+    await signIn(page);
+    await openDesk(page);
+
+    await test.step('raise it with the number left blank', async () => {
+      const raise = page.getByTestId('raise-order');
+      await expect(raise.getByLabel('Order number')).toHaveValue('');
+      await raise.getByLabel('New order customer id').fill(order.customers[0].id);
+      await raise.getByLabel('New order origin terminal id').fill(order.originId);
+      await raise.getByRole('button', { name: 'Raise order' }).click();
+      await expect(page.getByTestId('order-panel').getByRole('heading', { name: /^ORD-\d{4}-\d{6,}$/ })).toBeVisible();
+      await expect(page.getByTestId('order-status')).toHaveText('DRAFT');
+    });
+
+    await test.step('cancel it and read what happened, newest first', async () => {
+      await page.getByLabel('Cancellation reason').fill('raised by mistake');
+      await page.getByTestId('cancel-order').getByRole('button', { name: 'Cancel order' }).click();
+      await expect(page.getByTestId('order-status')).toHaveText('CANCELLED');
+
+      await page.getByTestId('tab-history').click();
+      const entries = page.getByTestId('order-history').getByTestId('history-entry');
+      await expect(entries).toHaveCount(2);
+      await expect(entries.nth(0).getByTestId('history-action')).toHaveText('ORDER_CANCELLED');
+      await expect(entries.nth(0)).toContainText('DRAFT → CANCELLED');
+      await expect(entries.nth(0)).toContainText('raised by mistake');
+      await expect(entries.nth(1).getByTestId('history-action')).toHaveText('ORDER_RAISED');
+      await expect(page.getByTestId('order-lines')).toBeHidden();
+
+      await page.getByTestId('tab-details').click();
+      await expect(page.getByTestId('order-history')).toHaveCount(0);
+      await expect(page.getByTestId('order-lines')).toBeVisible();
+    });
+  });
+
   test('a cancelled order offers nothing more to edit', async ({ page, request }, info) => {
     const order = await newDeskOrder(request, await apiSession(request), tag(info), 'DRAFT');
     await signIn(page);
