@@ -54,7 +54,8 @@ public class OrderQueryService {
                    o.requested_pickup_at, o.requested_delivery_at,
                    agg.line_count, agg.planned_line_count,
                    agg.total_dead_weight_kg, agg.contains_hazmat,
-                   o.freight_mode, o.created_at, o.version
+                   o.freight_mode, o.created_at, o.version,
+                   o.close_kind, o.close_reason, o.closed_at
               FROM sales_order o
               JOIN business_partner c ON c.id = o.customer_partner_id
               LEFT JOIN terminal t ON t.id = o.origin_terminal_id
@@ -68,7 +69,7 @@ public class OrderQueryService {
                                             AND btrim(l.hazmat_un_code) <> ''), false)
                                AS contains_hazmat
                       FROM order_line l
-                     WHERE l.order_id = o.id
+                     WHERE l.order_id = o.id AND l.cancelled = false
                    ) agg ON true
             """;
 
@@ -156,7 +157,8 @@ public class OrderQueryService {
                                l.planned,
                                l.consignee_partner_id, cn.legal_name AS consignee_name,
                                l.destination_terminal_id, dt.code AS destination_terminal_code,
-                               l.length_m, l.width_m, l.height_m, l.volumetric_divisor
+                               l.length_m, l.width_m, l.height_m, l.volumetric_divisor,
+                               l.close_kind, l.close_reason, l.closed_at, l.cancelled
                           FROM order_line l
                           JOIN business_partner cn ON cn.id = l.consignee_partner_id
                           JOIN terminal dt ON dt.id = l.destination_terminal_id

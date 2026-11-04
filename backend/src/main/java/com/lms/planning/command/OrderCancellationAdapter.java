@@ -15,13 +15,11 @@
  */
 package com.lms.planning.command;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -32,7 +30,6 @@ import com.lms.planning.api.LoadInUseGuard;
 import com.lms.planning.command.PlanningLinks.Placement;
 import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.Consignment.ConsignmentStatus;
-import com.lms.planning.command.domain.LoadUnit;
 import com.lms.planning.command.domain.LoadUnit.LoadStatus;
 import com.lms.planning.events.ConsignmentsCancelled;
 import com.lms.shared.audit.TransitionAudit;
@@ -85,22 +82,19 @@ public class OrderCancellationAdapter implements OrderCancellationHook {
             LoadStatus.COMPLETED.name());
 
     private final ConsignmentRepository consignments;
-    private final LoadUnitRepository loads;
     private final PlanningLinks links;
     private final List<LoadInUseGuard> inUseGuards;
-    private final List<LoadCancellationHook> cancellationHooks;
+    private final LoadRelease loadRelease;
     private final TransitionAudit audit;
     private final ApplicationEventPublisher events;
 
-    public OrderCancellationAdapter(ConsignmentRepository consignments, LoadUnitRepository loads,
-                                    PlanningLinks links, List<LoadInUseGuard> inUseGuards,
-                                    List<LoadCancellationHook> cancellationHooks,
-                                    TransitionAudit audit, ApplicationEventPublisher events) {
+    OrderCancellationAdapter(ConsignmentRepository consignments, PlanningLinks links,
+                             List<LoadInUseGuard> inUseGuards, LoadRelease loadRelease,
+                             TransitionAudit audit, ApplicationEventPublisher events) {
         this.consignments = consignments;
-        this.loads = loads;
         this.links = links;
         this.inUseGuards = inUseGuards;
-        this.cancellationHooks = cancellationHooks;
+        this.loadRelease = loadRelease;
         this.audit = audit;
         this.events = events;
     }
@@ -146,10 +140,7 @@ public class OrderCancellationAdapter implements OrderCancellationHook {
         // rolls these rows back with everything else.
         audit.recordAll("CONSIGNMENT_CANCELLED", PlanningAudit.CONSIGNMENT,
                 PlanningAudit.entries(toCancel, cancelled));
-        List<UUID> cancelledLoads = releaseLoads(tenantId, touchedLoads);
-        if (!cancelledLoads.isEmpty()) {
-            cancellationHooks.forEach(hook -> hook.onLoadsCancelling(cancelledLoads));
-        }
+        loadRelease.release(tenantId, touchedLoads);
         if (!cancelled.isEmpty()) {
             events.publishEvent(new ConsignmentsCancelled(tenantId, orderId,
                     cancelled.stream().map(Consignment::id).toList(),
@@ -174,47 +165,5 @@ public class OrderCancellationAdapter implements OrderCancellationHook {
                             + String.join(", ", left)
                             + " already dispatched, in transit or delivered");
         }
-    }
-
-    /**
-     * Restates each touched load from the freight still aboard, and cancels
-     * one that is left with none.
-     *
-     * @return the loads this cancelled, which sourcing is told about
-     */
-    private List<UUID> releaseLoads(UUID tenantId, Set<UUID> loadIds) {
-        if (loadIds.isEmpty()) {
-            return List.of();
-        }
-        List<UUID> cancelledLoads = new ArrayList<>();
-        List<TransitionAudit.Entry> cancelledEntries = new ArrayList<>();
-        Map<UUID, LoadUnit> touched = new java.util.HashMap<>();
-        loads.findAllById(loadIds).forEach(load -> touched.put(load.id(), load));
-        for (UUID loadId : loadIds) {
-            LoadUnit load = touched.get(loadId);
-            if (load == null) {
-                continue;
-            }
-            List<Consignment> aboard = consignments.findOnLoad(tenantId, loadId);
-            LoadUnit restated = load.restated(
-                    sum(aboard, Consignment::totalDeadWeightKg),
-                    sum(aboard, Consignment::totalVolumeM3),
-                    aboard.stream().anyMatch(Consignment::containsHazmat));
-            if (aboard.isEmpty()) {
-                LoadUnit cancelledLoad = loads.save(restated.transitionTo(LoadStatus.CANCELLED));
-                cancelledLoads.add(loadId);
-                cancelledEntries.add(PlanningAudit.entry(load, cancelledLoad));
-            } else {
-                loads.save(restated);
-            }
-        }
-        audit.recordAll("LOAD_CANCELLED", PlanningAudit.LOAD, cancelledEntries);
-        return cancelledLoads;
-    }
-
-    private static BigDecimal sum(List<Consignment> aboard,
-                                  java.util.function.Function<Consignment, BigDecimal> field) {
-        return aboard.stream().map(field).filter(java.util.Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }
