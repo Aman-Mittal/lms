@@ -15,7 +15,10 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { apiSession, newBillingClient, newConsignment, openScreen, signIn, tag, withoutPermissions } from './support';
+import {
+  apiSession, dayOfMonth, handledInLastMonth, newBillingClient, newConsignment, openScreen, signIn, tag,
+  withoutPermissions,
+} from './support';
 import { deliveredTrip } from './support-commercial';
 
 /*
@@ -84,11 +87,15 @@ test.describe('proof of delivery and money', () => {
     const session = await apiSession(request);
     const client = await newBillingClient(request, session);
     const consignment = await newConsignment(request, session);
+    // A month with nothing charged shows no charges table at all, so give the client one charge.
+    await handledInLastMonth(request, session, client.id, 1);
     await signIn(page);
     await openScreen(page, 'nav-client-billing', 'Client billing');
     await page.getByTestId('client-id').fill(client.id);
     await page.getByRole('button', { name: 'Open' }).click();
     await expect(page.getByTestId('client-desk')).toBeVisible();
+    await page.getByTestId('charges-month').fill(dayOfMonth(1, 1).slice(0, 7));
+    await expect(page.getByTestId('charge-row')).toHaveCount(1);
     await expect(page.getByRole('columnheader', { name: 'Billable' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Transport billed' })).toBeVisible();
     await expect(page.getByTestId('contract-row')).toContainText('On proof of delivery');

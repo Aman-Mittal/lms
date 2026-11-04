@@ -558,19 +558,25 @@ export class WarehouseFloor implements OnInit {
     this.refusal.set(null);
   }
 
-  /** Runs an action, says what happened (or names the refusal), and reads everything again. */
-  private async act(action: () => Promise<unknown>, confirmation: string): Promise<boolean> {
+  /**
+   * Runs an action, says what happened (or names the refusal), and reads everything again.
+   * `clear` empties the form the action came from; it runs as soon as the action succeeds,
+   * before the confirmation shows and before the floor is read again, so nothing typed into
+   * the form while that read is under way is wiped when it ends.
+   */
+  private async act(action: () => Promise<unknown>, confirmation: string, clear?: () => void): Promise<boolean> {
     this.done.set('');
     this.refusal.set(null);
     try {
       await action();
-      this.done.set(confirmation);
-      await this.refresh();
-      return true;
     } catch (e) {
       this.refusal.set({ code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message });
       return false;
     }
+    clear?.();
+    this.done.set(confirmation);
+    await this.refresh();
+    return true;
   }
 
   setMove(draft: WritableSignal<StockMoveDraft>, field: keyof StockMoveDraft, value: string): void {
@@ -611,25 +617,20 @@ export class WarehouseFloor implements OnInit {
 
   async createAsn(): Promise<void> {
     const asnNo = this.asnNo();
-    let id = '';
-    const ok = await this.act(async () => {
-      id = await this.gateway.createAsn({
+    await this.act(async () => {
+      this.asnId.set(await this.gateway.createAsn({
         warehouseId: this.warehouseId(), asnNo, supplierPartnerId: this.supplier(), lines: this.asnLines(),
-      });
-      this.asnId.set(id);
-    }, `ASN ${asnNo} is expected.`);
-    if (ok) {
+      }));
+    }, `ASN ${asnNo} is expected.`, () => {
       this.asnNo.set('');
       this.supplier.set('');
       this.asnLines.set([blankAsnLine()]);
-    }
+    });
   }
 
   async putaway(): Promise<void> {
     const move = this.put();
-    if (await this.act(() => this.gateway.putaway(move), `Put away ${move.quantity}.`)) {
-      this.put.set(blankMove());
-    }
+    await this.act(() => this.gateway.putaway(move), `Put away ${move.quantity}.`, () => this.put.set(blankMove()));
   }
 
   // ---------------------------------------------------------------- stock
@@ -652,9 +653,7 @@ export class WarehouseFloor implements OnInit {
     const action = kind === 'adjust' ? () => this.gateway.adjustStock(draft)
       : kind === 'release' ? () => this.gateway.releaseQuarantine(draft)
         : () => this.gateway.writeOffQuarantine(this.warehouseId(), draft);
-    if (await this.act(action, `${m.button}: ${draft.quantity} recorded.`)) {
-      m.draft.set(blankMove());
-    }
+    await this.act(action, `${m.button}: ${draft.quantity} recorded.`, () => m.draft.set(blankMove()));
   }
 
   // ---------------------------------------------------------------- outbound
@@ -695,16 +694,15 @@ export class WarehouseFloor implements OnInit {
 
   async createOutbound(): Promise<void> {
     const orderNo = this.orderNo();
-    const ok = await this.act(async () => {
+    await this.act(async () => {
       this.orderId.set(await this.gateway.createOutboundOrder({
         warehouseId: this.warehouseId(), orderNo, shipTo: this.shipTo(), lines: this.outLines(),
       }));
-    }, `Order ${orderNo} is open.`);
-    if (ok) {
+    }, `Order ${orderNo} is open.`, () => {
       this.orderNo.set('');
       this.shipTo.set('');
       this.outLines.set([blankOutLine()]);
-    }
+    });
   }
 
   async openUnit(id: string): Promise<void> {
@@ -740,11 +738,9 @@ export class WarehouseFloor implements OnInit {
 
   async releaseWave(): Promise<void> {
     const orderIds = this.chosen();
-    if (await this.act(async () => {
+    await this.act(async () => {
       this.waveId.set(await this.gateway.releasePickWave(this.warehouseId(), orderIds));
-    }, `Wave released with ${orderIds.length} orders.`)) {
-      this.chosen.set([]);
-    }
+    }, `Wave released with ${orderIds.length} orders.`, () => this.chosen.set([]));
   }
 
   async pickWave(): Promise<void> {
@@ -758,22 +754,22 @@ export class WarehouseFloor implements OnInit {
 
   async createBin(): Promise<void> {
     const code = this.binCode();
-    if (await this.act(() => this.gateway.createBin(this.warehouseId(), code, Number(this.capacity())), `Bin ${code} created.`)) {
+    await this.act(() => this.gateway.createBin(this.warehouseId(), code, Number(this.capacity())), `Bin ${code} created.`, () => {
       this.binCode.set('');
       this.capacity.set('');
-    }
+    });
   }
 
   async createSku(): Promise<void> {
     const code = this.skuCode();
-    if (await this.act(() => this.gateway.createSku({
+    await this.act(() => this.gateway.createSku({
       code, description: this.skuDescription(), ownerPartnerId: this.skuOwner(), uom: this.skuUom(),
-    }), `SKU ${code} created.`)) {
+    }), `SKU ${code} created.`, () => {
       this.skuCode.set('');
       this.skuDescription.set('');
       this.skuOwner.set('');
       this.skuUom.set('');
-    }
+    });
   }
 
   print(): void {
