@@ -167,6 +167,12 @@
     tags: [Trips]
     operationId: gateIn
     summary: Record arrival at the origin. The detention clock starts here.
+    description: |
+      Recorded once, at the trip's origin terminal. A second gate-in is refused
+      with 409 `trip-already-gated-in` and changes nothing: the first time
+      stands and the gate log gets no second entry. A terminal other than the
+      origin is refused with 409 `trip-gate-in-elsewhere`. A retry carrying the
+      same Idempotency-Key is answered from the first response instead.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -221,6 +227,9 @@
     tags: [Trips]
     operationId: markLoaded
     summary: Loading is finished and the vehicle weighed laden
+    description: |
+      Recorded once; marking a trip loaded again is refused with 409
+      `trip-already-loaded`.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -252,6 +261,10 @@
       statutory documents, the vehicle's and driver's documents against the
       departure date, hazmat certification where the load needs it, and the
       weighed payload against the manifest within tolerance.
+
+      Recorded once. Dispatching a trip that has already left is refused with
+      409 `trip-already-dispatched` before any check runs; nothing is written
+      to the gate log and nothing is announced again.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -301,6 +314,10 @@
     tags: [Trips]
     operationId: recordArrival
     summary: Mark the trip at its destination
+    description: |
+      Refused with 409 `trip-already-arrived` while the trip is still at its
+      destination or after completion. Arriving again after driving back out
+      of the destination geofence is a real second arrival and is accepted.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -328,7 +345,8 @@
     summary: Proof of delivery accepted
     description: |
       Raises the freight bill, priced against the rate card in force on the
-      dispatch date.
+      dispatch date. Recorded once; completing a trip again is refused with 409
+      `trip-already-completed`.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:

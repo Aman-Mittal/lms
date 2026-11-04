@@ -196,9 +196,12 @@ public class TripCommandService {
         Trip trip = require(tripId);
         Instant when = at == null ? Instant.now() : at;
 
+        // The trip is moved first: a repeat or the wrong terminal is refused
+        // before anything is written to the append-only gate log.
+        Trip gatedIn = trip.gateIn(terminalId, when);
         gateEvents.save(GateEvent.record(UUID.randomUUID(), tenantId, tripId, terminalId,
                 GateEvent.EventType.GATE_IN, when, remarks));
-        Trip arrived = trips.save(trip.gateIn(when));
+        Trip arrived = trips.save(gatedIn);
         auditTransition("TRIP_GATE_IN", trip, arrived, "terminalId", String.valueOf(terminalId),
                 "at", when.toString());
     }
@@ -280,6 +283,7 @@ public class TripCommandService {
         UUID tenantId = TenantContext.requireTenantId();
         Trip trip = require(tripId);
         Instant when = at == null ? Instant.now() : at;
+        trip.requireNotDispatched();
 
         LoadLifecyclePort.LoadSummary load = loads.summarise(trip.loadId())
                 .orElseThrow(() -> new ResourceNotFoundException("Load", trip.loadId()));
@@ -296,10 +300,11 @@ public class TripCommandService {
                             + String.join("; ", blockers));
         }
 
+        Trip moved = trip.dispatch(when);
         gateEvents.save(GateEvent.record(UUID.randomUUID(), tenantId, tripId,
                 trip.originTerminalId(), GateEvent.EventType.GATE_OUT, when, null));
 
-        Trip dispatched = trips.save(trip.dispatch(when));
+        Trip dispatched = trips.save(moved);
         loads.recordDispatched(trip.loadId());
         auditTransition("TRIP_DISPATCHED", trip, dispatched, "at", when.toString());
 
@@ -329,11 +334,12 @@ public class TripCommandService {
         Trip trip = require(tripId);
         Instant when = at == null ? Instant.now() : at;
 
+        Trip moved = trip.arrive(when);
         if (trip.destinationTerminalId() != null) {
             gateEvents.save(GateEvent.record(UUID.randomUUID(), tenantId, tripId,
                     trip.destinationTerminalId(), GateEvent.EventType.GATE_IN, when, null));
         }
-        Trip arrived = trips.save(trip.arrive(when));
+        Trip arrived = trips.save(moved);
         auditTransition("TRIP_ARRIVED", trip, arrived, "at", when.toString());
     }
 
