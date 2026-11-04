@@ -155,33 +155,84 @@ public record Trip(
         return moved.with(builder -> builder.vehicleId = vehicle, builder -> builder.driverId = driver);
     }
 
-    public Trip gateIn(Instant at) {
+    /**
+     * The vehicle reports at the origin gate.
+     *
+     * <p>Refused at any other terminal ({@code trip-gate-in-elsewhere}): a trip
+     * is gated in where its load is collected, and a gate-in recorded at the
+     * wrong yard would date the dwell from a lorry that was never there.
+     */
+    public Trip gateIn(UUID terminalId, Instant at) {
+        if (terminalId != null && originTerminalId != null && !originTerminalId.equals(terminalId)) {
+            throw new BusinessRuleViolationException("trip-gate-in-elsewhere",
+                    "Trip " + tripNo + " is gated in at its origin terminal, not at another one");
+        }
+        refuseRepeat(gateInAt != null, "trip-already-gated-in", "already gated in");
         Trip moved = transitionTo(TripStatus.AT_ORIGIN);
         return moved.with(builder -> builder.gateInAt = at);
     }
 
+    /** Gate-in with no terminal named: the origin is implied. */
+    public Trip gateIn(Instant at) {
+        return gateIn(null, at);
+    }
+
     public Trip markLoaded(Instant at) {
+        refuseRepeat(loadedAt != null, "trip-already-loaded", "already marked loaded");
         Trip moved = transitionTo(TripStatus.LOADED);
         return moved.with(builder -> builder.loadedAt = at);
     }
 
     public Trip dispatch(Instant at) {
+        requireNotDispatched();
         Trip moved = transitionTo(TripStatus.DISPATCHED);
         return moved.with(builder -> builder.dispatchedAt = at);
+    }
+
+    /**
+     * Refuses a second dispatch before any other check runs, so a repeated
+     * request is told it is a repeat rather than handed the dispatch blockers.
+     */
+    public void requireNotDispatched() {
+        refuseRepeat(dispatchedAt != null, "trip-already-dispatched", "already dispatched");
     }
 
     public Trip beginTransit() {
         return transitionTo(TripStatus.IN_TRANSIT);
     }
 
+    /**
+     * Inside the destination geofence. Arriving again after driving back out
+     * (AT_DESTINATION to IN_TRANSIT) is a real second arrival; arriving while
+     * still there, or after completion, is a repeat.
+     */
     public Trip arrive(Instant at) {
+        refuseRepeat(status == TripStatus.AT_DESTINATION || status == TripStatus.COMPLETED,
+                "trip-already-arrived", "already at its destination");
         Trip moved = transitionTo(TripStatus.AT_DESTINATION);
         return moved.with(builder -> builder.arrivedAt = at);
     }
 
     public Trip complete(Instant at) {
+        refuseRepeat(completedAt != null, "trip-already-completed", "already completed");
         Trip moved = transitionTo(TripStatus.COMPLETED);
         return moved.with(builder -> builder.completedAt = at);
+    }
+
+    /**
+     * A milestone is recorded once. Moving to the state a trip is already in
+     * used to return it unchanged, so a repeated gate-in or dispatch silently
+     * overwrote the first time and wrote a second gate event; detention and
+     * dwell are billed from those times, and dispatch is announced to finance
+     * and webhooks. A repeat is refused by name instead. A retry of the same
+     * request with its Idempotency-Key is still answered from the stored
+     * response and never reaches here.
+     */
+    private void refuseRepeat(boolean recorded, String code, String what) {
+        if (recorded) {
+            throw new BusinessRuleViolationException(code, "Trip " + tripNo + " is " + what
+                    + "; a milestone is recorded once");
+        }
     }
 
     /**
