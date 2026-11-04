@@ -30,6 +30,7 @@
     parameters:
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
     responses:
       "200":
         description: One page of bins.
@@ -70,6 +71,7 @@
     parameters:
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
     responses:
       "200":
         description: One page of SKUs.

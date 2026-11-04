@@ -222,7 +222,7 @@ public class RailItinerarySteps {
             UUID railLegId = leg(2).getId();
             String cursor = null;
             while (true) {
-                var page = settlement.listFreightBills(null, cursor, 200);
+                var page = settlement.listFreightBills(null, cursor, 200, null);
                 var found = page.getItems().stream()
                         .filter(b -> railLegId.equals(b.getItineraryLegId()))
                         .findFirst();

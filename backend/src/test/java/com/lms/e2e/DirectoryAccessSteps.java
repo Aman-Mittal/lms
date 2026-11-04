@@ -393,7 +393,7 @@ public class DirectoryAccessSteps {
         refusedWith(403, "access-denied", () -> partners.registerPartner(new RegisterPartnerRequest()
                 .orgUnitId(branchUnit).code(code).legalName(code + " Ltd")
                 .partnerType(RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER), null));
-        assertThat(world.api(PartnersApi.class).listPartners(null, null, code.substring(0, code.length() - 1), 5)
+        assertThat(world.api(PartnersApi.class).listPartners(null, null, code.substring(0, code.length() - 1), 5, null)
                 .getItems()).extracting(Partner::getCode).doesNotContain(code);
     }
 
@@ -422,7 +422,7 @@ public class DirectoryAccessSteps {
 
         // The rule bites on the action and the region, not on the person's other rights.
         assertThat(world.client(refreshed.getAccessToken(), PartnersApi.class)
-                .listPartners(null, null, "BRP-" + world.salt, 3).getItems()).isNotEmpty();
+                .listPartners(null, null, "BRP-" + world.salt, 3, null).getItems()).isNotEmpty();
         assertThat(world.partner("ADMINOK", RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER)).isNotNull();
     }
 

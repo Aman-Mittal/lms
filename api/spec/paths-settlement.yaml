@@ -24,6 +24,7 @@
       - $ref: "#/components/parameters/status"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
+      - $ref: "#/components/parameters/q"
     responses:
       "200":
         description: One page of bills.
@@ -149,6 +150,52 @@
       "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/tariffs:
+  get:
+    tags: [Settlement]
+    operationId: listTariffs
+    summary: Rate card versions, newest first
+    description: |
+      Requires `TARIFF_MANAGE` or `INVOICE_READ`. Only cards on the caller's
+      line of the organisation are listed -- published under one of the
+      caller's ancestors, the caller's own unit, or a unit beneath it -- and a
+      vendor's own staff see only that vendor's cards.
+    parameters:
+      - name: vendorPartnerId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: Only this vendor's cards.
+      - name: originTerminalId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: Only cards for lanes starting here.
+      - name: destinationTerminalId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: Only cards for lanes ending here.
+      - name: vehicleType
+        in: query
+        required: false
+        schema: { type: string }
+        description: Only cards for this vehicle type.
+      - name: superseded
+        in: query
+        required: false
+        schema: { type: boolean }
+        description: True for versions a successor has closed, false for open ones; both when absent.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of rate card versions.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TariffSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
   post:
     tags: [Settlement]
     operationId: publishTariff
@@ -171,6 +218,32 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/tariffs/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Settlement]
+    operationId: getTariff
+    summary: One rate card version with its weight bands
+    description: |
+      Requires `TARIFF_MANAGE` or `INVOICE_READ`. A card of a sibling branch of
+      the organisation, or another vendor's for a vendor's own staff, is not
+      found.
+    responses:
+      "200":
+        description: The rate card version and its bands, lightest first.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TariffCard" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
 
 /api/v1/tariffs/{id}/slabs:
   parameters:

@@ -33,5 +33,13 @@ public record OrderLineView(
         UUID consigneePartnerId,
         String consigneeName,
         UUID destinationTerminalId,
-        String destinationTerminalCode) {
+        String destinationTerminalCode,
+        /**
+         * The measurements, so that a line set restated whole by an edit keeps
+         * them rather than clearing them. Null together when never measured.
+         */
+        BigDecimal lengthM,
+        BigDecimal widthM,
+        BigDecimal heightM,
+        BigDecimal volumetricDivisor) {
 }

@@ -51,8 +51,9 @@ public class WarehouseSetupController {
     @GetMapping("/api/v1/warehouses/{warehouseId}/bins")
     public Slice<BinView> bins(@PathVariable UUID warehouseId,
                                @RequestParam(required = false) String cursor,
-                               @RequestParam(required = false) Integer limit) {
-        return queries.bins(warehouseId, cursor, limit);
+                               @RequestParam(required = false) Integer limit,
+                               @RequestParam(required = false) String q) {
+        return queries.bins(warehouseId, cursor, limit, q);
     }
 
     @PostMapping("/api/v1/warehouses/{warehouseId}/bins")
@@ -65,8 +66,9 @@ public class WarehouseSetupController {
 
     @GetMapping("/api/v1/skus")
     public Slice<SkuView> skus(@RequestParam(required = false) String cursor,
-                               @RequestParam(required = false) Integer limit) {
-        return queries.skus(cursor, limit);
+                               @RequestParam(required = false) Integer limit,
+                               @RequestParam(required = false) String q) {
+        return queries.skus(cursor, limit, q);
     }
 
     @PostMapping("/api/v1/skus")

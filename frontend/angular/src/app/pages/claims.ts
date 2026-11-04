@@ -19,6 +19,7 @@ import { CLAIM_TYPES, ClaimTarget, ClaimType, LmsGateway, Row } from '../gateway
 import { Session } from '../session';
 import { Qr } from './qr';
 import { RESOURCES } from './resources';
+import { EntityPicker } from './entity-picker';
 
 /** The panel beside the list: one claim, what may be done to it, and its slip. */
 @Component({
@@ -117,15 +118,15 @@ export class ClaimPanel {
 /** Claims: the list, a form to raise one, and a panel to decide and print it. */
 @Component({
   selector: 'app-claims',
-  imports: [FormsModule, ClaimPanel],
+  imports: [FormsModule, ClaimPanel, EntityPicker],
   template: `
     <div [class.with-panel]="selected()">
       <div class="list">
         <h1>Claims</h1>
         <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
         <form class="inline" (ngSubmit)="filter()" data-testid="claims-filter">
-          <input name="filterConsignment" placeholder="Consignment id" aria-label="Filter by consignment"
-                 data-testid="claims-filter-consignment" [value]="typed()" (input)="typed.set($any($event.target).value)" />
+          <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Filter by consignment" testId="claims-filter-consignment"
+                             [(value)]="typed" />
           <button type="submit">Filter</button>
         </form>
         @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -148,8 +149,8 @@ export class ClaimPanel {
         @if (session.can('CLAIM_RAISE')) {
           <h2>Raise a claim</h2>
           <form class="inline" (ngSubmit)="raise()" data-testid="raise-claim">
-            <input name="consignmentId" placeholder="Consignment id" aria-label="Consignment id"
-                   [(ngModel)]="consignmentId" required />
+            <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Consignment id" [required]="true"
+                               [value]="consignmentId" (valueChange)="consignmentId = $event" />
             <select name="claimType" aria-label="Claim type" [(ngModel)]="claimType">
               @for (t of claimTypes; track t) { <option [value]="t">{{ t }}</option> }
             </select>

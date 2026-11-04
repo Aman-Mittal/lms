@@ -53,6 +53,9 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Multimodal' && session.can('MILKRUN_READ')) {
                 <a routerLink="/milk-runs" routerLinkActive="active" data-testid="nav-milk-runs">Milk runs</a>
               }
+              @if (group === 'Operations' && session.can('ORDER_READ')) {
+                <a routerLink="/order-desk" routerLinkActive="active" data-testid="nav-order-desk">Order desk</a>
+              }
               @if (group === 'Operations' && session.can('LOAD_READ')) {
                 <a routerLink="/load-building" routerLinkActive="active" data-testid="nav-load-building">Load building</a>
               }
@@ -62,6 +65,14 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE'))) {
                 <a routerLink="/ltl" routerLinkActive="active" data-testid="nav-ltl">LTL rating</a>
               }
+              @if (group === 'Finance' && session.can('CLIENT_BILLING_READ')) {
+                <a routerLink="/client-billing" routerLinkActive="active" data-testid="nav-client-billing">Client billing</a>
+              }
+              <!-- Commercial -->
+              @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE')
+                  || session.can('ROUTING_GUIDE_MANAGE') || session.can('LOAD_ALLOCATE'))) {
+                <a routerLink="/commercial" routerLinkActive="active" data-testid="nav-commercial">Commercial</a>
+              }
               @if (group === 'Control tower' && session.can('EVENT_DEAD_LETTER_READ')) {
                 <a routerLink="/parked-events" routerLinkActive="active" data-testid="nav-parked-events">Parked events</a>
               }
@@ -70,6 +81,14 @@ import { GROUPS, RESOURCES } from './resources';
               }
               @if (group === 'Delivery' && session.can('TRACKING_LINK_MANAGE')) {
                 <a routerLink="/tracking" routerLinkActive="active" data-testid="nav-tracking">Tracking links</a>
+              }
+              <!-- Warehouse operations -->
+              @if (group === 'Operations' && session.can('WAREHOUSE_READ')) {
+                <a routerLink="/warehouse" routerLinkActive="active" data-testid="nav-warehouse">Warehouse operations</a>
+              }
+              <!-- Control tower -->
+              @if (group === 'Control tower' && session.can('EXCEPTION_READ')) {
+                <a routerLink="/exception-desk" routerLinkActive="active" data-testid="nav-exception-desk">Exception desk</a>
               }
             </div>
           }
@@ -85,6 +104,20 @@ import { GROUPS, RESOURCES } from './resources';
               }
               @if (session.can('WEBHOOK_READ')) {
                 <a routerLink="/settings/webhooks" routerLinkActive="active" data-testid="nav-webhooks">Webhooks</a>
+              }
+            </div>
+          }
+          <!-- Administration -->
+          @if (session.can('ACCESS_POLICY_MANAGE') || session.can('VEHICLE_READ')) {
+            <div class="group" data-testid="nav-admin">
+              <h6>Administration</h6>
+              @if (session.can('ACCESS_POLICY_MANAGE')) {
+                <a routerLink="/admin/users" routerLinkActive="active" data-testid="nav-admin-users">Users</a>
+                <a routerLink="/admin/access-policies" routerLinkActive="active"
+                   data-testid="nav-admin-policies">Access policies</a>
+              }
+              @if (session.can('VEHICLE_READ')) {
+                <a routerLink="/admin/compliance" routerLinkActive="active" data-testid="nav-admin-compliance">Compliance</a>
               }
             </div>
           }

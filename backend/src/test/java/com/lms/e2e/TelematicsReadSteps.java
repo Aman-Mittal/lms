@@ -417,7 +417,7 @@ public class TelematicsReadSteps {
     public void deviationTicket() {
         List<Exception> tickets = HttpWorld.eventually("the route deviation ticket", () -> {
             List<Exception> found = world.api(ControlTowerApi.class)
-                    .listExceptions(null, null, null, 200).getItems().stream()
+                    .listExceptions(null, null, null, 200, null).getItems().stream()
                     .filter(ticket -> strayTripId.equals(ticket.getTripId())
                             || tripId.equals(ticket.getTripId()))
                     .toList();

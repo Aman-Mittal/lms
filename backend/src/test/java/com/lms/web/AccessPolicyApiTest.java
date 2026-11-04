@@ -313,7 +313,7 @@ class AccessPolicyApiTest {
 
         assertThat(api.getTrip(ourTrip).getId()).isEqualTo(ourTrip);
         assertStatus(() -> api.getTrip(theirTrip), 404, null);
-        assertThat(api.listTrips(null, null, null).getItems()).extracting(Trip::getId)
+        assertThat(api.listTrips(null, null, null, null).getItems()).extracting(Trip::getId)
                 .containsExactly(ourTrip);
 
         // The tenant's own staff, carrying no partner, still see both.

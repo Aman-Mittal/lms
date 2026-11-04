@@ -149,6 +149,92 @@ PublishTariffRequest:
   required: [orgUnitId, code, vendorPartnerId, originTerminalId,
              destinationTerminalId, vehicleType, effectiveFrom]
 
+Tariff:
+  type: object
+  description: One version of a road rate card for a vendor, lane and vehicle type.
+  properties:
+    id: { type: string, format: uuid }
+    orgUnitId: { type: string, format: uuid }
+    orgUnitName: { type: string }
+    code: { type: string }
+    vendorPartnerId: { type: string, format: uuid }
+    vendorCode: { type: string }
+    vendorName: { type: string }
+    originTerminalId: { type: string, format: uuid }
+    originTerminalCode: { type: string }
+    destinationTerminalId: { type: string, format: uuid }
+    destinationTerminalCode: { type: string }
+    vehicleType: { type: string }
+    currency: { type: string }
+    effectiveFrom: { type: string, format: date }
+    effectiveTo:
+      type: string
+      format: date
+      description: Inclusive last day. Null until a successor is published.
+    superseded: { type: boolean, description: Whether a successor has closed this version. }
+    detentionFreeHours: { type: number }
+    detentionHourlyRate: { type: number }
+    additionalDropFee: { type: number }
+    minimumCharge: { type: number }
+    slabCount: { type: integer, description: How many weight bands the version carries. }
+    createdAt: { type: string, format: date-time }
+
+TariffSlab:
+  type: object
+  description: One weight band. Half-open; `maxWeightKg` is the first weight it does not cover.
+  properties:
+    id: { type: string, format: uuid }
+    minWeightKg: { type: number }
+    maxWeightKg: { type: number, description: Null for the open top band. }
+    rateBasis: { type: string, enum: [PER_KG, FLAT] }
+    rateAmount: { type: number }
+
+TariffCard:
+  type: object
+  description: A rate card version with its weight bands, lightest first.
+  properties:
+    id: { type: string, format: uuid }
+    orgUnitId: { type: string, format: uuid }
+    orgUnitName: { type: string }
+    code: { type: string }
+    vendorPartnerId: { type: string, format: uuid }
+    vendorCode: { type: string }
+    vendorName: { type: string }
+    originTerminalId: { type: string, format: uuid }
+    originTerminalCode: { type: string }
+    destinationTerminalId: { type: string, format: uuid }
+    destinationTerminalCode: { type: string }
+    vehicleType: { type: string }
+    currency: { type: string }
+    effectiveFrom: { type: string, format: date }
+    effectiveTo:
+      type: string
+      format: date
+      description: Inclusive last day. Null until a successor is published.
+    superseded: { type: boolean, description: Whether a successor has closed this version. }
+    detentionFreeHours: { type: number }
+    detentionHourlyRate: { type: number }
+    additionalDropFee: { type: number }
+    minimumCharge: { type: number }
+    slabCount: { type: integer, description: How many weight bands the version carries. }
+    createdAt: { type: string, format: date-time }
+    slabs:
+      type: array
+      items: { $ref: "#/components/schemas/TariffSlab" }
+
+TariffSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Tariff" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
 AddSlabRequest:
   type: object
   description: |

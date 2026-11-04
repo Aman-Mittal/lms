@@ -240,7 +240,7 @@ public class ConsignmentSplitSteps {
         assertThat(read.getPartCount()).isEqualTo(count);
         assertThat(read.getLoadNo()).as("the whole rides on nothing").isNull();
 
-        ConsignmentSlice firstPage = planning().listConsignmentParts(whole, null, 200);
+        ConsignmentSlice firstPage = planning().listConsignmentParts(whole, null, 200, null);
         assertThat(firstPage.getItems()).hasSize(count);
         assertThat(firstPage.getHasMore()).isFalse();
         assertThat(firstPage.getItems().stream().filter(p -> "DELIVERED".equals(p.getStatus())))
@@ -282,12 +282,12 @@ public class ConsignmentSplitSteps {
     @Then("the consignment is still planned with no parts")
     public void stillPlanned() {
         assertThat(planning().getConsignment(whole).getStatus()).isEqualTo("PLANNED");
-        assertThat(planning().listConsignmentParts(whole, null, null).getItems()).isEmpty();
+        assertThat(planning().listConsignmentParts(whole, null, null, null).getItems()).isEmpty();
     }
 
     @Then("the parts of a consignment nobody created are not found")
     public void partsOfNothing() {
-        FeignException e = refused(() -> planning().listConsignmentParts(UUID.randomUUID(), null, null));
+        FeignException e = refused(() -> planning().listConsignmentParts(UUID.randomUUID(), null, null, null));
         assertThat(e.status()).isEqualTo(404);
         assertThat(e.contentUTF8()).contains("not-found");
     }

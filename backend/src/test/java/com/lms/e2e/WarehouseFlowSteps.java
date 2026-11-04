@@ -179,7 +179,7 @@ public class WarehouseFlowSteps {
     @Then("the dispatched handling unit became a consignment for the consignee carrying {int} kg, waiting to be loaded")
     public void consignment(int kilos) {
         Consignment consignment = HttpWorld.eventually("the hand-off consignment",
-                () -> world.api(PlanningApi.class).listUnassignedConsignments(null, 200, null).getItems()
+                () -> world.api(PlanningApi.class).listUnassignedConsignments(null, 200, null, null).getItems()
                         .stream()
                         .filter(c -> handlingUnitId.equals(c.getHandlingUnitId()))
                         .findFirst()
@@ -292,7 +292,7 @@ public class WarehouseFlowSteps {
 
     private Exception ticketAbout(ExceptionCategory category, UUID subject) {
         return HttpWorld.eventually("a " + category + " ticket", () ->
-                world.api(ControlTowerApi.class).listExceptions(null, null, null, 200).getItems()
+                world.api(ControlTowerApi.class).listExceptions(null, null, null, 200, null).getItems()
                         .stream()
                         .filter(t -> t.getCategory() == category && subject.equals(t.getSubjectId()))
                         .findFirst()

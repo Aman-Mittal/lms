@@ -20,11 +20,12 @@ import { IssuedTrackingLink, LmsGateway, TrackingLinkView } from '../gateway/lms
 import { Session } from '../session';
 import { Qr } from './qr';
 import { trackingUrl } from './tracking-url';
+import { EntityPicker } from './entity-picker';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 @Component({
   selector: 'app-tracking-links',
-  imports: [FormsModule, Qr],
+  imports: [FormsModule, Qr, EntityPicker],
   template: `
     <h1>Tracking links</h1>
     <p class="muted">
@@ -35,8 +36,8 @@ import { trackingUrl } from './tracking-url';
     } @else {
       <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
       <form class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
-        <input name="consignmentId" placeholder="Consignment id" aria-label="Consignment id"
-               data-testid="consignment-id" [value]="typed()" (input)="typed.set($any($event.target).value)" required />
+        <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Consignment id" testId="consignment-id" [required]="true"
+                           [(value)]="typed" />
         <button type="submit">Look up</button>
       </form>
       @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }

@@ -56,8 +56,9 @@ public class VehicleController {
     @GetMapping
     public Slice<VehicleView> list(@RequestParam(required = false) String status,
                                    @RequestParam(required = false) String cursor,
-                                   @RequestParam(required = false) Integer limit) {
-        return masterData.listVehicles(status, cursor, limit);
+                                   @RequestParam(required = false) Integer limit,
+                                   @RequestParam(required = false) String q) {
+        return masterData.listVehicles(status, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

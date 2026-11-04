@@ -57,6 +57,9 @@ export function Shell() {
               {group === 'Multimodal' && can('MILKRUN_READ') && (
                 <NavLink to="/milk-runs" data-testid="nav-milk-runs">Milk runs</NavLink>
               )}
+              {group === 'Operations' && can('ORDER_READ') && (
+                <NavLink to="/order-desk" data-testid="nav-order-desk">Order desk</NavLink>
+              )}
               {group === 'Operations' && can('LOAD_READ') && (
                 <NavLink to="/load-building" data-testid="nav-load-building">Load building</NavLink>
               )}
@@ -66,6 +69,14 @@ export function Shell() {
               {group === 'Finance' && (can('INVOICE_READ') || can('TARIFF_MANAGE')) && (
                 <NavLink to="/ltl" data-testid="nav-ltl">LTL rating</NavLink>
               )}
+              {group === 'Finance' && can('CLIENT_BILLING_READ') && (
+                <NavLink to="/client-billing" data-testid="nav-client-billing">Client billing</NavLink>
+              )}
+              {/* Commercial */}
+              {group === 'Finance' && (can('INVOICE_READ') || can('TARIFF_MANAGE') || can('ROUTING_GUIDE_MANAGE')
+                || can('LOAD_ALLOCATE')) && (
+                <NavLink to="/commercial" data-testid="nav-commercial">Commercial</NavLink>
+              )}
               {group === 'Control tower' && can('EVENT_DEAD_LETTER_READ') && (
                 <NavLink to="/parked-events" data-testid="nav-parked-events">Parked events</NavLink>
               )}
@@ -74,6 +85,14 @@ export function Shell() {
               )}
               {group === 'Delivery' && can('TRACKING_LINK_MANAGE') && (
                 <NavLink to="/tracking" data-testid="nav-tracking">Tracking links</NavLink>
+              )}
+              {/* Warehouse operations */}
+              {group === 'Operations' && can('WAREHOUSE_READ') && (
+                <NavLink to="/warehouse" data-testid="nav-warehouse">Warehouse operations</NavLink>
+              )}
+              {/* Control tower */}
+              {group === 'Control tower' && can('EXCEPTION_READ') && (
+                <NavLink to="/exception-desk" data-testid="nav-exception-desk">Exception desk</NavLink>
               )}
             </div>
           ))}
@@ -85,6 +104,19 @@ export function Shell() {
               )}
               {can('DEMO_RESET') && <NavLink to="/settings/demo" data-testid="nav-demo">Demo data</NavLink>}
               {can('WEBHOOK_READ') && <NavLink to="/settings/webhooks" data-testid="nav-webhooks">Webhooks</NavLink>}
+            </div>
+          )}
+          {/* Administration */}
+          {(can('ACCESS_POLICY_MANAGE') || can('VEHICLE_READ')) && (
+            <div className="group" data-testid="nav-admin">
+              <h6>Administration</h6>
+              {can('ACCESS_POLICY_MANAGE') && (
+                <>
+                  <NavLink to="/admin/users" data-testid="nav-admin-users">Users</NavLink>
+                  <NavLink to="/admin/access-policies" data-testid="nav-admin-policies">Access policies</NavLink>
+                </>
+              )}
+              {can('VEHICLE_READ') && <NavLink to="/admin/compliance" data-testid="nav-admin-compliance">Compliance</NavLink>}
             </div>
           )}
         </nav>

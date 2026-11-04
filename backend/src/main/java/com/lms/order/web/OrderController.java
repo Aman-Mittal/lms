@@ -73,8 +73,9 @@ public class OrderController {
     @GetMapping
     public Slice<OrderView> list(@RequestParam(required = false) String status,
                                  @RequestParam(required = false) String cursor,
-                                 @RequestParam(required = false) Integer limit) {
-        return orderQueries.list(status, cursor, limit);
+                                 @RequestParam(required = false) Integer limit,
+                                 @RequestParam(required = false) String q) {
+        return orderQueries.list(status, cursor, limit, q);
     }
 
     /** The order, with its version as the ETag: what an edit sends back in {@code If-Match}. */

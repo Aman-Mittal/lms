@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -112,11 +113,17 @@ public class FinanceQueryService {
      * cost more than the last.
      */
     public Slice<FreightBillView> list(String status, String cursor, Integer limit) {
+        return list(status, cursor, limit, null);
+    }
+
+    /** As {@link #list(String, String, Integer)}, narrowed to bill numbers containing {@code q}. */
+    public Slice<FreightBillView> list(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<FreightBillView> rows = jdbc.sql(SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR b.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR b.bill_no > CAST(:cursor AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(b.bill_no) LIKE CAST(:q AS text))
                         """ + PARTNER_SCOPE + """
                          ORDER BY b.bill_no
                          LIMIT :limit
@@ -124,6 +131,7 @@ public class FinanceQueryService {
                 .param("status", status)
                 .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
+                .param("q", Search.containsPattern(q))
                 .param("limit", pageSize + 1)
                 .query(FreightBillView.class)
                 .list();
