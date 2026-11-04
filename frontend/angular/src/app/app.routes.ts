@@ -75,6 +75,7 @@ export const routes: Routes = [
       { path: 'admin/users', loadComponent: adminDesk, data: { section: 'users' } },
       { path: 'admin/access-policies', loadComponent: adminDesk, data: { section: 'policies' } },
       { path: 'admin/compliance', loadComponent: adminDesk, data: { section: 'compliance' } },
+      { path: 'admin/credit-limits', loadComponent: () => import('./pages/credit').then((m) => m.CreditLimitsPage) },
       // Control tower
       { path: 'exception-desk', loadComponent: () => import('./pages/exception-desk').then((m) => m.ExceptionDeskPage) },
       { path: ':resource', component: ListPage },
