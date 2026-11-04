@@ -27,6 +27,7 @@ import com.lms.clientbilling.command.ClientContractService;
 import com.lms.clientbilling.command.ClientCreditNoteService;
 import com.lms.clientbilling.command.ClientPaymentService;
 import com.lms.clientbilling.command.ClientStorageService;
+import com.lms.clientbilling.command.ConsignmentBillingService;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
 import com.lms.clientbilling.query.ClientAgeingQueryService;
@@ -76,6 +77,7 @@ public class ClientBillingController {
     private final ClientStorageService storage;
     private final ClientBillingQueryService queries;
     private final ClientAgeingQueryService ageing;
+    private final ConsignmentBillingService consignmentBilling;
 
     public ClientBillingController(ClientContractService contracts, ClientChargeService charges,
                                    ClientBillingRunService runs,
@@ -83,7 +85,9 @@ public class ClientBillingController {
                                    ClientPaymentService payments,
                                    ClientStorageService storage,
                                    ClientBillingQueryService queries,
-                                   ClientAgeingQueryService ageing) {
+                                   ClientAgeingQueryService ageing,
+                                   ConsignmentBillingService consignmentBilling) {
+        this.consignmentBilling = consignmentBilling;
         this.contracts = contracts;
         this.charges = charges;
         this.runs = runs;
@@ -108,7 +112,8 @@ public class ClientBillingController {
                         : request.valueAddedServices().stream()
                         .map(s -> new ClientContractService.ServiceRateTerm(s.serviceCode(),
                                 s.unit(), s.rate()))
-                        .toList());
+                        .toList(),
+                Boolean.TRUE.equals(request.billOnDispatch()));
         return ResponseEntity.created(URI.create("/api/v1/client-billing/clients/"
                         + request.clientPartnerId() + "/contracts"))
                 .body(new IdResponse(id));
@@ -151,6 +156,17 @@ public class ClientBillingController {
      * call issued it or an earlier one did: the run is idempotent per client
      * and month.
      */
+    /**
+     * Marks a consignment billable to its client without waiting for its proof
+     * of delivery. The reason is audited; marking it again changes nothing.
+     */
+    @PostMapping("/consignments/{consignmentId}/billing-eligibility")
+    public ResponseEntity<Void> markBillable(@PathVariable UUID consignmentId,
+                                             @Valid @RequestBody BillingEligibilityRequest request) {
+        consignmentBilling.markBillable(consignmentId, request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/clients/{clientId}/billing-runs")
     public IdResponse runBilling(@PathVariable UUID clientId,
                                  @Valid @RequestBody BillingRunRequest request) {
@@ -259,7 +275,11 @@ public class ClientBillingController {
                                          BigDecimal transportTaxRatePct,
                                          BigDecimal warehouseTaxRatePct,
                                          Integer storageUnitsPerPallet,
-                                         List<@Valid ValueAddedServiceRate> valueAddedServices) {
+                                         List<@Valid ValueAddedServiceRate> valueAddedServices,
+                                         Boolean billOnDispatch) {
+    }
+
+    public record BillingEligibilityRequest(@NotBlank String reason) {
     }
 
     public record ValueAddedServiceRate(@NotBlank String serviceCode,

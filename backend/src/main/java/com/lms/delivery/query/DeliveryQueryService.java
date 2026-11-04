@@ -45,7 +45,7 @@ public class DeliveryQueryService {
     public Optional<DeliveryProofView> proofOf(UUID consignmentId) {
         return jdbc.sql("""
                         SELECT consignment_id, status, recipient_name, photo_ref, delivered_at,
-                               lat, lon, otp_expires_at
+                               lat, lon, otp_expires_at, goods_condition, remark
                           FROM delivery_proof
                          WHERE consignment_id = :consignmentId
                         """)

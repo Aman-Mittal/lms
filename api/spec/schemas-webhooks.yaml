@@ -17,8 +17,11 @@ WebhookEventType:
   description: |
     What a subscription can ask for. `PING` cannot be subscribed to; it is what
     the ping action sends.
-  enum: [ORDER_VALIDATED, CONSIGNMENTS_GENERATED, CONSIGNMENT_SPLIT, TRIP_DISPATCHED, TRIP_COMPLETED, TRIP_CANCELLED,
-         DELIVERY_PROOF_RECORDED, CLAIM_RAISED, CLAIM_STATUS_CHANGED, PING]
+  enum: [ORDER_VALIDATED,
+         ORDER_RAISED, ORDER_AMENDED, ORDER_CANCELLED, ORDER_FULFILLED,
+         CONSIGNMENTS_GENERATED, CONSIGNMENT_SPLIT, TRIP_DISPATCHED, TRIP_COMPLETED, TRIP_CANCELLED,
+         DELIVERY_PROOF_RECORDED, CLAIM_RAISED, CLAIM_STATUS_CHANGED, CONSIGNMENT_IN_TRANSIT,
+         CONSIGNMENT_DELIVERED, PING]
 
 WebhookSubscriptionRequest:
   type: object
@@ -123,14 +126,21 @@ WebhookEnvelope:
     The body of every delivery. It names no tenant. `data` depends on `type`:
 
     - `ORDER_VALIDATED`: orderId, orderNo, lineCount, totalChargeableWeightKg, containsHazmat, freightMode
+    - `ORDER_RAISED`: orderId, orderNo, customerPartnerId, freightMode, source, numberAssigned
+    - `ORDER_AMENDED`: orderId, orderNo, version, lineCount, totalChargeableWeightKg
+    - `ORDER_CANCELLED`: orderId, orderNo, previousStatus, reason
+    - `ORDER_FULFILLED`: orderId, orderNo
     - `CONSIGNMENTS_GENERATED`: orderId, consignmentIds, trackingRefs, freightMode
     - `CONSIGNMENT_SPLIT`: consignmentId, trackingRef, orderId, partIds, partTrackingRefs
     - `TRIP_DISPATCHED`: tripId, tripNo, loadId, originTerminalId, destinationTerminalId, payloadWeightKg, dispatchedAt
     - `TRIP_COMPLETED`: tripId, tripNo, loadId, dispatchedAt, completedAt, payloadWeightKg
     - `TRIP_CANCELLED`: tripId, tripNo, loadId, reason, cancelledAt
-    - `DELIVERY_PROOF_RECORDED`: consignmentId, deliveredAt
+    - `DELIVERY_PROOF_RECORDED`: consignmentId, deliveredAt, goodsCondition
     - `CLAIM_RAISED`: claimId, claimNo, consignmentId, claimType, amount, currency
     - `CLAIM_STATUS_CHANGED`: claimId, claimNo, fromStatus, toStatus, approvedAmount
+    - `CONSIGNMENT_IN_TRANSIT`: consignmentId, trackingRef, loadId -- one per consignment leaving on a dispatched load
+    - `CONSIGNMENT_DELIVERED`: consignmentId, trackingRef, loadId (absent when a proof delivered it), trigger
+      (TRIP_COMPLETED or PROOF_OF_DELIVERY), deliveredAt
     - `PING`: subscriptionId, message
 
     Ids and times are strings (UUIDs and ISO-8601 instants); amounts and weights are numbers.
