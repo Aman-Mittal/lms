@@ -240,9 +240,11 @@ Rules that make the split worth having:
   opposite direction: planning telling order what happened (lines planned, order
   fulfilled). Do not replace either with an after-commit event if the caller must
   be able to stop the operation. The same pattern is used by `planning::api`:
-  `LoadInUseGuard` (execution implements it: a live trip on the load) and
+  `LoadInUseGuard` (execution implements it: a live trip on the load),
   `LoadCancellationHook` (sourcing implements it: withdraw the open allocation),
-  so planning never depends on execution or sourcing.
+  and `LoadAllocationGuard` (sourcing implements it: refuse a change to a
+  load's freight while an allocation is offered or awarded), so planning never
+  depends on execution or sourcing.
   `order::api` also defines `OrderAmendmentGuard` (planning implements it: refuse
   while a live consignment exists), which is what lets a validated order be
   amended only before freight is cut from it.
@@ -252,8 +254,12 @@ Rules that make the split worth having:
   `If-Match` (quoted or bare, never `*`) and a stale value is 409
   `concurrent-modification`. A draft is edited freely; a VALIDATED order with no
   consignments only through the amendment, which validates it again and audits
-  `ORDER_AMENDED` with before and after. Other update endpoints (terminals) still
-  take the version in the body; the header form is the one to copy.
+  `ORDER_AMENDED` with before and after. A consignment's particulars
+  (`PATCH /consignments/{id}`) follow the same pattern, and load changes after
+  building (taking a consignment off, un-planning, cancelling) take the load's
+  `ETag` the same way; all of them parse the header with `shared.web.IfMatch`.
+  Other update endpoints (terminals) still take the version in the body; the
+  header form is the one to copy.
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
@@ -671,6 +677,12 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   `itinerary_leg_id`, expected amount the leg's recorded cost) and then follows
   the ordinary match, dispute and approval path. Settlement holds are per trip,
   so a control-tower hold does not freeze a rail leg's bill.
+- Document numbering is `identity::numbering` (`DocumentNumbers`): `next(type,
+  orgUnitId)` joins the caller's transaction (`MANDATORY`) and returns empty when
+  no active series covers the unit, in which case keep the document's built-in
+  numbering; `release(type, number, reason)` is safe to call twice. Never read
+  or advance `number_series_counter` from another module, and never draw a
+  number in a transaction of its own (ADR 0006).
 - A proof of delivery decides money, not trip completion (V47). A completed trip
   whose consignments are not all proved clean gets a `PROOF_OF_DELIVERY` row in
   `settlement_hold`, lifted by the last clean proof or by
@@ -680,6 +692,48 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   the contract bills on dispatch. The completion's hold decision and a proof's
   re-evaluation take a per-trip advisory lock and re-read proofs under it, so a
   hold never outlives clean proofs whichever commits first.
+- Credit limits (V46) live in `masterdata`; `order` and `clientbilling` reach
+  them through `masterdata::api` (`CustomerCreditPort`), and masterdata reads
+  open order demand and receivables through the SPIs it publishes there
+  (`OpenOrderDemandSource`, `ReceivablesSource`) so it never depends on either.
+  Exposure is open orders at the contract transport rate on weight not yet
+  charged, plus unbilled charges, plus unpaid invoices net of credit notes and
+  payments -- each kilogram counted once, nothing reset on a calendar, an order
+  without a contract counted as zero. It is checked at order validate, amend
+  and line add or replace and at the client billing run, in the caller's
+  transaction after its write and under a per-customer advisory lock. The hard
+  limit refuses (`credit-limit-exceeded`); the soft limit warns
+  (`CREDIT_SOFT_LIMIT_EXCEEDED`, `CreditSoftLimitExceeded`). An override
+  (`CREDIT_OVERRIDE`) passes one named action up to a stated exposure, once,
+  within 24 hours. A limit changes only by maker-checker: `CREDIT_LIMIT_REQUEST`
+  asks, a different holder of `CREDIT_LIMIT_APPROVE` decides, both within
+  approval limits. A suspended or blacklisted customer gets no new or changed
+  orders (`customer-not-trading`); the billing run checks headroom only.
+- Order close (V49) is the order module's: `OrderCloseService` asks planning
+  through `order::api::OrderFreightProbe` what the freight of each line is doing,
+  and planning tells it of partial deliveries (`OrderPlanningPort.recordPartlyDelivered`)
+  as well as complete ones. A close never touches consignments, so a short- or
+  force-closed order can still have freight moving, proved and billed; it
+  leaves credit exposure's open-order term at once. CLOSED is terminal. The
+  tolerance is by weight of freight delivered and applies only to fully planned
+  orders, because planning still cuts every line of an order in one call: an
+  unplanned remainder cannot exist at delivery time, so it is not what the
+  tolerance measures. Quantities are not mixed across units of measure anywhere.
+- A line is open only while it is neither closed nor cancelled (V50,
+  `OrderLine.isOpen`). Planning, coverage, credit exposure and every close rule
+  count open lines only: a cancelled line never blocks a close or the automatic
+  one, and is not closed with its order; a closed line cannot be cancelled
+  (`order-line-already-closed`) nor a cancelled one closed
+  (`order-line-already-cancelled`). Cancelling one line reaches planning through
+  `order::api::OrderLineCancellationHook`.
+- Taking a consignment off a load before it leaves goes through one primitive,
+  `planning.command.LoadRelease.takeOff`, whether by hand
+  (`DELETE /loads/{id}/consignments/{cid}`) or by cancelling the consignment or
+  its order line: drops renumbered 1..n, totals restated from what stays aboard,
+  `LOAD_CONSIGNMENT_REMOVED` on the load. They differ only in an emptied load:
+  removal refuses to empty a PLANNED load (`load-would-be-empty`), cancellation
+  cancels the load it empties. An order's cancellation uses `LoadRelease.release`
+  over every touched load, with the same renumbering and restating.
 - A warehouse hand-off consignment has no sales order, so trip charges skip it;
   client billing instead charges the hand-off itself from `warehouse::events`
   (`ClientHandOffListener`): handling out (a pallet per unit) and transport (gross
