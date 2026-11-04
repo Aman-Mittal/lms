@@ -67,10 +67,16 @@
  * approved by the same rule and the same approval limit as any other bill.
  * Settlement holds are keyed on trips, so a rail leg's bill is not frozen by
  * them: a missed-connection ticket is on the predecessor's trip, not the leg.
+ *
+ * <p>Listens to {@code delivery::events} for proofs of delivery. A completed
+ * trip whose consignments are not all proved clean -- no confirmed proof yet,
+ * or one recording a shortage or damage -- is held from settlement, and the
+ * hold lifts when the last clean proof arrives or when a person with
+ * {@code SETTLEMENT_HOLD_RELEASE} releases it, saying why.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
         allowedDependencies = {"planning::api", "planning::events", "execution::events",
                 "controltower::events", "identity::access", "milkrun::events",
-                "multimodal::events", "masterdata::api"})
+                "multimodal::events", "masterdata::api", "delivery::events"})
 package com.lms.finance;
