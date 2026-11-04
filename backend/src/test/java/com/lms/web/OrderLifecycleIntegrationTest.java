@@ -244,7 +244,9 @@ class OrderLifecycleIntegrationTest {
                 e -> assertThat(e.code()).isEqualTo("order-work-dispatched"));
 
         assertThat(statusOfOrder(orderId)).isEqualTo("FULLY_PLANNED");
-        assertThat(consignmentStatuses(orderId)).containsOnly("ASSIGNED_TO_LOAD");
+        assertThat(consignmentStatuses(orderId))
+                .as("the dispatched one is on its way, the other still waits on its load")
+                .containsExactlyInAnyOrder("IN_TRANSIT", "ASSIGNED_TO_LOAD");
         assertThat(linksOfOrder(orderId)).isEqualTo(2);
         assertThat(loadStatus(waiting)).isEqualTo("PLANNED");
     }
@@ -268,7 +270,8 @@ class OrderLifecycleIntegrationTest {
         assertThat(statusOfOrder(orderId)).isEqualTo("FULFILLED");
         assertThat(jdbc.sql("SELECT version FROM consignment WHERE order_id = :o LIMIT 1")
                 .param("o", orderId).query(Long.class).single())
-                .as("delivered in one write, and not rewritten by the repeat").isEqualTo(2L);
+                .as("one write on dispatch, one on delivery, and not rewritten by the repeat")
+                .isEqualTo(3L);
     }
 
     @Test

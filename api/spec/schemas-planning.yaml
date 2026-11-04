@@ -23,7 +23,10 @@ Consignment:
     status:
       type: string
       description: |
-        PLANNED, ASSIGNED_TO_LOAD, IN_TRANSIT, DELIVERED or CANCELLED. An LTL
+        PLANNED, ASSIGNED_TO_LOAD, IN_TRANSIT, DELIVERED or CANCELLED. A full
+        truckload is IN_TRANSIT once its trip is dispatched, and DELIVERED
+        when the trip completes or its proof of delivery is confirmed,
+        whichever comes first. An LTL
         docket also passes through the hub states: its line haul's trip
         completing leaves it ARRIVED_AT_HUB, a delivery load from that hub
         makes it ASSIGNED_TO_DELIVERY, and that load's dispatch makes it
@@ -77,6 +80,16 @@ Consignment:
       type: integer
       description: For a SPLIT consignment, how many of its parts have been
         cancelled.
+    proofStatus:
+      type: string
+      enum: [OTP_ISSUED, CONFIRMED]
+      description: Where its proof of delivery stands; absent before a code
+        has been issued.
+    proofCondition:
+      type: string
+      enum: [CLEAN, SHORTAGE, DAMAGE]
+      description: The goods' condition on the proof; absent before a code
+        has been issued, and CLEAN until a proof says otherwise.
 
 SplitConsignmentRequest:
   type: object
