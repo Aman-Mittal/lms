@@ -78,7 +78,7 @@ public class ClientBillingQueryService {
                                transport_rate_per_kg, transport_minimum_charge,
                                storage_rate_per_pallet_day, handling_in_rate_per_pallet,
                                handling_out_rate_per_pallet, transport_tax_rate_pct,
-                               warehouse_tax_rate_pct, storage_units_per_pallet
+                               warehouse_tax_rate_pct, storage_units_per_pallet, bill_on_dispatch
                           FROM client_contract
                          WHERE client_partner_id = :clientPartnerId
                          ORDER BY effective_from DESC
@@ -111,7 +111,7 @@ public class ClientBillingQueryService {
                 r.transportRatePerKg(), r.transportMinimumCharge(), r.storageRatePerPalletDay(),
                 r.handlingInRatePerPallet(), r.handlingOutRatePerPallet(),
                 r.transportTaxRatePct(), r.warehouseTaxRatePct(), r.storageUnitsPerPallet(),
-                rates.getOrDefault(r.id(), List.of()))).toList();
+                rates.getOrDefault(r.id(), List.of()), r.billOnDispatch())).toList();
     }
 
     /** The charges filed under one billing period, in capture order. */
@@ -124,8 +124,10 @@ public class ClientBillingQueryService {
                         SELECT id, client_partner_id, service_type, service_code, quantity, unit,
                                occurred_on, billing_period,
                                billing_period > date_trunc('month', occurred_on::timestamp)::date AS late,
-                               reference, source_key, trip_id, invoice_id
-                          FROM client_charge
+                               reference, source_key, trip_id, invoice_id,
+                        """ + ClientBillability.BILLABLE + """
+                                AS billable
+                          FROM client_charge ch
                          WHERE client_partner_id = :clientPartnerId
                            AND billing_period = :period
                            AND (CAST(:after AS uuid) IS NULL OR id > CAST(:after AS uuid))
@@ -477,7 +479,8 @@ public class ClientBillingQueryService {
                        BigDecimal transportRatePerKg, BigDecimal transportMinimumCharge,
                        BigDecimal storageRatePerPalletDay, BigDecimal handlingInRatePerPallet,
                        BigDecimal handlingOutRatePerPallet, BigDecimal transportTaxRatePct,
-                       BigDecimal warehouseTaxRatePct, int storageUnitsPerPallet) {
+                       BigDecimal warehouseTaxRatePct, int storageUnitsPerPallet,
+                       boolean billOnDispatch) {
     }
 
     record RateRow(UUID contractId, String serviceCode, String unit, BigDecimal rate) {
