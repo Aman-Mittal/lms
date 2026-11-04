@@ -45,6 +45,7 @@ import { compareWithWhole, PlannedPart, splitByCapacity } from './split-plan';
         <h2>{{ c.trackingRef }}</h2>
         <dl>
           <div><dt>Status</dt><dd data-testid="consignment-status">{{ c.status }}</dd></div>
+          <div><dt>Proof of delivery</dt><dd data-testid="consignment-proof">{{ c.proofStatus === 'CONFIRMED' ? 'Confirmed, ' + c.proofCondition : c.proofStatus ? 'Code issued' : 'None yet' }}</dd></div>
           @if (c.parentId) {
             <div><dt>Part of</dt><dd>
               <button class="link" data-testid="consignment-parent" (click)="open(c.parentId)">{{ c.parentTrackingRef }}</button>

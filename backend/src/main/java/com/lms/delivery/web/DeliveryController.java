@@ -26,6 +26,7 @@ import com.lms.delivery.command.ClaimService;
 import com.lms.delivery.command.DeliveryService;
 import com.lms.delivery.command.domain.ClaimStatus;
 import com.lms.delivery.command.domain.ClaimType;
+import com.lms.delivery.command.domain.GoodsCondition;
 import com.lms.delivery.query.ClaimView;
 import com.lms.delivery.query.DeliveryProofView;
 import com.lms.delivery.query.DeliveryQueryService;
@@ -76,7 +77,8 @@ public class DeliveryController {
     public ResponseEntity<Void> recordProof(@PathVariable UUID consignmentId,
                                             @Valid @RequestBody RecordProofRequest request) {
         delivery.recordProof(consignmentId, request.otp(), request.recipientName(),
-                request.photoRef(), request.deliveredAt(), request.lat(), request.lon());
+                request.photoRef(), request.deliveredAt(), request.lat(), request.lon(),
+                request.goodsCondition(), request.remark());
         return ResponseEntity.noContent().build();
     }
 
@@ -128,7 +130,10 @@ public class DeliveryController {
             String photoRef,
             OffsetDateTime deliveredAt,
             @DecimalMin("-90") @DecimalMax("90") BigDecimal lat,
-            @DecimalMin("-180") @DecimalMax("180") BigDecimal lon) {
+            @DecimalMin("-180") @DecimalMax("180") BigDecimal lon,
+            /** Omitted is CLEAN. */
+            GoodsCondition goodsCondition,
+            String remark) {
     }
 
     public record RaiseClaimRequest(
