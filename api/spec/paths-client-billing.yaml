@@ -170,7 +170,10 @@
       answers with the invoice the first run issued and changes nothing.
       Refused for a month that has not ended, and for a month with nothing
       charged. Once the invoice exists the month is closed; later charges go
-      to the next open month.
+      to the next open month. Only billable charges are invoiced: transport
+      still waiting for proofs of delivery moves to the next open month, and
+      a month where that is all there is is refused with
+      `client-period-awaiting-proof` and stays open.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -186,6 +189,40 @@
             schema: { $ref: "#/components/schemas/IdResponse" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/consignments/{consignmentId}/billing-eligibility:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Client billing]
+    operationId: markConsignmentBillable
+    summary: Mark a consignment billable without its proof of delivery
+    description: |
+      Requires `CLIENT_BILLING_RUN`. The consignment then counts as proved for
+      client billing only; its status and the carrier's settlement are
+      untouched. The reason is audited (`CONSIGNMENT_BILLING_ELIGIBLE_MARKED`);
+      marking it again changes nothing. 409 `consignment-not-trip-billed` for a
+      docket or a warehouse hand-off, `consignment-not-billable` for a
+      cancelled or split consignment, `billing-mark-reason-required` without
+      a reason.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/BillingEligibilityRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 
