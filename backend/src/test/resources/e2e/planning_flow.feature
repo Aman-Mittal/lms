@@ -47,7 +47,7 @@ Feature: Planning reads, sourcing outcomes, the gate log and the control tower d
     And a planning-flow trip is assigned for 5000 kg, the load awarded to "ALPHA"
     Then tracking the planning-flow reference shows status ASSIGNED_TO_LOAD on the planning-flow load
     When the planning-flow lorry is gated in with the remark "Bay 4" and dispatched
-    Then tracking the planning-flow reference shows status ASSIGNED_TO_LOAD on the planning-flow load
+    Then tracking the planning-flow reference shows status IN_TRANSIT on the planning-flow load
     When the planning-flow trip arrives and is completed
     Then tracking the planning-flow reference shows status DELIVERED on the planning-flow load
     And the planning-flow load is COMPLETED

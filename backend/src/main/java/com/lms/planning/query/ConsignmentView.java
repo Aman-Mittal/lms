@@ -54,5 +54,12 @@ public record ConsignmentView(
         Integer partsDelivered,
         /** For a SPLIT consignment: how many of its parts have been cancelled. */
         Integer partsCancelled,
-        Instant createdAt) {
+        Instant createdAt,
+        /**
+         * Where its proof of delivery stands: OTP_ISSUED or CONFIRMED, or null
+         * before a code has been issued.
+         */
+        String proofStatus,
+        /** CLEAN, SHORTAGE or DAMAGE once a proof exists; null before. */
+        String proofCondition) {
 }

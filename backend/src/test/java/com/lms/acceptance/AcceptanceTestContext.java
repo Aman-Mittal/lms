@@ -63,5 +63,8 @@ public class AcceptanceTestContext {
         // Scenarios here are timelines set in the past; a background pass of the
         // missed-connection sweep would race their steps. Tests run it directly.
         registry.add("lms.multimodal.connection-sweep.enabled", () -> "false");
+        // Proofs of delivery are recorded the way the desk records them, from
+        // a code; a demo deployment hands the code back, and so does this one.
+        registry.add("lms.delivery.expose-otp", () -> "true");
     }
 }

@@ -149,6 +149,39 @@
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 
+/api/v1/freight-bills/{id}/proof-hold/release:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Settlement]
+    operationId: releaseProofHold
+    summary: Release a bill's trip from waiting on proofs of delivery
+    description: |
+      Requires `SETTLEMENT_HOLD_RELEASE`. For a proof that recorded a
+      shortage or damage somebody has accepted, or a proof that will never
+      come. The reason is audited (`SETTLEMENT_PROOF_HOLD_RELEASED`). An
+      exception ticket holding the same trip is not touched. 409
+      `no-proof-hold` when the trip is not held for proofs, and
+      `release-reason-required` without a reason.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReleaseProofHoldRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
 /api/v1/tariffs:
   get:
     tags: [Settlement]

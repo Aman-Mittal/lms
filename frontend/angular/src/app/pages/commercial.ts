@@ -622,6 +622,15 @@ export class AllocationsPanel implements OnInit {
             @if (d.bill['resolution']) {
               <div><dt>Resolution</dt><dd data-testid="bill-resolution">{{ d.bill['resolution'] }}</dd></div>
             }
+            @if (d.bill['settlementHeldBy']) {
+              <div><dt>Held by</dt><dd data-testid="bill-held-by">{{ d.bill['settlementHeldBy'] }}</dd></div>
+            }
+            @if (d.bill['awaitingProof']) {
+              <div><dt>Proof of delivery</dt><dd data-testid="bill-awaiting-proof">Waiting for clean proofs of delivery</dd></div>
+            }
+            @if (d.bill['proofHoldReleaseNote']) {
+              <div><dt>Proof hold</dt><dd data-testid="bill-proof-release">Released: {{ d.bill['proofHoldReleaseNote'] }}</dd></div>
+            }
           </dl>
           <app-commercial-table [rows]="d.lines" [columns]="lineColumns" rowTestId="bill-line" />
           <p><button class="link" data-testid="print-bill" (click)="slip.set(true)">Print bill</button></p>
@@ -653,6 +662,14 @@ export class AllocationsPanel implements OnInit {
               </form>
             }
           }
+          @if (release() && d.bill['awaitingProof']) {
+            <form class="inline" (ngSubmit)="releaseHold()" data-testid="release-proof-hold">
+              <input name="releaseReason" aria-label="Reason for releasing the proof hold"
+                     placeholder="Why it may be paid without clean proofs" [value]="releaseReason()"
+                     (input)="releaseReason.set($any($event.target).value)" required />
+              <button type="submit">Release proof hold</button>
+            </form>
+          }
           @if (outcome()) { <p data-testid="match-outcome">Matched: {{ outcome() }}.</p> }
         </section>
       }
@@ -664,6 +681,8 @@ export class BillsPanel implements OnInit {
   private readonly gateway = inject(LmsGateway);
 
   readonly approve = input(false);
+  readonly release = input(false);
+  readonly releaseReason = signal('');
   readonly lineColumns = BILL_LINE_COLUMNS;
   readonly loaded = signal(false);
   readonly status = signal('');
@@ -722,6 +741,21 @@ export class BillsPanel implements OnInit {
     try {
       this.outcome.set(await this.gateway.matchFreightBill(id, Number(this.claimed())));
       this.claimed.set('');
+    } catch (e) {
+      this.actRefusal.set(refusalOf(e));
+    }
+    await this.reread(id);
+  }
+
+  async releaseHold(): Promise<void> {
+    const id = this.openId();
+    if (!id) {
+      return;
+    }
+    this.actRefusal.set(null);
+    try {
+      await this.gateway.releaseProofHold(id, this.releaseReason());
+      this.releaseReason.set('');
     } catch (e) {
       this.actRefusal.set(refusalOf(e));
     }
@@ -1087,7 +1121,7 @@ export class RailTariffsPanel implements OnInit {
     @if (session.can('LOAD_READ') || session.can('LOAD_ALLOCATE')) {
       <app-allocations-panel [act]="session.can('LOAD_ALLOCATE')" />
     }
-    @if (session.can('INVOICE_READ')) { <app-bills-panel [approve]="session.can('INVOICE_APPROVE')" /> }
+    @if (session.can('INVOICE_READ')) { <app-bills-panel [approve]="session.can('INVOICE_APPROVE')" [release]="session.can('SETTLEMENT_HOLD_RELEASE')" /> }
   `,
 })
 export class Commercial implements OnInit {

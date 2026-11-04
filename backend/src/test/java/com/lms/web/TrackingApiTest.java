@@ -323,7 +323,7 @@ class TrackingApiTest {
 
         state("ASSIGNED_TO_LOAD", "DISPATCHED");
         assertThat(view(token).get("status").asString())
-                .as("a full truckload stays assigned to its load; its trip says it left")
+                .as("a full truckload dispatched before dispatch moved it still reads assigned; its trip says it left")
                 .isEqualTo("IN_TRANSIT");
 
         state("CANCELLED", "DISPATCHED");

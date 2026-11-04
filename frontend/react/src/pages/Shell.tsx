@@ -107,7 +107,8 @@ export function Shell() {
             </div>
           )}
           {/* Administration */}
-          {(can('ACCESS_POLICY_MANAGE') || can('VEHICLE_READ')) && (
+          {(can('ACCESS_POLICY_MANAGE') || can('VEHICLE_READ') || can('CREDIT_LIMIT_REQUEST')
+            || can('CREDIT_LIMIT_APPROVE')) && (
             <div className="group" data-testid="nav-admin">
               <h6>Administration</h6>
               {can('ACCESS_POLICY_MANAGE') && (
@@ -117,6 +118,9 @@ export function Shell() {
                 </>
               )}
               {can('VEHICLE_READ') && <NavLink to="/admin/compliance" data-testid="nav-admin-compliance">Compliance</NavLink>}
+              {(can('CREDIT_LIMIT_REQUEST') || can('CREDIT_LIMIT_APPROVE')) && (
+                <NavLink to="/admin/credit-limits" data-testid="nav-admin-credit">Credit limits</NavLink>
+              )}
             </div>
           )}
         </nav>

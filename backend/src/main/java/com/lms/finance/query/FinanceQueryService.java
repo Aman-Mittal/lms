@@ -63,7 +63,16 @@ public class FinanceQueryService {
                    (SELECT string_agg(h.ticket_no, ', ' ORDER BY h.placed_at)
                       FROM settlement_hold h
                      WHERE h.tenant_id = b.tenant_id AND h.trip_id = b.trip_id
-                       AND h.released_at IS NULL) AS settlement_held_by,
+                       AND h.released_at IS NULL AND h.reason = 'EXCEPTION') AS settlement_held_by,
+                   EXISTS (SELECT 1 FROM settlement_hold ph
+                            WHERE ph.tenant_id = b.tenant_id AND ph.trip_id = b.trip_id
+                              AND ph.reason = 'PROOF_OF_DELIVERY'
+                              AND ph.released_at IS NULL) AS awaiting_proof,
+                   (SELECT ph.release_note FROM settlement_hold ph
+                     WHERE ph.tenant_id = b.tenant_id AND ph.trip_id = b.trip_id
+                       AND ph.reason = 'PROOF_OF_DELIVERY'
+                       AND ph.release_note IS NOT NULL
+                     LIMIT 1) AS proof_hold_release_note,
                    b.created_at
               FROM freight_bill b
               LEFT JOIN trip t ON t.id = b.trip_id

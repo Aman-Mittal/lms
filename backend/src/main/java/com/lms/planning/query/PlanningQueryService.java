@@ -71,7 +71,8 @@ public class PlanningQueryService {
                    c.handling_unit_id, hu.hu_no AS handling_unit_no,
                    c.parent_consignment_id, pc.tracking_ref AS parent_tracking_ref,
                    sp.part_count, sp.parts_delivered, sp.parts_cancelled,
-                   c.created_at
+                   c.created_at,
+                   dp.status AS proof_status, dp.goods_condition AS proof_condition
               FROM consignment c
               LEFT JOIN sales_order o ON o.id = c.order_id
               LEFT JOIN handling_unit hu ON hu.id = c.handling_unit_id
@@ -87,6 +88,8 @@ public class PlanningQueryService {
                       FROM consignment px
                      WHERE px.tenant_id = c.tenant_id AND px.parent_consignment_id = c.id
                    ) sp ON c.status = 'SPLIT'
+              LEFT JOIN delivery_proof dp
+                     ON dp.tenant_id = c.tenant_id AND dp.consignment_id = c.id
             """;
 
     /**

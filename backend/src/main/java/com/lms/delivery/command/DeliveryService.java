@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.lms.delivery.command.domain.DeliveryProof;
+import com.lms.delivery.command.domain.GoodsCondition;
 import com.lms.delivery.command.domain.ProofStatus;
 import com.lms.delivery.events.DeliveryProofRecorded;
 import com.lms.shared.audit.TransitionAudit;
@@ -56,8 +57,11 @@ public class DeliveryService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Set<String> PROVABLE = Set.of("IN_TRANSIT", "DELIVERED");
+    /** A docket reaches its consignee only on its last leg, from the destination hub. */
+    private static final Set<String> DOCKET_PROVABLE = Set.of("OUT_FOR_DELIVERY", "DELIVERED");
     private static final int MAX_NAME = 120;
     private static final int MAX_PHOTO_REF = 500;
+    private static final int MAX_REMARK = 500;
 
     private final DeliveryProofRepository proofs;
     private final JdbcClient jdbc;
@@ -118,6 +122,10 @@ public class DeliveryService {
     /**
      * Records the proof when the code matches.
      *
+     * <p>A proof says what state the goods arrived in. Anything but CLEAN needs
+     * a remark, because whoever releases the carrier's money later has to know
+     * what was short or broken.
+     *
      * <p>{@code noRollbackFor}: a wrong code is refused with an exception, and
      * the count of wrong attempts must survive that. Rolled back with the
      * refusal, it would never reach its limit and the limit would protect
@@ -126,7 +134,8 @@ public class DeliveryService {
     @Transactional(noRollbackFor = BusinessRuleViolationException.class)
     @PreAuthorize("hasAuthority('POD_RECORD')")
     public void recordProof(UUID consignmentId, String otp, String recipientName, String photoRef,
-                            OffsetDateTime deliveredAt, BigDecimal lat, BigDecimal lon) {
+                            OffsetDateTime deliveredAt, BigDecimal lat, BigDecimal lon,
+                            GoodsCondition condition, String remark) {
         UUID tenantId = TenantContext.requireTenantId();
         requireProvable(consignmentId);
 
@@ -138,6 +147,17 @@ public class DeliveryService {
         if (photoRef != null && photoRef.length() > MAX_PHOTO_REF) {
             throw new BusinessRuleViolationException("photo-ref-invalid",
                     "A photo reference is at most " + MAX_PHOTO_REF + " characters");
+        }
+        GoodsCondition received = condition == null ? GoodsCondition.CLEAN : condition;
+        String note = remark == null ? null : remark.strip();
+        if (received != GoodsCondition.CLEAN && (note == null || note.isEmpty())) {
+            throw new BusinessRuleViolationException("proof-remark-required",
+                    "A delivery recorded with a " + received.name().toLowerCase(java.util.Locale.ROOT)
+                            + " needs a remark saying what was wrong");
+        }
+        if (note != null && note.length() > MAX_REMARK) {
+            throw new BusinessRuleViolationException("proof-remark-invalid",
+                    "A remark is at most " + MAX_REMARK + " characters");
         }
         if ((lat == null) != (lon == null)) {
             throw new BusinessRuleViolationException("position-incomplete",
@@ -164,11 +184,13 @@ public class DeliveryService {
             throw invalidCode();
         }
 
-        DeliveryProof saved = proofs.save(proof.confirmed(name, photoRef, at, lat, lon));
+        DeliveryProof saved = proofs.save(proof.confirmed(name, photoRef, at, lat, lon, received,
+                note == null || note.isEmpty() ? null : note));
         audit.record("DELIVERY_PROOF_RECORDED", "DELIVERY_PROOF", saved.id(), null,
                 Json.object("consignmentId", consignmentId.toString(), "recipient", name,
-                        "deliveredAt", at.toString()));
-        events.publishEvent(new DeliveryProofRecorded(tenantId, consignmentId, at, Instant.now()));
+                        "deliveredAt", at.toString(), "condition", saved.goodsCondition().name()));
+        events.publishEvent(new DeliveryProofRecorded(tenantId, consignmentId, at, Instant.now(),
+                saved.goodsCondition().name()));
     }
 
     private static BusinessRuleViolationException invalidCode() {
@@ -177,14 +199,20 @@ public class DeliveryService {
     }
 
     /** What a consignment's status says, and whether the trip carrying it has left. */
-    private record Standing(String status, boolean departed) {
+    record Standing(String status, boolean docket, boolean departed) {
 
         /**
-         * A full-truckload consignment never advances past ASSIGNED_TO_LOAD on
-         * its own -- only LTL dockets do -- so its status alone cannot say the
-         * goods have left. The trip on its load can.
+         * A full truckload is IN_TRANSIT once its trip is dispatched. One
+         * dispatched before that rule still reads ASSIGNED_TO_LOAD, so for it
+         * the trip on its load says whether the goods have left.
+         *
+         * <p>A part-load docket is proved only on its last leg: on the line
+         * haul or at a hub it has not reached its consignee.
          */
         boolean provable() {
+            if (docket) {
+                return DOCKET_PROVABLE.contains(status);
+            }
             return PROVABLE.contains(status) || ("ASSIGNED_TO_LOAD".equals(status) && departed);
         }
     }
@@ -195,7 +223,7 @@ public class DeliveryService {
      */
     private void requireProvable(UUID consignmentId) {
         Standing standing = jdbc.sql("""
-                        SELECT c.status,
+                        SELECT c.status, c.freight_mode = 'LTL' AS docket,
                                EXISTS (SELECT 1
                                          FROM load_consignment lc
                                          JOIN trip t ON t.load_id = lc.load_id
@@ -206,13 +234,17 @@ public class DeliveryService {
                          WHERE c.id = :id
                         """)
                 .param("id", consignmentId)
-                .query((rs, row) -> new Standing(rs.getString("status"), rs.getBoolean("departed")))
+                .query((rs, row) -> new Standing(rs.getString("status"), rs.getBoolean("docket"),
+                        rs.getBoolean("departed")))
                 .optional()
                 .orElseThrow(() -> new ResourceNotFoundException("Consignment", consignmentId));
         if (!standing.provable()) {
             throw new BusinessRuleViolationException("consignment-not-in-transit",
-                    "A delivery can be proved only for a consignment that has left, and this one is "
-                            + standing.status() + " with no trip on its way");
+                    standing.docket()
+                            ? "A docket's delivery can be proved only once it is out for delivery "
+                                    + "from its destination hub, and this one is " + standing.status()
+                            : "A delivery can be proved only for a consignment that has left, and "
+                                    + "this one is " + standing.status() + " with no trip on its way");
         }
     }
 

@@ -26,9 +26,15 @@ import com.lms.delivery.events.DeliveryProofRecorded;
 import com.lms.execution.events.TripCancelled;
 import com.lms.execution.events.TripCompleted;
 import com.lms.execution.events.TripDispatched;
+import com.lms.order.events.OrderAmended;
+import com.lms.order.events.OrderCancelled;
+import com.lms.order.events.OrderFulfilled;
+import com.lms.order.events.OrderRaised;
 import com.lms.order.events.OrderValidated;
 import com.lms.planning.events.ConsignmentSplit;
+import com.lms.planning.events.ConsignmentsDelivered;
 import com.lms.planning.events.ConsignmentsGenerated;
+import com.lms.planning.events.ConsignmentsInTransit;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -66,6 +72,36 @@ public class WebhookEventListener {
                 fields("orderId", e.orderId(), "orderNo", e.orderNo(), "lineCount", e.lineCount(),
                         "totalChargeableWeightKg", e.totalChargeableWeightKg(),
                         "containsHazmat", e.containsHazmat(), "freightMode", e.freightMode()));
+    }
+
+    @TransactionalEventListener
+    public void on(OrderRaised e) {
+        record(e.tenantId(), WebhookEventType.ORDER_RAISED, e.orderId().toString(), e.occurredAt(),
+                fields("orderId", e.orderId(), "orderNo", e.orderNo(),
+                        "customerPartnerId", e.customerPartnerId(), "freightMode", e.freightMode(),
+                        "source", e.source(), "numberAssigned", e.numberAssigned()));
+    }
+
+    /** Keyed by version: each amendment is its own delivery, a redelivery of one is not. */
+    @TransactionalEventListener
+    public void on(OrderAmended e) {
+        record(e.tenantId(), WebhookEventType.ORDER_AMENDED, e.orderId() + ":" + e.version(),
+                e.occurredAt(), fields("orderId", e.orderId(), "orderNo", e.orderNo(),
+                        "version", e.version(), "lineCount", e.lineCount(),
+                        "totalChargeableWeightKg", e.totalChargeableWeightKg()));
+    }
+
+    @TransactionalEventListener
+    public void on(OrderCancelled e) {
+        record(e.tenantId(), WebhookEventType.ORDER_CANCELLED, e.orderId().toString(), e.occurredAt(),
+                fields("orderId", e.orderId(), "orderNo", e.orderNo(),
+                        "previousStatus", e.previousStatus(), "reason", e.reason()));
+    }
+
+    @TransactionalEventListener
+    public void on(OrderFulfilled e) {
+        record(e.tenantId(), WebhookEventType.ORDER_FULFILLED, e.orderId().toString(), e.occurredAt(),
+                fields("orderId", e.orderId(), "orderNo", e.orderNo()));
     }
 
     @TransactionalEventListener
@@ -111,7 +147,8 @@ public class WebhookEventListener {
     @TransactionalEventListener
     public void on(DeliveryProofRecorded e) {
         record(e.tenantId(), WebhookEventType.DELIVERY_PROOF_RECORDED, e.consignmentId().toString(),
-                e.occurredAt(), fields("consignmentId", e.consignmentId(), "deliveredAt", e.deliveredAt()));
+                e.occurredAt(), fields("consignmentId", e.consignmentId(), "deliveredAt", e.deliveredAt(),
+                        "goodsCondition", e.goodsCondition()));
     }
 
     @TransactionalEventListener
@@ -127,6 +164,30 @@ public class WebhookEventListener {
                 e.occurredAt(), fields("claimId", e.claimId(), "claimNo", e.claimNo(),
                         "fromStatus", e.fromStatus(), "toStatus", e.toStatus(),
                         "approvedAmount", e.approvedAmount()));
+    }
+
+    /** One delivery per consignment, keyed on it: a consignment leaves once. */
+    @TransactionalEventListener
+    public void on(ConsignmentsInTransit e) {
+        for (int i = 0; i < e.consignmentIds().size(); i++) {
+            UUID consignmentId = e.consignmentIds().get(i);
+            record(e.tenantId(), WebhookEventType.CONSIGNMENT_IN_TRANSIT,
+                    consignmentId + ":" + e.loadId(), e.occurredAt(),
+                    fields("consignmentId", consignmentId, "trackingRef", e.trackingRefs().get(i),
+                            "loadId", e.loadId()));
+        }
+    }
+
+    /** One delivery per consignment, keyed on it: a consignment is delivered once. */
+    @TransactionalEventListener
+    public void on(ConsignmentsDelivered e) {
+        for (int i = 0; i < e.consignmentIds().size(); i++) {
+            UUID consignmentId = e.consignmentIds().get(i);
+            record(e.tenantId(), WebhookEventType.CONSIGNMENT_DELIVERED, consignmentId.toString(),
+                    e.deliveredAt(), fields("consignmentId", consignmentId,
+                            "trackingRef", e.trackingRefs().get(i), "loadId", e.loadId(),
+                            "trigger", e.trigger(), "deliveredAt", e.deliveredAt()));
+        }
     }
 
     private void record(UUID tenantId, WebhookEventType type, String key, Instant occurredAt,

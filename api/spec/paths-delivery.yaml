@@ -61,6 +61,15 @@
       exhausted or never-issued code is refused with the same answer
       (`code: otp-invalid`), so a caller cannot tell which; a wrong code counts
       against the three attempts. One proof per consignment.
+
+      A full truckload can be proved once its trip has left; a part-load
+      docket only once it is out for delivery from its destination hub
+      (`consignment-not-in-transit` otherwise). A confirmed proof moves the
+      consignment to DELIVERED if its trip has not already done so, and
+      decides money: the carrier's trip settles only once every consignment
+      on it is proved CLEAN, and a client's transport is invoiced once each of
+      its consignments has a confirmed proof. A SHORTAGE or DAMAGE needs a
+      `remark` (`proof-remark-required`).
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:

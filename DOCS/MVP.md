@@ -239,6 +239,19 @@ request after a quiet spell pays the start-up cost above.
   cut from it, or it is cancelled or delivered, it cannot be amended
   (`order-has-consignments`, `order-not-amendable`). Every edit sends the
   version it read in `If-Match`; a stale one is 409 `concurrent-modification`.
+- An order raised without a number (or with a blank one) gets the next from its
+  tenant's yearly counter, `ORD-<year>-<000001>`; concurrent raises never share
+  one, and a number already used by hand is skipped. A stated number is kept and
+  must be unused (`order-no-taken`). `GET /orders/by-number/{orderNo}` is an
+  exact lookup. Raising, validating, amending, cancelling and fulfilling an
+  order each publish an event (`OrderRaised`, `OrderValidated`, `OrderAmended`,
+  `OrderCancelled`, `OrderFulfilled`) through the publication registry, with its
+  retry and dead-letter handling, and each is a webhook type (`ORDER_*`).
+- `GET /orders/{id}/history`, `/consignments/{id}/history`, `/loads/{id}/history`
+  and `/trips/{id}/history` read the record's audit trail newest first, a page
+  at a time by cursor, under the same read rules as the record itself (another
+  tenant's record is a 404 `not-found`). The order desk in both consoles shows it
+  on a History tab.
 - An LTL load consolidates dockets from many customers gathered at one origin
   hub and bound for one destination hub; capacity, dangerous goods and
   compatibility rules apply as for any load. A docket then travels twice: line

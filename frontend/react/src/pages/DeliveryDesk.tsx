@@ -15,7 +15,7 @@
  */
 
 import { useState, type FormEvent } from 'react';
-import type { DeliveryProofView, OtpIssued } from '../gateway/lmsGateway';
+import { GOODS_CONDITIONS, type DeliveryProofView, type GoodsCondition, type OtpIssued } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
@@ -34,6 +34,14 @@ export function DeliveryDesk() {
   const proof = useLoad(
     () => (consignmentId ? gateway.deliveryProof(consignmentId) : Promise.resolve(null)),
     `${consignmentId}:${reload}`,
+  );
+  // What the proof did to the consignment. Best effort: a caller who may prove
+  // a delivery but not read consignments still has the desk.
+  const status = useLoad(
+    () => (consignmentId
+      ? gateway.consignment(consignmentId).then((c) => c.status, () => '')
+      : Promise.resolve('')),
+    `status:${consignmentId}:${reload}`,
   );
 
   function lookUp(event: FormEvent) {
@@ -55,6 +63,7 @@ export function DeliveryDesk() {
       {proof.error && <p className="error" role="alert">{proof.error}</p>}
       {consignmentId && !proof.loading && !proof.error && (
         <Desk key={`${consignmentId}:${reload}`} consignmentId={consignmentId} proof={proof.data}
+          consignmentStatus={status.data ?? ''}
           issued={issued} onIssued={setIssued} onChanged={() => setReload((n) => n + 1)} />
       )}
     </>
@@ -64,18 +73,21 @@ export function DeliveryDesk() {
 interface DeskProps {
   consignmentId: string;
   proof: DeliveryProofView | null;
+  consignmentStatus: string;
   issued: OtpIssued | null;
   onIssued: (issued: OtpIssued) => void;
   onChanged: () => void;
 }
 
-function Desk({ consignmentId, proof, issued, onIssued, onChanged }: DeskProps) {
+function Desk({ consignmentId, proof, consignmentStatus, issued, onIssued, onChanged }: DeskProps) {
   const { gateway, can } = useSession();
   const record = can('POD_RECORD');
   const [error, setError] = useState('');
   const [otp, setOtp] = useState('');
   const [recipient, setRecipient] = useState('');
   const [photo, setPhoto] = useState('');
+  const [condition, setCondition] = useState<GoodsCondition>('CLEAN');
+  const [remark, setRemark] = useState('');
   const [slip, setSlip] = useState(false);
   const confirmed = proof?.status === 'CONFIRMED';
 
@@ -93,7 +105,8 @@ function Desk({ consignmentId, proof, issued, onIssued, onChanged }: DeskProps) 
     event.preventDefault();
     setError('');
     try {
-      await gateway.recordDeliveryProof(consignmentId, { otp, recipientName: recipient, photoRef: photo });
+      await gateway.recordDeliveryProof(consignmentId,
+        { otp, recipientName: recipient, photoRef: photo, goodsCondition: condition, remark });
       onChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -102,6 +115,9 @@ function Desk({ consignmentId, proof, issued, onIssued, onChanged }: DeskProps) 
 
   return (
     <section data-testid="proof">
+      {consignmentStatus && (
+        <p data-testid="delivery-consignment-status">Consignment: <strong>{consignmentStatus}</strong></p>
+      )}
       {proof === null ? (
         <p className="muted" data-testid="no-proof">No code has been issued for this consignment yet.</p>
       ) : (
@@ -112,6 +128,8 @@ function Desk({ consignmentId, proof, issued, onIssued, onChanged }: DeskProps) 
               <div><dt>Received by</dt><dd data-testid="proof-recipient">{proof.recipientName}</dd></div>
               <div><dt>Photo</dt><dd>{proof.photoRef || '—'}</dd></div>
               <div><dt>Delivered</dt><dd>{proof.deliveredAt}</dd></div>
+              <div><dt>Goods</dt><dd data-testid="proof-condition">{proof.goodsCondition}</dd></div>
+              {proof.remark && <div><dt>Remark</dt><dd data-testid="proof-remark">{proof.remark}</dd></div>}
             </>
           ) : (
             <div><dt>Code valid until</dt><dd>{proof.otpExpiresAt}</dd></div>
@@ -136,6 +154,12 @@ function Desk({ consignmentId, proof, issued, onIssued, onChanged }: DeskProps) 
                 onChange={(e) => setRecipient(e.target.value)} required />
               <input placeholder="Photo reference" aria-label="Photo reference" value={photo}
                 onChange={(e) => setPhoto(e.target.value)} />
+              <select aria-label="Goods received" data-testid="proof-condition-input" value={condition}
+                onChange={(e) => setCondition(e.target.value as GoodsCondition)}>
+                {GOODS_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input placeholder="Remark: what was short or damaged" aria-label="Remark" data-testid="proof-remark-input"
+                value={remark} onChange={(e) => setRemark(e.target.value)} required={condition !== 'CLEAN'} />
               <button type="submit">Record proof</button>
             </form>
           )}
@@ -153,6 +177,7 @@ function Desk({ consignmentId, proof, issued, onIssued, onChanged }: DeskProps) 
                   <div><dt>Received by</dt><dd>{proof.recipientName}</dd></div>
                   <div><dt>Delivered</dt><dd>{proof.deliveredAt}</dd></div>
                   <div><dt>Photo</dt><dd>{proof.photoRef || '—'}</dd></div>
+                  <div><dt>Goods</dt><dd>{proof.goodsCondition}{proof.remark ? ` — ${proof.remark}` : ''}</dd></div>
                 </dl>
                 <Qr payload={`LMS:CONSIGNMENT:${proof.consignmentId}`} />
               </div>

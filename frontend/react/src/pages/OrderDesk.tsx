@@ -16,12 +16,13 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import {
-  ApiProblem, MATERIAL_CLASSES, type OrderDesk as Desk, type OrderHeaderDraft, type OrderLineDraft,
-  type OrderLineView, type OrderRaiseDraft,
+  ApiProblem, MATERIAL_CLASSES, type HistoryEntryRow, type OrderDesk as Desk, type OrderHeaderDraft,
+  type OrderLineDraft, type OrderLineView, type OrderRaiseDraft,
 } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -57,6 +58,8 @@ const PLANNED = ['PARTIALLY_PLANNED', 'FULLY_PLANNED'];
 interface Refusal {
   code: string;
   message: string;
+  /** What the problem names, such as a credit refusal's exposure and limit. */
+  errors: Record<string, string>;
 }
 
 /**
@@ -133,8 +136,8 @@ function RaiseOrder({ orgUnitId, onRaised }: { orgUnitId: string; onRaised: (id:
 
   return (
     <form className="inline" onSubmit={raise} data-testid="raise-order">
-      <input placeholder="Order number" aria-label="Order number" value={draft.orderNo}
-        onChange={(e) => set('orderNo')(e.target.value)} required />
+      <input placeholder="Order number (blank: next in sequence)" aria-label="Order number" value={draft.orderNo}
+        onChange={(e) => set('orderNo')(e.target.value)} />
       <EntityPicker kind="customer" placeholder="Customer" ariaLabel="New order customer id"
         value={draft.customerPartnerId} onChange={set('customerPartnerId')} required />
       <EntityPicker kind="terminal" placeholder="Origin terminal" ariaLabel="New order origin terminal id"
@@ -156,6 +159,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
   const [done, setDone] = useState('');
   const [reason, setReason] = useState('');
   const [slip, setSlip] = useState(false);
+  const [tab, setTab] = useState<'details' | 'history'>('details');
 
   // A fresh read replaces what was being edited; a refused edit leaves it, to be tried again.
   useEffect(() => {
@@ -175,7 +179,20 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
       setDone(outcome);
       onChanged();
     } catch (e) {
-      setRefusal({ code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message });
+      setRefusal({
+        code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message,
+        errors: e instanceof ApiProblem ? e.errors : {},
+      });
+    }
+  }
+
+  /** An override is on record: a draft is validated again; a refused edit is the operator's to repeat. */
+  function overridden() {
+    if (draft) {
+      void act('Validated under a credit override.', () => gateway.validateOrder(order.id));
+    } else {
+      setRefusal(null);
+      setDone('Override granted; repeat the change.');
     }
   }
 
@@ -221,7 +238,22 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
           {refusal.message}
         </p>
       )}
+      {refusal?.code === CREDIT_LIMIT_EXCEEDED && (
+        <CreditOverride partnerId={desk.header.customerPartnerId} subjectType="ORDER" orderId={order.id}
+          errors={refusal.errors} onGranted={overridden} />
+      )}
+      {desk.header.customerPartnerId && can('PARTNER_READ') && (
+        <CreditPosition partnerId={desk.header.customerPartnerId} refreshKey={desk} />
+      )}
 
+      <p className="actions" role="tablist" aria-label="Order views">
+        <button type="button" role="tab" className={tab === 'details' ? '' : 'link'} data-testid="tab-details"
+          aria-selected={tab === 'details'} onClick={() => setTab('details')}>Lines</button>{' '}
+        <button type="button" role="tab" className={tab === 'history' ? '' : 'link'} data-testid="tab-history"
+          aria-selected={tab === 'history'} onClick={() => setTab('history')}>History</button>
+      </p>
+      {tab === 'history' && <OrderHistory key={version} orderId={order.id} />}
+      <div hidden={tab !== 'details'} data-testid="order-details">
       <div className="table-scroll">
         <table data-testid="order-lines">
           <thead>
@@ -355,6 +387,8 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
         </section>
       )}
 
+      </div>
+
       {slip && (
         <section className="slip" data-testid="order-slip" aria-label="Order">
           <h3>Order · {order.orderNo}</h3>
@@ -377,6 +411,65 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
             <button className="link" onClick={() => setSlip(false)}>Close</button>
           </p>
         </section>
+      )}
+    </section>
+  );
+}
+
+/** What has happened to the order, newest first, read a page at a time. */
+function OrderHistory({ orderId }: { orderId: string }) {
+  const { gateway } = useSession();
+  const [entries, setEntries] = useState<HistoryEntryRow[]>([]);
+  const [next, setNext] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  async function load(cursor?: string) {
+    setLoading(true);
+    setError('');
+    try {
+      const page = await gateway.orderHistory(orderId, cursor);
+      setEntries((now) => (cursor ? [...now, ...page.entries] : page.entries));
+      setNext(page.nextCursor);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, [orderId]);
+
+  return (
+    <section data-testid="order-history" aria-label="Order history">
+      <h3>History</h3>
+      {error && <p className="error" role="alert">{error}</p>}
+      {!loading && !error && entries.length === 0 && <p className="muted">Nothing recorded yet.</p>}
+      {entries.length > 0 && (
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>When (UTC)</th><th>What</th><th>Status</th><th>By</th><th>Reason</th></tr></thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id} data-testid="history-entry">
+                  <td>{e.occurredAt}</td>
+                  <td data-testid="history-action">{e.action}</td>
+                  <td>{e.change}</td>
+                  <td>{e.actor || 'platform'}</td>
+                  <td>{e.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {next && (
+        <p className="actions">
+          <button type="button" className="link" data-testid="history-older" disabled={loading}
+            onClick={() => void load(next)}>Older</button>
+        </p>
       )}
     </section>
   );

@@ -397,3 +397,34 @@
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/trips/{id}/history:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Trips]
+    operationId: getTripHistory
+    summary: What has happened to the trip, newest first
+    description: |
+      The trip's audit trail: every recorded transition with who made it,
+      when, and the state either side. Newest first, a page at a time by
+      cursor. Readable by whoever can read the trip; a trip the caller
+      cannot read is a 404 `not-found`, exactly as reading it is.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of the history.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HistorySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

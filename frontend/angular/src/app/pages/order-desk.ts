@@ -17,11 +17,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  ApiProblem, LmsGateway, MATERIAL_CLASSES, OrderDesk, OrderHeaderDraft, OrderLineDraft, OrderLineView,
-  OrderRaiseDraft,
+  ApiProblem, HistoryEntryRow, LmsGateway, MATERIAL_CLASSES, OrderDesk, OrderHeaderDraft, OrderLineDraft,
+  OrderLineView, OrderRaiseDraft,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -66,6 +67,8 @@ const BLANK_HEADER: OrderHeaderDraft = {
 interface Refusal {
   code: string;
   message: string;
+  /** What the problem names, such as a credit refusal's exposure and limit. */
+  errors: Record<string, string>;
 }
 
 /**
@@ -78,7 +81,7 @@ interface Refusal {
  */
 @Component({
   selector: 'app-order-desk',
-  imports: [FormsModule, EntityPicker],
+  imports: [FormsModule, EntityPicker, CreditPositionPanel, CreditOverride],
   template: `
     <h1>Order desk</h1>
     <p class="muted">
@@ -92,8 +95,8 @@ interface Refusal {
     </form>
     @if (session.can('ORDER_CREATE') && session.orgUnitId()) {
       <form class="inline" (ngSubmit)="raise()" data-testid="raise-order">
-        <input name="orderNo" placeholder="Order number" aria-label="Order number" [value]="raising().orderNo"
-               (input)="setRaise('orderNo', $any($event.target).value)" required />
+        <input name="orderNo" placeholder="Order number (blank: next in sequence)" aria-label="Order number"
+               [value]="raising().orderNo" (input)="setRaise('orderNo', $any($event.target).value)" />
         <app-entity-picker [kind]="'customer'" placeholder="Customer" ariaLabel="New order customer id"
                            [value]="raising().customerPartnerId" [required]="true"
                            (valueChange)="setRaise('customerPartnerId', $event)" />
@@ -141,8 +144,55 @@ interface Refusal {
             @if (r.code) { <code data-testid="order-refusal">{{ r.code }}</code> }
             {{ r.message }}
           </p>
+          @if (r.code === creditRefused) {
+            <app-credit-override [partnerId]="d.header.customerPartnerId" [subjectType]="'ORDER'" [orderId]="d.order['id']"
+                                 [errors]="r.errors" (granted)="overridden()" />
+          }
+        }
+        @if (d.header.customerPartnerId && session.can('PARTNER_READ')) {
+          <app-credit-position [partnerId]="d.header.customerPartnerId" [refreshKey]="d" />
         }
 
+        <p class="actions" role="tablist" aria-label="Order views">
+          <button type="button" role="tab" [class.link]="tab() !== 'details'" data-testid="tab-details"
+                  [attr.aria-selected]="tab() === 'details'" (click)="tab.set('details')">Lines</button>
+          <button type="button" role="tab" [class.link]="tab() !== 'history'" data-testid="tab-history"
+                  [attr.aria-selected]="tab() === 'history'" (click)="showHistory()">History</button>
+        </p>
+        @if (tab() === 'history') {
+          <section data-testid="order-history" aria-label="Order history">
+            <h3>History</h3>
+            @if (historyError()) { <p class="error" role="alert">{{ historyError() }}</p> }
+            @if (!historyLoading() && !historyError() && history().length === 0) {
+              <p class="muted">Nothing recorded yet.</p>
+            }
+            @if (history().length > 0) {
+              <div class="table-scroll">
+                <table>
+                  <thead><tr><th>When (UTC)</th><th>What</th><th>Status</th><th>By</th><th>Reason</th></tr></thead>
+                  <tbody>
+                    @for (e of history(); track e.id) {
+                      <tr data-testid="history-entry">
+                        <td>{{ e.occurredAt }}</td>
+                        <td data-testid="history-action">{{ e.action }}</td>
+                        <td>{{ e.change }}</td>
+                        <td>{{ e.actor || 'platform' }}</td>
+                        <td>{{ e.reason }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+            @if (historyNext()) {
+              <p class="actions">
+                <button type="button" class="link" data-testid="history-older" [disabled]="historyLoading()"
+                        (click)="loadHistory(historyNext()!)">Older</button>
+              </p>
+            }
+          </section>
+        }
+        <div [hidden]="tab() !== 'details'" data-testid="order-details">
         <div class="table-scroll">
           <table data-testid="order-lines">
             <thead>
@@ -275,6 +325,8 @@ interface Refusal {
           </section>
         }
 
+        </div>
+
         @if (slip()) {
           <section class="slip" data-testid="order-slip" aria-label="Order">
             <h3>Order · {{ d.order['orderNo'] }}</h3>
@@ -309,6 +361,7 @@ export class OrderDeskPage {
   readonly session = inject(Session);
 
   readonly classes = MATERIAL_CLASSES;
+  readonly creditRefused = CREDIT_LIMIT_EXCEEDED;
   readonly typed = signal('');
   readonly orderId = signal('');
   readonly desk = signal<OrderDesk | null>(null);
@@ -321,6 +374,11 @@ export class OrderDeskPage {
   readonly done = signal('');
   readonly reason = signal('');
   readonly slip = signal(false);
+  readonly tab = signal<'details' | 'history'>('details');
+  readonly history = signal<HistoryEntryRow[]>([]);
+  readonly historyNext = signal<string | null>(null);
+  readonly historyLoading = signal(false);
+  readonly historyError = signal('');
 
   readonly isDraft = computed(() => this.desk()?.order['status'] === 'DRAFT');
   readonly isValidated = computed(() => this.desk()?.order['status'] === 'VALIDATED');
@@ -336,6 +394,7 @@ export class OrderDeskPage {
     if (next !== this.orderId()) {
       this.desk.set(null);
       this.slip.set(false);
+      this.tab.set('details');
       this.refusal.set(null);
       this.done.set('');
     }
@@ -359,6 +418,9 @@ export class OrderDeskPage {
       this.desk.set(desk);
       this.header.set({ ...desk.header });
       this.lines.set(editableLines(desk.lines));
+      if (this.tab() === 'history') {
+        await this.loadHistory();
+      }
     } catch (e) {
       this.desk.set(null);
       this.loadError.set((e as Error).message);
@@ -408,7 +470,42 @@ export class OrderDeskPage {
       this.done.set(outcome);
       await this.read();
     } catch (e) {
-      this.refusal.set({ code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message });
+      this.refusal.set({
+        code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message,
+        errors: e instanceof ApiProblem ? e.errors : {},
+      });
+    }
+  }
+
+  /** An override is on record: a draft is validated again; a refused edit is the operator's to repeat. */
+  async overridden(): Promise<void> {
+    const desk = this.desk();
+    if (desk && this.isDraft()) {
+      await this.act('Validated under a credit override.', this.gateway.validateOrder(desk.order['id']));
+    } else {
+      this.refusal.set(null);
+      this.done.set('Override granted; repeat the change.');
+    }
+  }
+
+  /** Opens the history tab, reading the newest page afresh. */
+  async showHistory(): Promise<void> {
+    this.tab.set('history');
+    await this.loadHistory();
+  }
+
+  /** The newest page, or with a cursor the next older one appended to what is shown. */
+  async loadHistory(cursor?: string): Promise<void> {
+    this.historyLoading.set(true);
+    this.historyError.set('');
+    try {
+      const page = await this.gateway.orderHistory(this.orderId(), cursor);
+      this.history.update((now) => (cursor ? [...now, ...page.entries] : page.entries));
+      this.historyNext.set(page.nextCursor);
+    } catch (e) {
+      this.historyError.set((e as Error).message);
+    } finally {
+      this.historyLoading.set(false);
     }
   }
 

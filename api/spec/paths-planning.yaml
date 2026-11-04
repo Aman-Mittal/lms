@@ -420,3 +420,65 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/{id}/history:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Planning]
+    operationId: getConsignmentHistory
+    summary: What has happened to the consignment, newest first
+    description: |
+      The consignment's audit trail: every recorded transition with who made it,
+      when, and the state either side. Newest first, a page at a time by
+      cursor. Readable by whoever can read the consignment; a consignment the caller
+      cannot read is a 404 `not-found`, exactly as reading it is.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of the history.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HistorySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/loads/{id}/history:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Planning]
+    operationId: getLoadHistory
+    summary: What has happened to the load, newest first
+    description: |
+      The load's audit trail: every recorded transition with who made it,
+      when, and the state either side. Newest first, a page at a time by
+      cursor. Readable by whoever can read the load; a load the caller
+      cannot read is a 404 `not-found`, exactly as reading it is.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of the history.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HistorySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

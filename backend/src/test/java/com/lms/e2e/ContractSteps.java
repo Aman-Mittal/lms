@@ -846,10 +846,33 @@ public class ContractSteps {
                     listingPath = "/api/v1/drivers";
                     registered.add(world.driver("CTP" + i));
                 }
+                case "orders" -> {
+                    listingPath = "/api/v1/orders";
+                    registered.add(contractOrderWithoutNumber(i));
+                }
                 default -> throw new AssertionError("unknown kind " + kind);
             }
         }
     }
+
+    /**
+     * An order raised with no number, so the walk also covers numbers the
+     * platform assigned. One customer and origin per scenario, made on first use.
+     */
+    private UUID contractOrderWithoutNumber(int i) {
+        if (i == 0 || pagingCustomer == null) {
+            pagingCustomer = world.partner("CT-PGC", RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER);
+            pagingOrigin = world.terminal(RegisterPointRadiusTerminalRequest.CategoryEnum.CUSTOMER_SITE,
+                    "CT-PGO", 64.0, 64.0);
+        }
+        return world.api(OrdersApi.class).raiseOrder(new RaiseOrderRequest()
+                .orgUnitId(world.orgUnitId()).customerPartnerId(pagingCustomer)
+                .originTerminalId(pagingOrigin)
+                .source(RaiseOrderRequest.SourceEnum.API), null).getId();
+    }
+
+    private UUID pagingCustomer;
+    private UUID pagingOrigin;
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> itemsOf(Reply page) {

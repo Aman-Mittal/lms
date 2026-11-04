@@ -165,6 +165,7 @@ public class SettlementDeskSteps {
                 .withDayOfMonth(day).withHour(10).withMinute(0).withSecond(0).withNano(0);
         world.dispatch(tripId, ends[0], kilos, dispatchedAt);
         world.deliver(tripId, dispatchedAt.plusHours(6));
+        world.proveDelivered(tripId);
         tripMonth = dispatchedAt.toLocalDate().withDayOfMonth(1);
         tripNos.put(tag, "TR-MS-" + tag + "-" + world.salt);
     }

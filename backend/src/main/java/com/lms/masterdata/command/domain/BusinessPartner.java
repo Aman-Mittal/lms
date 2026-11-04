@@ -47,6 +47,8 @@ public record BusinessPartner(
         BigDecimal onTimePct,
         BigDecimal claimsRatio,
         Instant scorecardAt,
+        /** Above this exposure a warning is raised; null for none. At most {@link #creditLimit}. */
+        BigDecimal creditSoftLimit,
         /*
          * Required for correctness: Spring Data JDBC treats a record with a
          * pre-assigned @Id as existing and would UPDATE nothing instead of
@@ -97,7 +99,7 @@ public record BusinessPartner(
                                            String legalName, PartnerType type, String taxId) {
         return new BusinessPartner(id, tenantId, orgUnitId, code, legalName, type,
                 PartnerStatus.DRAFT, taxId, null, null, null, null, null, null,
-                null, Instant.now(), Instant.now());
+                null, null, Instant.now(), Instant.now());
     }
 
     /**
@@ -125,7 +127,30 @@ public record BusinessPartner(
         }
         return new BusinessPartner(id, tenantId, orgUnitId, code, legalName, partnerType, target,
                 taxId, creditLimit, paymentTerms, billingAddress, onTimePct, claimsRatio,
-                scorecardAt, version, createdAt, Instant.now());
+                scorecardAt, creditSoftLimit, version, createdAt, Instant.now());
+    }
+
+    /**
+     * The partner with new credit limits, as an approved change request sets
+     * them. Never called except from that approval, so a limit cannot move
+     * without a second person agreeing.
+     */
+    public BusinessPartner withCreditLimits(BigDecimal hardLimit, BigDecimal softLimit) {
+        return new BusinessPartner(id, tenantId, orgUnitId, code, legalName, partnerType, status,
+                taxId, hardLimit, paymentTerms, billingAddress, onTimePct, claimsRatio,
+                scorecardAt, softLimit, version, createdAt, Instant.now());
+    }
+
+    /**
+     * Whether a customer may place or change orders and be billed.
+     *
+     * <p>Narrower than {@link #canTransact}: a customer still being onboarded
+     * (DRAFT, PENDING_VERIFICATION) may have orders captured, but one that has
+     * been suspended or blacklisted may not -- that is a decision somebody
+     * took about this customer, not paperwork still in progress.
+     */
+    public boolean isTradingCustomer() {
+        return status != PartnerStatus.SUSPENDED && status != PartnerStatus.BLACKLISTED;
     }
 
     /**

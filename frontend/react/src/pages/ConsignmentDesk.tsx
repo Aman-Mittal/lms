@@ -80,6 +80,9 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
       <h2>{c.trackingRef}</h2>
       <dl>
         <div><dt>Status</dt><dd data-testid="consignment-status">{c.status}</dd></div>
+        <div><dt>Proof of delivery</dt><dd data-testid="consignment-proof">
+          {c.proofStatus === 'CONFIRMED' ? `Confirmed, ${c.proofCondition}` : c.proofStatus ? 'Code issued' : 'None yet'}
+        </dd></div>
         {c.parentId && (
           <div><dt>Part of</dt><dd>
             <button className="link" data-testid="consignment-parent" onClick={() => onOpen(c.parentId)}>

@@ -96,6 +96,19 @@ public class OrderQueryService {
     }
 
     /**
+     * The order with exactly this number, under the same rules as
+     * {@link #findById}. Served by the unique {@code (tenant_id, order_no)} index.
+     */
+    public Optional<OrderView> findByOrderNo(String orderNo) {
+        return jdbc.sql(SELECT + " WHERE o.tenant_id = app_current_tenant() AND o.order_no = :orderNo"
+                        + PARTNER_SCOPE)
+                .param("orderNo", orderNo)
+                .param("partner", AccessSubject.current().partnerScope())
+                .query(OrderView.class)
+                .optional();
+    }
+
+    /**
      * A page of orders, optionally narrowed to one status.
      *
      * @param status optional; null means every status

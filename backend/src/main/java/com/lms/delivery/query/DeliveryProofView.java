@@ -31,5 +31,9 @@ public record DeliveryProofView(
         Instant deliveredAt,
         BigDecimal lat,
         BigDecimal lon,
-        Instant otpExpiresAt) {
+        Instant otpExpiresAt,
+        /** CLEAN, SHORTAGE or DAMAGE. */
+        String goodsCondition,
+        /** What was short or damaged; null for a clean delivery. */
+        String remark) {
 }

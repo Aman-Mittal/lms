@@ -33,6 +33,9 @@ import com.lms.order.api.OrderAmendmentGuard;
 import com.lms.order.api.OrderCancellationHook;
 import com.lms.order.command.domain.OrderLine;
 import com.lms.order.command.domain.SalesOrder;
+import com.lms.order.events.OrderAmended;
+import com.lms.order.events.OrderCancelled;
+import com.lms.order.events.OrderRaised;
 import com.lms.order.events.OrderValidated;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
@@ -70,13 +73,23 @@ public class OrderCommandService {
     private final List<OrderCancellationHook> cancellationHooks;
     private final List<OrderAmendmentGuard> amendmentGuards;
     private final TransitionAudit audit;
+    private final OrderNumberSequence numbers;
+    private final OrderCreditGate creditGate;
+
+    /**
+     * How many assigned numbers are skipped, at most, because a caller already
+     * used them by hand before the platform reached them. Far more than any
+     * real collision run; it bounds the loop rather than shapes behaviour.
+     */
+    private static final int MAX_NUMBER_SKIPS = 1000;
 
     public OrderCommandService(SalesOrderRepository orders, OrderLineRepository lines,
                                ApplicationEventPublisher events,
                                TerminalCategoryPort terminalCategories,
                                PartnerStandingPort partners,
                                List<OrderCancellationHook> cancellationHooks,
-                               List<OrderAmendmentGuard> amendmentGuards, TransitionAudit audit) {
+                               List<OrderAmendmentGuard> amendmentGuards, TransitionAudit audit,
+                               OrderNumberSequence numbers, OrderCreditGate creditGate) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
@@ -85,6 +98,8 @@ public class OrderCommandService {
         this.cancellationHooks = cancellationHooks;
         this.amendmentGuards = amendmentGuards;
         this.audit = audit;
+        this.numbers = numbers;
+        this.creditGate = creditGate;
     }
 
     /** Raises a full-truckload order, which is what an order without a mode has always been. */
@@ -103,6 +118,12 @@ public class OrderCommandService {
      * <p>An LTL order names the hub it enters the network at and the hub its
      * freight is delivered from; each consignment generated from it becomes a
      * docket between those two hubs.
+     *
+     * <p>An order raised with no number, or a blank one, is given the next
+     * number from the tenant's sequence ({@link OrderNumberSequence}). A number
+     * the caller states is kept as stated and must be unused within the tenant
+     * ({@code order-no-taken}); an assigned number that a caller happened to
+     * use by hand already is skipped rather than refused.
      */
     @Transactional
     @PreAuthorize("hasAuthority('ORDER_CREATE') and @abac.permitsIn('ORDER_CREATE', #orgUnitId)")
@@ -118,10 +139,17 @@ public class OrderCommandService {
         requirePartner(customerPartnerId);
         requireTerminal(originTerminalId);
 
-        orders.findByOrderNo(tenantId, orderNo).ifPresent(existing -> {
-            throw new BusinessRuleViolationException("order-no-taken",
-                    "An order numbered " + orderNo + " already exists");
-        });
+        boolean assigned = orderNo == null || orderNo.isBlank();
+        if (assigned) {
+            orderNo = nextFreeNumber(tenantId);
+        } else {
+            String stated = orderNo.strip();
+            orders.findByOrderNo(tenantId, stated).ifPresent(existing -> {
+                throw new BusinessRuleViolationException("order-no-taken",
+                        "An order numbered " + stated + " already exists");
+            });
+            orderNo = stated;
+        }
 
         SalesOrder order = SalesOrder.raise(UUID.randomUUID(), tenantId, orgUnitId,
                 customerPartnerId, orderNo, originTerminalId,
@@ -138,7 +166,21 @@ public class OrderCommandService {
                 Json.object("status", raised.status().name(), "orderNo", raised.orderNo(),
                         "customerPartnerId", raised.customerPartnerId().toString(),
                         "freightMode", raised.freightMode().name()));
+        events.publishEvent(new OrderRaised(tenantId, raised.id(), raised.orderNo(),
+                raised.customerPartnerId(), raised.freightMode().name(), raised.source().name(),
+                assigned, Instant.now()));
         return raised.id();
+    }
+
+    private String nextFreeNumber(UUID tenantId) {
+        for (int attempt = 0; attempt < MAX_NUMBER_SKIPS; attempt++) {
+            String candidate = numbers.next(tenantId);
+            if (orders.findByOrderNo(tenantId, candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        throw new BusinessRuleViolationException("order-numbering-exhausted",
+                "No unused order number was found; state one explicitly");
     }
 
     private void requirePartner(UUID partnerId) {
@@ -201,6 +243,7 @@ public class OrderCommandService {
         }
         requirePartner(consigneePartnerId);
         requireTerminal(destinationTerminalId);
+        creditGate.requireTrading(order);
 
         OrderLine line = new OrderLine(UUID.randomUUID(), tenantId, orderId, lineNo,
                 materialCode, materialDescription,
@@ -208,7 +251,9 @@ public class OrderCommandService {
                 quantity, uom, deadWeightKg, lengthM, widthM, heightM, volumetricDivisor,
                 consigneePartnerId, destinationTerminalId, false, null, Instant.now());
 
-        return lines.save(line).id();
+        UUID added = lines.save(line).id();
+        creditGate.afterLinesChanged(order);
+        return added;
     }
 
     /**
@@ -231,8 +276,10 @@ public class OrderCommandService {
         }
 
         requireValid(order, orderLines);
+        creditGate.requireTrading(order);
 
         orders.save(order.transitionTo(SalesOrder.OrderStatus.VALIDATED));
+        creditGate.afterValidating(order);
         audit.record("ORDER_VALIDATED", AUDIT_TYPE, orderId,
                 Json.object("status", order.status().name()),
                 Json.object("status", "VALIDATED", "lines", String.valueOf(orderLines.size())));
@@ -282,6 +329,9 @@ public class OrderCommandService {
                 reason == null || reason.isBlank()
                         ? Json.object("status", "CANCELLED")
                         : Json.object("status", "CANCELLED", "reason", reason.strip()));
+        events.publishEvent(new OrderCancelled(order.tenantId(), orderId, order.orderNo(),
+                order.status().name(), reason == null || reason.isBlank() ? null : reason.strip(),
+                Instant.now()));
     }
 
     // ---------------------------------------------------------------- editing
@@ -325,9 +375,11 @@ public class OrderCommandService {
         SalesOrder order = requireEditable(orderId, expectedVersion);
         requireDistinctLineNos(specs);
         List<OrderLine> before = lines.findByOrder(tenantId, orderId);
+        creditGate.requireTrading(order);
 
         SalesOrder saved = orders.save(order.expecting(expectedVersion));
         List<OrderLine> after = swapLines(tenantId, orderId, before, specs);
+        creditGate.afterLinesChanged(saved);
         audit.record("ORDER_LINES_REPLACED", AUDIT_TYPE, orderId,
                 snapshot(order, before), snapshot(saved, after));
     }
@@ -407,12 +459,18 @@ public class OrderCommandService {
 
         SalesOrder revised = header == null ? order.expecting(expectedVersion)
                 : reviseHeader(order, header, expectedVersion);
+        creditGate.beforeAmending(revised);
         SalesOrder saved = orders.save(revised);
         List<OrderLine> after = specs == null ? before : swapLines(tenantId, orderId, before, specs);
         requireValid(saved, after);
+        creditGate.afterAmending(order, saved, before, after);
 
         audit.record("ORDER_AMENDED", AUDIT_TYPE, orderId, snapshot(order, before),
                 snapshot(saved, after));
+        events.publishEvent(new OrderAmended(tenantId, orderId, saved.orderNo(),
+                saved.version() == null ? 0 : saved.version(), after.size(),
+                after.stream().map(OrderLine::chargeableWeightKg).reduce(BigDecimal.ZERO, BigDecimal::add),
+                Instant.now()));
     }
 
     private SalesOrder requireEditable(UUID orderId, long expectedVersion) {

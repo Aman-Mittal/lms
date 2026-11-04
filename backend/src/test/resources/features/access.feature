@@ -59,6 +59,8 @@ Feature: A permission says what kind of thing; a policy says how far
     And the tenant has access policy "inventory-adjust-org-subtree" on "INVENTORY_ADJUST"
     And the tenant has access policy "client-credit-note-write-org-subtree" on "CLIENT_CREDIT_NOTE_ISSUE"
     And the tenant has access policy "client-billing-write-org-subtree" on "CLIENT_BILLING_RUN"
+    And the tenant has access policy "credit-limit-approval-limit" on "CREDIT_LIMIT_APPROVE"
+    And the tenant has access policy "credit-override-approval-limit" on "CREDIT_OVERRIDE"
 
   # ------------------------------------------------ monetary: invoices
 

@@ -24,6 +24,10 @@ import com.lms.planning.command.domain.LoadUnit;
 import com.lms.planning.query.ConsignmentView;
 import com.lms.planning.query.LoadView;
 import com.lms.planning.query.PlanningQueryService;
+import com.lms.shared.audit.AuditHistoryQueryService;
+import com.lms.shared.audit.HistoryEntryView;
+import com.lms.shared.audit.HistoryViewer;
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
@@ -56,11 +60,14 @@ public class PlanningController {
 
     private final PlanningCommandService planning;
     private final PlanningQueryService planningQueries;
+    private final AuditHistoryQueryService history;
 
     public PlanningController(PlanningCommandService planning,
-                              PlanningQueryService planningQueries) {
+                              PlanningQueryService planningQueries,
+                              AuditHistoryQueryService history) {
         this.planning = planning;
         this.planningQueries = planningQueries;
+        this.history = history;
     }
 
     // ---------------------------------------------------------- consignments
@@ -78,6 +85,15 @@ public class PlanningController {
     public ConsignmentView getConsignment(@PathVariable UUID id) {
         return planningQueries.findConsignment(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Consignment", id));
+    }
+
+    /** The consignment's audit trail, newest first; a 404 wherever reading the consignment is. */
+    @GetMapping("/consignments/{id}/history")
+    public Slice<HistoryEntryView> consignmentHistory(@PathVariable UUID id,
+                                                      @RequestParam(required = false) String cursor,
+                                                      @RequestParam(required = false) Integer limit) {
+        getConsignment(id);
+        return history.historyOf("Consignment", id, cursor, limit, viewer());
     }
 
     /**
@@ -138,6 +154,21 @@ public class PlanningController {
     public LoadView getLoad(@PathVariable UUID id) {
         return planningQueries.findLoad(id)
                 .orElseThrow(() -> new ResourceNotFoundException("LoadUnit", id));
+    }
+
+    /** The load's audit trail, newest first; a 404 wherever reading the load is. */
+    @GetMapping("/loads/{id}/history")
+    public Slice<HistoryEntryView> loadHistory(@PathVariable UUID id,
+                                               @RequestParam(required = false) String cursor,
+                                               @RequestParam(required = false) Integer limit) {
+        getLoad(id);
+        return history.historyOf("Load", id, cursor, limit, viewer());
+    }
+
+    /** A portal caller is not told which of the tenant's staff took a step. */
+    private static HistoryViewer viewer() {
+        AccessSubject caller = AccessSubject.current();
+        return HistoryViewer.of(caller.userId(), caller.partnerScope() != null);
     }
 
     @GetMapping("/loads/{id}/consignments")

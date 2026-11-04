@@ -58,6 +58,11 @@ ClientContract:
     valueAddedServices:
       type: array
       items: { $ref: "#/components/schemas/ClientContractServiceRate" }
+    billOnDispatch:
+      type: boolean
+      description: True when a trip's transport is invoiceable as soon as the
+        trip is dispatched; false when it waits for each consignment's
+        confirmed proof of delivery.
 
 PublishClientContractRequest:
   type: object
@@ -104,7 +109,25 @@ PublishClientContractRequest:
       type: array
       description: Published with the version and immutable with it.
       items: { $ref: "#/components/schemas/ClientContractServiceRate" }
+    billOnDispatch:
+      type: boolean
+      default: false
+      description: |
+        Advance billing. When true, a trip's transport is charged when the
+        trip is dispatched and is invoiceable at once. When false (the
+        default), it is charged when the trip completes and invoiced only
+        once each of the client's consignments on the trip has a confirmed
+        proof of delivery or has been marked billable by hand.
   required: [orgUnitId, code, clientPartnerId, effectiveFrom]
+
+BillingEligibilityRequest:
+  type: object
+  properties:
+    reason:
+      type: string
+      maxLength: 500
+      description: Mandatory, and audited.
+  required: [reason]
 
 ClientPortalUserRequest:
   type: object
@@ -170,6 +193,13 @@ ClientCharge:
     sourceKey: { type: string }
     tripId: { type: string, format: uuid }
     invoiceId: { type: string, format: uuid }
+    billable:
+      type: boolean
+      description: Whether the next billing run invoices it. False for a
+        trip's transport while one of the client's consignments on the trip
+        has neither a confirmed proof of delivery nor a manual mark, unless
+        the contract bills on dispatch. A charge still waiting when its month
+        is billed moves to the next open month.
 
 ClientChargeSlice:
   type: object

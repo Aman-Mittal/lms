@@ -76,5 +76,14 @@ public record FreightBillView(
          * asking another screen.
          */
         String settlementHeldBy,
-        Instant createdAt) {
+        Instant createdAt,
+        /**
+         * True while the bill's trip waits for clean proofs of delivery: some
+         * consignment it delivered has no confirmed proof, or one recording a
+         * shortage or damage. Matching and settling are refused with
+         * {@code settlement-awaiting-proof} until it clears or is released.
+         */
+        boolean awaitingProof,
+        /** Why a person released the proof hold by hand; null otherwise. */
+        String proofHoldReleaseNote) {
 }

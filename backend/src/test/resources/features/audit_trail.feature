@@ -55,8 +55,8 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     And trip "TRIP-AU-1" runs load "LOAD-AU-1" for "HAULIER" on lorry "MH-01-AU-0001" driven by "Ravi"
     When trip "TRIP-AU-1" is completed at its destination
     Then the audit trail of order "AU-1" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED, ORDER_FULFILLED"
-    And the audit trail of the shipment of order "AU-1" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_DELIVERED"
-    And the audit trail of the shipment of order "AU-1" for "CONS-B" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_DELIVERED"
+    And the audit trail of the shipment of order "AU-1" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_IN_TRANSIT, CONSIGNMENT_DELIVERED"
+    And the audit trail of the shipment of order "AU-1" for "CONS-B" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_IN_TRANSIT, CONSIGNMENT_DELIVERED"
     And the audit trail of load "LOAD-AU-1" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_DISPATCHED, LOAD_COMPLETED"
 
   Scenario: Each entry carries the state before and after the transition
@@ -100,7 +100,7 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     When order "AU-5" is cancelled
     Then cancelling the order is refused with "order-work-dispatched"
     And the audit trail of order "AU-5" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED"
-    And the audit trail of the shipment of order "AU-5" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED"
+    And the audit trail of the shipment of order "AU-5" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_IN_TRANSIT"
     And the audit trail of load "LOAD-AU-5" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_DISPATCHED"
 
   Scenario: Recording a completion again does not audit it again
@@ -115,7 +115,7 @@ Feature: Order, planning and sourcing transitions leave an audit trail
     And trip "TRIP-AU-6" is completed at its destination
     When the completion of load "LOAD-AU-6" is recorded again
     Then the audit trail of load "LOAD-AU-6" reads "LOAD_OPENED, LOAD_PLANNED, LOAD_AWARDED, LOAD_DISPATCHED, LOAD_COMPLETED"
-    And the audit trail of the shipment of order "AU-6" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_DELIVERED"
+    And the audit trail of the shipment of order "AU-6" for "CONS-A" reads "CONSIGNMENT_GENERATED, CONSIGNMENT_ASSIGNED, CONSIGNMENT_IN_TRANSIT, CONSIGNMENT_DELIVERED"
     And the audit trail of order "AU-6" reads "ORDER_RAISED, ORDER_VALIDATED, ORDER_FULLY_PLANNED, ORDER_FULFILLED"
 
   Scenario: The allocation cascade is audited decision by decision

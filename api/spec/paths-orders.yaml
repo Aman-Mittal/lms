@@ -295,3 +295,59 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/history:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Orders]
+    operationId: getOrderHistory
+    summary: What has happened to the order, newest first
+    description: |
+      The order's audit trail: every recorded transition with who made it,
+      when, and the state either side. Newest first, a page at a time by
+      cursor. Readable by whoever can read the order; a order the caller
+      cannot read is a 404 `not-found`, exactly as reading it is.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of the history.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HistorySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/by-number/{orderNo}:
+  parameters:
+    - name: orderNo
+      in: path
+      required: true
+      schema: { type: string }
+      description: The order number, exactly as stored (case and spacing included).
+  get:
+    tags: [Orders]
+    operationId: getOrderByNumber
+    summary: Look an order up by its number
+    description: |
+      Exact match within the tenant. A number the tenant does not hold, or an
+      order the caller may not read, is a 404 `not-found`.
+    responses:
+      "200":
+        description: The order.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Order" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }

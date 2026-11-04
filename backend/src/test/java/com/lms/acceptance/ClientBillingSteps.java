@@ -146,7 +146,7 @@ public class ClientBillingSteps {
                             decimal(row, "warehouse tax percent"),
                             row.containsKey("storage units per pallet")
                                     ? Integer.valueOf(row.get("storage units per pallet")) : null),
-                    services);
+                    services, "yes".equalsIgnoreCase(row.get("bills on dispatch")));
             world.putRef("client-contract:" + contractCode, id);
         } catch (RuntimeException e) {
             failure = e;
@@ -690,7 +690,7 @@ public class ClientBillingSteps {
         return inTransaction(() -> jdbc.sql("""
                         SELECT id, client_partner_id, service_type, service_code, quantity, unit,
                                occurred_on, billing_period, false AS late, reference, source_key,
-                               trip_id, invoice_id
+                               trip_id, invoice_id, true AS billable
                           FROM client_charge
                          WHERE client_partner_id = :client AND trip_id = :tripId
                         """)

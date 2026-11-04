@@ -28,10 +28,13 @@ import com.lms.planning.api.LoadInUseGuard;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.planning.command.domain.Consignment;
 import com.lms.planning.command.domain.LoadUnit;
+import com.lms.planning.events.ConsignmentsDelivered;
+import com.lms.planning.events.ConsignmentsInTransit;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,16 +51,19 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     private final OrderPlanningPort orderPlanning;
     private final List<LoadInUseGuard> inUseGuards;
     private final TransitionAudit audit;
+    private final ApplicationEventPublisher events;
 
     public LoadLifecycleAdapter(LoadUnitRepository loads, ConsignmentRepository consignments,
                                 PlanningLinks links, OrderPlanningPort orderPlanning,
-                                List<LoadInUseGuard> inUseGuards, TransitionAudit audit) {
+                                List<LoadInUseGuard> inUseGuards, TransitionAudit audit,
+                                ApplicationEventPublisher events) {
         this.loads = loads;
         this.consignments = consignments;
         this.links = links;
         this.orderPlanning = orderPlanning;
         this.inUseGuards = inUseGuards;
         this.audit = audit;
+        this.events = events;
     }
 
     @Override
@@ -114,11 +120,13 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     }
 
     /**
-     * Moves the load to DISPATCHED and, for a part load, its dockets with it:
-     * a line haul's to IN_TRANSIT, a delivery load's to OUT_FOR_DELIVERY.
+     * Moves the load to DISPATCHED and its consignments with it: a full
+     * truckload's and a line haul's to IN_TRANSIT, a delivery load's dockets
+     * to OUT_FOR_DELIVERY.
      *
-     * <p>A full truckload's consignments are left as they were, as they always
-     * have been; this change is about the part-load journey only.
+     * <p>Consignments that moved to IN_TRANSIT are announced as
+     * {@link ConsignmentsInTransit}. A repeat call moves nothing and announces
+     * nothing.
      */
     @Override
     @Transactional
@@ -130,15 +138,26 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
                     PlanningAudit.load(load));
         }
         if (load.freightMode() != FreightMode.LTL) {
+            announceInTransit(load, advance(load, c -> !c.isDocket(),
+                    Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD,
+                    Consignment.ConsignmentStatus.IN_TRANSIT));
             return;
         }
-        Consignment.ConsignmentStatus from = load.isDelivery()
-                ? Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY
-                : Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD;
-        Consignment.ConsignmentStatus to = load.isDelivery()
-                ? Consignment.ConsignmentStatus.OUT_FOR_DELIVERY
-                : Consignment.ConsignmentStatus.IN_TRANSIT;
-        advanceDockets(load, from, to);
+        if (load.isDelivery()) {
+            advanceDockets(load, Consignment.ConsignmentStatus.ASSIGNED_TO_DELIVERY,
+                    Consignment.ConsignmentStatus.OUT_FOR_DELIVERY);
+        } else {
+            announceInTransit(load, advanceDockets(load, Consignment.ConsignmentStatus.ASSIGNED_TO_LOAD,
+                    Consignment.ConsignmentStatus.IN_TRANSIT));
+        }
+    }
+
+    private void announceInTransit(LoadUnit load, List<Consignment> moved) {
+        if (!moved.isEmpty()) {
+            events.publishEvent(new ConsignmentsInTransit(load.tenantId(), load.id(),
+                    moved.stream().map(Consignment::id).toList(),
+                    moved.stream().map(Consignment::trackingRef).toList(), java.time.Instant.now()));
+        }
     }
 
     @Override
@@ -174,6 +193,12 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
                     PlanningAudit.load(completed));
         }
 
+        if (!delivered.isEmpty()) {
+            events.publishEvent(new ConsignmentsDelivered(load.tenantId(), load.id(),
+                    delivered.stream().map(Consignment::id).toList(),
+                    delivered.stream().map(Consignment::trackingRef).toList(),
+                    ConsignmentsDelivered.TRIP_COMPLETED, java.time.Instant.now()));
+        }
         fulfilOrders(load.tenantId(), delivered);
     }
 
@@ -182,12 +207,14 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
      * in one step, because a full truckload goes from its origin straight to
      * its consignee and nothing is tracked in between.
      *
-     * <p>Walks the existing state machine (ASSIGNED_TO_LOAD, IN_TRANSIT,
-     * DELIVERED) in memory and writes each consignment once. Only a load that
+     * <p>Dispatch has already moved them to IN_TRANSIT; one dispatched before
+     * that rule still reads ASSIGNED_TO_LOAD and walks the state machine
+     * through IN_TRANSIT in memory, so each is written once. Only a load that
      * has left is delivered; a COMPLETED one is revisited too, so a load
      * completed before this was tracked heals on its next completion call.
-     * Consignments in any other state -- already delivered, cancelled -- are
-     * skipped, so a repeat call changes nothing.
+     * Consignments in any other state -- already delivered (by a proof that
+     * arrived first, say), cancelled -- are skipped, so a repeat call changes
+     * nothing.
      *
      * @return the consignments delivered by this call
      */
@@ -240,13 +267,23 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
      */
     private List<Consignment> advanceDockets(LoadUnit load, Consignment.ConsignmentStatus from,
                                              Consignment.ConsignmentStatus to) {
+        return advance(load, Consignment::isDocket, from, to);
+    }
+
+    /**
+     * Moves every consignment on the load that {@code which} selects and is in
+     * {@code from} to {@code to}, audited the way {@link #advanceDockets} is.
+     */
+    private List<Consignment> advance(LoadUnit load, java.util.function.Predicate<Consignment> which,
+                                      Consignment.ConsignmentStatus from,
+                                      Consignment.ConsignmentStatus to) {
         List<Consignment> moved = new ArrayList<>();
         List<TransitionAudit.Entry> movedEntries = new ArrayList<>();
-        for (Consignment docket : consignments.findOnLoad(load.tenantId(), load.id())) {
-            if (docket.isDocket() && docket.status() == from) {
-                Consignment next = consignments.save(docket.transitionTo(to));
+        for (Consignment consignment : consignments.findOnLoad(load.tenantId(), load.id())) {
+            if (which.test(consignment) && consignment.status() == from) {
+                Consignment next = consignments.save(consignment.transitionTo(to));
                 moved.add(next);
-                movedEntries.add(PlanningAudit.entry(docket, next));
+                movedEntries.add(PlanningAudit.entry(consignment, next));
             }
         }
         // One statement for the whole movement; none when nothing moved, which

@@ -50,9 +50,16 @@
  * and command in this module. It honours the partner attribute that
  * {@code identity::access} carries for a portal user, and adds this module's
  * own portal binding for users without one.
+ *
+ * <p>A trip's transport charge is invoiced only once each of the client's
+ * consignments on the trip has a confirmed proof of delivery, or has been
+ * marked billable by hand with a reason -- unless the client's contract bills
+ * on dispatch, in which case the charge is captured when the trip leaves and
+ * is invoiceable at once. Proofs are read with SQL, like the trip's freight,
+ * so no dependency on the delivery module is needed.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "3PL Client Billing",
         allowedDependencies = {"execution::events", "identity::access", "warehouse::api",
-                "warehouse::events"})
+                "warehouse::events", "masterdata::api"})
 package com.lms.clientbilling;

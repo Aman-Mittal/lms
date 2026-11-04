@@ -32,6 +32,7 @@ import com.lms.finance.command.domain.FreightBillLine;
 import com.lms.finance.command.domain.FuelSurchargeIndex;
 import com.lms.finance.command.domain.Tariff;
 import com.lms.finance.events.FreightBillRaised;
+import com.lms.identity.access.AccessSubject;
 import com.lms.multimodal.events.RailLegCompleted;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.shared.audit.AuditTrail;
@@ -391,6 +392,48 @@ public class BillingService {
                 Json.object("status", resolved.status().name(), "reason", reason));
     }
 
+    /**
+     * Releases a bill's trip from waiting on proofs of delivery, by hand.
+     *
+     * <p>For the case the rule cannot decide: a proof that recorded a
+     * shortage or damage somebody has looked at and accepted, or a delivery
+     * whose proof will never come. The reason is required and audited with the
+     * release; an exception ticket still holding the trip is not touched.
+     *
+     * @throws BusinessRuleViolationException {@code no-proof-hold} when the
+     *         bill's trip is not held for proofs (already released, never held,
+     *         or a bill with no trip)
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('SETTLEMENT_HOLD_RELEASE')")
+    public void releaseProofHold(UUID billId, String reason) {
+        FreightBill bill = require(billId);
+        String note = reason == null ? "" : reason.strip();
+        if (note.isEmpty() || note.length() > 500) {
+            throw new BusinessRuleViolationException("release-reason-required",
+                    "Say why the hold is released, in at most 500 characters");
+        }
+        Instant now = Instant.now();
+        if (bill.tripId() == null || !holds.releaseByHand(bill.tripId(), now, actorId(), note)) {
+            throw new BusinessRuleViolationException("no-proof-hold",
+                    "Bill " + bill.billNo() + " is not held for proofs of delivery");
+        }
+        audit.recordAtomically("SETTLEMENT_PROOF_HOLD_RELEASED", "FREIGHT_BILL", bill.id(),
+                Json.object("awaitingProof", "true"),
+                Json.object("awaitingProof", "false", "tripId", bill.tripId().toString(),
+                        "reason", note));
+    }
+
+    /** The signed-in user, when the principal is one; null for a test or a service. */
+    private static UUID actorId() {
+        String userId = AccessSubject.current().userId();
+        try {
+            return userId == null ? null : UUID.fromString(userId);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     // ------------------------------------------------------------- internals
 
     /**
@@ -414,6 +457,11 @@ public class BillingService {
             throw new BusinessRuleViolationException("settlement-on-hold",
                     "Bill " + bill.billNo() + " cannot be settled while exception "
                             + String.join(", ", holding) + " is open on its trip");
+        }
+        if (holds.awaitingProof(bill.tripId())) {
+            throw new BusinessRuleViolationException("settlement-awaiting-proof",
+                    "Bill " + bill.billNo() + " cannot be settled until every consignment on its "
+                            + "trip has a clean proof of delivery, or the hold is released");
         }
     }
 

@@ -57,9 +57,15 @@
  * which execution already calls on dispatch) the docket has arrived at its
  * destination hub, and a DELIVERY load opened at that hub takes it to its
  * consignee. The docket's state machine is documented on {@code Consignment}.
+ *
+ * <p>Listens to {@code delivery::events} for a confirmed proof of delivery,
+ * which delivers its consignment if the trip has not already done so (a
+ * docket only on its last leg). Every delivery, by trip or by proof, is
+ * announced as {@code ConsignmentsDelivered}; consignments leaving on a
+ * dispatched load as {@code ConsignmentsInTransit}.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",
         allowedDependencies = {"order::api", "masterdata::api", "warehouse::events",
-                "identity::access"})
+                "identity::access", "delivery::events"})
 package com.lms.planning;

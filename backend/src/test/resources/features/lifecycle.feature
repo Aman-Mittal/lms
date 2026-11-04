@@ -92,7 +92,7 @@ Feature: A trip's completion and an order's cancellation reach the freight they 
     And trip "TRIP-FT-3B" runs load "LOAD-FT-3B" for "HAULIER" on lorry "MH-01-LC-0002" driven by "Sunil"
     When trip "TRIP-FT-3A" is completed at its destination
     Then the shipment of order "FT-3" for "CONS-A" is "DELIVERED"
-    And the shipment of order "FT-3" for "CONS-B" is "ASSIGNED_TO_LOAD"
+    And the shipment of order "FT-3" for "CONS-B" is "IN_TRANSIT"
     And order "FT-3" is "FULLY_PLANNED"
     When trip "TRIP-FT-3B" is completed at its destination
     Then order "FT-3" is "FULFILLED"
@@ -172,7 +172,7 @@ Feature: A trip's completion and an order's cancellation reach the freight they 
     When order "CX-4" is cancelled
     Then cancelling the order is refused with "order-work-dispatched"
     And order "CX-4" is "FULLY_PLANNED"
-    And the shipment of order "CX-4" for "CONS-A" is "ASSIGNED_TO_LOAD"
+    And the shipment of order "CX-4" for "CONS-A" is "IN_TRANSIT"
     And load "LOAD-CX-4" is "DISPATCHED"
 
   Scenario: A delivered order cannot be cancelled

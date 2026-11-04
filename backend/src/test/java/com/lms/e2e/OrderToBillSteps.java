@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.lms.client.ApiClient;
 import com.lms.client.api.AuthenticationApi;
 import com.lms.client.api.ControlTowerApi;
+import com.lms.client.api.DeliveryAndClaimsApi;
 import com.lms.client.api.DriversApi;
 import com.lms.client.api.OrdersApi;
 import com.lms.client.api.PartnersApi;
@@ -66,6 +67,7 @@ import com.lms.client.model.PublishTariffRequest;
 import com.lms.client.model.RaiseExceptionRequest;
 import com.lms.client.model.RaiseOrderRequest;
 import com.lms.client.model.RaiseTripRequest;
+import com.lms.client.model.RecordDeliveryProofRequest;
 import com.lms.client.model.RegisterDriverRequest;
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.RegisterPointRadiusTerminalRequest;
@@ -343,9 +345,20 @@ public class OrderToBillSteps {
         assertThat(api(TripsApi.class).getTrip(tripId).getStatus().getValue()).isEqualTo(status);
     }
 
+    /**
+     * The trip completes and every consignment on it is proved delivered clean:
+     * the bill is raised on completion, and settles only once the proofs are in.
+     */
     @When("proof of delivery is accepted")
     public void complete() {
         api(TripsApi.class).completeTrip(tripId, new MilestoneRequest(), null);
+        UUID loadId = api(TripsApi.class).getTrip(tripId).getLoadId();
+        DeliveryAndClaimsApi desk = api(DeliveryAndClaimsApi.class);
+        for (var consignment : api(PlanningApi.class).listLoadConsignments(loadId)) {
+            String otp = desk.issueDeliveryOtp(consignment.getId(), null).getOtp();
+            desk.recordDeliveryProof(consignment.getId(), new RecordDeliveryProofRequest()
+                    .otp(otp).recipientName("Receiving clerk"), null);
+        }
     }
 
     /** The whole of the first scenario up to arrival, for scenarios about what happens next. */

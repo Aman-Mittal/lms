@@ -99,6 +99,20 @@ public class FreightBillController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Releases the bill's trip from waiting on proofs of delivery. The reason
+     * is audited with the release.
+     */
+    @PostMapping("/{id}/proof-hold/release")
+    public ResponseEntity<Void> releaseProofHold(@PathVariable UUID id,
+                                                 @Valid @RequestBody ReleaseProofHoldRequest request) {
+        billing.releaseProofHold(id, request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    public record ReleaseProofHoldRequest(@NotBlank String reason) {
+    }
+
     public record MatchRequest(@NotNull @PositiveOrZero BigDecimal claimedAmount) {
     }
 

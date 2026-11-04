@@ -38,7 +38,7 @@ Feature: Every refusal is a problem document a client can branch on
       | createAsn                  | /api/v1/asns                            | asnNo, warehouseId, lines                           |
       | createOutboundOrder        | /api/v1/outbound-orders                 | orderNo, warehouseId, lines                         |
       | releasePickWave            | /api/v1/pick-waves                      | warehouseId, orderIds                               |
-      | raiseOrder                 | /api/v1/orders                          | orgUnitId, customerPartnerId, originTerminalId, orderNo |
+      | raiseOrder                 | /api/v1/orders                          | orgUnitId, customerPartnerId, originTerminalId      |
       | openLoad                   | /api/v1/loads                           | orgUnitId, loadNo, originTerminalId, vehicleId      |
       | allocateLoad               | /api/v1/allocations                     | loadId                                              |
       | defineRoutingGuide         | /api/v1/routing-guides                  | orgUnitId, originTerminalId, destinationTerminalId, vehicleType |

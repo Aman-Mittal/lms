@@ -1,0 +1,203 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/partners/{id}/credit-position:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the customer partner.
+  get:
+    tags: [Credit]
+    operationId: getCreditPosition
+    summary: A customer's credit limit, exposure and headroom
+    description: |
+      Read-only. Exposure is open order value (validated orders not yet
+      fulfilled or cancelled, priced at the client contract's transport rate)
+      plus client charges not yet invoiced plus issued invoices still unpaid
+      (net of credit notes and payments). Repeated reads change nothing.
+    responses:
+      "200":
+        description: The position as of now.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreditPosition" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/partners/{id}/credit-limit-changes:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the customer partner.
+  get:
+    tags: [Credit]
+    operationId: listPartnerCreditLimitChanges
+    summary: The change log of one partner's credit limit, newest first
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of change requests, whatever their outcome.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreditLimitChangeSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Credit]
+    operationId: requestCreditLimitChange
+    summary: Ask for a new credit limit, to be approved by someone else
+    description: |
+      The limit does not change until a second person approves the request.
+      Refused with 409 `credit-limit-change-pending` while another request
+      for the partner is open, and `credit-soft-limit-above-limit` when the
+      soft limit is above the hard one (equal is allowed).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreditLimitChangeRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/credit-limit-changes:
+  get:
+    tags: [Credit]
+    operationId: listCreditLimitChanges
+    summary: Credit-limit change requests across partners, newest first
+    parameters:
+      - name: status
+        in: query
+        required: false
+        schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+        description: Restricts the listing to one outcome.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of change requests.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreditLimitChangeSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/credit-limit-changes/{id}/approve:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the change request.
+  post:
+    tags: [Credit]
+    operationId: approveCreditLimitChange
+    summary: Approve a pending change and apply the new limit
+    description: |
+      Needs `CREDIT_LIMIT_APPROVE`, an approval limit covering the requested
+      limit, and a different person from the requester (409
+      `credit-limit-change-self-approval`). A request no longer pending is
+      409 `credit-limit-change-not-pending`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreditLimitDecisionRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/credit-limit-changes/{id}/reject:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the change request.
+  post:
+    tags: [Credit]
+    operationId: rejectCreditLimitChange
+    summary: Reject a pending change; the limit stays as it was
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreditLimitDecisionRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/partners/{id}/credit-overrides:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the customer partner.
+  post:
+    tags: [Credit]
+    operationId: grantCreditOverride
+    summary: Let one refused action through the hard credit limit
+    description: |
+      A one-time, audited pass for one order (validate, amend or line add)
+      or one client billing period. It lets the action through when the
+      exposure is no more than `upTo`, and is used up by the first action
+      it covers. Expires after 24 hours if unused. Needs `CREDIT_OVERRIDE`
+      and an approval limit covering the amount above the hard limit.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreditOverrideRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

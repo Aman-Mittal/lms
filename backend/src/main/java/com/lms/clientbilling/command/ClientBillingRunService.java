@@ -39,6 +39,7 @@ import com.lms.clientbilling.command.domain.ContractServiceRate;
 import com.lms.clientbilling.command.domain.Tax;
 import com.lms.clientbilling.events.ClientInvoiceIssued;
 import com.lms.clientbilling.query.ClientAccess;
+import com.lms.masterdata.api.CustomerCreditPort;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
@@ -77,6 +78,7 @@ public class ClientBillingRunService {
     private final JdbcClient jdbc;
     private final AuditTrail audit;
     private final ApplicationEventPublisher events;
+    private final CustomerCreditPort credit;
 
     public ClientBillingRunService(ClientChargeRepository charges,
                                    ClientContractRepository contracts,
@@ -84,7 +86,7 @@ public class ClientBillingRunService {
                                    ClientInvoiceRepository invoices,
                                    ClientInvoiceLineRepository lines, ClientPeriods periods,
                                    ClientAccess access, JdbcClient jdbc, AuditTrail audit,
-                                   ApplicationEventPublisher events) {
+                                   ApplicationEventPublisher events, CustomerCreditPort credit) {
         this.charges = charges;
         this.contracts = contracts;
         this.serviceRates = serviceRates;
@@ -95,6 +97,7 @@ public class ClientBillingRunService {
         this.jdbc = jdbc;
         this.audit = audit;
         this.events = events;
+        this.credit = credit;
     }
 
     /**
@@ -131,11 +134,22 @@ public class ClientBillingRunService {
         }
 
         List<ClientCharge> unbilled = charges.findUnbilled(tenantId, clientPartnerId, periodStart);
+        long awaitingProof = charges.countAwaitingProof(tenantId, clientPartnerId, periodStart);
+        if (unbilled.isEmpty() && awaitingProof > 0) {
+            throw new BusinessRuleViolationException("client-period-awaiting-proof",
+                    awaitingProof + " transport charge(s) for " + periodStart + " to " + periodEnd
+                            + " wait for proofs of delivery and nothing else is billable yet;"
+                            + " no invoice was issued and the period stays open");
+        }
         if (unbilled.isEmpty()) {
             throw new BusinessRuleViolationException("client-period-empty",
                     "Nothing was charged to this client for " + periodStart + " to " + periodEnd
                             + "; no invoice was issued and the period stays open");
         }
+        // The credit gate at invoicing: a client over its hard limit is not
+        // invoiced further without an override for this month.
+        credit.requireHeadroom(CustomerCreditPort.CreditCheck.forInvoice(clientPartnerId,
+                periodStart));
 
         List<Priced> priced = priceAll(tenantId, clientPartnerId, unbilled);
         BigDecimal taxable = priced.stream()
@@ -167,15 +181,32 @@ public class ClientBillingRunService {
                         UPDATE client_charge
                            SET invoice_id = :invoiceId, version = version + 1
                          WHERE tenant_id = :tenantId
-                           AND client_partner_id = :clientPartnerId
-                           AND billing_period = :period
+                           AND id IN (:ids)
                            AND invoice_id IS NULL
                         """)
                 .param("invoiceId", invoice.id())
                 .param("tenantId", tenantId)
-                .param("clientPartnerId", clientPartnerId)
-                .param("period", periodStart)
+                .param("ids", priced.stream().map(p -> p.charge().id()).toList())
                 .update();
+
+        // Transport still waiting for proofs of delivery cannot stay in a month
+        // that is now closed, or it would never be billed: it moves to the next
+        // open month, as a charge arriving late does.
+        if (awaitingProof > 0) {
+            jdbc.sql("""
+                            UPDATE client_charge
+                               SET billing_period = :next, version = version + 1
+                             WHERE tenant_id = :tenantId
+                               AND client_partner_id = :clientPartnerId
+                               AND billing_period = :period
+                               AND invoice_id IS NULL
+                            """)
+                    .param("next", periods.openPeriodFor(tenantId, clientPartnerId, periodStart))
+                    .param("tenantId", tenantId)
+                    .param("clientPartnerId", clientPartnerId)
+                    .param("period", periodStart)
+                    .update();
+        }
 
         audit.recordAtomically("CLIENT_INVOICE_ISSUED", "CLIENT_INVOICE", invoice.id(), null,
                 Json.object("client", clientPartnerId.toString(),

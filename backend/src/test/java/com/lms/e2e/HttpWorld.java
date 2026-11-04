@@ -26,6 +26,7 @@ import java.util.function.Supplier;
 
 import com.lms.client.ApiClient;
 import com.lms.client.api.AuthenticationApi;
+import com.lms.client.api.DeliveryAndClaimsApi;
 import com.lms.client.api.DriversApi;
 import com.lms.client.api.OrdersApi;
 import com.lms.client.api.PartnersApi;
@@ -52,6 +53,7 @@ import com.lms.client.model.PartnerTransitionRequest;
 import com.lms.client.model.Point;
 import com.lms.client.model.RaiseOrderRequest;
 import com.lms.client.model.RaiseTripRequest;
+import com.lms.client.model.RecordDeliveryProofRequest;
 import com.lms.client.model.RegisterDriverRequest;
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.RegisterPointRadiusTerminalRequest;
@@ -311,5 +313,20 @@ final class HttpWorld {
         trips.beginTransit(tripId, null);
         trips.recordArrival(tripId, new MilestoneRequest().at(deliveredAt.minusMinutes(10)), null);
         trips.completeTrip(tripId, new MilestoneRequest().at(deliveredAt), null);
+    }
+
+    /**
+     * A clean proof of delivery for every consignment the trip carried, the
+     * way the delivery desk records one: a code issued, then given back. The
+     * carrier's bill settles only once every consignment is proved clean.
+     */
+    void proveDelivered(UUID tripId) {
+        UUID loadId = api(TripsApi.class).getTrip(tripId).getLoadId();
+        DeliveryAndClaimsApi desk = api(DeliveryAndClaimsApi.class);
+        for (var consignment : api(PlanningApi.class).listLoadConsignments(loadId)) {
+            String otp = desk.issueDeliveryOtp(consignment.getId(), null).getOtp();
+            desk.recordDeliveryProof(consignment.getId(), new RecordDeliveryProofRequest()
+                    .otp(otp).recipientName("Receiving clerk"), null);
+        }
     }
 }

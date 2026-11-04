@@ -81,8 +81,10 @@ public class AuthorityHooks {
             "INVOICE_READ", "INVOICE_APPROVE",
             "CLIENT_CONTRACT_MANAGE", "CLIENT_BILLING_RUN", "CLIENT_BILLING_READ", "CLIENT_MARGIN_READ",
             "CLIENT_CREDIT_NOTE_ISSUE",
+            "CREDIT_LIMIT_REQUEST", "CREDIT_LIMIT_APPROVE", "CREDIT_OVERRIDE",
             "EXCEPTION_READ", "EXCEPTION_RAISE", "EXCEPTION_MANAGE", "EXCEPTION_CLOSE",
-            "AUDIT_READ");
+            "AUDIT_READ",
+            "POD_RECORD", "POD_READ", "SETTLEMENT_HOLD_RELEASE");
 
     /**
      * Runs before the tenant-scope hooks, because a step that issues a command

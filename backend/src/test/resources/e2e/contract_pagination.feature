@@ -37,6 +37,7 @@ Feature: Listings page by keyset, bounded, and never skip or repeat
       | terminals |
       | vehicles  |
       | drivers   |
+      | orders    |
 
   Scenario Outline: A partners page size of "<limit>" is bounded
     Given 5 contract partners have been registered

@@ -120,7 +120,7 @@ export function Commercial() {
         <GuidesPanel manage={can('ROUTING_GUIDE_MANAGE')} orgUnitId={auth?.orgUnitId ?? ''} />
       )}
       {(can('LOAD_READ') || can('LOAD_ALLOCATE')) && <AllocationsPanel act={can('LOAD_ALLOCATE')} />}
-      {can('INVOICE_READ') && <BillsPanel approve={can('INVOICE_APPROVE')} />}
+      {can('INVOICE_READ') && <BillsPanel approve={can('INVOICE_APPROVE')} release={can('SETTLEMENT_HOLD_RELEASE')} />}
     </>
   );
 }
@@ -530,7 +530,7 @@ function AllocationsPanel({ act }: { act: boolean }) {
 }
 
 /** Freight bills: what the platform computed, what the vendor claimed, and how it settled. */
-function BillsPanel({ approve }: { approve: boolean }) {
+function BillsPanel({ approve, release = false }: { approve: boolean; release?: boolean }) {
   const { gateway } = useSession();
   const [status, setStatus] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
@@ -544,6 +544,7 @@ function BillsPanel({ approve }: { approve: boolean }) {
   const [reason, setReason] = useState('');
   const [outcome, setOutcome] = useState('');
   const [actRefusal, setActRefusal] = useState<Refusal | null>(null);
+  const [releaseReason, setReleaseReason] = useState('');
 
   async function refresh(filter = status) {
     setListRefusal(null);
@@ -594,6 +595,21 @@ function BillsPanel({ approve }: { approve: boolean }) {
     try {
       setOutcome(await gateway.matchFreightBill(openId, Number(claimed)));
       setClaimed('');
+    } catch (e) {
+      setActRefusal(refusalOf(e));
+    }
+    await reread(openId);
+  }
+
+  async function releaseHold(event: FormEvent) {
+    event.preventDefault();
+    if (!openId) {
+      return;
+    }
+    setActRefusal(null);
+    try {
+      await gateway.releaseProofHold(openId, releaseReason);
+      setReleaseReason('');
     } catch (e) {
       setActRefusal(refusalOf(e));
     }
@@ -664,6 +680,15 @@ function BillsPanel({ approve }: { approve: boolean }) {
             {detail.bill.resolution && (
               <div><dt>Resolution</dt><dd data-testid="bill-resolution">{detail.bill.resolution}</dd></div>
             )}
+            {detail.bill.settlementHeldBy && (
+              <div><dt>Held by</dt><dd data-testid="bill-held-by">{detail.bill.settlementHeldBy}</dd></div>
+            )}
+            {detail.bill.awaitingProof && (
+              <div><dt>Proof of delivery</dt><dd data-testid="bill-awaiting-proof">Waiting for clean proofs of delivery</dd></div>
+            )}
+            {detail.bill.proofHoldReleaseNote && (
+              <div><dt>Proof hold</dt><dd data-testid="bill-proof-release">Released: {detail.bill.proofHoldReleaseNote}</dd></div>
+            )}
           </dl>
           <Table rows={detail.lines} columns={BILL_LINE_COLUMNS} rowTestId="bill-line" />
           <p><button className="link" data-testid="print-bill" onClick={() => setSlip(true)}>Print bill</button></p>
@@ -691,6 +716,13 @@ function BillsPanel({ approve }: { approve: boolean }) {
               <input aria-label="Reason for settling" placeholder="Reason" value={reason}
                 onChange={(e) => setReason(e.target.value)} required />
               <button type="submit">Settle in the vendor&apos;s favour</button>
+            </form>
+          )}
+          {release && detail.bill.awaitingProof && (
+            <form className="inline" onSubmit={releaseHold} data-testid="release-proof-hold">
+              <input aria-label="Reason for releasing the proof hold" placeholder="Why it may be paid without clean proofs"
+                value={releaseReason} onChange={(e) => setReleaseReason(e.target.value)} required />
+              <button type="submit">Release proof hold</button>
             </form>
           )}
           {outcome && <p data-testid="match-outcome">Matched: {outcome}.</p>}

@@ -40,30 +40,49 @@ public record DeliveryProof(
         BigDecimal lat,
         BigDecimal lon,
         @Version Long version,
-        Instant createdAt) {
+        Instant createdAt,
+        /** CLEAN until a proof says otherwise; see {@link GoodsCondition}. */
+        GoodsCondition goodsCondition,
+        /** What was short or damaged; null for a clean delivery. */
+        String remark) {
 
     public static DeliveryProof issued(UUID tenantId, UUID consignmentId, String otpHash,
                                        Instant now, Instant expiresAt) {
         return new DeliveryProof(UUID.randomUUID(), tenantId, consignmentId, ProofStatus.OTP_ISSUED,
-                otpHash, now, expiresAt, 0, null, null, null, null, null, null, now);
+                otpHash, now, expiresAt, 0, null, null, null, null, null, null, now,
+                GoodsCondition.CLEAN, null);
     }
 
     /** A fresh code replaces the old one and starts the count of wrong attempts again. */
     public DeliveryProof withNewCode(String otpHash, Instant now, Instant expiresAt) {
         return new DeliveryProof(id, tenantId, consignmentId, status, otpHash, now, expiresAt, 0,
-                recipientName, photoRef, deliveredAt, lat, lon, version, createdAt);
+                recipientName, photoRef, deliveredAt, lat, lon, version, createdAt, goodsCondition, remark);
     }
 
     public DeliveryProof afterWrongAttempt() {
         return new DeliveryProof(id, tenantId, consignmentId, status, otpHash, otpIssuedAt,
                 otpExpiresAt, otpAttempts + 1, recipientName, photoRef, deliveredAt, lat, lon,
-                version, createdAt);
+                version, createdAt, goodsCondition, remark);
     }
 
+    /**
+     * The proof recorded.
+     *
+     * @param condition null is CLEAN
+     * @param remark    what was wrong; required unless the goods were clean, and
+     *                  dropped when they were
+     */
     public DeliveryProof confirmed(String recipientName, String photoRef, Instant deliveredAt,
-                                   BigDecimal lat, BigDecimal lon) {
+                                   BigDecimal lat, BigDecimal lon, GoodsCondition condition,
+                                   String remark) {
+        GoodsCondition received = condition == null ? GoodsCondition.CLEAN : condition;
         return new DeliveryProof(id, tenantId, consignmentId, ProofStatus.CONFIRMED, otpHash,
                 otpIssuedAt, otpExpiresAt, otpAttempts, recipientName, photoRef, deliveredAt, lat,
-                lon, version, createdAt);
+                lon, version, createdAt, received, received == GoodsCondition.CLEAN ? null : remark);
+    }
+
+    /** Whether the goods were received with nothing short or damaged. */
+    public boolean clean() {
+        return goodsCondition == null || goodsCondition == GoodsCondition.CLEAN;
     }
 }

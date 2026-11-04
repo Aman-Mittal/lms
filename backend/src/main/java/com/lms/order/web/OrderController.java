@@ -29,6 +29,10 @@ import com.lms.order.command.domain.SalesOrder;
 import com.lms.order.query.OrderLineView;
 import com.lms.order.query.OrderQueryService;
 import com.lms.order.query.OrderView;
+import com.lms.shared.audit.AuditHistoryQueryService;
+import com.lms.shared.audit.HistoryEntryView;
+import com.lms.shared.audit.HistoryViewer;
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
@@ -64,10 +68,16 @@ public class OrderController {
 
     private final OrderCommandService orders;
     private final OrderQueryService orderQueries;
+    private final AuditHistoryQueryService history;
 
-    public OrderController(OrderCommandService orders, OrderQueryService orderQueries) {
+    /** The audit resource type the order module writes; see OrderCommandService. */
+    private static final String AUDIT_TYPE = "SalesOrder";
+
+    public OrderController(OrderCommandService orders, OrderQueryService orderQueries,
+                           AuditHistoryQueryService history) {
         this.orders = orders;
         this.orderQueries = orderQueries;
+        this.history = history;
     }
 
     @GetMapping
@@ -85,6 +95,30 @@ public class OrderController {
                 .orElseThrow(() -> new ResourceNotFoundException("SalesOrder", id));
         return ResponseEntity.ok().eTag("\"" + (order.version() == null ? 0 : order.version()) + "\"")
                 .body(order);
+    }
+
+    /** Exact lookup by order number; a number that is not the tenant's (or the caller's) is a 404. */
+    @GetMapping("/by-number/{orderNo}")
+    public OrderView byNumber(@PathVariable String orderNo) {
+        return orderQueries.findByOrderNo(orderNo)
+                .orElseThrow(() -> new ResourceNotFoundException("No order numbered " + orderNo));
+    }
+
+    /**
+     * What has happened to the order, newest first. Readable by whoever can
+     * read the order: the order is read first, so an order the caller may not
+     * see is a 404 here exactly as it is on {@code GET /orders/{id}}.
+     */
+    @GetMapping("/{id}/history")
+    public Slice<HistoryEntryView> history(@PathVariable UUID id,
+                                           @RequestParam(required = false) String cursor,
+                                           @RequestParam(required = false) Integer limit) {
+        if (orderQueries.findById(id).isEmpty()) {
+            throw new ResourceNotFoundException("SalesOrder", id);
+        }
+        AccessSubject caller = AccessSubject.current();
+        return history.historyOf(AUDIT_TYPE, id, cursor, limit,
+                HistoryViewer.of(caller.userId(), caller.partnerScope() != null));
     }
 
     @GetMapping("/{id}/lines")
@@ -232,7 +266,8 @@ public class OrderController {
     public record RaiseOrderRequest(
             @NotNull UUID orgUnitId,
             @NotNull UUID customerPartnerId,
-            @NotBlank String orderNo,
+            /** Assigned from the tenant's sequence when omitted or blank. */
+            String orderNo,
             @NotNull UUID originTerminalId,
             Instant requestedPickupAt,
             Instant requestedDeliveryAt,

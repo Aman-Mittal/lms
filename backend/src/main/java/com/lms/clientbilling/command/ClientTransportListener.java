@@ -16,6 +16,7 @@
 package com.lms.clientbilling.command;
 
 import com.lms.execution.events.TripCompleted;
+import com.lms.execution.events.TripDispatched;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -28,6 +29,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * <em>before</em> the capture opens its transaction, with the scope taken from
  * the event so the restart-republication path works as well as the happy one.
  * The capture is idempotent on trip and client, so a redelivery is a no-op.
+ *
+ * <p>A client whose contract bills on dispatch is charged when the trip is
+ * dispatched instead; the completion then finds the charge already there.
  */
 @Component
 public class ClientTransportListener {
@@ -43,5 +47,12 @@ public class ClientTransportListener {
         TenantContext.runWith(event.tenantId(), null, () ->
                 charges.captureTransport(event.tripId(), event.tripNo(), event.loadId(),
                         event.dispatchedAt(), event.completedAt()));
+    }
+
+    @TransactionalEventListener
+    public void onTripDispatched(TripDispatched event) {
+        TenantContext.runWith(event.tenantId(), null, () ->
+                charges.captureTransportOnDispatch(event.tripId(), event.tripNo(), event.loadId(),
+                        event.dispatchedAt()));
     }
 }

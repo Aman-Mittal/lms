@@ -59,7 +59,13 @@ public record ClientContract(
          */
         int storageUnitsPerPallet,
         @Version Long version,
-        Instant createdAt) {
+        Instant createdAt,
+        /**
+         * When the client may be invoiced for a trip's transport: false (the
+         * default) once each of its consignments on the trip has a confirmed
+         * proof of delivery; true as soon as the trip is dispatched.
+         */
+        boolean billOnDispatch) {
 
     /**
      * The rates a contract is published with.
@@ -87,6 +93,15 @@ public record ClientContract(
     public static ClientContract publish(UUID id, UUID tenantId, UUID orgUnitId, String code,
                                          UUID clientPartnerId, String currency,
                                          LocalDate effectiveFrom, Rates rates) {
+        return publish(id, tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom,
+                rates, false);
+    }
+
+    /** As the other {@code publish}, saying whether transport is billed on dispatch. */
+    public static ClientContract publish(UUID id, UUID tenantId, UUID orgUnitId, String code,
+                                         UUID clientPartnerId, String currency,
+                                         LocalDate effectiveFrom, Rates rates,
+                                         boolean billOnDispatch) {
         if (code == null || code.isBlank()) {
             throw new IllegalArgumentException("A client contract needs a name somebody can refer to");
         }
@@ -104,7 +119,7 @@ public record ClientContract(
                 percentage(rates.transportTaxRatePct(), "transport tax rate"),
                 percentage(rates.warehouseTaxRatePct(), "warehouse tax rate"),
                 unitsPerPallet(rates.storageUnitsPerPallet()),
-                null, Instant.now());
+                null, Instant.now(), billOnDispatch);
     }
 
     /** Whether this version was in force on the given day, both bounds inclusive. */
@@ -156,7 +171,7 @@ public record ClientContract(
                 effectiveFrom, lastDay, transportRatePerKg, transportMinimumCharge,
                 storageRatePerPalletDay, handlingInRatePerPallet, handlingOutRatePerPallet,
                 transportTaxRatePct, warehouseTaxRatePct, storageUnitsPerPallet, version,
-                createdAt);
+                createdAt, billOnDispatch);
     }
 
     private static BigDecimal percentage(BigDecimal value, String what) {

@@ -23,6 +23,10 @@ package com.lms.webhooks.command;
  */
 public enum WebhookEventType {
     ORDER_VALIDATED,
+    ORDER_RAISED,
+    ORDER_AMENDED,
+    ORDER_CANCELLED,
+    ORDER_FULFILLED,
     CONSIGNMENTS_GENERATED,
     CONSIGNMENT_SPLIT,
     TRIP_DISPATCHED,
@@ -31,6 +35,8 @@ public enum WebhookEventType {
     DELIVERY_PROOF_RECORDED,
     CLAIM_RAISED,
     CLAIM_STATUS_CHANGED,
+    CONSIGNMENT_IN_TRANSIT,
+    CONSIGNMENT_DELIVERED,
     PING;
 
     public boolean subscribable() {

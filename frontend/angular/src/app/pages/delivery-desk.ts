@@ -15,7 +15,7 @@
  */
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DeliveryProofView, LmsGateway, OtpIssued } from '../gateway/lms-gateway';
+import { DeliveryProofView, GOODS_CONDITIONS, GoodsCondition, LmsGateway, OtpIssued } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { Qr } from './qr';
 import { EntityPicker } from './entity-picker';
@@ -36,6 +36,9 @@ import { EntityPicker } from './entity-picker';
     @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
     @if (consignmentId() && loaded()) {
       <section data-testid="proof">
+        @if (consignmentStatus()) {
+          <p data-testid="delivery-consignment-status">Consignment: <strong>{{ consignmentStatus() }}</strong></p>
+        }
         @if (proof() === null) {
           <p class="muted" data-testid="no-proof">No code has been issued for this consignment yet.</p>
         } @else if (proof(); as p) {
@@ -45,6 +48,8 @@ import { EntityPicker } from './entity-picker';
               <div><dt>Received by</dt><dd data-testid="proof-recipient">{{ p.recipientName }}</dd></div>
               <div><dt>Photo</dt><dd>{{ p.photoRef || '—' }}</dd></div>
               <div><dt>Delivered</dt><dd>{{ p.deliveredAt }}</dd></div>
+              <div><dt>Goods</dt><dd data-testid="proof-condition">{{ p.goodsCondition }}</dd></div>
+              @if (p.remark) { <div><dt>Remark</dt><dd data-testid="proof-remark">{{ p.remark }}</dd></div> }
             } @else {
               <div><dt>Code valid until</dt><dd>{{ p.otpExpiresAt }}</dd></div>
             }
@@ -67,6 +72,12 @@ import { EntityPicker } from './entity-picker';
                      [(ngModel)]="recipient" required />
               <input name="photo" placeholder="Photo reference" aria-label="Photo reference"
                      [(ngModel)]="photo" />
+              <select aria-label="Goods received" data-testid="proof-condition-input" [value]="condition()"
+                      (change)="condition.set($any($event.target).value)">
+                @for (c of conditions; track c) { <option [value]="c" [selected]="c === condition()">{{ c }}</option> }
+              </select>
+              <input placeholder="Remark: what was short or damaged" aria-label="Remark" data-testid="proof-remark-input"
+                     [value]="remark()" (input)="remark.set($any($event.target).value)" [required]="condition() !== 'CLEAN'" />
               <button type="submit">Record proof</button>
             </form>
           }
@@ -82,6 +93,7 @@ import { EntityPicker } from './entity-picker';
                   <div><dt>Received by</dt><dd>{{ p.recipientName }}</dd></div>
                   <div><dt>Delivered</dt><dd>{{ p.deliveredAt }}</dd></div>
                   <div><dt>Photo</dt><dd>{{ p.photoRef || '—' }}</dd></div>
+                  <div><dt>Goods</dt><dd>{{ p.goodsCondition }}@if (p.remark) { — {{ p.remark }}}</dd></div>
                 </dl>
                 <app-qr [payload]="'LMS:CONSIGNMENT:' + p.consignmentId" />
               </div>
@@ -108,6 +120,11 @@ export class DeliveryDesk {
   readonly slip = signal(false);
   readonly record = computed(() => this.session.can('POD_RECORD'));
   readonly confirmed = computed(() => this.proof()?.status === 'CONFIRMED');
+  readonly conditions = GOODS_CONDITIONS;
+  readonly condition = signal<GoodsCondition>('CLEAN');
+  readonly remark = signal('');
+  /** What the proof did to the consignment; empty when it cannot be read. */
+  readonly consignmentStatus = signal('');
 
   readonly typed = signal('');
   otp = '';
@@ -134,8 +151,10 @@ export class DeliveryDesk {
   async submit(): Promise<void> {
     this.error.set('');
     try {
-      await this.gateway.recordDeliveryProof(this.consignmentId(),
-        { otp: this.otp, recipientName: this.recipient, photoRef: this.photo });
+      await this.gateway.recordDeliveryProof(this.consignmentId(), {
+        otp: this.otp, recipientName: this.recipient, photoRef: this.photo,
+        goodsCondition: this.condition(), remark: this.remark(),
+      });
       await this.refresh();
     } catch (e) {
       this.error.set((e as Error).message);
@@ -151,6 +170,8 @@ export class DeliveryDesk {
     try {
       this.proof.set(await this.gateway.deliveryProof(this.consignmentId()));
       this.loaded.set(true);
+      // Best effort: a caller who may prove a delivery but not read consignments still has the desk.
+      this.consignmentStatus.set(await this.gateway.consignment(this.consignmentId()).then((c) => c.status, () => ''));
     } catch (e) {
       this.loaded.set(false);
       this.loadError.set((e as Error).message);
