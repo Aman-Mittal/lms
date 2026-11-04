@@ -16,7 +16,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import {
-  ApiProblem, MATERIAL_CLASSES, type HistoryEntryRow, type OrderDesk as Desk, type OrderHeaderDraft,
+  ApiProblem, MATERIAL_CLASSES, type CloseKindChoice, type HistoryEntryRow, type OrderDesk as Desk, type OrderHeaderDraft,
   type OrderLineDraft, type OrderLineView, type OrderRaiseDraft,
 } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
@@ -53,6 +53,9 @@ function editableLines(lines: OrderLineView[]): OrderLineDraft[] {
 
 /** Once consignments are cut from an order, its lines belong to them. */
 const PLANNED = ['PARTIALLY_PLANNED', 'FULLY_PLANNED'];
+
+/** An order may be closed from validation until it ends. */
+const CLOSABLE = ['VALIDATED', ...PLANNED];
 
 /** A refusal as the desk shows it: the problem's stable name, then what it says. */
 interface Refusal {
@@ -158,6 +161,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [done, setDone] = useState('');
   const [reason, setReason] = useState('');
+  const [closeReason, setCloseReason] = useState('');
   const [slip, setSlip] = useState(false);
   const [tab, setTab] = useState<'details' | 'history'>('details');
 
@@ -170,6 +174,17 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
   const draft = order.status === 'DRAFT';
   const validated = order.status === 'VALIDATED';
   const editable = can('ORDER_UPDATE') && (draft || validated);
+  const closable = can('ORDER_UPDATE') && CLOSABLE.includes(order.status);
+
+  /** Closes the order, or one line of it; the reason is cleared once the close is done. */
+  function close(outcome: string, kind: CloseKindChoice, lineId?: string) {
+    void act(outcome, async () => {
+      await (lineId
+        ? gateway.closeOrderLine(order.id, lineId, kind, closeReason)
+        : gateway.closeOrder(order.id, kind, closeReason));
+      setCloseReason('');
+    });
+  }
 
   async function act(outcome: string, action: () => Promise<unknown>) {
     setRefusal(null);
@@ -215,6 +230,13 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
         <div><dt>Lines</dt><dd data-testid="order-line-count">{order.lineCount}</dd></div>
         <div><dt>Weight kg</dt><dd data-testid="order-weight">{order.totalDeadWeightKg}</dd></div>
         <div><dt>Pickup</dt><dd>{order.requestedPickupAt || '—'}</dd></div>
+        {order.closeKind && (
+          <div>
+            <dt>Closed</dt>
+            <dd data-testid="order-close-kind">{order.closeKind}</dd>
+            {order.closeReason && <dd className="muted" data-testid="order-close-reason">{order.closeReason}</dd>}
+          </div>
+        )}
       </dl>
       <p className="actions">
         {draft && can('ORDER_UPDATE') && (
@@ -257,7 +279,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
       <div className="table-scroll">
         <table data-testid="order-lines">
           <thead>
-            <tr><th>#</th><th>Material</th><th>Class</th><th>Qty</th><th>Weight kg</th><th>L × W × H m</th><th>Consignee</th><th>Destination</th><th>Planned</th><th /></tr>
+            <tr><th>#</th><th>Material</th><th>Class</th><th>Qty</th><th>Weight kg</th><th>L × W × H m</th><th>Consignee</th><th>Destination</th><th>Planned</th><th>Closed</th><th /></tr>
           </thead>
           <tbody>
             {desk.lines.map((l) => (
@@ -271,7 +293,20 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
                 <td>{l.consigneeName}</td>
                 <td>{l.destinationTerminalCode}</td>
                 <td>{l.planned ? 'Yes' : ''}</td>
+                <td data-testid="line-closed">{l.cancelled ? 'CANCELLED' : l.closeKind}</td>
                 <td>
+                  {closable && !l.closeKind && !l.cancelled && (
+                    <button type="button" className="link" data-testid="close-line"
+                      onClick={() => close(`Line ${l.lineNo} closed.`, 'SHORT', l.id)}>
+                      Short-close line
+                    </button>
+                  )}{' '}
+                  {closable && !l.closeKind && !l.cancelled && can('ORDER_FORCE_CLOSE') && (
+                    <button type="button" className="link" data-testid="force-close-line"
+                      onClick={() => close(`Line ${l.lineNo} closed.`, 'FORCE', l.id)}>
+                      Force-close line
+                    </button>
+                  )}
                   {draft && can('ORDER_UPDATE') && desk.lines.length > 1 && (
                     <button type="button" className="link" data-testid="remove-line"
                       onClick={() => act(`Line ${l.lineNo} removed.`, () => gateway.removeOrderLine(order.id, version, l.id))}>
@@ -285,6 +320,31 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
         </table>
       </div>
 
+      {closable && (
+        <section data-testid="close-order" aria-label="Close the order">
+          <h3>Close the order</h3>
+          <p className="muted">
+            A close needs every line planned and delivered. A short close gives up what is not yet planned once
+            cut freight has left; a forced close ends the order whatever its freight is doing. Both need a reason,
+            which also serves the line actions above. Consignments already cut carry on.
+          </p>
+          <div className="inline">
+            <input aria-label="Close reason" placeholder="Why it is closed" value={closeReason}
+              onChange={(e) => setCloseReason(e.target.value)} />
+            <button type="button" data-testid="close-normal" onClick={() => close('Order closed.', 'NORMAL')}>
+              Close
+            </button>{' '}
+            <button type="button" data-testid="close-short" onClick={() => close('Order short-closed.', 'SHORT')}>
+              Short close
+            </button>{' '}
+            {can('ORDER_FORCE_CLOSE') && (
+              <button type="button" data-testid="close-force" onClick={() => close('Order force-closed.', 'FORCE')}>
+                Force close
+              </button>
+            )}
+          </div>
+        </section>
+      )}
       {PLANNED.includes(order.status) && (
         <p className="muted" data-testid="not-amendable">
           Consignments have been cut from this order, so it can no longer be amended
