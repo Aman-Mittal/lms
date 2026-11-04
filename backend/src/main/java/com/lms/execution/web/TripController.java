@@ -25,6 +25,10 @@ import com.lms.execution.command.domain.WeighbridgeReading;
 import com.lms.execution.query.GateEventView;
 import com.lms.execution.query.TripQueryService;
 import com.lms.execution.query.TripView;
+import com.lms.shared.audit.AuditHistoryQueryService;
+import com.lms.shared.audit.HistoryEntryView;
+import com.lms.shared.audit.HistoryViewer;
+import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
@@ -61,10 +65,13 @@ public class TripController {
 
     private final TripCommandService trips;
     private final TripQueryService tripQueries;
+    private final AuditHistoryQueryService history;
 
-    public TripController(TripCommandService trips, TripQueryService tripQueries) {
+    public TripController(TripCommandService trips, TripQueryService tripQueries,
+                          AuditHistoryQueryService history) {
         this.trips = trips;
         this.tripQueries = tripQueries;
+        this.history = history;
     }
 
     @GetMapping
@@ -79,6 +86,17 @@ public class TripController {
     public TripView get(@PathVariable UUID id) {
         return tripQueries.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Trip", id));
+    }
+
+    /** The trip's audit trail, newest first; a 404 wherever reading the trip is. */
+    @GetMapping("/{id}/history")
+    public Slice<HistoryEntryView> history(@PathVariable UUID id,
+                                           @RequestParam(required = false) String cursor,
+                                           @RequestParam(required = false) Integer limit) {
+        get(id);
+        AccessSubject caller = AccessSubject.current();
+        return history.historyOf("TRIP", id, cursor, limit,
+                HistoryViewer.of(caller.userId(), caller.partnerScope() != null));
     }
 
     @GetMapping("/{id}/gate-log")
