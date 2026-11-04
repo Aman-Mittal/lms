@@ -54,6 +54,7 @@ const Itineraries = lazy(() => import('./pages/Itineraries').then((m) => ({ defa
 const MilkRuns = lazy(() => import('./pages/MilkRuns').then((m) => ({ default: m.MilkRuns })));
 // Administration: loaded on first visit too; few sessions open it.
 const AdminDesk = lazy(() => import('./pages/AdminDesk').then((m) => ({ default: m.AdminDesk })));
+const CreditLimits = lazy(() => import('./pages/Credit').then((m) => ({ default: m.CreditLimits })));
 
 function Deferred({ children }: { children: ReactNode }) {
   return <Suspense fallback={<p className="muted">Loading…</p>}>{children}</Suspense>;
@@ -99,6 +100,7 @@ export function App() {
           <Route path="admin/users" element={<Deferred><AdminDesk section="users" /></Deferred>} />
           <Route path="admin/access-policies" element={<Deferred><AdminDesk section="policies" /></Deferred>} />
           <Route path="admin/compliance" element={<Deferred><AdminDesk section="compliance" /></Deferred>} />
+          <Route path="admin/credit-limits" element={<Deferred><CreditLimits /></Deferred>} />
           {/* Control tower */}
           <Route path="exception-desk" element={<ExceptionDesk />} />
           <Route path=":resource" element={<ListPage />} />

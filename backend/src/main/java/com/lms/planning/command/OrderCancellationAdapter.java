@@ -77,8 +77,9 @@ public class OrderCancellationAdapter implements OrderCancellationHook {
             ConsignmentStatus.DELIVERED);
 
     /**
-     * A full truckload's consignments stay ASSIGNED_TO_LOAD while the load is
-     * on the road, so the load's own status is what says it has left.
+     * A full truckload dispatched before dispatch moved its consignments to
+     * IN_TRANSIT still reads ASSIGNED_TO_LOAD on the road, so the load's own
+     * status is what says it has left.
      */
     private static final Set<String> LEFT = Set.of(LoadStatus.DISPATCHED.name(),
             LoadStatus.COMPLETED.name());

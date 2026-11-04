@@ -32,6 +32,13 @@ Feature: A consignee confirms a delivery with a code, and a claim can follow, ov
     Then the delivery proof is confirmed for "Asha Rao" with photo "s3://pod/asha.jpg"
     And a new code can no longer be issued for the delivery
 
+  Scenario: A proof recording a shortage delivers the consignment and says what was short
+    Then the consignment reads IN_TRANSIT before any proof
+    When the desk issues a delivery code
+    And the right code is given by recipient "Asha Rao" recording a SHORTAGE of "One carton short"
+    Then the delivery proof records a SHORTAGE of "One carton short"
+    And the consignment reads DELIVERED with a confirmed SHORTAGE proof
+
   Scenario: Three wrong codes lock the code until a new one is issued
     When the desk issues a delivery code
     And three wrong codes are given for the delivery
