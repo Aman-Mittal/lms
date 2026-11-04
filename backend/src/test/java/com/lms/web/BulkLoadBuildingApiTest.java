@@ -169,10 +169,10 @@ class BulkLoadBuildingApiTest {
         assertThat(planning.generateConsignments(orderId, null)).hasSize(LARGE);
 
         // The queue narrowed to the order holds exactly its consignments.
-        List<Consignment> queue = planning.listUnassignedConsignments(null, 200, orderId)
+        List<Consignment> queue = planning.listUnassignedConsignments(null, 200, orderId, null)
                 .getItems();
         assertThat(queue).hasSize(LARGE).allMatch(c -> "PLANNED".equals(c.getStatus()));
-        assertThat(planning.listUnassignedConsignments(null, 200, UUID.randomUUID()).getItems())
+        assertThat(planning.listUnassignedConsignments(null, 200, UUID.randomUUID(), null).getItems())
                 .isEmpty();
 
         // Board them in reverse queue order, to prove the order given is kept.
@@ -188,7 +188,7 @@ class BulkLoadBuildingApiTest {
         Load built = planning.getLoad(load);
         assertThat(built.getConsignmentCount()).isEqualTo(LARGE);
         assertThat(built.getPlannedWeightKg()).isEqualByComparingTo("15000");
-        assertThat(planning.listUnassignedConsignments(null, 200, orderId).getItems()).isEmpty();
+        assertThat(planning.listUnassignedConsignments(null, 200, orderId, null).getItems()).isEmpty();
 
         planning.planLoad(load, null);
         assertThat(planning.getLoad(load).getStatus()).isEqualTo("PLANNED");
@@ -362,7 +362,7 @@ class BulkLoadBuildingApiTest {
     }
 
     private Map<String, Consignment> byConsignee(PlanningApi planning, UUID orderId) {
-        return planning.listUnassignedConsignments(null, 200, orderId).getItems().stream()
+        return planning.listUnassignedConsignments(null, 200, orderId, null).getItems().stream()
                 .collect(Collectors.toMap(Consignment::getConsigneeName, c -> c));
     }
 

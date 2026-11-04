@@ -367,7 +367,7 @@ class MultimodalApiTest {
         ApiClient apiClient = new ApiClient().setBasePath("http://localhost:" + port);
         apiClient.getFeignBuilder().requestInterceptor(template ->
                 template.header("Authorization", "Bearer " + token));
-        return apiClient.buildClient(ControlTowerApi.class).listExceptions(null, null, null, 100)
+        return apiClient.buildClient(ControlTowerApi.class).listExceptions(null, null, null, 100, null)
                 .getItems().stream()
                 .filter(ticket -> itineraryId.equals(ticket.getSubjectId()))
                 .filter(ticket -> ticket.getCategory() == ExceptionCategory.MISSED_CONNECTION)

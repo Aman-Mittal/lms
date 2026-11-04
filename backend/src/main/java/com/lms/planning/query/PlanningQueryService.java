@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -145,11 +146,17 @@ public class PlanningQueryService {
      * index that exists rather than one added to serve the screen.
      */
     public Slice<LoadView> listLoads(String status, String cursor, Integer limit) {
+        return listLoads(status, cursor, limit, null);
+    }
+
+    /** As {@link #listLoads(String, String, Integer)}, narrowed to load numbers containing {@code q}. */
+    public Slice<LoadView> listLoads(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<LoadView> rows = jdbc.sql(LOAD_SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR l.status = CAST(:status AS text))
                            AND (CAST(:cursor AS text) IS NULL OR l.load_no > CAST(:cursor AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(l.load_no) LIKE CAST(:q AS text))
                         """ + LOAD_PARTNER_SCOPE + """
                          ORDER BY l.load_no
                          LIMIT :limit
@@ -157,6 +164,7 @@ public class PlanningQueryService {
                 .param("status", status)
                 .param("partner", AccessSubject.current().partnerScope())
                 .param("cursor", cursor)
+                .param("q", Search.containsPattern(q))
                 .param("limit", pageSize + 1)
                 .query(LoadView.class)
                 .list();
@@ -195,6 +203,12 @@ public class PlanningQueryService {
      * <p>Served by {@code consignment_parent_idx}.
      */
     public Optional<Slice<ConsignmentView>> listParts(UUID parentId, String cursor, Integer limit) {
+        return listParts(parentId, cursor, limit, null);
+    }
+
+    /** As {@link #listParts(UUID, String, Integer)}, narrowed to part references containing {@code q}. */
+    public Optional<Slice<ConsignmentView>> listParts(UUID parentId, String cursor, Integer limit,
+                                                      String q) {
         if (jdbc.sql("SELECT 1 FROM consignment WHERE id = :id").param("id", parentId)
                 .query(Integer.class).optional().isEmpty()) {
             return Optional.empty();
@@ -203,12 +217,14 @@ public class PlanningQueryService {
         List<ConsignmentView> rows = jdbc.sql(CONSIGNMENT_SELECT + """
                          WHERE c.tenant_id = app_current_tenant()
                            AND c.parent_consignment_id = :parent
+                           AND (CAST(:q AS text) IS NULL OR lower(c.tracking_ref) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL
                                 OR c.tracking_ref > CAST(:cursor AS text))
                          ORDER BY c.tracking_ref
                          LIMIT :limit
                         """)
                 .param("parent", parentId)
+                .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
                 .query(ConsignmentView.class)
@@ -232,6 +248,11 @@ public class PlanningQueryService {
      * @param orderId null for the whole queue
      */
     public Slice<ConsignmentView> listUnassigned(UUID orderId, String cursor, Integer limit) {
+        return listUnassigned(orderId, cursor, limit, null);
+    }
+
+    /** As {@link #listUnassigned(UUID, String, Integer)}, narrowed to references containing {@code q}. */
+    public Slice<ConsignmentView> listUnassigned(UUID orderId, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
 
         String ofOrder = orderId == null ? "" : """
@@ -241,17 +262,62 @@ public class PlanningQueryService {
                          WHERE c.status = 'PLANNED'
                            AND lc.consignment_id IS NULL
                         """ + ofOrder + """
+                           AND (CAST(:q AS text) IS NULL OR lower(c.tracking_ref) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL
                                 OR c.tracking_ref > CAST(:cursor AS text))
                          ORDER BY c.tracking_ref
                          LIMIT :limit
                         """)
+                .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1);
         if (orderId != null) {
             statement = statement.param("orderId", orderId);
         }
         List<ConsignmentView> rows = statement
+                .query(ConsignmentView.class)
+                .list();
+
+        return Slice.of(rows, pageSize, ConsignmentView::trackingRef);
+    }
+
+    /**
+     * Every consignment in any state, by tracking reference: what a desk picks
+     * from when it acts on one that has already moved -- a delivery to prove, a
+     * claim to raise, a link to send. Parts are listed like any consignment.
+     *
+     * <p>A portal user sees only the consignments their own partner is the
+     * customer of, as on the hub queue; staff, with no partner, see them all.
+     *
+     * <p>Open to each desk that picks from it, not only to planners: proving
+     * a delivery ({@code POD_READ}), raising a claim ({@code CLAIM_READ}) and
+     * sending a tracking link ({@code TRACKING_LINK_MANAGE}) all start from a
+     * consignment, and a clerk with only that right still needs to find it.
+     *
+     * @param status optional; null means every status
+     * @param q      optional; narrows to references containing it, ignoring case
+     */
+    @PreAuthorize("hasAnyAuthority('LOAD_READ', 'POD_READ', 'CLAIM_READ', 'TRACKING_LINK_MANAGE')")
+    public Slice<ConsignmentView> listConsignments(String status, String cursor, Integer limit,
+                                                   String q) {
+        int pageSize = Slice.clampLimit(limit);
+
+        List<ConsignmentView> rows = jdbc.sql(CONSIGNMENT_SELECT + """
+                         WHERE c.tenant_id = app_current_tenant()
+                           AND (CAST(:status AS text) IS NULL OR c.status = CAST(:status AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(c.tracking_ref) LIKE CAST(:q AS text))
+                           AND (CAST(:cursor AS text) IS NULL
+                                OR c.tracking_ref > CAST(:cursor AS text))
+                           AND (CAST(:partner AS uuid) IS NULL
+                                OR c.customer_partner_id = CAST(:partner AS uuid))
+                         ORDER BY c.tracking_ref
+                         LIMIT :limit
+                        """)
+                .param("status", status)
+                .param("q", Search.containsPattern(q))
+                .param("cursor", cursor)
+                .param("partner", AccessSubject.current().partnerScope())
+                .param("limit", pageSize + 1)
                 .query(ConsignmentView.class)
                 .list();
 

@@ -21,12 +21,29 @@ import {
   type CustomFieldEntityType, type CustomFieldType,
   type RegisterPartnerRequestPartnerTypeEnum,
   type AllocationRule, type AllocationRuleAction, type Load, type AllocationRuleRequest,
+  type AddOrderLineRequest, type Order, type OrderLine, type UpdateOrderRequest,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
   type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
 } from '../api';
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
+// Pickers
+import type { PickPage, PickQuery } from './lmsGateway';
+import {
+  ClientBillingApi, type ClientCharge, type ClientContract, type ClientInvoice, type ClientInvoiceLine,
+  type ClientStatementEntry,
+} from '../api';
+import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lmsGateway';
+// Commercial
+import {
+  type AddSlabRequestRateBasisEnum, type Allocation as CommercialAllocation, type DefineGuideRequestStrategyEnum,
+  type FreightBill as CommercialFreightBill, type FreightBillLine as CommercialFreightBillLine,
+  type Offer as CommercialOffer, type RoutingGuide as CommercialRoutingGuide,
+} from '../api';
+import type {
+  AllocationDetail, FreightBillDetail, GuideDraft, GuideVendorDraft, RoutingGuideDetail, SlabDraft, TariffDraft,
+} from './lmsGateway';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
   ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
@@ -36,7 +53,72 @@ import {
   type GeoPoint, type MapFeature, type Mapped, type MappedDetail, type TrackingLinkView, type TripRoute,
   type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
   type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
+  type OrderDesk, type OrderHeaderDraft, type OrderLineDraft, type OrderRaiseDraft,
 } from './lmsGateway';
+// Warehouse operations
+import { ListTerminalsCategoryEnum, WarehouseApi } from '../api';
+import type {
+  AsnDraft, DispatchDraft, OutboundDraft, ReceiptCountDraft, SkuDraft, StockMoveDraft, WarehouseDocument,
+} from './lmsGateway';
+// Administration
+import {
+  AccessPoliciesApi, ComplianceApi, UsersApi, type AccessPolicy, type AttachDocumentRequest, type ComplianceDocument,
+  type CreateAccessPolicyRequestEffectEnum, type ReviseAccessPolicyRequestEffectEnum, type SetUserAccessAttributesRequest,
+  type SetUserAccessAttributesRequestFreightModesEnum, type User, type UserAccessAttributes,
+} from '../api';
+import type {
+  AccessAttributesDraft, AccessFreightMode, AccessPolicyChanges, AccessPolicyDraft, AccessPolicyPage,
+  AccessPolicyView, AdminUser, DocumentDraft, DocumentOwnerType, PolicyEffect,
+} from './lmsGateway';
+// Control tower
+import {
+  type Exception as ApiException, type ExceptionCategory, type ListExceptionsSeverityEnum,
+} from '../api';
+import type {
+  DetectorSettingsView, ExceptionDraft, ExceptionFilter, TripActivity, TripWatchDraft, TripWatchView,
+} from './lmsGateway';
+// Rate cards and rail tariffs
+import {
+  type RailTariff as RailRateCard, type Tariff as RateCard, type TariffCard as RateCardWithBands,
+  type TariffSlab as RateCardBand,
+} from '../api';
+import type { RailTariffDraft, RateCardPage, TariffCardDetail, TariffFilter } from './lmsGateway';
+
+/** A ticket as the exception desk lists and opens it. */
+function ticketRow(e: ApiException): Row {
+  return {
+    id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
+    category: text(e.category), description: text(e.description), source: text(e.source),
+    tripId: text(e.tripId), tripNo: text(e.tripNo), registrationNo: text(e.registrationNo),
+    subjectLabel: text(e.subjectLabel), assigneeName: text(e.assigneeName), raisedBy: text(e.raisedBy),
+    raisedAt: text(e.raisedAt), resolution: text(e.resolution), resolvedBy: text(e.resolvedBy),
+    closedBy: text(e.closedBy), suspendsSettlement: e.suspendsSettlement ? 'Yes' : '',
+    positionSource: text(e.positionSource), lat: text(e.lat), lon: text(e.lon),
+  };
+}
+
+/** A typed number, or nothing when the field was left blank. */
+function decimalOrAbsent(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+/** A blank note is no note. */
+function noteOf(note: string): { note: string } | undefined {
+  return note.trim() ? { note: note.trim() } : undefined;
+}
+
+/** The call's result, or null when the API answers 404; any other failure as an ApiProblem. */
+async function absentOn404<T>(call: () => Promise<T>): Promise<T | null> {
+  try {
+    return await guard(call);
+  } catch (e) {
+    if (e instanceof ApiProblem && e.status === 404) {
+      return null;
+    }
+    throw e;
+  }
+}
 
 /** A load as the building screen shows it. */
 function loadRow(l: Load): Row {
@@ -56,6 +138,55 @@ function consignmentRow(c: Consignment): Row {
     totalDeadWeightKg: text(c.totalDeadWeightKg), materialClasses: text(c.materialClasses),
     containsHazmat: c.containsHazmat ? 'Yes' : '',
   };
+}
+
+/** A client contract version as the billing desk lists it. */
+function contractRow(c: ClientContract): Row {
+  return {
+    id: text(c.id), code: text(c.code), currency: text(c.currency), effectiveFrom: text(c.effectiveFrom),
+    effectiveTo: text(c.effectiveTo), transportRatePerKg: text(c.transportRatePerKg),
+    handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
+    storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+  };
+}
+
+/** A charge as the billing desk lists it; `invoiced` and `late` read Yes or nothing. */
+function chargeRow(c: ClientCharge): Row {
+  return {
+    id: text(c.id), occurredOn: text(c.occurredOn), serviceType: text(c.serviceType), serviceCode: text(c.serviceCode),
+    quantity: text(c.quantity), unit: text(c.unit), reference: text(c.reference),
+    invoiced: c.invoiceId ? 'Yes' : '', late: c.late ? 'Yes' : '',
+  };
+}
+
+function invoiceRow(i: ClientInvoice): Row {
+  return {
+    id: text(i.id), invoiceNo: text(i.invoiceNo), periodStart: text(i.periodStart), periodEnd: text(i.periodEnd),
+    status: text(i.status), currency: text(i.currency), taxableAmount: text(i.taxableAmount),
+    taxAmount: text(i.taxAmount), totalAmount: text(i.totalAmount), creditedAmount: text(i.creditedAmount),
+    lineCount: text(i.lineCount), issuedAt: text(i.issuedAt), clientName: text(i.clientName),
+  };
+}
+
+function invoiceLineRow(l: ClientInvoiceLine): Row {
+  return {
+    lineNo: text(l.lineNo), serviceType: text(l.serviceType), narrative: text(l.narrative),
+    quantity: text(l.quantity), unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+    taxAmount: text(l.taxAmount), lineTotal: text(l.lineTotal), creditedAmount: text(l.creditedAmount),
+  };
+}
+
+function statementRow(e: ClientStatementEntry): Row {
+  return {
+    id: text(e.documentId), entryType: text(e.entryType), documentNo: text(e.documentNo), issuedAt: text(e.issuedAt),
+    invoiceNo: text(e.invoiceNo), reason: text(e.reason), debit: text(e.debit), credit: text(e.credit),
+    balance: text(e.balance),
+  };
+}
+
+/** A `YYYY-MM-DD` day as the generated client sends a date. */
+function day(value: string): Date {
+  return new Date(`${value}T00:00:00Z`);
 }
 
 /** A display cell: the contract's optional fields become an empty string. */
@@ -192,6 +323,77 @@ function deliveryRow(d: WebhookDelivery): Row {
   };
 }
 
+/** A draft's optional value, left out of the request when blank. */
+function blankAsAbsent(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function numberOrAbsent(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+function instantOrAbsent(value: string): Date | undefined {
+  const trimmed = value.trim();
+  return trimmed ? new Date(trimmed) : undefined;
+}
+
+/** An instant as a draft holds it, to the second, or blank. */
+function isoOf(d: Date | null | undefined): string {
+  return d ? d.toISOString().replace(/\.\d{3}Z$/, 'Z') : '';
+}
+
+function headerRequest(h: OrderHeaderDraft): UpdateOrderRequest {
+  return {
+    customerPartnerId: h.customerPartnerId.trim(), originTerminalId: h.originTerminalId.trim(),
+    requestedPickupAt: instantOrAbsent(h.requestedPickupAt),
+    requestedDeliveryAt: instantOrAbsent(h.requestedDeliveryAt),
+    originHubTerminalId: blankAsAbsent(h.originHubTerminalId),
+    destinationHubTerminalId: blankAsAbsent(h.destinationHubTerminalId),
+  };
+}
+
+function lineRequest(l: OrderLineDraft): AddOrderLineRequest {
+  return {
+    lineNo: l.lineNo, materialCode: l.materialCode.trim(), materialDescription: l.materialDescription.trim(),
+    materialClass: l.materialClass, hazmatUnCode: blankAsAbsent(l.hazmatUnCode), quantity: Number(l.quantity),
+    uom: l.uom.trim(), deadWeightKg: Number(l.deadWeightKg), lengthM: numberOrAbsent(l.lengthM),
+    widthM: numberOrAbsent(l.widthM), heightM: numberOrAbsent(l.heightM),
+    volumetricDivisor: numberOrAbsent(l.volumetricDivisor), consigneePartnerId: blankAsAbsent(l.consigneePartnerId),
+    destinationTerminalId: l.destinationTerminalId.trim(),
+  };
+}
+
+/** An order and its lines as the desk shows them, each line ready to be restated by an edit. */
+function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
+  return {
+    order: {
+      id: text(o.id), orderNo: text(o.orderNo), status: text(o.status), customerName: text(o.customerName),
+      originTerminalCode: text(o.originTerminalCode), freightMode: text(o.freightMode),
+      lineCount: text(o.lineCount), plannedLineCount: text(o.plannedLineCount),
+      totalDeadWeightKg: text(o.totalDeadWeightKg), containsHazmat: o.containsHazmat ? 'Yes' : '',
+      requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
+    },
+    version: text(o.version),
+    header: {
+      customerPartnerId: text(o.customerPartnerId), originTerminalId: text(o.originTerminalId),
+      requestedPickupAt: isoOf(o.requestedPickupAt), requestedDeliveryAt: isoOf(o.requestedDeliveryAt),
+      originHubTerminalId: text(o.originHubTerminalId), destinationHubTerminalId: text(o.destinationHubTerminalId),
+    },
+    lines: lines.map((l) => ({
+      id: text(l.id), lineNo: l.lineNo ?? 0, materialCode: text(l.materialCode),
+      materialDescription: text(l.materialDescription), materialClass: text(l.materialClass),
+      hazmatUnCode: text(l.hazmatUnCode), quantity: text(l.quantity), uom: text(l.uom),
+      deadWeightKg: text(l.deadWeightKg), lengthM: text(l.lengthM), widthM: text(l.widthM),
+      heightM: text(l.heightM), volumetricDivisor: text(l.volumetricDivisor),
+      consigneePartnerId: text(l.consigneePartnerId), destinationTerminalId: text(l.destinationTerminalId),
+      consigneeName: text(l.consigneeName), destinationTerminalCode: text(l.destinationTerminalCode),
+      planned: l.planned ?? false,
+    })),
+  };
+}
+
 /** The adapter: the only file in the React app that imports the generated client. */
 export function createGeneratedGateway(getToken: () => string | null): LmsGateway {
   // The token is read per request (a function), so one gateway outlives sign-ins.
@@ -218,6 +420,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const links = new TrackingLinksApi(config);
   const rules = new AllocationRulesApi(config);
   const sourcing = new SourcingApi(config);
+  const clientBilling = new ClientBillingApi(config);
   // The public read is made with no credentials at all: a customer has none, and
   // a console left signed in must not send its token to a route that ignores it.
   const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
@@ -771,6 +974,312 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         await loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } });
       }),
+    orderDesk: (orderId: string): Promise<OrderDesk> =>
+      guard(async () => {
+        const [order, lines] = await Promise.all([
+          orders.getOrder({ id: orderId }), orders.listOrderLines({ id: orderId })]);
+        return orderDeskOf(order, lines);
+      }),
+    raiseOrder: (orgUnitId: string, draft: OrderRaiseDraft) =>
+      guard(async () => text((await orders.raiseOrder({
+        raiseOrderRequest: {
+          orgUnitId, orderNo: draft.orderNo.trim(), customerPartnerId: draft.customerPartnerId.trim(),
+          originTerminalId: draft.originTerminalId.trim(), requestedPickupAt: instantOrAbsent(draft.requestedPickupAt),
+          requestedDeliveryAt: instantOrAbsent(draft.requestedDeliveryAt),
+        },
+      })).id)),
+    reviseOrderHeader: (orderId: string, version: string, header: OrderHeaderDraft) =>
+      guard(async () => {
+        await orders.updateOrder({ id: orderId, ifMatch: version, updateOrderRequest: headerRequest(header) });
+      }),
+    replaceOrderLines: (orderId: string, version: string, lines: OrderLineDraft[]) =>
+      guard(async () => {
+        await orders.replaceOrderLines({
+          id: orderId, ifMatch: version, replaceOrderLinesRequest: { lines: lines.map(lineRequest) },
+        });
+      }),
+    removeOrderLine: (orderId: string, version: string, lineId: string) =>
+      guard(async () => {
+        await orders.removeOrderLine({ id: orderId, ifMatch: version, lineId });
+      }),
+    amendOrder: (orderId: string, version: string, header: OrderHeaderDraft | null, lines: OrderLineDraft[] | null) =>
+      guard(async () => {
+        await orders.amendOrder({
+          id: orderId, ifMatch: version,
+          amendOrderRequest: {
+            header: header ? headerRequest(header) : undefined, lines: lines ? lines.map(lineRequest) : undefined,
+          },
+        });
+      }),
+    validateOrder: (orderId: string) =>
+      guard(async () => {
+        await orders.validateOrder({ id: orderId });
+      }),
+    cancelOrder: (orderId: string, reason: string) =>
+      guard(async () => {
+        await orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } });
+      }),
+    generateConsignments: (orderId: string) =>
+      guard(async () => (await loads.generateConsignments({ id: orderId })).length),
+
+    clientChoices: (): Promise<Choice[]> =>
+      guard(async () => (await partners.listPartners({
+        partnerType: 'CUSTOMER' as unknown as ListPartnersPartnerTypeEnum, limit: 200,
+      })).items.map((p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` }))),
+    clientContracts: (clientId: string) =>
+      guard(async () => (await clientBilling.listClientContracts({ clientId })).map(contractRow)),
+    clientCharges: (clientId: string, period: string) =>
+      guard(async () => (await clientBilling.listClientCharges({ clientId, period: day(period), limit: 200 }))
+        .items.map(chargeRow)),
+    runClientBilling: (clientId: string, period: string) =>
+      guard(async () => (await clientBilling.runClientBilling({
+        clientId, clientBillingRunRequest: { period: day(period) },
+      })).id),
+    clientInvoices: (clientId: string) =>
+      guard(async () => (await clientBilling.listClientInvoices({ clientId, limit: 100 })).items.map(invoiceRow)),
+    clientInvoice: (invoiceId: string): Promise<ClientInvoiceDetail> =>
+      guard(async () => {
+        const [invoice, lines] = await Promise.all([
+          clientBilling.getClientInvoice({ id: invoiceId }), clientBilling.getClientInvoiceLines({ id: invoiceId })]);
+        return { invoice: invoiceRow(invoice), lines: lines.map(invoiceLineRow) };
+      }),
+    recordClientPayment: (clientId: string, draft: PaymentDraft) =>
+      guard(async () => {
+        await clientBilling.recordClientPayment({
+          clientId,
+          clientPaymentRequest: { amount: draft.amount, receivedOn: day(draft.receivedOn), reference: draft.reference },
+        });
+      }),
+    issueClientCreditNote: (invoiceId: string, draft: CreditNoteDraft) =>
+      guard(async () => {
+        const issued = await clientBilling.issueClientCreditNote({
+          id: invoiceId, clientCreditNoteRequest: { reason: draft.reason, amount: draft.amount },
+        });
+        return text((await clientBilling.getClientCreditNote({ id: issued.id })).creditNoteNo);
+      }),
+    clientStatement: (clientId: string) =>
+      guard(async () => (await clientBilling.getClientStatement({ clientId, limit: 200 })).items.map(statementRow)),
+    clientAgeing: (clientId: string): Promise<ClientAgeingView> =>
+      guard(async () => {
+        const a = await clientBilling.getClientAgeing({ clientId });
+        return {
+          currency: text(a.currency), outstanding: text(a.outstanding), unappliedCredit: text(a.unappliedCredit),
+          buckets: {
+            '0-30': text(a.buckets?.days0to30), '31-60': text(a.buckets?.days31to60),
+            '61-90': text(a.buckets?.days61to90), '90+': text(a.buckets?.over90),
+          },
+          invoices: (a.invoices ?? []).map((i) => ({
+            id: text(i.invoiceId), invoiceNo: text(i.invoiceNo), issuedOn: text(i.issuedOn), total: text(i.total),
+            credited: text(i.credited), paid: text(i.paid), outstanding: text(i.outstanding),
+            ageDays: text(i.ageDays), bucket: text(i.bucket),
+          })),
+        };
+      }),
+
+    // Warehouse operations
+    ...warehouseVerbs(new WarehouseApi(config), terminals),
+    // Administration
+    ...adminGateway(config),
+    // Rate cards and rail tariffs
+    ...rateCardVerbs(config),
+    // Pickers
+    ...pickerVerbs({
+      partners, terminals, vehicles, drivers, warehouse: new WarehouseApi(config), orders, loads, trips,
+      controlTower, sourcing, freightBills,
+    }),
+
+    // Commercial
+    publishTariff: (orgUnitId: string, draft: TariffDraft) =>
+      guard(async () => text((await freightBills.publishTariff({
+        publishTariffRequest: {
+          orgUnitId, code: draft.code.trim(), vendorPartnerId: draft.vendorPartnerId.trim(),
+          originTerminalId: draft.originTerminalId.trim(), destinationTerminalId: draft.destinationTerminalId.trim(),
+          vehicleType: draft.vehicleType.trim(), effectiveFrom: day(draft.effectiveFrom),
+          currency: commercialBlank(draft.currency), minimumCharge: commercialNumber(draft.minimumCharge),
+          detentionFreeHours: commercialNumber(draft.detentionFreeHours),
+          detentionHourlyRate: commercialNumber(draft.detentionHourlyRate),
+          additionalDropFee: commercialNumber(draft.additionalDropFee),
+        },
+      })).id)),
+    addTariffSlab: (tariffId: string, slab: SlabDraft) =>
+      guard(async () => text((await freightBills.addTariffSlab({
+        id: tariffId,
+        addSlabRequest: {
+          minWeightKg: Number(slab.minWeightKg), maxWeightKg: commercialNumber(slab.maxWeightKg),
+          rateBasis: slab.rateBasis as unknown as AddSlabRequestRateBasisEnum, rateAmount: Number(slab.rateAmount),
+        },
+      })).id)),
+    recordFuelSurcharge: (month: string, surchargePct: number) =>
+      guard(async () => text((await freightBills.recordFuelSurcharge({
+        fuelSurchargeRequest: { month: day(month), surchargePct },
+      })).id)),
+    defineRoutingGuide: (orgUnitId: string, draft: GuideDraft) =>
+      guard(async () => text((await sourcing.defineRoutingGuide({
+        defineGuideRequest: {
+          orgUnitId, originTerminalId: draft.originTerminalId.trim(),
+          destinationTerminalId: draft.destinationTerminalId.trim(), vehicleType: draft.vehicleType.trim(),
+          strategy: draft.strategy as unknown as DefineGuideRequestStrategyEnum,
+        },
+      })).id)),
+    routingGuide: (id: string): Promise<RoutingGuideDetail> =>
+      guard(async () => commercialGuideOf(await sourcing.getRoutingGuide({ id }))),
+    addGuideVendor: (guideId: string, draft: GuideVendorDraft) =>
+      guard(async () => {
+        await sourcing.addRoutingGuideVendor({
+          id: guideId,
+          addVendorRequest: {
+            vendorPartnerId: draft.vendorPartnerId.trim(), rankNo: draft.rankNo,
+            responseSlaMinutes: draft.responseSlaMinutes, agreedRate: commercialNumber(draft.agreedRate),
+          },
+        });
+      }),
+    retireRoutingGuide: (id: string) =>
+      guard(async () => {
+        await sourcing.retireRoutingGuide({ id });
+      }),
+    allocations: (status?: string) =>
+      guard(async () => (await sourcing.listAllocations({ status: status || undefined, limit: 100 }))
+        .items.map(commercialAllocationRow)),
+    allocationDetail: (id: string): Promise<AllocationDetail> =>
+      guard(async () => {
+        const [allocation, offers] = await Promise.all([sourcing.getAllocation({ id }), sourcing.listOffers({ id })]);
+        return { allocation: commercialAllocationRow(allocation), offers: offers.map(commercialOfferRow) };
+      }),
+    allocateLoad: (loadId: string) =>
+      guard(async () => text((await sourcing.allocateLoad({ allocateRequest: { loadId: loadId.trim() } })).id)),
+    acceptOffer: (allocationId: string, vendorPartnerId: string) =>
+      guard(async () => {
+        await sourcing.acceptOffer({ id: allocationId, vendorResponseRequest: { vendorPartnerId } });
+      }),
+    rejectOffer: (allocationId: string, vendorPartnerId: string) =>
+      guard(async () => {
+        await sourcing.rejectOffer({ id: allocationId, vendorResponseRequest: { vendorPartnerId } });
+      }),
+    cancelAllocation: (id: string) =>
+      guard(async () => {
+        await sourcing.cancelAllocation({ id });
+      }),
+    freightBillList: (status?: string) =>
+      guard(async () => (await freightBills.listFreightBills({ status: status || undefined, limit: 100 }))
+        .items.map(commercialBillRow)),
+    freightBill: (id: string): Promise<FreightBillDetail> =>
+      guard(async () => {
+        const [bill, lines] = await Promise.all([
+          freightBills.getFreightBill({ id }), freightBills.getFreightBillLines({ id })]);
+        return { bill: commercialBillRow(bill), lines: lines.map(commercialBillLineRow) };
+      }),
+    matchFreightBill: (id: string, claimedAmount: number) =>
+      guard(async () => text((await freightBills.matchFreightBill({ id, matchRequest: { claimedAmount } })).status)),
+    resolveFreightBill: (id: string, reason: string) =>
+      guard(async () => {
+        await freightBills.resolveDispute({ id, resolveDisputeRequest: { reason } });
+      }),
+
+    // Control tower
+    exceptionTickets: (filter: ExceptionFilter) =>
+      guard(async () => (await controlTower.listExceptions({
+        status: filter.status || undefined, severity: (filter.severity || undefined) as ListExceptionsSeverityEnum | undefined,
+        limit: 50,
+      })).items.map(ticketRow)),
+    exceptionTicket: (id: string) => guard(async () => ticketRow(await controlTower.getException({ id }))),
+    exceptionHistory: (id: string) =>
+      guard(async () => (await controlTower.getExceptionHistory({ id })).map((a) => ({
+        action: text(a.action), fromStatus: text(a.fromStatus), toStatus: text(a.toStatus), note: text(a.note),
+        actor: text(a.actor), occurredAt: text(a.occurredAt),
+      }))),
+    raiseException: (draft: ExceptionDraft) =>
+      guard(async () => text((await controlTower.raiseException({
+        raiseExceptionRequest: {
+          tripId: draft.tripId.trim(), category: draft.category as ExceptionCategory,
+          description: draft.description.trim(),
+        },
+      })).id)),
+    assignException: (id: string, assigneeUserId: string, note: string) =>
+      guard(() => controlTower.assignException({
+        id, assignExceptionRequest: { assigneeUserId: assigneeUserId.trim(), note: note.trim() || undefined },
+      })),
+    investigateException: (id: string, note: string) =>
+      guard(() => controlTower.investigateException({ id, exceptionNoteRequest: noteOf(note) })),
+    resolveException: (id: string, resolution: string) =>
+      guard(() => controlTower.resolveException({ id, resolveExceptionRequest: { resolution: resolution.trim() } })),
+    reopenException: (id: string, reason: string) =>
+      guard(() => controlTower.reopenException({ id, reopenExceptionRequest: { reason: reason.trim() } })),
+    closeException: (id: string, note: string) =>
+      guard(() => controlTower.closeException({ id, exceptionNoteRequest: noteOf(note) })),
+    userChoices: (): Promise<Choice[]> =>
+      guard(async () => (await new UsersApi(config).listUsers()).map((u) => ({
+        id: text(u.id), label: `${text(u.fullName)} · ${text(u.email)}`,
+      }))),
+    detectorSettings: (): Promise<DetectorSettingsView> =>
+      guard(async () => {
+        const d = await controlTower.getDetectorSettings();
+        return {
+          etaSlipMinutes: d.etaSlipMinutes ?? 0, temperatureExcursionMinutes: d.temperatureExcursionMinutes ?? 0,
+          customised: d.customised ?? false,
+        };
+      }),
+    saveDetectorSettings: (etaSlipMinutes: number, temperatureExcursionMinutes: number) =>
+      guard(() => controlTower.setDetectorSettings({
+        setDetectorSettingsRequest: { etaSlipMinutes, temperatureExcursionMinutes },
+      })),
+    tripWatch: (tripId: string): Promise<TripWatchView | null> =>
+      absentOn404(async () => {
+        const w = await controlTower.getTripWatch({ tripId });
+        return {
+          committedArrivalAt: text(w.committedArrivalAt), tempMinC: text(w.tempMinC), tempMaxC: text(w.tempMaxC),
+          outsideRangeSince: text(w.outsideRangeSince), lastReadingAt: text(w.lastReadingAt),
+        };
+      }),
+    setTripWatch: (tripId: string, draft: TripWatchDraft) =>
+      guard(() => controlTower.setTripWatch({
+        tripId,
+        setTripWatchRequest: {
+          committedArrivalAt: draft.committedArrivalAt ? new Date(draft.committedArrivalAt) : undefined,
+          tempMinC: decimalOrAbsent(draft.tempMinC), tempMaxC: decimalOrAbsent(draft.tempMaxC),
+        },
+      })),
+    clearTripWatch: (tripId: string) => guard(() => controlTower.clearTripWatch({ tripId })),
+    tripActivity: (tripId: string): Promise<TripActivity> =>
+      guard(async () => {
+        const [progress, crossings] = await Promise.all([
+          absentOn404(() => telematics.getProgress({ tripId })),
+          telematics.listCrossings({ tripId }),
+        ]);
+        return {
+          progress: progress && {
+            tripNo: text(progress.tripNo), status: text(progress.status), lastFixAt: text(progress.lastFixAt),
+            completionPct: text(progress.completionPct), remainingDistanceM: text(progress.remainingDistanceM),
+            estimatedMinutesRemaining: text(progress.estimatedMinutesRemaining),
+            offRoute: progress.offRoute ? 'Yes' : '', deviationM: text(progress.deviationM),
+          },
+          crossings: crossings.map((c) => ({
+            id: text(c.id), eventType: text(c.eventType), terminalCode: text(c.terminalCode),
+            occurredAt: text(c.occurredAt),
+          })),
+        };
+      }),
+    vehiclePositions: (): Promise<Mapped> =>
+      guard(async () => {
+        const positions = await telematics.listPositions();
+        const rows = positions.map((v) => ({
+          id: text(v.vehicleId), registrationNo: text(v.registrationNo), tripId: text(v.tripId), tripNo: text(v.tripNo),
+          tripStatus: text(v.tripStatus), speedKph: text(v.speedKph), recordedAt: text(v.recordedAt),
+          ageSeconds: text(v.ageSeconds),
+        }));
+        const features: MapFeature[] = positions
+          .filter((v) => v.lat !== undefined && v.lon !== undefined)
+          .map((v) => ({
+            id: text(v.vehicleId), kind: 'vehicle',
+            label: `${text(v.registrationNo)}${v.tripNo ? ` · ${v.tripNo}` : ''}`,
+            points: [{ lat: v.lat as number, lon: v.lon as number }],
+          }));
+        return { rows, features };
+      }),
+    openDeviations: () =>
+      guard(async () => (await telematics.listOpenDeviations()).map((d) => ({
+        id: text(d.id), tripId: text(d.tripId), tripNo: text(d.tripNo), detectedAt: text(d.detectedAt),
+        distanceM: text(d.distanceM), corridorM: text(d.corridorM),
+      }))),
   };
 }
 
@@ -782,11 +1291,15 @@ async function guard<T>(call: () => Promise<T>): Promise<T> {
     if (e instanceof ResponseError) {
       const status = e.response.status;
       try {
-        const body = (await e.response.clone().json()) as { detail?: string; errors?: Record<string, string> };
+        const body = (await e.response.clone().json()) as {
+          detail?: string; code?: string; errors?: Record<string, string>;
+        };
         if (body.errors && status !== 409) {
-          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status, body.errors);
+          throw new ApiProblem(Object.entries(body.errors).map(([k, v]) => `${k}: ${v}`).join('; '), status, body.errors,
+            body.code ?? '');
         }
-        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status, body.errors ?? {});
+        throw new ApiProblem(body.detail ?? `${status} ${e.response.statusText}`, status, body.errors ?? {},
+          body.code ?? '');
       } catch (inner) {
         if (inner instanceof ApiProblem) {
           throw inner;
@@ -796,4 +1309,519 @@ async function guard<T>(call: () => Promise<T>): Promise<T> {
     }
     throw new ApiProblem('Could not reach the API. Try again.');
   }
+}
+
+// Warehouse operations
+
+/** A record's scalar fields as display cells; nested lists are mapped by the caller. */
+function flatRow(record: object): Row {
+  return Object.fromEntries(Object.entries(record)
+    .filter(([, v]) => v === null || v === undefined || v instanceof Date || typeof v !== 'object')
+    .map(([k, v]) => [k, text(v)]));
+}
+
+function stockMove(d: StockMoveDraft) {
+  return { binId: d.binId.trim(), skuId: d.skuId.trim(), lotNo: blankAsAbsent(d.lotNo), quantity: Number(d.quantity) };
+}
+
+/** The warehouse verbs of the gateway, over the generated Warehouse client. */
+function warehouseVerbs(warehouse: WarehouseApi, terminals: TerminalsApi) {
+  const document = <T extends object>(header: T, lines: object[] | undefined): WarehouseDocument =>
+    ({ header: flatRow(header), lines: (lines ?? []).map(flatRow) });
+  return {
+    warehouseChoices: (): Promise<Choice[]> =>
+      guard(async () => (await terminals.listTerminals({ category: ListTerminalsCategoryEnum.Warehouse, limit: 200 }))
+        .items.map((t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` }))),
+    warehouseBins: (warehouseId: string) =>
+      guard(async () => (await warehouse.listBins({ warehouseId, limit: 200 })).items.map(flatRow)),
+    createBin: (warehouseId: string, code: string, capacityUnits: number) =>
+      guard(async () => (await warehouse.createBin({
+        warehouseId, createBinRequest: { code: code.trim(), capacityUnits },
+      })).id),
+    skus: () => guard(async () => (await warehouse.listSkus({ limit: 200 })).items.map(flatRow)),
+    createSku: (draft: SkuDraft) =>
+      guard(async () => (await warehouse.createSku({
+        createSkuRequest: {
+          code: draft.code.trim(), description: draft.description.trim(),
+          ownerPartnerId: blankAsAbsent(draft.ownerPartnerId), uom: blankAsAbsent(draft.uom),
+        },
+      })).id),
+    asns: (warehouseId: string) =>
+      guard(async () => (await warehouse.listAsns({ warehouseId, limit: 100 })).items.map(flatRow)),
+    asn: (id: string) => guard(async () => {
+      const a = await warehouse.getAsn({ id });
+      return document(a, a.lines);
+    }),
+    createAsn: (draft: AsnDraft) =>
+      guard(async () => (await warehouse.createAsn({
+        createAsnRequest: {
+          warehouseId: draft.warehouseId, asnNo: draft.asnNo.trim(),
+          supplierPartnerId: blankAsAbsent(draft.supplierPartnerId),
+          lines: draft.lines.map((l) => ({
+            skuId: l.skuId.trim(), lotNo: blankAsAbsent(l.lotNo), quantity: Number(l.quantity),
+          })),
+        },
+      })).id),
+    receiveAsn: (id: string, counts: ReceiptCountDraft[], crossDock: boolean) =>
+      guard(async () => {
+        await warehouse.receiveAsn({
+          id, receiveAsnRequest: {
+            crossDock,
+            lines: counts.map((c) => ({
+              lineNo: c.lineNo, receivedQty: Number(c.receivedQty), damagedQty: Number(c.damagedQty || 0),
+            })),
+          },
+        });
+      }),
+    putaway: (draft: StockMoveDraft) =>
+      guard(async () => { await warehouse.putaway({ putawayRequest: stockMove(draft) }); }),
+    stock: (warehouseId: string) =>
+      guard(async () => (await warehouse.listStock({ warehouseId, limit: 200 })).items.map(flatRow)),
+    stockMovements: (skuId: string) =>
+      guard(async () => (await warehouse.listStockMovements({ skuId, limit: 100 })).items.map(flatRow)),
+    adjustStock: (draft: StockMoveDraft) =>
+      guard(async () => (await warehouse.adjustStock({
+        adjustStockRequest: { ...stockMove(draft), reason: draft.reason.trim() },
+      })).id),
+    releaseQuarantine: (draft: StockMoveDraft) =>
+      guard(async () => (await warehouse.releaseQuarantinedStock({
+        releaseQuarantineRequest: { ...stockMove(draft), reason: draft.reason.trim() },
+      })).id),
+    writeOffQuarantine: (warehouseId: string, draft: StockMoveDraft) =>
+      guard(async () => (await warehouse.writeOffQuarantinedStock({
+        writeOffQuarantineRequest: {
+          warehouseId, skuId: draft.skuId.trim(), lotNo: blankAsAbsent(draft.lotNo), quantity: Number(draft.quantity),
+          reason: draft.reason.trim(),
+        },
+      })).id),
+    outboundOrders: (warehouseId: string) =>
+      guard(async () => (await warehouse.listOutboundOrders({ warehouseId, limit: 100 })).items.map(flatRow)),
+    outboundOrder: (id: string) => guard(async () => {
+      const o = await warehouse.getOutboundOrder({ id });
+      return document(o, o.lines);
+    }),
+    createOutboundOrder: (draft: OutboundDraft) =>
+      guard(async () => (await warehouse.createOutboundOrder({
+        createOutboundOrderRequest: {
+          warehouseId: draft.warehouseId, orderNo: draft.orderNo.trim(), shipTo: blankAsAbsent(draft.shipTo),
+          lines: draft.lines.map((l) => ({ skuId: l.skuId.trim(), quantity: Number(l.quantity) })),
+        },
+      })).id),
+    pickOutboundOrder: (id: string) => guard(async () => { await warehouse.pickOutboundOrder({ id }); }),
+    packOutboundOrder: (id: string) => guard(async () => (await warehouse.packOutboundOrder({ id })).id),
+    cancelBackOrder: (id: string) => guard(async () => { await warehouse.cancelOutboundOrderBackOrder({ id }); }),
+    handlingUnits: (warehouseId: string) =>
+      guard(async () => (await warehouse.listHandlingUnits({ warehouseId, limit: 100 })).items.map(flatRow)),
+    handlingUnit: (id: string) => guard(async () => {
+      const u = await warehouse.getHandlingUnit({ id });
+      return document(u, u.contents);
+    }),
+    dispatchHandlingUnit: (id: string, draft: DispatchDraft) =>
+      guard(async () => {
+        await warehouse.dispatchHandlingUnit({
+          id, dispatchRequest: {
+            reference: blankAsAbsent(draft.reference), destinationTerminalId: blankAsAbsent(draft.destinationTerminalId),
+            consigneePartnerId: blankAsAbsent(draft.consigneePartnerId), grossWeightKg: numberOrAbsent(draft.grossWeightKg),
+          },
+        });
+      }),
+    pickWaves: (warehouseId: string) =>
+      guard(async () => (await warehouse.listPickWaves({ warehouseId, limit: 100 })).items.map(flatRow)),
+    pickWave: (id: string) => guard(async () => {
+      const w = await warehouse.getPickWave({ id });
+      return document(w, w.orders);
+    }),
+    releasePickWave: (warehouseId: string, orderIds: string[]) =>
+      guard(async () => (await warehouse.releasePickWave({ releasePickWaveRequest: { warehouseId, orderIds } })).id),
+    pickPickWave: (id: string) => guard(async () => { await warehouse.pickPickWave({ id }); }),
+  };
+}
+
+// Administration
+
+type AdminVerbs = Pick<LmsGateway, 'adminUsers' | 'userPermissions' | 'accessAttributes' | 'setAccessAttributes'
+  | 'accessPolicies' | 'createAccessPolicy' | 'reviseAccessPolicy' | 'deleteAccessPolicy' | 'expiringDocuments'
+  | 'ownerDocuments' | 'attachDocument'>;
+
+/** The administration desk's verbs, over the same configuration as the rest of the gateway. */
+function adminGateway(config: Configuration): AdminVerbs {
+  const users = new UsersApi(config);
+  const policies = new AccessPoliciesApi(config);
+  const compliance = new ComplianceApi(config);
+  const partners = new PartnersApi(config);
+  const vehicles = new VehiclesApi(config);
+  const drivers = new DriversApi(config);
+  return {
+    adminUsers: () => guard(async () => (await users.listUsers()).map(adminUserOf)),
+    userPermissions: (userId: string) =>
+      guard(async () => [...(await users.getUserPermissions({ id: userId }))].sort()),
+    accessAttributes: (userId: string) =>
+      guard(async () => adminAttributesOf(await policies.getUserAccessAttributes({ id: userId }))),
+    setAccessAttributes: (userId: string, draft: AccessAttributesDraft) =>
+      guard(async () => {
+        await policies.setUserAccessAttributes({ id: userId, setUserAccessAttributesRequest: adminAttributesRequest(draft) });
+      }),
+    accessPolicies: (cursor?: string): Promise<AccessPolicyPage> =>
+      guard(async () => {
+        const page = await policies.listAccessPolicies({ cursor, limit: 100 });
+        return { policies: page.items.map(adminPolicyOf), nextCursor: page.hasMore ? page.nextCursor ?? null : null };
+      }),
+    createAccessPolicy: async (draft: AccessPolicyDraft) => {
+      const condition = adminConditionOf(draft.condition);
+      return guard(async () => (await policies.createAccessPolicy({
+        createAccessPolicyRequest: {
+          code: draft.code.trim(), action: draft.action.trim(),
+          effect: draft.effect as CreateAccessPolicyRequestEffectEnum, description: draft.description.trim(),
+          condition, enabled: draft.enabled,
+        },
+      })).id);
+    },
+    reviseAccessPolicy: async (id: string, changes: AccessPolicyChanges) => {
+      const condition = adminConditionOf(changes.condition);
+      return guard(async () => {
+        await policies.reviseAccessPolicy({
+          id,
+          reviseAccessPolicyRequest: {
+            effect: changes.effect as ReviseAccessPolicyRequestEffectEnum, description: changes.description.trim(),
+            condition, enabled: changes.enabled,
+          },
+        });
+      });
+    },
+    deleteAccessPolicy: (id: string) =>
+      guard(async () => {
+        await policies.deleteAccessPolicy({ id });
+      }),
+    expiringDocuments: (withinDays: number) =>
+      guard(async () => (await compliance.listExpiringDocuments({ withinDays })).map(adminDocumentRow)),
+    ownerDocuments: (ownerType: DocumentOwnerType, ownerId: string) =>
+      guard(async () => {
+        const id = ownerId.trim();
+        const docs = ownerType === 'PARTNER' ? await partners.listPartnerDocuments({ id })
+          : ownerType === 'VEHICLE' ? await vehicles.listVehicleDocuments({ id })
+            : await drivers.listDriverDocuments({ id });
+        return docs.map(adminDocumentRow);
+      }),
+    attachDocument: (ownerType: DocumentOwnerType, ownerId: string, draft: DocumentDraft) =>
+      guard(async () => {
+        const id = ownerId.trim();
+        const attachDocumentRequest = adminDocumentRequest(draft);
+        const made = ownerType === 'PARTNER' ? await partners.attachPartnerDocument({ id, attachDocumentRequest })
+          : ownerType === 'VEHICLE' ? await vehicles.attachVehicleDocument({ id, attachDocumentRequest })
+            : await drivers.attachDriverDocument({ id, attachDocumentRequest });
+        return text(made.id);
+      }),
+  };
+}
+
+function adminUserOf(u: User): AdminUser {
+  return {
+    id: text(u.id), email: text(u.email), fullName: text(u.fullName), status: text(u.status),
+    orgName: text(u.orgName), lastLoginAt: text(u.lastLoginAt),
+  };
+}
+
+function adminAttributesOf(a: UserAccessAttributes): AccessAttributesDraft {
+  return {
+    region: text(a.region), freightModes: (a.freightModes ?? []).map((m) => m as AccessFreightMode),
+    partnerId: text(a.partnerId), approvalLimit: text(a.approvalLimit),
+  };
+}
+
+/** An empty set of modes is left out rather than sent: absent means unrestricted, `[]` would mean none. */
+function adminAttributesRequest(d: AccessAttributesDraft): SetUserAccessAttributesRequest {
+  return {
+    region: blankAsAbsent(d.region),
+    freightModes: d.freightModes.length > 0
+      ? d.freightModes.map((m) => m as SetUserAccessAttributesRequestFreightModesEnum) : undefined,
+    partnerId: blankAsAbsent(d.partnerId), approvalLimit: numberOrAbsent(d.approvalLimit),
+  };
+}
+
+function adminPolicyOf(p: AccessPolicy): AccessPolicyView {
+  return {
+    id: text(p.id), code: text(p.code), action: text(p.action), effect: text(p.effect) as PolicyEffect,
+    description: text(p.description), condition: JSON.stringify(p.condition ?? {}, null, 2),
+    enabled: p.enabled === true, updatedAt: text(p.updatedAt),
+  };
+}
+
+/** The condition a desk typed, as the object the API takes; anything but a JSON object is refused here. */
+function adminConditionOf(condition: string): { [key: string]: unknown } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(condition);
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ApiProblem('The condition must be a JSON object, such as {"attr": "subject.region", "op": "present"}.',
+      undefined, {}, 'condition-not-json');
+  }
+  return parsed as { [key: string]: unknown };
+}
+
+/** `state` reads Expired, Expiring (within 30 days), Valid, or No expiry. */
+function adminDocumentRow(d: ComplianceDocument): Row {
+  const days = d.daysToExpiry;
+  const state = d.expired ? 'Expired' : days === undefined || days === null ? 'No expiry'
+    : days <= 30 ? 'Expiring' : 'Valid';
+  return {
+    id: text(d.id), ownerType: text(d.ownerType), ownerLabel: text(d.ownerLabel),
+    documentType: text(d.documentType), documentNo: text(d.documentNo), issuingAuthority: text(d.issuingAuthority),
+    issuedOn: text(d.issuedOn), expiresOn: text(d.expiresOn), daysToExpiry: text(days), state,
+  };
+}
+
+function adminDocumentRequest(d: DocumentDraft): AttachDocumentRequest {
+  return {
+    documentType: d.documentType.trim(), documentNo: d.documentNo.trim(),
+    issuingAuthority: blankAsAbsent(d.issuingAuthority),
+    issuedOn: d.issuedOn.trim() ? day(d.issuedOn.trim()) : undefined,
+    expiresOn: d.expiresOn.trim() ? day(d.expiresOn.trim()) : undefined,
+  };
+}
+
+// Commercial
+
+/** A blank optional text left out of a request. */
+function commercialBlank(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** A blank optional figure left out of a request. */
+function commercialNumber(value: string): number | undefined {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
+
+function commercialGuideOf(g: CommercialRoutingGuide): RoutingGuideDetail {
+  return {
+    guide: {
+      id: text(g.id), originTerminalCode: text(g.originTerminalCode), destinationTerminalCode: text(g.destinationTerminalCode),
+      vehicleType: text(g.vehicleType), strategy: text(g.strategy), active: g.active ? 'Yes' : '',
+    },
+    entries: (g.entries ?? []).map((e) => ({
+      rankNo: text(e.rankNo), vendorPartnerId: text(e.vendorPartnerId), vendorName: text(e.vendorName),
+      responseSlaMinutes: text(e.responseSlaMinutes), agreedRate: text(e.agreedRate),
+    })),
+  };
+}
+
+function commercialAllocationRow(a: CommercialAllocation): Row {
+  return {
+    id: text(a.id), loadId: text(a.loadId), loadNo: text(a.loadNo), strategy: text(a.strategy), status: text(a.status),
+    pendingVendorName: text(a.pendingVendorName), respondsBy: text(a.respondsBy),
+    awardedVendorName: text(a.awardedVendorName), awardedAt: text(a.awardedAt), currentRank: text(a.currentRank),
+    offersMade: text(a.offersMade), appliedRuleName: text(a.appliedRuleName), createdAt: text(a.createdAt),
+  };
+}
+
+function commercialOfferRow(o: CommercialOffer): Row {
+  return {
+    id: text(o.id), rankNo: text(o.rankNo), vendorPartnerId: text(o.vendorPartnerId), vendorName: text(o.vendorName),
+    outcome: text(o.outcome), offeredAt: text(o.offeredAt), respondsBy: text(o.respondsBy),
+    respondedAt: text(o.respondedAt),
+  };
+}
+
+function commercialBillRow(b: CommercialFreightBill): Row {
+  return {
+    id: text(b.id), billNo: text(b.billNo), status: text(b.status), source: text(b.source), currency: text(b.currency),
+    tripNo: text(b.tripNo), loadNo: text(b.loadNo), vendorName: text(b.vendorName), tariffCode: text(b.tariffCode),
+    pricedOn: text(b.pricedOn), chargeableWeightKg: text(b.chargeableWeightKg), baseFreight: text(b.baseFreight),
+    detentionAmount: text(b.detentionAmount), multiDropAmount: text(b.multiDropAmount),
+    fuelSurchargeAmount: text(b.fuelSurchargeAmount), computedAmount: text(b.computedAmount),
+    claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount), variancePct: text(b.variancePct),
+    resolution: text(b.resolution), matchedAt: text(b.matchedAt), settlementHeldBy: text(b.settlementHeldBy),
+  };
+}
+
+function commercialBillLineRow(l: CommercialFreightBillLine): Row {
+  return {
+    lineNo: text(l.lineNo), chargeType: text(l.chargeType), narrative: text(l.narrative), quantity: text(l.quantity),
+    unit: text(l.unit), rate: text(l.rate), amount: text(l.amount),
+  };
+}
+
+// Rate cards and rail tariffs
+
+/** Rate cards read a page at a time; the desk follows the cursor for more. */
+const RATE_CARD_PAGE = 50;
+
+type RateCardVerbs = Pick<LmsGateway, 'tariffs' | 'tariffCard' | 'railTariffs' | 'railTariff' | 'publishRailTariff'>;
+
+function rateCardVerbs(config: Configuration): RateCardVerbs {
+  const settlement = new SettlementApi(config);
+  const multimodal = new MultimodalApi(config);
+  const figure = (value: string): number | undefined => (value.trim() ? Number(value.trim()) : undefined);
+  return {
+    tariffs: (filter: TariffFilter, cursor?: string) =>
+      guard(async (): Promise<RateCardPage> => {
+        const page = await settlement.listTariffs({
+          vendorPartnerId: filter.vendorPartnerId.trim() || undefined,
+          superseded: filter.state === '' ? undefined : filter.state === 'superseded',
+          cursor, limit: RATE_CARD_PAGE,
+        });
+        return { rows: page.items.map(rateCardRow), nextCursor: page.nextCursor ?? null };
+      }),
+    tariffCard: (id: string) =>
+      guard(async () => rateCardDetailOf(await settlement.getTariff({ id }))),
+    railTariffs: (cursor?: string) =>
+      guard(async (): Promise<RateCardPage> => {
+        const page = await multimodal.listRailTariffs({ cursor, limit: RATE_CARD_PAGE });
+        return { rows: (page.items ?? []).map(railRateCardRow), nextCursor: page.nextCursor ?? null };
+      }),
+    railTariff: (id: string) => guard(async () => railRateCardRow(await multimodal.getRailTariff({ id }))),
+    publishRailTariff: (draft: RailTariffDraft) =>
+      guard(async () => text((await multimodal.publishRailTariff({
+        publishRailTariffRequest: {
+          code: draft.code.trim(), carrierPartnerId: draft.carrierPartnerId.trim(),
+          originTerminalId: draft.originTerminalId.trim(), destinationTerminalId: draft.destinationTerminalId.trim(),
+          effectiveFrom: day(draft.effectiveFrom), currency: draft.currency.trim() || undefined,
+          perWagonRate: figure(draft.perWagonRate), perContainerRate: figure(draft.perContainerRate),
+          minimumCharge: figure(draft.minimumCharge),
+        },
+      })).id)),
+  };
+}
+
+function rateCardRow(t: RateCard | RateCardWithBands): Row {
+  return {
+    id: text(t.id), code: text(t.code), orgUnitName: text(t.orgUnitName), vendorCode: text(t.vendorCode),
+    vendorName: text(t.vendorName), originTerminalCode: text(t.originTerminalCode),
+    destinationTerminalCode: text(t.destinationTerminalCode), vehicleType: text(t.vehicleType),
+    currency: text(t.currency), effectiveFrom: text(t.effectiveFrom), effectiveTo: text(t.effectiveTo),
+    superseded: t.superseded ? 'Yes' : '', minimumCharge: text(t.minimumCharge),
+    detentionFreeHours: text(t.detentionFreeHours), detentionHourlyRate: text(t.detentionHourlyRate),
+    additionalDropFee: text(t.additionalDropFee), slabCount: text(t.slabCount),
+  };
+}
+
+function rateCardDetailOf(t: RateCardWithBands): TariffCardDetail {
+  return {
+    card: rateCardRow(t),
+    slabs: (t.slabs ?? []).map((b: RateCardBand) => ({
+      minWeightKg: text(b.minWeightKg), maxWeightKg: b.maxWeightKg === undefined || b.maxWeightKg === null ? '—' : text(b.maxWeightKg),
+      rateBasis: text(b.rateBasis), rateAmount: text(b.rateAmount),
+    })),
+  };
+}
+
+function railRateCardRow(r: RailRateCard): Row {
+  return {
+    id: text(r.id), code: text(r.code), carrierCode: text(r.carrierCode), originTerminalCode: text(r.originTerminalCode),
+    destinationTerminalCode: text(r.destinationTerminalCode), currency: text(r.currency),
+    perWagonRate: text(r.perWagonRate), perContainerRate: text(r.perContainerRate), minimumCharge: text(r.minimumCharge),
+    effectiveFrom: text(r.effectiveFrom), effectiveTo: text(r.effectiveTo),
+  };
+}
+
+// Pickers
+/** A page of choices for one picker, from the listing that kind is kept in. */
+interface PickerApis {
+  partners: PartnersApi; terminals: TerminalsApi; vehicles: VehiclesApi; drivers: DriversApi;
+  warehouse: WarehouseApi; orders: OrdersApi; loads: PlanningApi; trips: TripsApi;
+  controlTower: ControlTowerApi; sourcing: SourcingApi; freightBills: SettlementApi;
+}
+
+function pickerVerbs({
+  partners, terminals, vehicles, drivers, warehouse, orders, loads, trips, controlTower, sourcing, freightBills,
+}: PickerApis): Pick<LmsGateway, 'pick'> {
+  const page = <T>(items: T[], nextCursor: string | null | undefined, label: (item: T) => Choice): PickPage =>
+    ({ items: items.map(label), nextCursor: nextCursor ?? null });
+  const PICK_LIMIT = 20;
+  return {
+    pick: ({ kind, q, cursor, warehouseId }: PickQuery): Promise<PickPage> =>
+      guard(async () => {
+        const search = q.trim() || undefined;
+        const at = cursor || undefined;
+        switch (kind) {
+          case 'partner':
+          case 'customer':
+          case 'vendor': {
+            const s = await partners.listPartners({
+              partnerType: kind === 'partner' ? undefined
+                : (kind.toUpperCase() as unknown as ListPartnersPartnerTypeEnum),
+              q: search, cursor: at, limit: PICK_LIMIT,
+            });
+            return page(s.items, s.nextCursor, (p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` }));
+          }
+          case 'terminal':
+          case 'warehouse': {
+            const s = await terminals.listTerminals({
+              category: kind === 'warehouse' ? ListTerminalsCategoryEnum.Warehouse : undefined,
+              q: search, cursor: at, limit: PICK_LIMIT,
+            });
+            return page(s.items, s.nextCursor, (t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` }));
+          }
+          case 'vehicle': {
+            const s = await vehicles.listVehicles({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (v) => ({
+              id: text(v.id), label: `${text(v.registrationNo)} · ${text(v.vehicleType)}`,
+            }));
+          }
+          case 'driver': {
+            const s = await drivers.listDrivers({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (d) => ({ id: text(d.id), label: `${text(d.licenceNo)} · ${text(d.fullName)}` }));
+          }
+          case 'sku': {
+            const s = await warehouse.listSkus({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (k) => ({ id: text(k.id), label: `${text(k.code)} · ${text(k.description)}` }));
+          }
+          case 'bin': {
+            if (!warehouseId) {
+              return { items: [], nextCursor: null };
+            }
+            const s = await warehouse.listBins({ warehouseId, q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (b) => ({ id: text(b.id), label: text(b.code) }));
+          }
+          case 'order': {
+            const s = await orders.listOrders({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (o) => ({ id: text(o.id), label: `${text(o.orderNo)} · ${text(o.status)}` }));
+          }
+          case 'load': {
+            const s = await loads.listLoads({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (l) => ({ id: text(l.id), label: `${text(l.loadNo)} · ${text(l.status)}` }));
+          }
+          case 'trip': {
+            const s = await trips.listTrips({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (t) => ({ id: text(t.id), label: `${text(t.tripNo)} · ${text(t.status)}` }));
+          }
+          case 'ticket': {
+            const s = await controlTower.listExceptions({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (x) => ({
+              id: text(x.id), label: `${text(x.ticketNo)} · ${text(x.category)} · ${text(x.status)}`,
+            }));
+          }
+          case 'allocation': {
+            const s = await sourcing.listAllocations({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (a) => ({ id: text(a.id), label: `${text(a.loadNo)} · ${text(a.status)}` }));
+          }
+          case 'bill': {
+            const s = await freightBills.listFreightBills({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (b) => ({ id: text(b.id), label: `${text(b.billNo)} · ${text(b.status)}` }));
+          }
+          case 'consignment': {
+            const s = await loads.listConsignments({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (c) => ({ id: text(c.id), label: `${text(c.trackingRef)} · ${text(c.status)}` }));
+          }
+          case 'unassigned': {
+            const s = await loads.listUnassignedConsignments({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (c) => ({ id: text(c.id), label: `${text(c.trackingRef)} · ${text(c.status)}` }));
+          }
+          case 'routing-guide': {
+            const s = await sourcing.listRoutingGuides({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (g) => ({ id: text(g.id), label: guideLabel(g) }));
+          }
+        }
+      }),
+  };
+}
+
+/** A routing guide is its lane and vehicle type; a retired one says so. */
+function guideLabel(g: CommercialRoutingGuide): string {
+  const lane = `${text(g.originTerminalCode)} → ${text(g.destinationTerminalCode)} · ${text(g.vehicleType)}`;
+  return g.active === false ? `${lane} · retired` : lane;
 }

@@ -199,7 +199,7 @@ public class SourcingLifecycleFlowSteps {
     public void firstStillCancelled() {
         assertThat(world.api(SourcingApi.class).getAllocation(firstAllocationId).getStatus())
                 .isEqualTo("CANCELLED");
-        assertThat(world.api(SourcingApi.class).listAllocations("CANCELLED", null, 200).getItems())
+        assertThat(world.api(SourcingApi.class).listAllocations("CANCELLED", null, 200, null).getItems())
                 .extracting(Allocation::getId).contains(firstAllocationId);
     }
 

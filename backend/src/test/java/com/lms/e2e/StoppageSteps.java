@@ -108,7 +108,7 @@ public class StoppageSteps {
     public void oneTicket() {
         List<Exception> tickets = HttpWorld.eventually("the stoppage ticket", () -> {
             List<Exception> found = world.api(ControlTowerApi.class)
-                    .listExceptions(null, null, null, 200).getItems().stream()
+                    .listExceptions(null, null, null, 200, null).getItems().stream()
                     .filter(ticket -> tripId.equals(ticket.getTripId()))
                     .toList();
             assertThat(found).hasSize(1);

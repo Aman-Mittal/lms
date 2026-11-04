@@ -58,3 +58,13 @@ Feature: A disputed freight bill is resolved on the record and a fuel surcharge 
     When the settlement desk resolves the dispute of the "DISPUTED" trip's bill because "Detention agreed with the vendor on a call"
     Then the bill of the "DISPUTED" trip is approved for payment, keeps the claim of 25000 and records the reason "Detention agreed with the vendor on a call"
     And resolving the bill of the "DISPUTED" trip because "Again" is refused with 409 and code "bill-not-disputed"
+
+  Scenario: A published rate card is read back with its bands, by those who may and only within their organisation
+    Then the settlement desk lists its rate card for lane "A" as an open version with 1 weight band
+    And the rate card for lane "A" reads back with one open band from 0 kg at 4 per kg
+    And reading a rate card that does not exist is refused as not found
+    And a user who may read freight bills reads the rate card for lane "A"
+    And a user who may only read orders is refused listing rate cards as forbidden
+    And a user in a branch beneath the desk reads the rate card for lane "A", which applies to the branch
+    And a user in another branch beneath the desk does not find a card published by the first branch
+    And the administrator of another tenant cannot read the rate card for lane "A" and lists none of the desk's cards

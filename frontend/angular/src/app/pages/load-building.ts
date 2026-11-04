@@ -18,6 +18,7 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { ApiProblem, LmsGateway, LoadBuild, MAX_BULK_ASSIGNMENT, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { EntityPicker } from './entity-picker';
 
 /** A load's states in which more freight may still go on. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -55,14 +56,14 @@ export class ConsignmentTable {
 /** Finds waiting consignments, picks them, and puts them on the load together. */
 @Component({
   selector: 'app-add-consignments',
-  imports: [FormsModule],
+  imports: [FormsModule, EntityPicker],
   template: `
     <section data-testid="add-panel">
       <h3>Add consignments</h3>
       <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
       <form class="inline" (ngSubmit)="find()" data-testid="find-unassigned">
-        <input name="orderId" placeholder="Order id (optional)" aria-label="Order id" data-testid="order-filter"
-               [value]="orderTyped()" (input)="orderTyped.set($any($event.target).value)" />
+        <app-entity-picker [kind]="'order'" placeholder="Order (optional)" ariaLabel="Order id" testId="order-filter"
+                           [(value)]="orderTyped" />
         <button type="submit">Find waiting consignments</button>
       </form>
       @if (added() > 0) { <p class="ok" data-testid="bulk-added">Added {{ added() }} consignments to the load.</p> }
@@ -205,7 +206,7 @@ export class AddConsignments {
  */
 @Component({
   selector: 'app-load-building',
-  imports: [FormsModule, ConsignmentTable, AddConsignments],
+  imports: [FormsModule, ConsignmentTable, AddConsignments, EntityPicker],
   template: `
     <h1>Load building</h1>
     <p class="muted">
@@ -214,8 +215,8 @@ export class AddConsignments {
     </p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="open()" data-testid="open-load">
-      <input name="loadId" placeholder="Load id" aria-label="Load id" data-testid="load-id"
-             [value]="typed()" (input)="typed.set($any($event.target).value)" required />
+      <app-entity-picker [kind]="'load'" placeholder="Load" ariaLabel="Load id" testId="load-id" [required]="true"
+                         [(value)]="typed" />
       <button type="submit">Open</button>
     </form>
     @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }

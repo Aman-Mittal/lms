@@ -28,10 +28,15 @@ import { DeliveryDesk } from './pages/delivery-desk';
 import { DemoSettings } from './pages/demo-settings';
 import { ListPage } from './pages/list';
 import { LoadBuilding } from './pages/load-building';
+import { OrderDeskPage } from './pages/order-desk';
+import { ClientBilling } from './pages/client-billing';
 import { LtlRating } from './pages/ltl-rating';
 import { ParkedEvents } from './pages/parked-events';
 import { FieldsSettings } from './pages/fields-settings';
 import { Webhooks } from './pages/webhooks';
+
+// Administration
+const adminDesk = () => import('./pages/admin-desk').then((m) => m.AdminDesk);
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
@@ -52,6 +57,10 @@ export const routes: Routes = [
       { path: 'tracking', component: TrackingLinks },
       { path: 'allocation-rules', component: AllocationRules },
       { path: 'load-building', component: LoadBuilding },
+      { path: 'order-desk', component: OrderDeskPage },
+      { path: 'client-billing', component: ClientBilling },
+      // Commercial: loaded on first visit, like the other desks.
+      { path: 'commercial', loadComponent: () => import('./pages/commercial').then((m) => m.Commercial) },
       // The map screens load on first visit: Leaflet is the console's largest
       // dependency and most sessions never open a map.
       { path: 'map', loadComponent: () => import('./pages/network-map').then((m) => m.NetworkMap) },
@@ -60,6 +69,14 @@ export const routes: Routes = [
       { path: 'milk-runs', loadComponent: () => import('./pages/milk-runs').then((m) => m.MilkRuns) },
       { path: 'ltl', component: LtlRating },
       { path: 'parked-events', component: ParkedEvents },
+      // Warehouse operations
+      { path: 'warehouse', loadComponent: () => import('./pages/warehouse-desk').then((m) => m.WarehouseDesk) },
+      // Administration: loaded on first visit, like the maps; few sessions open it.
+      { path: 'admin/users', loadComponent: adminDesk, data: { section: 'users' } },
+      { path: 'admin/access-policies', loadComponent: adminDesk, data: { section: 'policies' } },
+      { path: 'admin/compliance', loadComponent: adminDesk, data: { section: 'compliance' } },
+      // Control tower
+      { path: 'exception-desk', loadComponent: () => import('./pages/exception-desk').then((m) => m.ExceptionDeskPage) },
       { path: ':resource', component: ListPage },
     ],
   },

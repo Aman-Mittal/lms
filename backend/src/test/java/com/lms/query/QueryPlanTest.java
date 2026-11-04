@@ -395,6 +395,19 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the road rate card listing pages newest first without a sort")
+    void tariffListing() {
+        assertIndexed("""
+                SELECT * FROM tariff
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (created_at, id) < (TIMESTAMPTZ '2026-10-01 00:00:00+00',
+                                           '00000000-0000-0000-0000-000000000009')
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 51
+                """, "tariff");
+    }
+
+    @Test
     @DisplayName("compliance document expiry lookup is index-served")
     void complianceDocumentExpiry() {
         assertIndexed("""

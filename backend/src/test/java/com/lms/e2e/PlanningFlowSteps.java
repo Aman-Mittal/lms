@@ -17,7 +17,6 @@ package com.lms.e2e;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -76,7 +75,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.PlatformTransactionManager;
-import tools.jackson.databind.JsonNode;
 
 import static com.lms.e2e.PlanningFlowSupport.assertProblem;
 import static com.lms.e2e.PlanningFlowSupport.assertStatus;
@@ -540,9 +538,9 @@ public class PlanningFlowSteps {
 
     @Then("the cancelled planning-flow allocation is listed among cancelled allocations")
     public void listedCancelled() {
-        var page = world.api(SourcingApi.class).listAllocations("CANCELLED", null, 200);
+        var page = world.api(SourcingApi.class).listAllocations("CANCELLED", null, 200, null);
         assertThat(page.getItems()).extracting(Allocation::getId).contains(allocationId);
-        assertThat(world.api(SourcingApi.class).listAllocations("OFFERED", null, 200).getItems())
+        assertThat(world.api(SourcingApi.class).listAllocations("OFFERED", null, 200, null).getItems())
                 .extracting(Allocation::getId).doesNotContain(allocationId);
     }
 

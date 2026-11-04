@@ -16,6 +16,7 @@
 
 import { useState, type FormEvent } from 'react';
 import type { IssuedTrackingLink, TrackingLinkView } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
@@ -54,8 +55,8 @@ export function TrackingLinks() {
       ) : (
         <>
           <form className="inline" onSubmit={lookUp} data-testid="lookup">
-            <input placeholder="Consignment id" aria-label="Consignment id" data-testid="consignment-id"
-              value={typed} onChange={(e) => setTyped(e.target.value)} required />
+            <EntityPicker kind="consignment" placeholder="Consignment" ariaLabel="Consignment id" testId="consignment-id"
+          value={typed} onChange={setTyped} required />
             <button type="submit">Look up</button>
           </form>
           {links.error && <p className="error" role="alert">{links.error}</p>}

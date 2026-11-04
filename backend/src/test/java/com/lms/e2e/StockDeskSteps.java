@@ -188,7 +188,7 @@ public class StockDeskSteps {
 
     @Then("the stock desk lists bin {string} holding {int} of {int} and bin {string} holding {int} of {int}")
     public void binsHold(String a, int heldA, int capacityA, String b, int heldB, int capacityB) {
-        List<Bin> listed = warehouses().listBins(warehouse, null, 50).getItems();
+        List<Bin> listed = warehouses().listBins(warehouse, null, 50, null).getItems();
         assertThat(listed).extracting(Bin::getId).contains(bin(a), bin(b));
         assertThat(listed).filteredOn(x -> x.getId().equals(bin(a))).singleElement()
                 .satisfies(x -> {
@@ -206,12 +206,12 @@ public class StockDeskSteps {
 
     @Then("the stock desk pages the bins two at a time by code, ending with bin {string}")
     public void pageBins(String last) {
-        var page1 = warehouses().listBins(warehouse, null, 2);
+        var page1 = warehouses().listBins(warehouse, null, 2, null);
         assertThat(page1.getItems()).extracting(Bin::getCode)
                 .containsExactly(world.code("BIN-A"), world.code("BIN-B"));
         assertThat(page1.getHasMore()).isTrue();
         assertThat(page1.getNextCursor()).isNotBlank();
-        var page2 = warehouses().listBins(warehouse, page1.getNextCursor(), 2);
+        var page2 = warehouses().listBins(warehouse, page1.getNextCursor(), 2, null);
         assertThat(page2.getItems()).extracting(Bin::getId).containsExactly(bin(last));
         assertThat(page2.getHasMore()).isFalse();
     }
@@ -219,7 +219,7 @@ public class StockDeskSteps {
     @Then("the stock desk lists its stock items by code and pages them two at a time")
     public void pageSkus() {
         String before = world.salt + "-MS-0";
-        var page1 = warehouses().listSkus(before, 2);
+        var page1 = warehouses().listSkus(before, 2, null);
         assertThat(page1.getItems()).extracting(Sku::getCode)
                 .containsExactly(skuCode(1), skuCode(2));
         assertThat(page1.getItems().get(0)).satisfies(sku -> {
@@ -230,7 +230,7 @@ public class StockDeskSteps {
         });
         assertThat(page1.getHasMore()).isTrue();
         assertThat(page1.getNextCursor()).isEqualTo(skuCode(2));
-        var page2 = warehouses().listSkus(page1.getNextCursor(), 2);
+        var page2 = warehouses().listSkus(page1.getNextCursor(), 2, null);
         assertThat(page2.getItems().get(0).getCode()).isEqualTo(skuCode(3));
         assertThat(page2.getItems()).extracting(Sku::getCode)
                 .doesNotContain(skuCode(1), skuCode(2));
@@ -385,7 +385,7 @@ public class StockDeskSteps {
 
     @Then("the stock desk can read bin {string} as still holding {int} units")
     public void binStillHolds(String bin, int units) {
-        assertThat(warehouses().listBins(warehouse, null, 50).getItems())
+        assertThat(warehouses().listBins(warehouse, null, 50, null).getItems())
                 .filteredOn(b -> b.getId().equals(bin(bin))).singleElement()
                 .satisfies(b -> assertThat(b.getOccupiedUnits()).isEqualTo(units));
     }
@@ -636,8 +636,8 @@ public class StockDeskSteps {
     public void noReadNoListing() {
         AuthResult clerk = support.userWith("noread", "CLIENT_BILLING_READ");
         WarehouseApi api = support.as(clerk, WarehouseApi.class);
-        assertProblem(() -> api.listBins(warehouse, null, 10), 403, "access-denied");
-        assertProblem(() -> api.listSkus(null, 10), 403, "access-denied");
+        assertProblem(() -> api.listBins(warehouse, null, 10, null), 403, "access-denied");
+        assertProblem(() -> api.listSkus(null, 10, null), 403, "access-denied");
         assertProblem(() -> api.listAsns(warehouse, null, null, 10), 403, "access-denied");
         assertProblem(() -> api.listStock(warehouse, null, null, null, 10), 403, "access-denied");
         assertProblem(() -> api.listStockMovements(first(), null, 10), 403, "access-denied");
@@ -665,12 +665,12 @@ public class StockDeskSteps {
     public void otherTenant() {
         other = support.otherTenantAdministrator();
         WarehouseApi api = support.as(other, WarehouseApi.class);
-        assertThat(api.listBins(warehouse, null, 50).getItems()).isEmpty();
+        assertThat(api.listBins(warehouse, null, 50, null).getItems()).isEmpty();
         assertThat(api.listAsns(warehouse, null, null, 50).getItems()).isEmpty();
         assertThat(api.listStock(warehouse, null, null, null, 50).getItems()).isEmpty();
         assertThat(api.listStockMovements(first(), null, 50).getItems()).isEmpty();
         assertThat(api.listHandlingUnits(warehouse, null, null, 50).getItems()).isEmpty();
-        assertThat(api.listSkus(world.salt + "-MS-0", 50).getItems()).isEmpty();
+        assertThat(api.listSkus(world.salt + "-MS-0", 50, null).getItems()).isEmpty();
         assertProblem(() -> api.getHandlingUnit(units.isEmpty() ? UUID.randomUUID() : units.get(0)),
                 404, "not-found");
         assertProblem(() -> api.adjustStock(new AdjustStockRequest().binId(bin("A"))

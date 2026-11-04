@@ -201,7 +201,7 @@ class WarehouseApiTest {
                                 StockBalance.LocationTypeEnum.BIN, "A-01", 50),
                         org.assertj.core.groups.Tuple.tuple(
                                 StockBalance.LocationTypeEnum.QUARANTINE, null, 5));
-        BinSlice bins = api.listBins(warehouseId, null, null);
+        BinSlice bins = api.listBins(warehouseId, null, null, null);
         assertThat(bins.getItems().get(0).getOccupiedUnits()).isEqualTo(50);
 
         UUID orderId = api.createOutboundOrder(new CreateOutboundOrderRequest()
@@ -332,7 +332,7 @@ class WarehouseApiTest {
         assertThat(dispatched.getVolumeM3()).isEqualByComparingTo("2");
 
         PlanningApi planning = planningClient();
-        ConsignmentSlice waiting = planning.listUnassignedConsignments(null, null, null);
+        ConsignmentSlice waiting = planning.listUnassignedConsignments(null, null, null, null);
         Consignment consignment = waiting.getItems().stream()
                 .filter(c -> unitId.equals(c.getHandlingUnitId()))
                 .findFirst()
