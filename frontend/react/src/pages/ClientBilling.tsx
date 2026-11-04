@@ -15,10 +15,11 @@
  */
 
 import { useState, type FormEvent } from 'react';
-import type { Row } from '../gateway/lmsGateway';
+import { ApiProblem, type Row } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -82,6 +83,7 @@ function ClientDesk({ clientId }: { clientId: string }) {
   return (
     <section data-testid="client-desk">
       {error && <p className="error" role="alert">{error}</p>}
+      {can('PARTNER_READ') && <CreditPosition partnerId={clientId} refreshKey={reload} />}
 
       <h2>Contracts</h2>
       {contracts.data && contracts.data.length === 0 ? (
@@ -91,6 +93,7 @@ function ClientDesk({ clientId }: { clientId: string }) {
           ['code', 'Contract'], ['effectiveFrom', 'From'], ['effectiveTo', 'To'], ['currency', 'Currency'],
           ['transportRatePerKg', 'Transport / kg'], ['handlingInRatePerPallet', 'Handling in / pallet'],
           ['handlingOutRatePerPallet', 'Handling out / pallet'], ['storageRatePerPalletDay', 'Storage / pallet-day'],
+          ['billing', 'Transport billed'],
         ]} />
       )}
 
@@ -107,6 +110,7 @@ function ClientDesk({ clientId }: { clientId: string }) {
           <Table rows={charges.data ?? []} rowTestId="charge-row" columns={[
             ['occurredOn', 'Day'], ['serviceType', 'Service'], ['serviceCode', 'Code'], ['quantity', 'Quantity'],
             ['unit', 'Unit'], ['reference', 'Reference'], ['invoiced', 'Invoiced'], ['late', 'Late'],
+            ['billable', 'Billable'],
           ]} />
         </div>
       )}
@@ -114,6 +118,7 @@ function ClientDesk({ clientId }: { clientId: string }) {
       {can('CLIENT_BILLING_RUN') && (
         <RunBilling clientId={clientId} onBilled={(id) => { setInvoiceId(id); changed(); }} />
       )}
+      {can('CLIENT_BILLING_RUN') && <MarkBillable onMarked={changed} />}
 
       <h2>Invoices</h2>
       {invoices.data && invoices.data.length === 0 ? (
@@ -188,18 +193,28 @@ function RunBilling({ clientId, onBilled }: { clientId: string; onBilled: (invoi
   const { gateway } = useSession();
   const [month, setMonth] = useState(lastMonth());
   const [error, setError] = useState('');
+  const [code, setCode] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [billed, setBilled] = useState('');
 
-  async function run(event: FormEvent) {
-    event.preventDefault();
+  async function bill() {
     setError('');
+    setCode('');
+    setErrors({});
     setBilled('');
     try {
       onBilled(await gateway.runClientBilling(clientId, `${month}-01`));
       setBilled(month);
     } catch (e) {
       setError((e as Error).message);
+      setCode(e instanceof ApiProblem ? e.code : '');
+      setErrors(e instanceof ApiProblem ? e.errors : {});
     }
+  }
+
+  async function run(event: FormEvent) {
+    event.preventDefault();
+    await bill();
   }
 
   return (
@@ -211,6 +226,56 @@ function RunBilling({ clientId, onBilled }: { clientId: string; onBilled: (invoi
         <button type="submit" data-testid="run-billing">Run billing</button>
       </form>
       {billed && <p data-testid="billing-result">Billed {billed}.</p>}
+      {error && (
+        <p className="error" role="alert" data-testid="billing-error">
+          {code && <><code data-testid="billing-refusal">{code}</code>{' '}</>}
+          {error}
+        </p>
+      )}
+      {code === CREDIT_LIMIT_EXCEEDED && (
+        <CreditOverride partnerId={clientId} subjectType="CLIENT_INVOICE" period={`${month}-01`} errors={errors}
+          onGranted={() => { void bill(); }} />
+      )}
+    </>
+  );
+}
+
+/**
+ * Marks a consignment billable without its proof of delivery -- a paper copy was
+ * signed, a code was never used. The reason is audited.
+ */
+function MarkBillable({ onMarked }: { onMarked: () => void }) {
+  const { gateway } = useSession();
+  const [consignmentId, setConsignmentId] = useState('');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [marked, setMarked] = useState(false);
+
+  async function mark(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setMarked(false);
+    try {
+      await gateway.markConsignmentBillable(consignmentId.trim(), reason);
+      setMarked(true);
+      setReason('');
+      onMarked();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <h2>Billable without proof</h2>
+      <form className="inline" onSubmit={mark} data-testid="mark-billable">
+        <input aria-label="Consignment id" placeholder="Consignment id" value={consignmentId}
+          onChange={(e) => setConsignmentId(e.target.value)} required />
+        <input aria-label="Reason it is billable" placeholder="Reason" value={reason}
+          onChange={(e) => setReason(e.target.value)} required />
+        <button type="submit">Mark billable</button>
+      </form>
+      {marked && <p data-testid="marked-billable">Marked billable.</p>}
       {error && <p className="error" role="alert">{error}</p>}
     </>
   );
