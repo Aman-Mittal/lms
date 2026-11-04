@@ -18,6 +18,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import { DemoDataService } from '../api';
+import { GoodsCondition as ApiGoodsCondition } from '../api';
 import {
   ClientBillingService, ClientCharge, ClientContract, ClientInvoice, ClientInvoiceLine, ClientStatementEntry,
 } from '../api';
@@ -49,6 +50,7 @@ import {
   ParkedEvent, ParkedEventStatus, PublishLtlRateCardRequestRateBasisEnum,
   WebhookDelivery, WebhookEventType as ApiWebhookEventType, WebhookSubscription, WebhooksService,
   AddOrderLineRequest, Order, OrderLine, UpdateOrderRequest,
+  HistoryEntry,
 } from '../api';
 import {
   AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ConsignmentPage, LoadBuild, ClaimMove, ConsignmentCard, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
@@ -58,6 +60,7 @@ import {
   ParkedEventDetail, ParkedFilter, RateCardDraft,
   WebhookChanges, WebhookDeliveryPage, WebhookDraft, WebhookSecret, WebhookView,
   OrderDesk, OrderHeaderDraft, OrderLineDraft, OrderRaiseDraft,
+  HistoryEntryRow, HistoryPage,
 } from './lms-gateway';
 // Warehouse operations
 import { WarehouseService } from '../api';
@@ -80,9 +83,42 @@ import type {
   DetectorSettingsView, ExceptionDraft, ExceptionFilter, TripActivity, TripWatchDraft, TripWatchView,
 } from './lms-gateway';
 
+// Credit
+import {
+  CreditLimitChange, CreditOverrideRequestSubjectTypeEnum, CreditPosition, CreditService,
+} from '../api';
+import type {
+  CreditChangeStatus, CreditLimitChangeDraft, CreditLimitState, CreditOverrideDraft, CreditPositionView,
+} from './lms-gateway';
+
 /** An instant as the React console shows one: `YYYY-MM-DD HH:mm` in UTC. */
 function instant(v: string | null | undefined): string {
   return v ? text(new Date(v)) : '';
+}
+
+/** A customer's credit position, every amount as text and a missing one blank. */
+function creditPositionOf(p: CreditPosition): CreditPositionView {
+  return {
+    partnerId: text(p.partnerId), partnerCode: text(p.partnerCode), partnerStatus: text(p.partnerStatus),
+    trading: p.trading, currency: text(p.currency), creditLimit: text(p.creditLimit), softLimit: text(p.softLimit),
+    openOrders: text(p.exposure.openOrders), openOrderCount: text(p.exposure.openOrderCount),
+    unpricedOpenOrderCount: text(p.exposure.unpricedOpenOrderCount),
+    unbilledCharges: text(p.exposure.unbilledCharges), unbilledChargeCount: text(p.exposure.unbilledChargeCount),
+    outstandingInvoices: text(p.exposure.outstandingInvoices), exposure: text(p.exposure.total),
+    headroom: text(p.headroom), limitState: text(p.limitState) as CreditLimitState,
+    pendingChangeId: text(p.pendingChangeId), asOf: instant(p.asOf),
+  };
+}
+
+/** A credit limit change request as the administration desk lists it. */
+function creditChangeRow(c: CreditLimitChange): Row {
+  return {
+    id: text(c.id), partnerId: text(c.partnerId), partnerCode: text(c.partnerCode), status: text(c.status),
+    previousLimit: text(c.previousLimit), previousSoftLimit: text(c.previousSoftLimit),
+    requestedLimit: text(c.requestedLimit), requestedSoftLimit: text(c.requestedSoftLimit), reason: text(c.reason),
+    requestedBy: text(c.requestedBy), requestedAt: instant(c.requestedAt), decidedBy: text(c.decidedBy),
+    decidedAt: instant(c.decidedAt), decisionNote: text(c.decisionNote),
+  };
 }
 
 /** A ticket as the exception desk lists and opens it. */
@@ -148,6 +184,7 @@ function contractRow(c: ClientContract): Row {
     effectiveTo: text(c.effectiveTo), transportRatePerKg: text(c.transportRatePerKg),
     handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
     storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+    billing: c.billOnDispatch ? 'On dispatch' : 'On proof of delivery',
   };
 }
 
@@ -157,6 +194,7 @@ function chargeRow(c: ClientCharge): Row {
     id: text(c.id), occurredOn: text(c.occurredOn), serviceType: text(c.serviceType), serviceCode: text(c.serviceCode),
     quantity: text(c.quantity), unit: text(c.unit), reference: text(c.reference),
     invoiced: c.invoiceId ? 'Yes' : '', late: c.late ? 'Yes' : '',
+    billable: c.billable === false ? 'Awaiting proof' : 'Yes',
   };
 }
 
@@ -339,6 +377,31 @@ function lineRequest(l: OrderLineDraft): AddOrderLineRequest {
   };
 }
 
+/** Who took a step, as far as the reader may know: a portal reader is never told staff names. */
+function actorOf(e: HistoryEntry): string {
+  if (e.actorName) {
+    return text(e.actorName);
+  }
+  if (e.actorKind === 'YOU') {
+    return 'you';
+  }
+  return e.actorKind === 'USER' ? text(e.actorId) || 'another user' : '';
+}
+
+/** A history entry as the desk lists it: the status move and any reason pulled out of the snapshots. */
+function historyRowOf(e: HistoryEntry): HistoryEntryRow {
+  const before = (e.before ?? {}) as Record<string, unknown>;
+  const after = (e.after ?? {}) as Record<string, unknown>;
+  const from = text(before['status']);
+  const to = text(after['status']);
+  return {
+    id: text(e.id), action: text(e.action), actor: actorOf(e),
+    occurredAt: instant(e.occurredAt),
+    change: to && from !== to ? (from ? `${from} → ${to}` : to) : '',
+    reason: text(after['reason']),
+  };
+}
+
 /** An order and its lines as the desk shows them, each line ready to be restated by an edit. */
 function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
   return {
@@ -376,6 +439,7 @@ function consignmentCard(c: Consignment): ConsignmentCard {
     chargeableWeightKg: text(c.chargeableWeightKg), loadNo: text(c.loadNo), freightMode: text(c.freightMode),
     parentId: text(c.parentConsignmentId), parentTrackingRef: text(c.parentTrackingRef),
     partCount: c.partCount ?? null, partsDelivered: c.partsDelivered ?? null, partsCancelled: c.partsCancelled ?? null,
+    proofStatus: text(c.proofStatus), proofCondition: text(c.proofCondition),
   };
 }
 
@@ -548,6 +612,7 @@ export class GeneratedLmsGateway extends LmsGateway {
       consignmentId,
       recordDeliveryProofRequest: {
         otp: draft.otp, recipientName: draft.recipientName, photoRef: draft.photoRef || undefined,
+        goodsCondition: draft.goodsCondition as unknown as ApiGoodsCondition | undefined, remark: draft.remark || undefined,
       },
     }), () => undefined);
   }
@@ -559,6 +624,7 @@ export class GeneratedLmsGateway extends LmsGateway {
         status: (p.status as unknown as string) === 'CONFIRMED' ? 'CONFIRMED' as const : 'OTP_ISSUED' as const,
         recipientName: text(p.recipientName), photoRef: text(p.photoRef),
         deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
+        goodsCondition: text(p.goodsCondition) || 'CLEAN', remark: text(p.remark),
       }));
     } catch (e) {
       if (e instanceof ApiProblem && e.status === 404) {
@@ -940,7 +1006,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   raiseOrder(orgUnitId: string, draft: OrderRaiseDraft): Promise<string> {
     return this.call(this.orders.raiseOrder({
       raiseOrderRequest: {
-        orgUnitId, orderNo: draft.orderNo.trim(), customerPartnerId: draft.customerPartnerId.trim(),
+        orgUnitId, orderNo: blankAsAbsent(draft.orderNo), customerPartnerId: draft.customerPartnerId.trim(),
         originTerminalId: draft.originTerminalId.trim(), requestedPickupAt: blankAsAbsent(draft.requestedPickupAt),
         requestedDeliveryAt: blankAsAbsent(draft.requestedDeliveryAt),
       },
@@ -981,6 +1047,11 @@ export class GeneratedLmsGateway extends LmsGateway {
       () => undefined);
   }
 
+  orderHistory(orderId: string, cursor?: string): Promise<HistoryPage> {
+    return this.call(this.orders.getOrderHistory({ id: orderId, cursor: cursor || undefined, limit: 20 }),
+      (page) => ({ entries: page.items.map(historyRowOf), nextCursor: page.nextCursor ?? null }));
+  }
+
   generateConsignments(orderId: string): Promise<number> {
     return this.call(this.loads.generateConsignments({ id: orderId }), (made) => made.length);
   }
@@ -997,6 +1068,12 @@ export class GeneratedLmsGateway extends LmsGateway {
   clientCharges(clientId: string, period: string): Promise<Row[]> {
     return this.call(this.clientBilling.listClientCharges({ clientId, period, limit: 200 }),
       (page) => page.items.map(chargeRow));
+  }
+
+  markConsignmentBillable(consignmentId: string, reason: string): Promise<void> {
+    return this.call(this.clientBilling.markConsignmentBillable({
+      consignmentId, billingEligibilityRequest: { reason },
+    }), () => undefined);
   }
 
   runClientBilling(clientId: string, period: string): Promise<string> {
@@ -1380,6 +1457,49 @@ export class GeneratedLmsGateway extends LmsGateway {
   }
 
   /** Awaits a generated call, maps its result, and turns any failure into an ApiProblem. */
+  // Credit
+  private readonly credit = inject(CreditService);
+
+  creditPosition(partnerId: string): Promise<CreditPositionView> {
+    return this.call(this.credit.getCreditPosition({ id: partnerId }), creditPositionOf);
+  }
+
+  grantCreditOverride(partnerId: string, draft: CreditOverrideDraft): Promise<string> {
+    return this.call(this.credit.grantCreditOverride({
+      id: partnerId,
+      creditOverrideRequest: {
+        subjectType: draft.subjectType as CreditOverrideRequestSubjectTypeEnum, orderId: draft.orderId || undefined,
+        period: draft.period || undefined, upTo: draft.upTo, reason: draft.reason.trim(),
+      },
+    }), (r) => text(r.id));
+  }
+
+  requestCreditLimitChange(partnerId: string, draft: CreditLimitChangeDraft): Promise<string> {
+    return this.call(this.credit.requestCreditLimitChange({
+      id: partnerId,
+      creditLimitChangeRequest: { creditLimit: draft.creditLimit, softLimit: draft.softLimit, reason: draft.reason.trim() },
+    }), (r) => text(r.id));
+  }
+
+  creditLimitChanges(status?: CreditChangeStatus): Promise<Row[]> {
+    return this.call(this.credit.listCreditLimitChanges({ status, limit: 100 }), (s) => s.items.map(creditChangeRow));
+  }
+
+  partnerCreditLimitChanges(partnerId: string): Promise<Row[]> {
+    return this.call(this.credit.listPartnerCreditLimitChanges({ id: partnerId, limit: 100 }),
+      (s) => s.items.map(creditChangeRow));
+  }
+
+  approveCreditLimitChange(id: string, note: string): Promise<void> {
+    return this.call(this.credit.approveCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }),
+      () => undefined);
+  }
+
+  rejectCreditLimitChange(id: string, note: string): Promise<void> {
+    return this.call(this.credit.rejectCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }),
+      () => undefined);
+  }
+
   private async call<T, R>(request: Observable<T>, map: (value: T) => R): Promise<R> {
     try {
       return map(await firstValueFrom(request));
@@ -1649,6 +1769,11 @@ export class GeneratedLmsGateway extends LmsGateway {
   resolveFreightBill(id: string, reason: string): Promise<void> {
     return this.call(this.freightBills.resolveDispute({ id, resolveDisputeRequest: { reason } }), () => undefined);
   }
+
+  releaseProofHold(billId: string, reason: string): Promise<void> {
+    return this.call(this.freightBills.releaseProofHold({ id: billId, releaseProofHoldRequest: { reason } }),
+      () => undefined);
+  }
 }
 
 // Administration
@@ -1790,6 +1915,7 @@ function commercialBillRow(b: CommercialFreightBill): Row {
     fuelSurchargeAmount: text(b.fuelSurchargeAmount), computedAmount: text(b.computedAmount),
     claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount), variancePct: text(b.variancePct),
     resolution: text(b.resolution), matchedAt: text(b.matchedAt), settlementHeldBy: text(b.settlementHeldBy),
+    awaitingProof: b.awaitingProof ? 'Yes' : '', proofHoldReleaseNote: text(b.proofHoldReleaseNote),
   };
 }
 
