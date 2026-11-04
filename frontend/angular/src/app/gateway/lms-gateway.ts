@@ -141,7 +141,14 @@ export interface ProofDraft {
   otp: string;
   recipientName: string;
   photoRef?: string;
+  /** Omitted is CLEAN. Anything else needs a remark. */
+  goodsCondition?: GoodsCondition;
+  remark?: string;
 }
+
+/** The state the goods were received in; anything but CLEAN holds the carrier's settlement. */
+export const GOODS_CONDITIONS = ['CLEAN', 'SHORTAGE', 'DAMAGE'] as const;
+export type GoodsCondition = (typeof GOODS_CONDITIONS)[number];
 
 /** A consignment's proof of delivery, every cell already formatted for display. */
 export interface DeliveryProofView {
@@ -151,6 +158,10 @@ export interface DeliveryProofView {
   photoRef: string;
   deliveredAt: string;
   otpExpiresAt: string;
+  /** CLEAN, SHORTAGE or DAMAGE. */
+  goodsCondition: string;
+  /** What was short or damaged; empty for a clean delivery. */
+  remark: string;
 }
 
 // ---------------------------------------------------------------- consignments
@@ -175,6 +186,10 @@ export interface ConsignmentCard {
   partCount: number | null;
   partsDelivered: number | null;
   partsCancelled: number | null;
+  /** OTP_ISSUED or CONFIRMED; empty before a code has been issued. */
+  proofStatus: string;
+  /** CLEAN, SHORTAGE or DAMAGE once a proof exists; empty before. */
+  proofCondition: string;
 }
 
 /** One part of a split as the planner states it, in kilograms and cubic metres. */
@@ -390,8 +405,11 @@ export interface ParkedEventDetail {
 
 /** What a subscription can ask for. `PING` is what a test ping sends and cannot be subscribed to. */
 export const WEBHOOK_EVENT_TYPES = [
-  'ORDER_VALIDATED', 'CONSIGNMENTS_GENERATED', 'CONSIGNMENT_SPLIT', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
+  'ORDER_VALIDATED',
+  'ORDER_RAISED', 'ORDER_AMENDED', 'ORDER_CANCELLED', 'ORDER_FULFILLED',
+  'CONSIGNMENTS_GENERATED', 'CONSIGNMENT_SPLIT', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
   'DELIVERY_PROOF_RECORDED', 'CLAIM_RAISED', 'CLAIM_STATUS_CHANGED',
+  'CONSIGNMENT_IN_TRANSIT', 'CONSIGNMENT_DELIVERED',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
@@ -506,6 +524,25 @@ export interface OrderDesk {
   version: string;
   header: OrderHeaderDraft;
   lines: OrderLineView[];
+}
+
+/** One step of a record's history, as the desk lists it. */
+export interface HistoryEntryRow {
+  id: string;
+  action: string;
+  /** Who did it: a name, `you`, `another user` for a portal reader, or empty when the platform did. */
+  actor: string;
+  occurredAt: string;
+  /** `FROM → TO` when the step moved the status, otherwise empty. */
+  change: string;
+  /** A reason recorded with the step, when there is one. */
+  reason: string;
+}
+
+/** A page of history, newest first; `nextCursor` reads the older steps. */
+export interface HistoryPage {
+  entries: HistoryEntryRow[];
+  nextCursor: string | null;
 }
 
 // ---------------------------------------------------------------- client billing
@@ -673,6 +710,8 @@ export abstract class LmsGateway {
     lines: OrderLineDraft[] | null): Promise<void>;
   abstract validateOrder(orderId: string): Promise<void>;
   abstract cancelOrder(orderId: string, reason: string): Promise<void>;
+  /** The order's history, newest first; a 404 problem for an order the caller cannot read. */
+  abstract orderHistory(orderId: string, cursor?: string): Promise<HistoryPage>;
   /** Resolves to how many consignments were cut. */
   abstract generateConsignments(orderId: string): Promise<number>;
   /** Customer partners a 3PL contract may be held by. */
@@ -681,6 +720,8 @@ export abstract class LmsGateway {
   abstract clientContracts(clientId: string): Promise<Row[]>;
   /** The client's charges in the month holding `period` (a `YYYY-MM-DD` day). */
   abstract clientCharges(clientId: string, period: string): Promise<Row[]>;
+  /** Marks a consignment billable to its client without waiting for its proof; audited. */
+  abstract markConsignmentBillable(consignmentId: string, reason: string): Promise<void>;
   /**
    * Bills the month holding `period`; resolves to the invoice's id. Running a month
    * again answers the same invoice.
@@ -802,6 +843,8 @@ export abstract class LmsGateway {
   abstract matchFreightBill(id: string, claimedAmount: number): Promise<string>;
   /** Settles a dispute in the vendor's favour, with the reason on the record. */
   abstract resolveFreightBill(id: string, reason: string): Promise<void>;
+  /** Releases a bill's trip from waiting on proofs of delivery; the reason is audited. */
+  abstract releaseProofHold(billId: string, reason: string): Promise<void>;
   // Control tower
   /** Newest first, one page; an empty filter value means any. */
   abstract exceptionTickets(filter: ExceptionFilter): Promise<Row[]>;
@@ -851,6 +894,19 @@ export abstract class LmsGateway {
   // Pickers
   /** One page of what a picker offers for the typed text; a blank `q` lists from the start. */
   abstract pick(query: PickQuery): Promise<PickPage>;
+  // Credit
+  /** A customer's limits, exposure and headroom as of now. Rejects with a 404 problem for an unknown partner. */
+  abstract creditPosition(partnerId: string): Promise<CreditPositionView>;
+  /** Grants a one-time override of the hard limit; resolves to its id. Needs CREDIT_OVERRIDE. */
+  abstract grantCreditOverride(partnerId: string, draft: CreditOverrideDraft): Promise<string>;
+  /** Asks for a new limit, which applies only once someone else approves it; resolves to the request's id. */
+  abstract requestCreditLimitChange(partnerId: string, draft: CreditLimitChangeDraft): Promise<string>;
+  /** Change requests across partners, newest first, only those in `status` when one is given. */
+  abstract creditLimitChanges(status?: CreditChangeStatus): Promise<Row[]>;
+  /** One partner's change log, newest first. */
+  abstract partnerCreditLimitChanges(partnerId: string): Promise<Row[]>;
+  abstract approveCreditLimitChange(id: string, note: string): Promise<void>;
+  abstract rejectCreditLimitChange(id: string, note: string): Promise<void>;
 }
 
 // Warehouse operations
@@ -1169,3 +1225,62 @@ export interface PickPage {
   /** Null on the last page. */
   nextCursor: string | null;
 }
+
+// Credit
+
+/** How a customer's exposure stands against its limits. */
+export type CreditLimitState = 'NO_LIMIT' | 'WITHIN' | 'SOFT_EXCEEDED' | 'HARD_EXCEEDED';
+
+/**
+ * A customer's credit position, every amount formatted for display. A blank limit is no
+ * limit; a blank headroom is what having no limit leaves.
+ */
+export interface CreditPositionView {
+  partnerId: string;
+  partnerCode: string;
+  partnerStatus: string;
+  /** False for a suspended or blacklisted customer: its orders are refused whatever the limit. */
+  trading: boolean;
+  currency: string;
+  creditLimit: string;
+  softLimit: string;
+  openOrders: string;
+  openOrderCount: string;
+  unpricedOpenOrderCount: string;
+  unbilledCharges: string;
+  unbilledChargeCount: string;
+  outstandingInvoices: string;
+  /** The total of the three parts above. */
+  exposure: string;
+  headroom: string;
+  limitState: CreditLimitState;
+  /** The open limit change request, or blank. */
+  pendingChangeId: string;
+  asOf: string;
+}
+
+/** What a credit override is for: one order, or one client billing month. */
+export type CreditSubjectType = 'ORDER' | 'CLIENT_INVOICE';
+
+/** A one-time pass through the hard limit for one refused action. */
+export interface CreditOverrideDraft {
+  subjectType: CreditSubjectType;
+  /** For an order. */
+  orderId?: string;
+  /** For a billing run: any `YYYY-MM-DD` day of the month. */
+  period?: string;
+  /** The highest exposure the override lets through. */
+  upTo: number;
+  reason: string;
+}
+
+/** A requested credit limit; a second person approves it before it applies. */
+export interface CreditLimitChangeDraft {
+  creditLimit: number;
+  /** Optional, and at most the credit limit. */
+  softLimit?: number;
+  reason: string;
+}
+
+export const CREDIT_CHANGE_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
+export type CreditChangeStatus = (typeof CREDIT_CHANGE_STATUSES)[number];
