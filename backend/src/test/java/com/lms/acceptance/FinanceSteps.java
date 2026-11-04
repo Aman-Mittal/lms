@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
+import com.lms.delivery.command.domain.GoodsCondition;
 import com.lms.execution.command.TripCommandService;
 import com.lms.execution.command.domain.WeighbridgeReading;
 import com.lms.finance.command.BillingService;
@@ -90,6 +91,8 @@ public class FinanceSteps {
     private TripCommandService tripCommands;
     @Autowired
     private PlatformTransactionManager transactionManager;
+    @Autowired
+    private ProofFixtures proofs;
 
     /** The card the most recent {@code a rate card ...} step published. */
     private UUID currentTariffId;
@@ -206,16 +209,29 @@ public class FinanceSteps {
     }
 
     /**
-     * Proof of delivery, which is what raises the bill.
+     * The trip completed, which raises the bill, and its consignments proved
+     * delivered clean, which is what lets the bill settle.
      *
-     * <p>The listener is an after-commit one and runs on this thread, so by the
-     * time this step returns the bill exists. That is a design choice rather
-     * than luck -- see {@code TripBillingListener} -- and it is why these
-     * scenarios can assert on the bill in the very next line instead of polling
-     * for it.
+     * <p>The listeners are after-commit ones and run on this thread, so by the
+     * time this step returns the bill exists and the proof hold the completion
+     * placed has been lifted again. That is a design choice rather than luck --
+     * see {@code TripBillingListener} -- and it is why these scenarios can
+     * assert on the bill in the very next line instead of polling for it. A
+     * scenario about the hold itself completes the trip without proofs.
      */
     @When("trip {string} is completed")
     public void tripIsCompleted(String tripNo) {
+        UUID tripId = completeTrip(tripNo);
+        proofs.proveTrip(tripId, GoodsCondition.CLEAN, null);
+    }
+
+    /** Completion alone: the bill is raised and settlement waits for the proofs. */
+    @When("trip {string} is completed without proofs of delivery")
+    public void tripIsCompletedUnproved(String tripNo) {
+        completeTrip(tripNo);
+    }
+
+    private UUID completeTrip(String tripNo) {
         UUID tripId = tripIdOf(tripNo);
         tripCommands.complete(tripId, Instant.now());
 
@@ -223,6 +239,7 @@ public class FinanceSteps {
                 tripId).orElseThrow(() ->
                 new AssertionError("Completing trip " + tripNo + " raised no freight bill")).id());
         world.putRef("bill:FB-" + tripNo, billId);
+        return tripId;
     }
 
     /**
