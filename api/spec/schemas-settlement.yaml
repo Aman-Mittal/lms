@@ -92,6 +92,17 @@ FreightBill:
         matching and dispute settlement are refused with
         `settlement-on-hold`.
     createdAt: { type: string, format: date-time }
+    awaitingProof:
+      type: boolean
+      description: True while the bill's trip waits for clean proofs of
+        delivery -- a consignment it delivered has no confirmed proof, or one
+        recording a shortage or damage. Matching and dispute settlement are
+        then refused with `settlement-awaiting-proof`. Clears when the last
+        clean proof arrives, or when a person releases the hold.
+    proofHoldReleaseNote:
+      type: string
+      description: Why a person released the proof hold by hand; absent
+        otherwise.
 
 FreightBillLine:
   type: object
@@ -118,6 +129,16 @@ MatchResponse:
   properties:
     status: { type: string, enum: [APPROVED_FOR_PAYMENT, DISPUTED] }
   required: [status]
+
+ReleaseProofHoldRequest:
+  type: object
+  properties:
+    reason:
+      type: string
+      maxLength: 500
+      description: Mandatory. Releasing pays a carrier for a delivery nobody
+        has proved clean, so it says why.
+  required: [reason]
 
 ResolveDisputeRequest:
   type: object

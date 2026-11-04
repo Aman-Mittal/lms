@@ -108,7 +108,8 @@ import { GROUPS, RESOURCES } from './resources';
             </div>
           }
           <!-- Administration -->
-          @if (session.can('ACCESS_POLICY_MANAGE') || session.can('VEHICLE_READ')) {
+          @if (session.can('ACCESS_POLICY_MANAGE') || session.can('VEHICLE_READ') || session.can('CREDIT_LIMIT_REQUEST')
+               || session.can('CREDIT_LIMIT_APPROVE')) {
             <div class="group" data-testid="nav-admin">
               <h6>Administration</h6>
               @if (session.can('ACCESS_POLICY_MANAGE')) {
@@ -118,6 +119,9 @@ import { GROUPS, RESOURCES } from './resources';
               }
               @if (session.can('VEHICLE_READ')) {
                 <a routerLink="/admin/compliance" routerLinkActive="active" data-testid="nav-admin-compliance">Compliance</a>
+              }
+              @if (session.can('CREDIT_LIMIT_REQUEST') || session.can('CREDIT_LIMIT_APPROVE')) {
+                <a routerLink="/admin/credit-limits" routerLinkActive="active" data-testid="nav-admin-credit">Credit limits</a>
               }
             </div>
           }

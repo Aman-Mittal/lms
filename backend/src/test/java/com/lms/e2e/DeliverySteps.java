@@ -23,10 +23,13 @@ import java.util.UUID;
 
 import com.lms.client.api.AuthenticationApi;
 import com.lms.client.api.DeliveryAndClaimsApi;
+import com.lms.client.api.PlanningApi;
 import com.lms.client.model.Claim;
 import com.lms.client.model.ClaimStatus;
 import com.lms.client.model.ClaimType;
+import com.lms.client.model.Consignment;
 import com.lms.client.model.DeliveryProof;
+import com.lms.client.model.GoodsCondition;
 import com.lms.client.model.LoginRequest;
 import com.lms.client.model.RaiseClaimRequest;
 import com.lms.client.model.RecordDeliveryProofRequest;
@@ -100,8 +103,7 @@ public class DeliverySteps {
                 lorry, driver, 5000);
         world.dispatch(trip, origin, 5000, OffsetDateTime.now(ZoneOffset.UTC).minusHours(5));
 
-        // The consignment itself stays ASSIGNED_TO_LOAD for a full truckload; what
-        // says it has left is the trip, which dispatch has just moved.
+        // Dispatch has moved the trip, and with it the full truckload to IN_TRANSIT.
         consignment = jdbc.sql("""
                         SELECT c.id FROM consignment c JOIN sales_order o ON o.id = c.order_id
                          WHERE o.order_no = :no
@@ -192,6 +194,36 @@ public class DeliverySteps {
                     assertThat(e.status()).isEqualTo(409);
                     assertThat(e.contentUTF8()).contains("proof-already-recorded");
                 });
+    }
+
+    @When("the right code is given by recipient {string} recording a {word} of {string}")
+    public void rightWithException(String recipient, String condition, String remark) {
+        desk().recordDeliveryProof(consignment, new RecordDeliveryProofRequest()
+                .otp(code).recipientName(recipient)
+                .goodsCondition(GoodsCondition.fromValue(condition)).remark(remark), null);
+    }
+
+    @Then("the delivery proof records a {word} of {string}")
+    public void proofRecords(String condition, String remark) {
+        DeliveryProof proof = desk().getDeliveryProof(consignment);
+        assertThat(proof.getStatus()).isEqualTo(DeliveryProof.StatusEnum.CONFIRMED);
+        assertThat(String.valueOf(proof.getGoodsCondition())).isEqualTo(condition);
+        assertThat(proof.getRemark()).isEqualTo(remark);
+    }
+
+    @Then("the consignment reads {word} before any proof")
+    public void consignmentBeforeProof(String status) {
+        Consignment read = world.api(PlanningApi.class).getConsignment(consignment);
+        assertThat(read.getStatus()).isEqualTo(status);
+        assertThat(read.getProofStatus()).isNull();
+    }
+
+    @Then("the consignment reads {word} with a confirmed {word} proof")
+    public void consignmentReads(String status, String condition) {
+        Consignment read = world.api(PlanningApi.class).getConsignment(consignment);
+        assertThat(read.getStatus()).isEqualTo(status);
+        assertThat(String.valueOf(read.getProofStatus())).isEqualTo("CONFIRMED");
+        assertThat(String.valueOf(read.getProofCondition())).isEqualTo(condition);
     }
 
     @Given("the delivery has been proved")
