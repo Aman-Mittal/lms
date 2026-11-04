@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.lms.identity.numbering.DocumentNumbers;
+import com.lms.identity.numbering.DocumentType;
 import com.lms.masterdata.api.PartnerStandingPort;
 import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.order.api.FreightMode;
@@ -74,6 +76,7 @@ public class OrderCommandService {
     private final List<OrderAmendmentGuard> amendmentGuards;
     private final TransitionAudit audit;
     private final OrderNumberSequence numbers;
+    private final DocumentNumbers documentNumbers;
     private final OrderCreditGate creditGate;
 
     /**
@@ -89,7 +92,8 @@ public class OrderCommandService {
                                PartnerStandingPort partners,
                                List<OrderCancellationHook> cancellationHooks,
                                List<OrderAmendmentGuard> amendmentGuards, TransitionAudit audit,
-                               OrderNumberSequence numbers, OrderCreditGate creditGate) {
+                               OrderNumberSequence numbers, OrderCreditGate creditGate,
+                               DocumentNumbers documentNumbers) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
@@ -100,6 +104,7 @@ public class OrderCommandService {
         this.audit = audit;
         this.numbers = numbers;
         this.creditGate = creditGate;
+        this.documentNumbers = documentNumbers;
     }
 
     /** Raises a full-truckload order, which is what an order without a mode has always been. */
@@ -120,7 +125,8 @@ public class OrderCommandService {
      * docket between those two hubs.
      *
      * <p>An order raised with no number, or a blank one, is given the next
-     * number from the tenant's sequence ({@link OrderNumberSequence}). A number
+     * number from the tenant's ORDER number series, or without one from the
+     * order sequence ({@link OrderNumberSequence}). A number
      * the caller states is kept as stated and must be unused within the tenant
      * ({@code order-no-taken}); an assigned number that a caller happened to
      * use by hand already is skipped rather than refused.
@@ -141,7 +147,7 @@ public class OrderCommandService {
 
         boolean assigned = orderNo == null || orderNo.isBlank();
         if (assigned) {
-            orderNo = nextFreeNumber(tenantId);
+            orderNo = nextFreeNumber(tenantId, orgUnitId);
         } else {
             String stated = orderNo.strip();
             orders.findByOrderNo(tenantId, stated).ifPresent(existing -> {
@@ -172,9 +178,14 @@ public class OrderCommandService {
         return raised.id();
     }
 
-    private String nextFreeNumber(UUID tenantId) {
+    /**
+     * The tenant's ORDER series answers when one covers the unit; otherwise
+     * the order's own yearly sequence, as before series existed.
+     */
+    private String nextFreeNumber(UUID tenantId, UUID orgUnitId) {
         for (int attempt = 0; attempt < MAX_NUMBER_SKIPS; attempt++) {
-            String candidate = numbers.next(tenantId);
+            String candidate = documentNumbers.next(DocumentType.ORDER, orgUnitId)
+                    .orElseGet(() -> numbers.next(tenantId));
             if (orders.findByOrderNo(tenantId, candidate).isEmpty()) {
                 return candidate;
             }
@@ -249,7 +260,8 @@ public class OrderCommandService {
                 materialCode, materialDescription,
                 materialClass == null ? MaterialClass.GENERAL : materialClass, hazmatUnCode,
                 quantity, uom, deadWeightKg, lengthM, widthM, heightM, volumetricDivisor,
-                consigneePartnerId, destinationTerminalId, false, null, Instant.now());
+                consigneePartnerId, destinationTerminalId, false, false, null, Instant.now(), null, null,
+                null);
 
         UUID added = lines.save(line).id();
         creditGate.afterLinesChanged(order);
@@ -527,8 +539,8 @@ public class OrderCommandService {
                     spec.materialClass() == null ? MaterialClass.GENERAL : spec.materialClass(),
                     spec.hazmatUnCode(), spec.quantity(), spec.uom(), spec.deadWeightKg(),
                     spec.lengthM(), spec.widthM(), spec.heightM(), spec.volumetricDivisor(),
-                    spec.consigneePartnerId(), spec.destinationTerminalId(), false, null,
-                    Instant.now())));
+                    spec.consigneePartnerId(), spec.destinationTerminalId(), false, false, null,
+                    Instant.now(), null, null, null)));
         }
         created.sort(java.util.Comparator.comparingInt(OrderLine::lineNo));
         return created;

@@ -252,6 +252,49 @@ request after a quiet spell pays the start-up cost above.
   at a time by cursor, under the same read rules as the record itself (another
   tenant's record is a 404 `not-found`). The order desk in both consoles shows it
   on a History tab.
+- Document number series (V48, `NUMBER_SERIES_MANAGE`): a tenant numbers a
+  document type (ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE)
+  from a series that is tenant-wide or scoped to one organisational unit's
+  subtree; the active series on the deepest unit covering the document wins.
+  A number is `prefix [sep year-code] sep counter`, the counter zero-padded and
+  restarting each financial year (start month and time zone per series, default
+  April and UTC). The draw is one upsert on the counter row in the document's own
+  transaction, so concurrent documents never share a number. A number given back
+  is logged with its reason and, only where the series says so, handed out again
+  before the counter advances. `/api/v1/number-series` covers CRUD, activation,
+  next-number preview, format preview, manual issue, release with its log,
+  verification and the effective series for a unit; the Administration group of
+  both consoles has a Number series screen. Orders take an ORDER series when one
+  covers their unit and keep `ORD-<year>-<000001>` otherwise; lorry receipts and
+  dockets stay random unless the tenant configures a CONSIGNMENT_NOTE or DOCKET
+  series. Other modules use the two-call `identity::numbering` port
+  (`DocumentNumbers.next` / `release`).
+- An order can be closed short of cancelling it (`POST /orders/{id}/close`,
+  V49). NORMAL needs every open line planned and its freight delivered
+  (`order-not-complete` names each line and what is outstanding). SHORT gives
+  up the lines not yet planned -- they are closed and never planned -- but is
+  refused while freight cut from an open line has not left
+  (`order-freight-pending`). FORCE, held to `ORDER_FORCE_CLOSE`, ends the order
+  whatever its freight is doing. Short and forced closes need a reason
+  (`close-reason-required`); a draft is cancelled instead
+  (`order-not-validated`), and an order that has ended is refused by how it
+  ended (`order-already-closed`, `order-is-cancelled`). One line closes the same
+  way (`POST /orders/{id}/lines/{lineId}/close`); a closed unplanned line counts
+  as spoken for, so the order can become fully planned, and the order closes
+  itself once every other line is closed or delivered. Consignments already cut
+  are never touched: they travel, are proved and are billed as before. Each
+  close is audited (`ORDER_CLOSED`, `ORDER_LINE_CLOSED`, on the order's
+  history) and publishes `OrderClosed` with its kind (webhook `ORDER_CLOSED`).
+- A tenant's close policy (`GET/PUT /orders/close-settings`, setting it needs
+  `ORDER_FORCE_CLOSE`): a tolerance, 0 by default, under which a line counts as
+  delivered -- measured by the weight of the freight carrying it, so it bites
+  when a split consignment's last part is still on the road -- after which the
+  platform closes the order itself (kind AUTO); and a switch that turns
+  automatic fulfilment off, leaving delivered orders FULLY_PLANNED until a
+  person closes them. The tolerance is never applied to a close asked for by
+  hand. The order desk in both consoles offers close, short close and force
+  close, and a short or forced close per line, each only to whoever holds the
+  right, and shows a refusal by its code.
 - An LTL load consolidates dockets from many customers gathered at one origin
   hub and bound for one destination hub; capacity, dangerous goods and
   compatibility rules apply as for any load. A docket then travels twice: line
@@ -349,6 +392,46 @@ request after a quiet spell pays the start-up cost above.
   matched to the invoices it settles; the reference is unique per client, so a
   receipt entered twice is refused. Needs `CLIENT_BILLING_RUN` in the caller's
   subtree, is audited, never edited or removed.
+
+**Customer standing and credit limits (V46)** — `masterdata`, gated from `order` and `clientbilling`
+- Standing: a SUSPENDED or BLACKLISTED customer gets no new or changed
+  orders. Validating an order, amending one and adding or replacing its lines
+  are refused with `customer-not-trading`; freight already cut is not stopped.
+- Exposure, defined once (`CreditExposureService`): open orders (VALIDATED,
+  PARTIALLY_PLANNED or FULLY_PLANNED, plus the draft being checked) valued at
+  the client contract's transport rate on the weight not yet charged, plus
+  client charges not yet invoiced, plus issued invoices less credit notes and
+  payments. Each kilogram counts once -- as order weight until its trip is
+  charged, then as a charge until invoiced, then as an invoice until paid --
+  and nothing resets on a calendar. An order without a contract counts zero and
+  is reported as unpriced. A closed or cancelled order drops out of the
+  first term; whatever of it was already charged stays in the others.
+- Gate points: order validation, amendment and line add or replace, and the
+  client billing run. The gate runs in the caller's transaction after the
+  change is written, so the exposure includes it and a refusal rolls it back;
+  checks for one customer are serialised by an advisory lock, so two orders
+  cannot both spend the same headroom.
+- Limits: `business_partner.credit_limit` is the hard limit, with a soft limit
+  beside it (never above it, `credit-soft-limit-above-limit`). Past the hard
+  limit the action is refused with `credit-limit-exceeded`, the problem naming
+  the exposure and the limit. Past the soft limit it goes ahead, audited as
+  `CREDIT_SOFT_LIMIT_EXCEEDED` and published as `CreditSoftLimitExceeded`. A
+  customer with no limit is not held to one.
+- Override: `POST /partners/{id}/credit-overrides` (`CREDIT_OVERRIDE`, within
+  the granter's approval limit for the amount above the hard limit) lets one
+  named action -- one order's validate, amend or line add, or one client
+  billing period -- through while exposure stays within the stated `upTo`. It
+  is used by the first action it covers, expires unused after 24 hours, and is
+  audited (`CREDIT_LIMIT_OVERRIDDEN`).
+- Maker-checker: a limit changes only through a request
+  (`POST /partners/{id}/credit-limit-changes`, `CREDIT_LIMIT_REQUEST`) that a
+  different person approves (`CREDIT_LIMIT_APPROVE`, within their approval
+  limit; `credit-limit-change-self-approval` otherwise) or rejects. One request
+  per partner is open at a time (`credit-limit-change-pending`); the change log
+  keeps before and after. `GET /partners/{id}/credit-position` (`PARTNER_READ`)
+  reads limit, soft limit, exposure by part and headroom, and both consoles show
+  it on the order desk and a credit screen, with the override offered on a
+  refusal.
 
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
