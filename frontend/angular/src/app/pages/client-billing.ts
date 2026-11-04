@@ -16,9 +16,10 @@
 
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ClientAgeingView, ClientInvoiceDetail, LmsGateway, Row } from '../gateway/lms-gateway';
+import { ApiProblem, ClientAgeingView, ClientInvoiceDetail, LmsGateway, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -61,10 +62,12 @@ const CONTRACT_COLUMNS: Array<[string, string]> = [
   ['code', 'Contract'], ['effectiveFrom', 'From'], ['effectiveTo', 'To'], ['currency', 'Currency'],
   ['transportRatePerKg', 'Transport / kg'], ['handlingInRatePerPallet', 'Handling in / pallet'],
   ['handlingOutRatePerPallet', 'Handling out / pallet'], ['storageRatePerPalletDay', 'Storage / pallet-day'],
+  ['billing', 'Transport billed'],
 ];
 const CHARGE_COLUMNS: Array<[string, string]> = [
   ['occurredOn', 'Day'], ['serviceType', 'Service'], ['serviceCode', 'Code'], ['quantity', 'Quantity'],
   ['unit', 'Unit'], ['reference', 'Reference'], ['invoiced', 'Invoiced'], ['late', 'Late'],
+  ['billable', 'Billable'],
 ];
 const LINE_COLUMNS: Array<[string, string]> = [
   ['lineNo', '#'], ['serviceType', 'Service'], ['narrative', 'Narrative'], ['quantity', 'Quantity'],
@@ -82,10 +85,13 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
  */
 @Component({
   selector: 'app-client-desk',
-  imports: [FormsModule, BillingTable],
+  imports: [FormsModule, BillingTable, CreditPositionPanel, CreditOverride],
   template: `
     <section data-testid="client-desk">
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (session.can('PARTNER_READ')) {
+        <app-credit-position [partnerId]="clientId()" [refreshKey]="invoices()" />
+      }
 
       <h2>Contracts</h2>
       @if (loaded() && contracts().length === 0) {
@@ -115,7 +121,27 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
           <button type="submit" data-testid="run-billing">Run billing</button>
         </form>
         @if (billed()) { <p data-testid="billing-result">Billed {{ billed() }}.</p> }
-        @if (runError()) { <p class="error" role="alert">{{ runError() }}</p> }
+        @if (runError()) {
+          <p class="error" role="alert" data-testid="billing-error">
+            @if (runCode()) { <code data-testid="billing-refusal">{{ runCode() }}</code> }
+            {{ runError() }}
+          </p>
+          @if (runCode() === creditRefused) {
+            <app-credit-override [partnerId]="clientId()" [subjectType]="'CLIENT_INVOICE'"
+                                 [period]="billingMonth() + '-01'" [errors]="runErrors()" (granted)="run()" />
+          }
+        }
+
+        <h2>Billable without proof</h2>
+        <form class="inline" (ngSubmit)="markBillable()" data-testid="mark-billable">
+          <input name="markConsignment" aria-label="Consignment id" placeholder="Consignment id"
+                 [value]="markConsignment()" (input)="markConsignment.set($any($event.target).value)" required />
+          <input name="markReason" aria-label="Reason it is billable" placeholder="Reason"
+                 [value]="markReason()" (input)="markReason.set($any($event.target).value)" required />
+          <button type="submit">Mark billable</button>
+        </form>
+        @if (marked()) { <p data-testid="marked-billable">Marked billable.</p> }
+        @if (markError()) { <p class="error" role="alert">{{ markError() }}</p> }
       }
 
       <h2>Invoices</h2>
@@ -240,8 +266,15 @@ export class ClientDesk implements OnInit {
   });
 
   readonly billingMonth = signal(lastMonth());
+  readonly markConsignment = signal('');
+  readonly markReason = signal('');
+  readonly marked = signal(false);
+  readonly markError = signal('');
   readonly billed = signal('');
   readonly runError = signal('');
+  readonly runCode = signal('');
+  readonly runErrors = signal<Record<string, string>>({});
+  readonly creditRefused = CREDIT_LIMIT_EXCEEDED;
 
   readonly invoiceId = signal<string | null>(null);
   readonly invoice = signal<ClientInvoiceDetail | null>(null);
@@ -286,6 +319,20 @@ export class ClientDesk implements OnInit {
     }
   }
 
+  /** Marks a consignment billable without its proof of delivery; the reason is audited. */
+  async markBillable(): Promise<void> {
+    this.markError.set('');
+    this.marked.set(false);
+    try {
+      await this.gateway.markConsignmentBillable(this.markConsignment().trim(), this.markReason());
+      this.marked.set(true);
+      this.markReason.set('');
+      await this.refresh();
+    } catch (e) {
+      this.markError.set((e as Error).message);
+    }
+  }
+
   async pickMonth(value: string): Promise<void> {
     if (!value) {
       return;
@@ -300,6 +347,8 @@ export class ClientDesk implements OnInit {
 
   async run(): Promise<void> {
     this.runError.set('');
+    this.runCode.set('');
+    this.runErrors.set({});
     this.billed.set('');
     try {
       const id = await this.gateway.runClientBilling(this.clientId(), `${this.billingMonth()}-01`);
@@ -308,6 +357,8 @@ export class ClientDesk implements OnInit {
       await this.refresh();
     } catch (e) {
       this.runError.set((e as Error).message);
+      this.runCode.set(e instanceof ApiProblem ? e.code : '');
+      this.runErrors.set(e instanceof ApiProblem ? e.errors : {});
     }
   }
 
