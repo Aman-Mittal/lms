@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.order.api.FreightMode;
+import com.lms.planning.command.LoadMaintenanceService;
 import com.lms.planning.command.PlanningCommandService;
 import com.lms.planning.command.domain.LoadUnit;
 import com.lms.planning.query.ConsignmentView;
@@ -31,6 +32,7 @@ import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
@@ -38,10 +40,12 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -58,14 +62,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class PlanningController {
 
+    private static final String LOAD_VERSION = "the load's version";
+
     private final PlanningCommandService planning;
+    private final LoadMaintenanceService maintenance;
     private final PlanningQueryService planningQueries;
     private final AuditHistoryQueryService history;
 
     public PlanningController(PlanningCommandService planning,
+                              LoadMaintenanceService maintenance,
                               PlanningQueryService planningQueries,
                               AuditHistoryQueryService history) {
         this.planning = planning;
+        this.maintenance = maintenance;
         this.planningQueries = planningQueries;
         this.history = history;
     }
@@ -81,8 +90,16 @@ public class PlanningController {
                 .body(generated);
     }
 
+    /** The consignment, with its version as the ETag: what an amendment sends back in {@code If-Match}. */
     @GetMapping("/consignments/{id}")
-    public ConsignmentView getConsignment(@PathVariable UUID id) {
+    public ResponseEntity<ConsignmentView> getConsignment(@PathVariable UUID id) {
+        ConsignmentView consignment = readConsignment(id);
+        return ResponseEntity.ok()
+                .eTag(IfMatch.etag(consignment.version()))
+                .body(consignment);
+    }
+
+    private ConsignmentView readConsignment(UUID id) {
         return planningQueries.findConsignment(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Consignment", id));
     }
@@ -92,7 +109,7 @@ public class PlanningController {
     public Slice<HistoryEntryView> consignmentHistory(@PathVariable UUID id,
                                                       @RequestParam(required = false) String cursor,
                                                       @RequestParam(required = false) Integer limit) {
-        getConsignment(id);
+        readConsignment(id);
         return history.historyOf("Consignment", id, cursor, limit, viewer());
     }
 
@@ -150,8 +167,14 @@ public class PlanningController {
         return planningQueries.listLoads(status, cursor, limit, q);
     }
 
+    /** The load, with its version as the ETag: what a change sends back in {@code If-Match}. */
     @GetMapping("/loads/{id}")
-    public LoadView getLoad(@PathVariable UUID id) {
+    public ResponseEntity<LoadView> getLoad(@PathVariable UUID id) {
+        LoadView load = findLoad(id);
+        return ResponseEntity.ok().eTag(IfMatch.etag(load.version())).body(load);
+    }
+
+    private LoadView findLoad(UUID id) {
         return planningQueries.findLoad(id)
                 .orElseThrow(() -> new ResourceNotFoundException("LoadUnit", id));
     }
@@ -161,7 +184,7 @@ public class PlanningController {
     public Slice<HistoryEntryView> loadHistory(@PathVariable UUID id,
                                                @RequestParam(required = false) String cursor,
                                                @RequestParam(required = false) Integer limit) {
-        getLoad(id);
+        findLoad(id);
         return history.historyOf("Load", id, cursor, limit, viewer());
     }
 
@@ -211,6 +234,41 @@ public class PlanningController {
     public ResponseEntity<Void> plan(@PathVariable UUID id) {
         planning.planLoad(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Takes a consignment off a load that has not been awarded or left; it goes
+     * back to wait for another. {@code If-Match} carries the load's version.
+     */
+    @DeleteMapping("/loads/{id}/consignments/{consignmentId}")
+    public ResponseEntity<Void> removeConsignment(@PathVariable UUID id, @PathVariable UUID consignmentId,
+                                                  @RequestHeader(value = "If-Match", required = false)
+                                                  String ifMatch) {
+        maintenance.removeConsignment(id, consignmentId, IfMatch.version(ifMatch, LOAD_VERSION));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Opens a planned load for building again. */
+    @PostMapping("/loads/{id}/unplan")
+    public ResponseEntity<Void> unplan(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        maintenance.unplanLoad(id, IfMatch.version(ifMatch, LOAD_VERSION));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Cancels a load that has not left, releasing what is aboard. */
+    @PostMapping("/loads/{id}/cancel")
+    public ResponseEntity<Void> cancel(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @RequestBody(required = false) @Valid CancelLoadRequest request) {
+        maintenance.cancelLoad(id, IfMatch.version(ifMatch, LOAD_VERSION),
+                request == null || request.reason() == null || request.reason().isBlank()
+                        ? null : request.reason().strip());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Why a load is cancelled; optional, kept in the load's history. */
+    public record CancelLoadRequest(@Size(max = 500) String reason) {
     }
 
     public record OpenLoadRequest(

@@ -140,6 +140,40 @@ public class PlanningLinks {
                 .update();
     }
 
+    /**
+     * Numbers what is left on a load 1, 2, 3... in the order it was in, so a
+     * consignment taken off leaves no gap in the drops. One statement, served
+     * by {@code load_consignment_load_idx}.
+     */
+    public void closeUpDropSequence(UUID tenantId, UUID loadId) {
+        jdbc.sql("""
+                        UPDATE load_consignment lc
+                           SET drop_sequence = renumbered.position
+                          FROM (SELECT consignment_id,
+                                       CAST(row_number() OVER (ORDER BY drop_sequence) AS integer)
+                                           AS position
+                                  FROM load_consignment
+                                 WHERE tenant_id = :tenantId AND load_id = :loadId) renumbered
+                         WHERE lc.tenant_id = :tenantId AND lc.load_id = :loadId
+                           AND lc.consignment_id = renumbered.consignment_id
+                           AND lc.drop_sequence <> renumbered.position
+                        """)
+                .param("tenantId", tenantId)
+                .param("loadId", loadId)
+                .update();
+    }
+
+    /** Takes everything off one load, in one statement. */
+    public void unlinkLoad(UUID tenantId, UUID loadId) {
+        jdbc.sql("""
+                        DELETE FROM load_consignment
+                         WHERE tenant_id = :tenantId AND load_id = :loadId
+                        """)
+                .param("tenantId", tenantId)
+                .param("loadId", loadId)
+                .update();
+    }
+
     /** Where a consignment sits: the load, and that load's status. */
     public record Placement(UUID consignmentId, UUID loadId, String loadStatus) {
     }
@@ -165,6 +199,67 @@ public class PlanningLinks {
                 .query((rs, n) -> new Placement(rs.getObject("consignment_id", UUID.class),
                         rs.getObject("load_id", UUID.class), rs.getString("status")))
                 .list();
+    }
+
+    /**
+     * Every load placement of one consignment: none, or one per leg it has
+     * been put on. Served by the unique {@code (consignment_id, leg)} index on
+     * {@code load_consignment}.
+     */
+    public List<Placement> placementsOf(UUID tenantId, UUID consignmentId) {
+        return jdbc.sql("""
+                        SELECT lc.consignment_id, lc.load_id, l.status
+                          FROM load_consignment lc
+                          JOIN load_unit l ON l.id = lc.load_id
+                         WHERE lc.tenant_id = :tenantId AND lc.consignment_id = :consignmentId
+                        """)
+                .param("tenantId", tenantId)
+                .param("consignmentId", consignmentId)
+                .query((rs, n) -> new Placement(rs.getObject("consignment_id", UUID.class),
+                        rs.getObject("load_id", UUID.class), rs.getString("status")))
+                .list();
+    }
+
+    /** The order lines a consignment was cut from. Served by the primary key. */
+    public List<UUID> orderLinesOf(UUID tenantId, UUID consignmentId) {
+        return jdbc.sql("""
+                        SELECT order_line_id FROM consignment_line
+                         WHERE tenant_id = :tenantId AND consignment_id = :consignmentId
+                        """)
+                .param("tenantId", tenantId)
+                .param("consignmentId", consignmentId)
+                .query(UUID.class)
+                .list();
+    }
+
+    /** The consignments an order line is on, in any state. Served by {@code consignment_line_order_line_idx}. */
+    public List<UUID> consignmentsOfLine(UUID tenantId, UUID orderLineId) {
+        return jdbc.sql("""
+                        SELECT consignment_id FROM consignment_line
+                         WHERE tenant_id = :tenantId AND order_line_id = :orderLineId
+                        """)
+                .param("tenantId", tenantId)
+                .param("orderLineId", orderLineId)
+                .query(UUID.class)
+                .list();
+    }
+
+    /**
+     * Frees the order lines a cancelled consignment was cut from.
+     *
+     * <p>A cancelled consignment no longer holds demand. Its lines go back to
+     * the order to be planned again, and the link would otherwise keep the
+     * order from being amended -- an amendment replaces the lines, and the
+     * link's foreign key refuses to let a line it names go.
+     */
+    public void unlinkLines(UUID tenantId, UUID consignmentId) {
+        jdbc.sql("""
+                        DELETE FROM consignment_line
+                         WHERE tenant_id = :tenantId AND consignment_id = :consignmentId
+                        """)
+                .param("tenantId", tenantId)
+                .param("consignmentId", consignmentId)
+                .update();
     }
 
     /** Takes consignments off whatever loads hold them, in one statement. */
