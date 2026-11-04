@@ -1,0 +1,418 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/number-series:
+  get:
+    tags: [Number series]
+    operationId: listNumberSeries
+    summary: A page of the tenant's number series, in code order
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Each series carries where its counter
+      stands in the current financial year.
+    parameters:
+      - name: documentType
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/NumberedDocumentType" }
+        description: Restricts the listing to series of one document type.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of series.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NumberSeriesSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Number series]
+    operationId: createNumberSeries
+    summary: Add a number series for a document type, tenant-wide or for one unit's subtree
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Numbers read
+      `prefix [separator year-code] separator counter`, the counter
+      zero-padded to `counterLength` and restarting every financial year
+      (which starts on the first of `yearStartMonth` in `timeZone`); a series
+      with `yearCode` NONE never restarts. Refused with 409
+      `number-series-code-taken` for a code already used,
+      `number-series-prefix-taken` when another series of the type has the
+      prefix, and `number-series-scope-taken` when it is to be active and
+      another active series of the type already has the same scope. A unit
+      that is not the tenant's is 404.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateNumberSeriesRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/number-series/verify:
+  get:
+    tags: [Number series]
+    operationId: verifyDocumentNumber
+    summary: Whether a number belongs to one of the tenant's series, and whether it was issued
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Read-only. Every series of the type is
+      tried, active or not. A number no series could have produced answers
+      `belongs: false`, not 404.
+    parameters:
+      - name: documentType
+        in: query
+        required: true
+        schema: { $ref: "#/components/schemas/NumberedDocumentType" }
+        description: The kind of document the number is on.
+      - name: number
+        in: query
+        required: true
+        schema: { type: string, maxLength: 64 }
+        description: The number to check, as printed.
+    responses:
+      "200":
+        description: The verdict.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NumberVerification" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/number-series/effective:
+  get:
+    tags: [Number series]
+    operationId: getEffectiveNumberSeries
+    summary: The series that would number a document of a type raised at a unit
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. The active series on the deepest unit
+      at or above `orgUnitId` wins; failing that, the tenant-wide one. 404
+      `not-found` when none would, which means the document keeps its
+      built-in numbering.
+    parameters:
+      - name: documentType
+        in: query
+        required: true
+        schema: { $ref: "#/components/schemas/NumberedDocumentType" }
+        description: The kind of document.
+      - name: orgUnitId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: The unit the document would be raised at. Omit for the tenant-wide series.
+    responses:
+      "200":
+        description: The series that would answer.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NumberSeries" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/number-series/format-preview:
+  get:
+    tags: [Number series]
+    operationId: previewNumberFormat
+    summary: What numbers in a proposed format look like, before saving a series
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Read-only. A format that could not be
+      saved is 400, with the reason.
+    parameters:
+      - name: prefix
+        in: query
+        required: true
+        schema: { type: string, maxLength: 16 }
+        description: 1-16 upper-case letters, digits, '/' or '-'.
+      - name: yearCode
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/NumberYearCode" }
+        description: Defaults to NONE.
+      - name: separator
+        in: query
+        required: false
+        schema: { type: string, maxLength: 1 }
+        description: One of '-', '/', '_', '.', or empty for none. Defaults to '-'.
+      - name: counterLength
+        in: query
+        required: false
+        schema: { type: integer, minimum: 1, maximum: 12 }
+        description: Defaults to 5.
+      - name: yearStartMonth
+        in: query
+        required: false
+        schema: { type: integer, minimum: 1, maximum: 12 }
+        description: Defaults to 4 (April).
+      - name: timeZone
+        in: query
+        required: false
+        schema: { type: string, maxLength: 64 }
+        description: An IANA zone id. Defaults to UTC.
+    responses:
+      "200":
+        description: Sample numbers.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NumberFormatPreview" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/number-series/scopes:
+  get:
+    tags: [Number series]
+    operationId: listNumberSeriesScopes
+    summary: The organisational units a series can be scoped to
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. The caller's own unit and those beneath
+      it, in path order.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of units.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NumberSeriesScopeSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/number-series/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the series.
+  get:
+    tags: [Number series]
+    operationId: getNumberSeries
+    summary: One number series
+    responses:
+      "200":
+        description: The series.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NumberSeries" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Number series]
+    operationId: reviseNumberSeries
+    summary: Change a series' format, reuse setting or description
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. The code, document type and scope never
+      change. The format may change only until the series issues its first
+      number (409 `number-series-in-use` after), so that every number it
+      issued stays verifiable; a new prefix must be free for the type (409
+      `number-series-prefix-taken`).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReviseNumberSeriesRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  delete:
+    tags: [Number series]
+    operationId: deleteNumberSeries
+    summary: Remove a series that never issued a number
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. A series that issued a number is 409
+      `number-series-in-use`; deactivate it instead.
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/number-series/{id}/activate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the series.
+  post:
+    tags: [Number series]
+    operationId: activateNumberSeries
+    summary: Start numbering documents from a series
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Activating an active series changes
+      nothing. Refused with 409 `number-series-scope-taken` while another
+      active series of the type has the same scope.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/number-series/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the series.
+  post:
+    tags: [Number series]
+    operationId: deactivateNumberSeries
+    summary: Stop numbering documents from a series
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. The next most specific active series,
+      or the document's built-in numbering, takes over. Its numbers stay
+      verifiable. Deactivating an inactive series changes nothing.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/number-series/{id}/preview:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the series.
+  get:
+    tags: [Number series]
+    operationId: previewNextNumber
+    summary: The number a series would issue next, without issuing it
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Read-only, and only a prediction: a
+      document created meanwhile takes the number first.
+    responses:
+      "200":
+        description: The next number.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NextNumberPreview" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/number-series/{id}/issue:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the series.
+  post:
+    tags: [Number series]
+    operationId: issueNumber
+    summary: Issue the next number for a document made outside the platform
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Draws exactly as a document would --
+      atomically, from the pool first when the series reuses released
+      numbers -- and audits `NUMBER_ISSUED`. An inactive series is 409
+      `number-series-inactive`. Send an `Idempotency-Key` to make a retry
+      return the same number rather than draw another.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "201":
+        description: The number issued.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IssuedNumber" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/number-series/{id}/releases:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the series.
+  get:
+    tags: [Number series]
+    operationId: listNumberReleases
+    summary: The numbers given back to a series, newest first
+    description: Requires `NUMBER_SERIES_MANAGE`.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of releases.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NumberReleaseSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Number series]
+    operationId: releaseNumber
+    summary: Give a number back, with a reason
+    description: |
+      Requires `NUMBER_SERIES_MANAGE`. Recorded and audited
+      (`NUMBER_RELEASED`) whether or not the series reuses numbers; a series
+      with `reuseReleased` hands the lowest released number of the current
+      financial year out again before advancing its counter. Refused with
+      409 `number-not-in-series` for a number the series could not have
+      produced, `number-not-issued` for one its counter has not reached, and
+      `number-already-released` for one released and not issued since.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReleaseNumberRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

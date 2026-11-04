@@ -15,14 +15,15 @@
  */
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ConsignmentCard, LmsGateway } from '../gateway/lms-gateway';
+import { ApiProblem, ConsignmentCard, ConsignmentParticularsDraft, LmsGateway } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { Qr } from './qr';
 import { compareWithWhole, PlannedPart, splitByCapacity } from './split-plan';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
- * print its lorry receipt, and split one too big for a single vehicle.
+ * print its lorry receipt, split one too big for a single vehicle, correct what
+ * is said about it while it waits for a load, and cancel it on its own.
  *
  * Every input is a signal bound with [value] and (input), not ngModel: with no
  * zone, ngModel connects after the screen is shown and would wipe what was
@@ -58,7 +59,50 @@ import { compareWithWhole, PlannedPart, splitByCapacity } from './split-plan';
           <div><dt>Volume m³</dt><dd>{{ c.volumeM3 }}</dd></div>
           <div><dt>Chargeable kg</dt><dd>{{ c.chargeableWeightKg }}</dd></div>
           <div><dt>Load</dt><dd>{{ c.loadNo || '—' }}</dd></div>
+          <div><dt>Client reference</dt><dd data-testid="consignment-client-ref">{{ c.clientReference || '—' }}</dd></div>
+          <div><dt>Consignee contact</dt><dd data-testid="consignment-contact">{{ c.contactName || '—' }}{{ c.contactPhone ? ', ' + c.contactPhone : '' }}</dd></div>
+          <div><dt>Consignee reference</dt><dd>{{ c.consigneeReference || '—' }}</dd></div>
+          <div><dt>Delivery window</dt><dd data-testid="consignment-window">{{ c.deliveryWindowFrom || '…' }} to {{ c.deliveryWindowTo || '…' }}</dd></div>
+          <div><dt>Remarks</dt><dd data-testid="consignment-remarks">{{ c.remarks || '—' }}</dd></div>
         </dl>
+
+        @if (amendable()) {
+          <section data-testid="particulars-form">
+            <h3>Particulars</h3>
+            <p class="muted">What it carries is fixed; who to call, the references, the delivery window and remarks can be corrected until it is on a load. Times are ISO-8601, such as 2026-12-01T06:00:00Z.</p>
+            <form (ngSubmit)="saveParticulars()">
+              @for (f of particularFields; track f.key) {
+                <label>{{ f.label }}
+                  <input [name]="f.key" [attr.data-testid]="'particular-' + f.key" [attr.aria-label]="f.label"
+                         [value]="draft()[f.key]" (input)="setParticular(f.key, $any($event.target).value)" />
+                </label>
+              }
+              <button type="submit" data-testid="save-particulars" [disabled]="busy()">Save particulars</button>
+            </form>
+            @if (particularsRefusal(); as r) {
+              <p class="error" role="alert" data-testid="particulars-error">
+                @if (r.code) { <code data-testid="particulars-refusal">{{ r.code }}</code> } {{ r.message }}
+              </p>
+            }
+          </section>
+        }
+
+        @if (cancellable()) {
+          <section data-testid="cancel-form">
+            <h3>Cancel this consignment</h3>
+            <p class="muted">Takes it off its load first; its order lines go back to be planned again.</p>
+            <form class="inline" (ngSubmit)="cancelConsignment()">
+              <input name="reason" placeholder="Reason" aria-label="Reason for cancelling" data-testid="cancel-reason"
+                     [value]="reason()" (input)="reason.set($any($event.target).value)" />
+              <button type="submit" data-testid="cancel-consignment" [disabled]="busy()">Cancel consignment</button>
+            </form>
+          </section>
+        }
+        @if (cancelRefusal(); as r) {
+          <p class="error" role="alert" data-testid="cancel-error">
+            @if (r.code) { <code data-testid="cancel-refusal">{{ r.code }}</code> } {{ r.message }}
+          </p>
+        }
 
         @if (c.status === 'SPLIT' && c.partCount !== null) {
           <div data-testid="split-progress">
@@ -169,6 +213,29 @@ export class ConsignmentDesk {
   readonly splitError = signal('');
   readonly busy = signal(false);
 
+  readonly particularFields: { key: keyof ConsignmentParticularsDraft; label: string }[] = [
+    { key: 'contactName', label: 'Contact name' },
+    { key: 'contactPhone', label: 'Contact phone' },
+    { key: 'consigneeReference', label: 'Consignee reference' },
+    { key: 'clientReference', label: 'Client reference' },
+    { key: 'deliveryWindowFrom', label: 'Deliver from' },
+    { key: 'deliveryWindowTo', label: 'Deliver by' },
+    { key: 'remarks', label: 'Remarks' },
+  ];
+  readonly draft = signal<ConsignmentParticularsDraft>(emptyDraft());
+  readonly particularsRefusal = signal<{ code: string; message: string } | null>(null);
+  readonly reason = signal('');
+  readonly cancelRefusal = signal<{ code: string; message: string } | null>(null);
+
+  readonly amendable = computed(() => {
+    const c = this.card();
+    return !!c && c.status === 'PLANNED' && this.session.can('LOAD_CREATE');
+  });
+  readonly cancellable = computed(() => {
+    const c = this.card();
+    return !!c && (c.status === 'PLANNED' || c.status === 'ASSIGNED_TO_LOAD') && !c.handlingUnitNo
+      && !c.parentId && this.session.can('LOAD_CREATE');
+  });
   readonly splittable = computed(() => {
     const c = this.card();
     return !!c && c.status === 'PLANNED' && c.freightMode === 'FTL' && !c.parentId
@@ -226,17 +293,64 @@ export class ConsignmentDesk {
     window.print();
   }
 
+  setParticular(key: keyof ConsignmentParticularsDraft, value: string): void {
+    this.draft.update((d) => ({ ...d, [key]: value }));
+  }
+
+  async saveParticulars(): Promise<void> {
+    const c = this.card();
+    if (!c) {
+      return;
+    }
+    this.particularsRefusal.set(null);
+    this.busy.set(true);
+    try {
+      await this.gateway.amendConsignment(c.id, c.version, this.draft());
+      await this.show(() => this.gateway.consignment(c.id));
+    } catch (e) {
+      this.particularsRefusal.set(refusalOf(e));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async cancelConsignment(): Promise<void> {
+    const c = this.card();
+    if (!c) {
+      return;
+    }
+    this.cancelRefusal.set(null);
+    this.busy.set(true);
+    try {
+      await this.gateway.cancelConsignment(c.id, this.reason());
+      // Cleared before the re-read, so nothing typed survives a success.
+      this.reason.set('');
+      await this.show(() => this.gateway.consignment(c.id));
+    } catch (e) {
+      this.cancelRefusal.set(refusalOf(e));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   private async show(read: () => Promise<ConsignmentCard>): Promise<void> {
     this.loadError.set('');
     this.slip.set(false);
+    this.cancelRefusal.set(null);
     this.planned.set([]);
     this.capacity.set('');
     this.splitError.set('');
     this.parts.set([]);
     this.partsError.set('');
+    this.particularsRefusal.set(null);
     try {
       const c = await read();
       this.card.set(c);
+      this.draft.set({
+        contactName: c.contactName, contactPhone: c.contactPhone, consigneeReference: c.consigneeReference,
+        clientReference: c.clientReference, deliveryWindowFrom: c.deliveryWindowFrom,
+        deliveryWindowTo: c.deliveryWindowTo, remarks: c.remarks,
+      });
       if (c.status === 'SPLIT') {
         try {
           this.parts.set(await this.gateway.consignmentParts(c.id));
@@ -249,4 +363,16 @@ export class ConsignmentDesk {
       this.loadError.set((e as Error).message);
     }
   }
+}
+
+function emptyDraft(): ConsignmentParticularsDraft {
+  return {
+    contactName: '', contactPhone: '', consigneeReference: '', clientReference: '',
+    deliveryWindowFrom: '', deliveryWindowTo: '', remarks: '',
+  };
+}
+
+/** A refusal as the desk shows it: the problem's code, when there is one, and its message. */
+function refusalOf(e: unknown): { code: string; message: string } {
+  return { code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message };
 }

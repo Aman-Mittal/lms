@@ -22,9 +22,13 @@ import java.util.UUID;
 
 import com.lms.order.api.FreightMode;
 import com.lms.order.api.MaterialClass;
+import com.lms.order.command.OrderCloseService;
+import com.lms.order.command.OrderCloseSettings;
 import com.lms.order.command.OrderCommandService;
 import com.lms.order.command.OrderHeaderChange;
+import com.lms.order.command.OrderLineCancellationService;
 import com.lms.order.command.OrderLineSpec;
+import com.lms.order.command.domain.CloseKind;
 import com.lms.order.command.domain.SalesOrder;
 import com.lms.order.query.OrderLineView;
 import com.lms.order.query.OrderQueryService;
@@ -36,6 +40,7 @@ import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -67,17 +72,25 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderController {
 
     private final OrderCommandService orders;
+    private final OrderCloseService closes;
+    private final OrderCloseSettings closeSettings;
     private final OrderQueryService orderQueries;
     private final AuditHistoryQueryService history;
+    private final OrderLineCancellationService lineCancellations;
 
     /** The audit resource type the order module writes; see OrderCommandService. */
     private static final String AUDIT_TYPE = "SalesOrder";
 
-    public OrderController(OrderCommandService orders, OrderQueryService orderQueries,
-                           AuditHistoryQueryService history) {
+    public OrderController(OrderCommandService orders, OrderCloseService closes,
+                           OrderCloseSettings closeSettings, OrderQueryService orderQueries,
+                           AuditHistoryQueryService history,
+                           OrderLineCancellationService lineCancellations) {
         this.orders = orders;
+        this.closes = closes;
+        this.closeSettings = closeSettings;
         this.orderQueries = orderQueries;
         this.history = history;
+        this.lineCancellations = lineCancellations;
     }
 
     @GetMapping
@@ -93,7 +106,7 @@ public class OrderController {
     public ResponseEntity<OrderView> get(@PathVariable UUID id) {
         OrderView order = orderQueries.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("SalesOrder", id));
-        return ResponseEntity.ok().eTag("\"" + (order.version() == null ? 0 : order.version()) + "\"")
+        return ResponseEntity.ok().eTag(IfMatch.etag(order.version()))
                 .body(order);
     }
 
@@ -165,6 +178,37 @@ public class OrderController {
     }
 
     /**
+     * Closes the order: NORMAL (the default, when the body or its kind is
+     * omitted), SHORT or FORCE. See {@link OrderCloseService} for the rules.
+     */
+    @PostMapping("/{id}/close")
+    public ResponseEntity<Void> close(@PathVariable UUID id,
+                                      @RequestBody(required = false) @Valid CloseRequest request) {
+        closes.close(id, request == null ? null : request.kind(), request == null ? null : request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Closes one line; the order follows when nothing else is left open. */
+    @PostMapping("/{id}/lines/{lineId}/close")
+    public ResponseEntity<Void> closeLine(@PathVariable UUID id, @PathVariable UUID lineId,
+                                          @RequestBody(required = false) @Valid CloseRequest request) {
+        closes.closeLine(id, lineId, request == null ? null : request.kind(),
+                request == null ? null : request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** The tenant's close policy, defaults included. */
+    @GetMapping("/close-settings")
+    public CloseSettingsResponse closeSettings() {
+        return CloseSettingsResponse.of(closeSettings.view());
+    }
+
+    @PutMapping("/close-settings")
+    public CloseSettingsResponse setCloseSettings(@Valid @RequestBody CloseSettingsRequest request) {
+        return CloseSettingsResponse.of(closeSettings.update(request.tolerancePercent(), request.autoFulfil()));
+    }
+
+    /**
      * Replaces the header of a draft order. {@code If-Match} carries the
      * version from the last read; a stale one is 409 {@code concurrent-modification}.
      */
@@ -193,6 +237,19 @@ public class OrderController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Cancels one line of a validated order, and the consignment it is on;
+     * see the service for what that frees and refuses.
+     */
+    @PostMapping("/{id}/lines/{lineId}/cancellation")
+    public OrderLineCancellationService.LineCancellation cancelLine(
+            @PathVariable UUID id, @PathVariable UUID lineId,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch,
+            @RequestBody(required = false) @Valid CancelOrderRequest request) {
+        return lineCancellations.cancel(id, lineId, versionOf(ifMatch),
+                request == null ? null : request.reason());
+    }
+
     /** Amends a validated order that has no consignments yet; see the service for the refusals. */
     @PostMapping("/{id}/amend")
     public ResponseEntity<Void> amend(@PathVariable UUID id,
@@ -212,21 +269,7 @@ public class OrderController {
      * header exists to prevent; {@code *} is not accepted for the same reason.
      */
     private static long versionOf(String ifMatch) {
-        if (ifMatch == null || ifMatch.isBlank()) {
-            throw new IllegalArgumentException("An If-Match header carrying the order's version is required");
-        }
-        String raw = ifMatch.strip();
-        if (raw.startsWith("W/")) {
-            raw = raw.substring(2);
-        }
-        if (raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"")) {
-            raw = raw.substring(1, raw.length() - 1);
-        }
-        try {
-            return Long.parseLong(raw);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("If-Match must be an order version as returned in its ETag");
-        }
+        return IfMatch.version(ifMatch, "the order's version");
     }
 
     private static List<OrderLineSpec> specsOf(List<AddLineRequest> lines) {
@@ -257,6 +300,21 @@ public class OrderController {
     /** Either part may be omitted to leave it as it is, but not both. */
     public record AmendOrderRequest(@Valid OrderHeaderRequest header,
                                     List<@Valid AddLineRequest> lines) {
+    }
+
+    /** How and why an order or line is closed; the kind defaults to NORMAL. */
+    public record CloseRequest(CloseKind kind, @Size(max = 500) String reason) {
+    }
+
+    /** Boxed and required, so that an omitted switch does not silently turn fulfilment off. */
+    public record CloseSettingsRequest(@NotNull BigDecimal tolerancePercent, @NotNull Boolean autoFulfil) {
+    }
+
+    public record CloseSettingsResponse(BigDecimal tolerancePercent, boolean autoFulfil, boolean customised) {
+
+        static CloseSettingsResponse of(OrderCloseSettings.Policy policy) {
+            return new CloseSettingsResponse(policy.tolerancePercent(), policy.autoFulfil(), policy.customised());
+        }
     }
 
     /** Why the order is being cancelled. The whole body is optional, and so is the reason. */
