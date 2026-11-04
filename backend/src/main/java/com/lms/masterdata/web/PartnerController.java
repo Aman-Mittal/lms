@@ -64,8 +64,9 @@ public class PartnerController {
     public Slice<PartnerView> list(@RequestParam(required = false) String partnerType,
                                    @RequestParam(required = false) String status,
                                    @RequestParam(required = false) String cursor,
-                                   @RequestParam(required = false) Integer limit) {
-        return masterData.listPartners(partnerType, status, cursor, limit);
+                                   @RequestParam(required = false) Integer limit,
+                                   @RequestParam(required = false) String q) {
+        return masterData.listPartners(partnerType, status, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

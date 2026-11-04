@@ -95,11 +95,11 @@ public class TenantIsolationFlowSteps {
 
         String orderNo = "SO-IS-" + demo.salt;
         orderId = first(() -> demo.api(OrdersApi.class)
-                .listOrders(null, null, 200).getItems().stream()
+                .listOrders(null, null, 200, null).getItems().stream()
                 .filter(o -> orderNo.equals(o.getOrderNo())).findFirst().orElseThrow().getId());
         String loadNo = "LD-IS-" + demo.salt;
         loadId = first(() -> demo.api(PlanningApi.class)
-                .listLoads(null, null, 200).getItems().stream()
+                .listLoads(null, null, 200, null).getItems().stream()
                 .filter(l -> loadNo.equals(l.getLoadNo())).findFirst().orElseThrow().getId());
         // Read straight from the table: the spec declares GET /loads/{id}/consignments as
         // answering one Consignment, while the server answers an array, so the generated
@@ -107,7 +107,7 @@ public class TenantIsolationFlowSteps {
         consignmentId = jdbc.sql("SELECT id FROM consignment WHERE order_id = :o")
                 .param("o", orderId).query(UUID.class).single();
         allocationId = first(() -> demo.api(SourcingApi.class)
-                .listAllocations(null, null, 200).getItems().stream()
+                .listAllocations(null, null, 200, null).getItems().stream()
                 .filter(a -> loadId.equals(a.getLoadId())).findFirst().orElseThrow().getId());
     }
 
@@ -151,11 +151,11 @@ public class TenantIsolationFlowSteps {
 
     @Then("none of the second company's listings contain the demo company's freight")
     public void listingsAreConfined() {
-        assertThat(second(OrdersApi.class).listOrders(null, null, 200).getItems()).isEmpty();
-        assertThat(second(PlanningApi.class).listLoads(null, null, 200).getItems()).isEmpty();
-        assertThat(second(TripsApi.class).listTrips(null, null, 200).getItems()).isEmpty();
-        assertThat(second(SourcingApi.class).listAllocations(null, null, 200).getItems()).isEmpty();
-        assertThat(second(PlanningApi.class).listUnassignedConsignments(null, 200, null).getItems())
+        assertThat(second(OrdersApi.class).listOrders(null, null, 200, null).getItems()).isEmpty();
+        assertThat(second(PlanningApi.class).listLoads(null, null, 200, null).getItems()).isEmpty();
+        assertThat(second(TripsApi.class).listTrips(null, null, 200, null).getItems()).isEmpty();
+        assertThat(second(SourcingApi.class).listAllocations(null, null, 200, null).getItems()).isEmpty();
+        assertThat(second(PlanningApi.class).listUnassignedConsignments(null, 200, null, null).getItems())
                 .isEmpty();
     }
 

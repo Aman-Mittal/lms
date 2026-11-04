@@ -97,8 +97,18 @@ public class PlanningController {
     @GetMapping("/consignments/unassigned")
     public Slice<ConsignmentView> unassigned(@RequestParam(required = false) UUID orderId,
                                              @RequestParam(required = false) String cursor,
-                                             @RequestParam(required = false) Integer limit) {
-        return planningQueries.listUnassigned(orderId, cursor, limit);
+                                             @RequestParam(required = false) Integer limit,
+                                             @RequestParam(required = false) String q) {
+        return planningQueries.listUnassigned(orderId, cursor, limit, q);
+    }
+
+    /** Every consignment by tracking reference, in any state; see {@code listConsignments}. */
+    @GetMapping("/consignments")
+    public Slice<ConsignmentView> consignments(@RequestParam(required = false) String status,
+                                               @RequestParam(required = false) String cursor,
+                                               @RequestParam(required = false) Integer limit,
+                                               @RequestParam(required = false) String q) {
+        return planningQueries.listConsignments(status, cursor, limit, q);
     }
 
     /**
@@ -119,8 +129,9 @@ public class PlanningController {
     @GetMapping("/loads")
     public Slice<LoadView> listLoads(@RequestParam(required = false) String status,
                                      @RequestParam(required = false) String cursor,
-                                     @RequestParam(required = false) Integer limit) {
-        return planningQueries.listLoads(status, cursor, limit);
+                                     @RequestParam(required = false) Integer limit,
+                                     @RequestParam(required = false) String q) {
+        return planningQueries.listLoads(status, cursor, limit, q);
     }
 
     @GetMapping("/loads/{id}")

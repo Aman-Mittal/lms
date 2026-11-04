@@ -61,8 +61,9 @@ public class AllocationController {
     @GetMapping
     public Slice<AllocationView> list(@RequestParam(required = false) String status,
                                       @RequestParam(required = false) String cursor,
-                                      @RequestParam(required = false) Integer limit) {
-        return sourcingQueries.list(status, cursor, limit);
+                                      @RequestParam(required = false) Integer limit,
+                                      @RequestParam(required = false) String q) {
+        return sourcingQueries.list(status, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

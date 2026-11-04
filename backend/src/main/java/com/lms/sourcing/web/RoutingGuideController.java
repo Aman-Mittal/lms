@@ -20,6 +20,7 @@ import java.net.URI;
 import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import com.lms.sourcing.command.RoutingGuideCommandService;
 import com.lms.sourcing.command.domain.RoutingGuide;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -63,6 +65,15 @@ public class RoutingGuideController {
                 request.destinationTerminalId(), request.vehicleType(), request.strategy());
         return ResponseEntity.created(URI.create("/api/v1/routing-guides/" + id))
                 .body(new IdResponse(id));
+    }
+
+    /** A page of guides without their vendors; {@code q} matches the lane's terminal codes or the vehicle type. */
+    @GetMapping
+    public Slice<RoutingGuideView> list(@RequestParam(required = false) Boolean active,
+                                        @RequestParam(required = false) String cursor,
+                                        @RequestParam(required = false) Integer limit,
+                                        @RequestParam(required = false) String q) {
+        return queries.listGuides(active, cursor, limit, q);
     }
 
     @GetMapping("/{id}")

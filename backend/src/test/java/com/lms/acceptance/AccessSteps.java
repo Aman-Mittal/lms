@@ -295,7 +295,7 @@ public class AccessSteps {
 
     @Then("the load listing shows the load of {string} only")
     public void loadListingShowsOnly(String tripNo) {
-        assertThat(inTransaction(() -> planningQueries.listLoads(null, null, 200).items().stream()
+        assertThat(inTransaction(() -> planningQueries.listLoads(null, null, 200, null).items().stream()
                 .map(LoadView::id)
                 .toList()))
                 .containsExactly(world.ref("portal-load:" + tripNo));

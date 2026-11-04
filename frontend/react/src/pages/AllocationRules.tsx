@@ -19,6 +19,7 @@ import {
   MATERIAL_CLASSES, RULE_ACTIONS, type AllocationRuleView, type AllocationSummary, type Choice,
   type RuleAction, type RuleDraft, type RuleEvaluation,
 } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 
@@ -277,8 +278,8 @@ function DryRun() {
       <h2>Dry run</h2>
       <p className="muted">Which rule would fire for a load, and who would be asked first. Nothing is offered.</p>
       <form className="inline" onSubmit={run}>
-        <input placeholder="Load id" aria-label="Load id" data-testid="dry-run-load" value={loadId}
-          onChange={(e) => setLoadId(e.target.value)} required />
+        <EntityPicker kind="load" placeholder="Load" ariaLabel="Load id" testId="dry-run-load"
+          value={loadId} onChange={setLoadId} required />
         <button type="submit" data-testid="dry-run-go">Evaluate</button>
       </form>
       {error && <p className="error" role="alert">{error}</p>}
@@ -319,8 +320,8 @@ function AllocationLookUp() {
     <section data-testid="allocation-lookup">
       <h2>What decided an allocation</h2>
       <form className="inline" onSubmit={lookUp}>
-        <input placeholder="Allocation id" aria-label="Allocation id" data-testid="allocation-id" value={id}
-          onChange={(e) => setId(e.target.value)} required />
+        <EntityPicker kind="allocation" placeholder="Allocation" ariaLabel="Allocation id" testId="allocation-id"
+          value={id} onChange={setId} required />
         <button type="submit" data-testid="allocation-go">Look up</button>
       </form>
       {error && <p className="error" role="alert">{error}</p>}

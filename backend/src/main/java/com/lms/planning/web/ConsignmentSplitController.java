@@ -70,8 +70,9 @@ public class ConsignmentSplitController {
     @GetMapping("/parts")
     public Slice<ConsignmentView> parts(@PathVariable UUID id,
                                         @RequestParam(required = false) String cursor,
-                                        @RequestParam(required = false) Integer limit) {
-        return planningQueries.listParts(id, cursor, limit)
+                                        @RequestParam(required = false) Integer limit,
+                                        @RequestParam(required = false) String q) {
+        return planningQueries.listParts(id, cursor, limit, q)
                 .orElseThrow(() -> new ResourceNotFoundException("Consignment", id));
     }
 

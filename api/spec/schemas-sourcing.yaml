@@ -113,6 +113,20 @@ RoutingGuide:
           responseSlaMinutes: { type: integer }
           agreedRate: { type: number }
 
+RoutingGuideSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/RoutingGuide" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
 DefineGuideRequest:
   type: object
   properties:

@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -78,6 +79,11 @@ public class WarehouseQueryService {
 
     /** A warehouse's bins by code, with how full each is. */
     public Slice<BinView> bins(UUID warehouseId, String cursor, Integer limit) {
+        return bins(warehouseId, cursor, limit, null);
+    }
+
+    /** As {@link #bins(UUID, String, Integer)}, narrowed to bin codes containing {@code q}. */
+    public Slice<BinView> bins(UUID warehouseId, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
         List<BinView> rows = jdbc.sql("""
                         SELECT w.id, w.warehouse_id, w.code, w.capacity_units,
@@ -88,11 +94,13 @@ public class WarehouseQueryService {
                                             AND b.location_id = w.id), 0)::int AS occupied_units
                           FROM warehouse_bin w
                          WHERE w.warehouse_id = :warehouseId
+                           AND (CAST(:q AS text) IS NULL OR lower(w.code) LIKE CAST(:q AS text))
                            AND (CAST(:after AS text) IS NULL OR w.code > CAST(:after AS text))
                          ORDER BY w.code
                          LIMIT :limit
                         """)
                 .param("warehouseId", warehouseId)
+                .param("q", Search.containsPattern(q))
                 .param("after", blankToNull(cursor))
                 .param("limit", pageSize + 1)
                 .query(BinView.class)
@@ -101,16 +109,24 @@ public class WarehouseQueryService {
     }
 
     public Slice<SkuView> skus(String cursor, Integer limit) {
+        return skus(cursor, limit, null);
+    }
+
+    /** As {@link #skus(String, Integer)}, narrowed to SKUs whose code or description contains {@code q}. */
+    public Slice<SkuView> skus(String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
         List<SkuView> rows = jdbc.sql("""
                         SELECT s.id, s.code, s.description, s.owner_partner_id, s.uom
                           FROM sku s
                          WHERE (CAST(:after AS text) IS NULL OR s.code > CAST(:after AS text))
+                           AND (CAST(:q AS text) IS NULL OR lower(s.code) LIKE CAST(:q AS text)
+                                OR lower(s.description) LIKE CAST(:q AS text))
                         """ + OWNER_SCOPE + """
                          ORDER BY s.code
                          LIMIT :limit
                         """)
                 .param("after", blankToNull(cursor))
+                .param("q", Search.containsPattern(q))
                 .param("partner", AccessSubject.current().partnerScope())
                 .param("limit", pageSize + 1)
                 .query(SkuView.class)

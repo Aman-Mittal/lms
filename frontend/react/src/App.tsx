@@ -26,6 +26,10 @@ import { FieldsSettings } from './pages/FieldsSettings';
 import { ListPage } from './pages/ListPage';
 import { LtlRating } from './pages/LtlRating';
 import { LoadBuilding } from './pages/LoadBuilding';
+import { OrderDesk } from './pages/OrderDesk';
+import { ClientBilling } from './pages/ClientBilling';
+// Commercial
+import { Commercial } from './pages/Commercial';
 import { Login } from './pages/Login';
 import { ParkedEvents } from './pages/ParkedEvents';
 import { Shell } from './pages/Shell';
@@ -33,6 +37,10 @@ import { TrackingLinks } from './pages/TrackingLinks';
 import { TrackPage } from './pages/TrackPage';
 import { Webhooks } from './pages/Webhooks';
 import { useSession } from './session';
+// Warehouse operations
+import { WarehouseDesk } from './pages/WarehouseDesk';
+// Control tower
+import { ExceptionDesk } from './pages/ExceptionDesk';
 
 /*
  * REACT CONCEPT: lazy and Suspense.
@@ -44,6 +52,8 @@ const NetworkMap = lazy(() => import('./pages/NetworkMap').then((m) => ({ defaul
 const TripRoute = lazy(() => import('./pages/TripRoute').then((m) => ({ default: m.TripRoute })));
 const Itineraries = lazy(() => import('./pages/Itineraries').then((m) => ({ default: m.Itineraries })));
 const MilkRuns = lazy(() => import('./pages/MilkRuns').then((m) => ({ default: m.MilkRuns })));
+// Administration: loaded on first visit too; few sessions open it.
+const AdminDesk = lazy(() => import('./pages/AdminDesk').then((m) => ({ default: m.AdminDesk })));
 
 function Deferred({ children }: { children: ReactNode }) {
   return <Suspense fallback={<p className="muted">Loading…</p>}>{children}</Suspense>;
@@ -73,12 +83,24 @@ export function App() {
           <Route path="tracking" element={<TrackingLinks />} />
           <Route path="allocation-rules" element={<AllocationRules />} />
           <Route path="load-building" element={<LoadBuilding />} />
+          <Route path="order-desk" element={<OrderDesk />} />
+          <Route path="client-billing" element={<ClientBilling />} />
+          {/* Commercial */}
+          <Route path="commercial" element={<Commercial />} />
           <Route path="map" element={<Deferred><NetworkMap /></Deferred>} />
           <Route path="trip-route" element={<Deferred><TripRoute /></Deferred>} />
           <Route path="itineraries" element={<Deferred><Itineraries /></Deferred>} />
           <Route path="milk-runs" element={<Deferred><MilkRuns /></Deferred>} />
           <Route path="ltl" element={<LtlRating />} />
           <Route path="parked-events" element={<ParkedEvents />} />
+          {/* Warehouse operations */}
+          <Route path="warehouse" element={<WarehouseDesk />} />
+          {/* Administration */}
+          <Route path="admin/users" element={<Deferred><AdminDesk section="users" /></Deferred>} />
+          <Route path="admin/access-policies" element={<Deferred><AdminDesk section="policies" /></Deferred>} />
+          <Route path="admin/compliance" element={<Deferred><AdminDesk section="compliance" /></Deferred>} />
+          {/* Control tower */}
+          <Route path="exception-desk" element={<ExceptionDesk />} />
           <Route path=":resource" element={<ListPage />} />
         </Route>
       </Route>

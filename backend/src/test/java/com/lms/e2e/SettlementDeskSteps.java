@@ -36,6 +36,9 @@ import com.lms.client.model.PublishTariffRequest;
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.RegisterPointRadiusTerminalRequest;
 import com.lms.client.model.ResolveDisputeRequest;
+import com.lms.client.model.Tariff;
+import com.lms.client.model.TariffCard;
+import com.lms.client.model.TariffSlab;
 import feign.FeignException;
 import io.cucumber.java.After;
 import io.cucumber.java.en.Given;
@@ -80,6 +83,9 @@ public class SettlementDeskSteps {
     private final Map<String, UUID[]> lanes = new HashMap<>();
     private final Map<String, String> tripNos = new HashMap<>();
     private final Map<String, UUID> bills = new HashMap<>();
+    private final Map<String, UUID> cards = new HashMap<>();
+    private UUID branchUnit;
+    private UUID branchCard;
     private LocalDate tripMonth;
     private UUID fuelRecord;
     private int trips;
@@ -139,6 +145,7 @@ public class SettlementDeskSteps {
                 .detentionHourlyRate(BigDecimal.ZERO)
                 .additionalDropFee(BigDecimal.ZERO)
                 .minimumCharge(BigDecimal.ZERO), null).getId();
+        cards.put(name, tariffId);
         settlement().addTariffSlab(tariffId, new AddSlabRequest()
                 .minWeightKg(BigDecimal.ZERO)
                 .rateBasis(AddSlabRequest.RateBasisEnum.PER_KG)
@@ -167,7 +174,7 @@ public class SettlementDeskSteps {
         String billNo = "FB-" + tripNos.get(tag);
         String justBelow = billNo.substring(0, billNo.length() - 1);
         FreightBill found = HttpWorld.eventually("the freight bill of trip " + tag, () ->
-                settlement().listFreightBills(null, justBelow, 5).getItems().stream()
+                settlement().listFreightBills(null, justBelow, 5, null).getItems().stream()
                         .filter(b -> billNo.equals(b.getBillNo())).findFirst()
                         .orElseThrow(() -> new AssertionError("no bill " + billNo)));
         bills.put(tag, found.getId());
@@ -294,7 +301,7 @@ public class SettlementDeskSteps {
         assertThat(bill.getResolution()).as("the match's explanation, not yet a resolution")
                 .contains("Claimed 25000 against computed 20000").contains("beyond the allowance");
         assertThat(bill.getMatchedAt()).isNotNull();
-        assertThat(settlement().listFreightBills("DISPUTED", billNoJustBelow(tag), 5).getItems())
+        assertThat(settlement().listFreightBills("DISPUTED", billNoJustBelow(tag), 5, null).getItems())
                 .extracting(FreightBill::getId).contains(bills.get(tag));
     }
 
@@ -311,9 +318,9 @@ public class SettlementDeskSteps {
         assertThat(bill.getClaimedAmount()).isEqualByComparingTo(BigDecimal.valueOf(claimed));
         assertThat(bill.getResolution()).isEqualTo(reason);
         assertThat(bill.getMatchedAt()).isNotNull();
-        assertThat(settlement().listFreightBills("APPROVED_FOR_PAYMENT", billNoJustBelow(tag), 5)
+        assertThat(settlement().listFreightBills("APPROVED_FOR_PAYMENT", billNoJustBelow(tag), 5, null)
                 .getItems()).extracting(FreightBill::getId).contains(bills.get(tag));
-        assertThat(settlement().listFreightBills("DISPUTED", billNoJustBelow(tag), 5).getItems())
+        assertThat(settlement().listFreightBills("DISPUTED", billNoJustBelow(tag), 5, null).getItems())
                 .extracting(FreightBill::getId).doesNotContain(bills.get(tag));
     }
 
@@ -353,5 +360,85 @@ public class SettlementDeskSteps {
         assertProblem(() -> api.resolveDispute(bills.get(tag),
                 new ResolveDisputeRequest().reason("Another tenant's bill"), null),
                 404, "not-found");
+    }
+
+    // -------------------------------------------------------------- rate cards
+
+    @Then("the settlement desk lists its rate card for lane {string} as an open version with {int} weight band")
+    public void listsCard(String lane, int bands) {
+        List<Tariff> listed = settlement().listTariffs(vendor, lanes.get(lane)[0], null, null,
+                false, null, null).getItems();
+        assertThat(listed).extracting(Tariff::getId).containsExactly(cards.get(lane));
+        assertThat(listed.get(0).getSuperseded()).isFalse();
+        assertThat(listed.get(0).getSlabCount()).isEqualTo(bands);
+        assertThat(listed.get(0).getDestinationTerminalId()).isEqualTo(lanes.get(lane)[1]);
+    }
+
+    @Then("the rate card for lane {string} reads back with one open band from {int} kg at {int} per kg")
+    public void readsCard(String lane, int fromKg, int perKg) {
+        TariffCard card = settlement().getTariff(cards.get(lane));
+        assertThat(card.getVendorPartnerId()).isEqualTo(vendor);
+        assertThat(card.getVehicleType()).isEqualTo(HttpWorld.VEHICLE_TYPE);
+        assertThat(card.getSlabs()).hasSize(1);
+        TariffSlab band = card.getSlabs().get(0);
+        assertThat(band.getMinWeightKg()).isEqualByComparingTo(BigDecimal.valueOf(fromKg));
+        assertThat(band.getMaxWeightKg()).isNull();
+        assertThat(band.getRateBasis()).isEqualTo(TariffSlab.RateBasisEnum.PER_KG);
+        assertThat(band.getRateAmount()).isEqualByComparingTo(BigDecimal.valueOf(perKg));
+    }
+
+    @Then("reading a rate card that does not exist is refused as not found")
+    public void unknownCard() {
+        assertProblem(() -> settlement().getTariff(UUID.randomUUID()), 404, "not-found");
+    }
+
+    @Then("a user who may read freight bills reads the rate card for lane {string}")
+    public void billReaderReadsCard(String lane) {
+        AuthResult reader = support.userWith("cardreader", "INVOICE_READ");
+        assertThat(support.as(reader, SettlementApi.class).getTariff(cards.get(lane)).getId())
+                .isEqualTo(cards.get(lane));
+    }
+
+    @Then("a user who may only read orders is refused listing rate cards as forbidden")
+    public void plannerCannotListCards() {
+        AuthResult planner = support.userWith("cardplanner", "ORDER_READ");
+        assertProblem(() -> support.as(planner, SettlementApi.class)
+                .listTariffs(null, null, null, null, null, null, null), 403, "access-denied");
+    }
+
+    @Then("a user in a branch beneath the desk reads the rate card for lane {string}, which applies to the branch")
+    public void branchSeesTheDesksCard(String lane) {
+        branchUnit = support.branchUnit("cards");
+        AuthResult branch = support.userIn(branchUnit, "cardbranch", "TARIFF_MANAGE");
+        SettlementApi api = support.as(branch, SettlementApi.class);
+        assertThat(api.getTariff(cards.get(lane)).getId()).isEqualTo(cards.get(lane));
+        assertThat(api.listTariffs(vendor, lanes.get(lane)[0], null, null, null, null, null).getItems())
+                .extracting(Tariff::getId).containsExactly(cards.get(lane));
+        branchCard = api.publishTariff(new PublishTariffRequest()
+                .orgUnitId(branchUnit)
+                .code(world.code("MSCARD-BRANCH"))
+                .vendorPartnerId(vendor)
+                .originTerminalId(lanes.get(lane)[1])
+                .destinationTerminalId(lanes.get(lane)[0])
+                .vehicleType(HttpWorld.VEHICLE_TYPE)
+                .effectiveFrom(LocalDate.now(ZoneOffset.UTC).minusDays(30)), null).getId();
+    }
+
+    @Then("a user in another branch beneath the desk does not find a card published by the first branch")
+    public void siblingBranchCannotSeeCard() {
+        AuthResult sibling = support.userIn(support.branchUnit("cards2"), "cardsibling", "TARIFF_MANAGE");
+        SettlementApi api = support.as(sibling, SettlementApi.class);
+        assertProblem(() -> api.getTariff(branchCard), 404, "not-found");
+        assertThat(api.listTariffs(vendor, null, null, null, null, null, null).getItems())
+                .extracting(Tariff::getId).doesNotContain(branchCard);
+        assertThat(settlement().getTariff(branchCard).getId())
+                .as("the desk above both branches sees it").isEqualTo(branchCard);
+    }
+
+    @Then("the administrator of another tenant cannot read the rate card for lane {string} and lists none of the desk's cards")
+    public void otherTenantCannotSeeCard(String lane) {
+        SettlementApi api = support.as(support.otherTenantAdministrator(), SettlementApi.class);
+        assertProblem(() -> api.getTariff(cards.get(lane)), 404, "not-found");
+        assertThat(api.listTariffs(vendor, null, null, null, null, null, null).getItems()).isEmpty();
     }
 }

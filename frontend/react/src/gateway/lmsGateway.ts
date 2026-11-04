@@ -448,13 +448,106 @@ export interface ConsignmentPage {
 /** The most consignments one request may put on a load. */
 export const MAX_BULK_ASSIGNMENT = 500;
 
+// ---------------------------------------------------------------- order desk
+
+/** An order's header as an edit restates it, whole. Blank strings are values left unset. */
+export interface OrderHeaderDraft {
+  customerPartnerId: string;
+  originTerminalId: string;
+  /** ISO instants, or blank. */
+  requestedPickupAt: string;
+  requestedDeliveryAt: string;
+  /** Both for a part-load order, neither for a full truckload. */
+  originHubTerminalId: string;
+  destinationHubTerminalId: string;
+}
+
+/** What raising an order needs; it starts as a draft. */
+export interface OrderRaiseDraft {
+  orderNo: string;
+  customerPartnerId: string;
+  originTerminalId: string;
+  requestedPickupAt: string;
+  requestedDeliveryAt: string;
+}
+
+/**
+ * A line as entered or restated. Numbers stay as typed, and blank optional fields are left
+ * out of the request. The measurements travel with it, or an edit would clear them.
+ */
+export interface OrderLineDraft {
+  lineNo: number;
+  materialCode: string;
+  materialDescription: string;
+  materialClass: string;
+  hazmatUnCode: string;
+  quantity: string;
+  uom: string;
+  deadWeightKg: string;
+  lengthM: string;
+  widthM: string;
+  heightM: string;
+  volumetricDivisor: string;
+  consigneePartnerId: string;
+  destinationTerminalId: string;
+}
+
+/** A stored line: the draft it restates as, and what is shown beside it. */
+export interface OrderLineView extends OrderLineDraft {
+  id: string;
+  consigneeName: string;
+  destinationTerminalCode: string;
+  planned: boolean;
+}
+
+/** An order as the desk shows it, with the version every edit must send back. */
+export interface OrderDesk {
+  order: Row;
+  version: string;
+  header: OrderHeaderDraft;
+  lines: OrderLineView[];
+}
+
+// ---------------------------------------------------------------- client billing
+
+/** An invoice and its lines, in line order. */
+export interface ClientInvoiceDetail {
+  invoice: Row;
+  lines: Row[];
+}
+
+/** What a client owes as of today, in age buckets, and the invoices it is made of. */
+export interface ClientAgeingView {
+  currency: string;
+  outstanding: string;
+  unappliedCredit: string;
+  /** Keyed `0-30`, `31-60`, `61-90` and `90+`. */
+  buckets: Record<string, string>;
+  invoices: Row[];
+}
+
+/** Money received from a client; `receivedOn` is a `YYYY-MM-DD` day. */
+export interface PaymentDraft {
+  amount: number;
+  receivedOn: string;
+  reference: string;
+}
+
+/** A credit against a whole invoice, before tax, spread over its lines. */
+export interface CreditNoteDraft {
+  reason: string;
+  amount: number;
+}
+
 /**
  * The one error screens handle: a message fit to show, and the HTTP status if there was one.
  * `errors` names each item a refusal of many was about -- a field, or a consignment's
- * tracking reference -- with its reasons; it is empty otherwise.
+ * tracking reference -- with its reasons; it is empty otherwise. `code` is the problem's
+ * stable name, such as `order-has-consignments`, or empty when there was none.
  */
 export class ApiProblem extends Error {
-  constructor(message: string, readonly status?: number, readonly errors: Record<string, string> = {}) {
+  constructor(message: string, readonly status?: number, readonly errors: Record<string, string> = {},
+    readonly code = '') {
     super(message);
     this.name = 'ApiProblem';
   }
@@ -563,4 +656,516 @@ export interface LmsGateway {
    * ApiProblem whose `errors` name each consignment that cannot board, by tracking reference.
    */
   assignConsignments(loadId: string, consignmentIds: string[]): Promise<void>;
+
+  /** Rejects with a 404 problem for an order that does not exist. */
+  orderDesk(orderId: string): Promise<OrderDesk>;
+  /** Resolves to the new order's id. */
+  raiseOrder(orgUnitId: string, draft: OrderRaiseDraft): Promise<string>;
+  /**
+   * The edits below send `version` as If-Match: the version the desk was read at. A stale one
+   * is refused with the problem code `concurrent-modification`, and nothing changes.
+   */
+  reviseOrderHeader(orderId: string, version: string, header: OrderHeaderDraft): Promise<void>;
+  replaceOrderLines(orderId: string, version: string, lines: OrderLineDraft[]): Promise<void>;
+  removeOrderLine(orderId: string, version: string, lineId: string): Promise<void>;
+  /** A validated order with no consignments yet; a null part is kept as it is. */
+  amendOrder(orderId: string, version: string, header: OrderHeaderDraft | null,
+    lines: OrderLineDraft[] | null): Promise<void>;
+  validateOrder(orderId: string): Promise<void>;
+  cancelOrder(orderId: string, reason: string): Promise<void>;
+  /** Resolves to how many consignments were cut. */
+  generateConsignments(orderId: string): Promise<number>;
+  /** Customer partners a 3PL contract may be held by. */
+  clientChoices(): Promise<Choice[]>;
+  /** Every contract version of the client, newest first. */
+  clientContracts(clientId: string): Promise<Row[]>;
+  /** The client's charges in the month holding `period` (a `YYYY-MM-DD` day). */
+  clientCharges(clientId: string, period: string): Promise<Row[]>;
+  /**
+   * Bills the month holding `period`; resolves to the invoice's id. Running a month
+   * again answers the same invoice.
+   */
+  runClientBilling(clientId: string, period: string): Promise<string>;
+  /** Newest period first. */
+  clientInvoices(clientId: string): Promise<Row[]>;
+  clientInvoice(invoiceId: string): Promise<ClientInvoiceDetail>;
+  recordClientPayment(clientId: string, draft: PaymentDraft): Promise<void>;
+  /** Resolves to the credit note's number. */
+  issueClientCreditNote(invoiceId: string, draft: CreditNoteDraft): Promise<string>;
+  /** Invoices, credit notes and payments in the order they happened, with the running balance. */
+  clientStatement(clientId: string): Promise<Row[]>;
+  clientAgeing(clientId: string): Promise<ClientAgeingView>;
+
+  // Warehouse operations
+  /** Terminals whose category is WAREHOUSE. */
+  warehouseChoices(): Promise<Choice[]>;
+  warehouseBins(warehouseId: string): Promise<Row[]>;
+  /** Resolves to the new bin's id. */
+  createBin(warehouseId: string, code: string, capacityUnits: number): Promise<string>;
+  /** The tenant's SKUs in code order (one page of 200). */
+  skus(): Promise<Row[]>;
+  /** Resolves to the new SKU's id. */
+  createSku(draft: SkuDraft): Promise<string>;
+  /** Newest first. */
+  asns(warehouseId: string): Promise<Row[]>;
+  /** The notice and its lines; rejects with a 404 problem for one that does not exist. */
+  asn(id: string): Promise<WarehouseDocument>;
+  /** Resolves to the new ASN's id. */
+  createAsn(draft: AsnDraft): Promise<string>;
+  /** The count at the dock: undamaged units go onto the dock, damaged ones into quarantine. */
+  receiveAsn(id: string, counts: ReceiptCountDraft[], crossDock: boolean): Promise<void>;
+  /** Moves units from the dock into a bin. */
+  putaway(draft: StockMoveDraft): Promise<void>;
+  /** What is on hand, by location, sku and lot; empty locations are left out. */
+  stock(warehouseId: string): Promise<Row[]>;
+  /** A SKU's ledger, newest first. */
+  stockMovements(skuId: string): Promise<Row[]>;
+  /** A signed correction to a bin; resolves to the movement's id. */
+  adjustStock(draft: StockMoveDraft): Promise<string>;
+  /** Moves quarantined units into a bin; resolves to the movement's id. */
+  releaseQuarantine(draft: StockMoveDraft): Promise<string>;
+  /** Writes quarantined units off (the bin is not used); resolves to the movement's id. */
+  writeOffQuarantine(warehouseId: string, draft: StockMoveDraft): Promise<string>;
+  /** Newest first. */
+  outboundOrders(warehouseId: string): Promise<Row[]>;
+  outboundOrder(id: string): Promise<WarehouseDocument>;
+  /** Resolves to the new order's id. */
+  createOutboundOrder(draft: OutboundDraft): Promise<string>;
+  pickOutboundOrder(id: string): Promise<void>;
+  /** Resolves to the handling unit the order was packed into. */
+  packOutboundOrder(id: string): Promise<string>;
+  cancelBackOrder(id: string): Promise<void>;
+  /** Newest first. */
+  handlingUnits(warehouseId: string): Promise<Row[]>;
+  handlingUnit(id: string): Promise<WarehouseDocument>;
+  /** Hands the unit to transport; a destination, consignee and weight make it a consignment too. */
+  dispatchHandlingUnit(id: string, draft: DispatchDraft): Promise<void>;
+  /** Newest first. */
+  pickWaves(warehouseId: string): Promise<Row[]>;
+  pickWave(id: string): Promise<WarehouseDocument>;
+  /** Resolves to the new wave's id. */
+  releasePickWave(warehouseId: string, orderIds: string[]): Promise<string>;
+  pickPickWave(id: string): Promise<void>;
+
+  // Administration
+  /** Everyone in the caller's organisational unit and below, by name. */
+  adminUsers(): Promise<AdminUser[]>;
+  /** The permission codes the user's roles grant, sorted. */
+  userPermissions(userId: string): Promise<string[]>;
+  /** What the user's next access token will carry; a blank field is unrestricted. */
+  accessAttributes(userId: string): Promise<AccessAttributesDraft>;
+  /** Replaces the whole set: a field left blank is cleared, not kept. */
+  setAccessAttributes(userId: string, draft: AccessAttributesDraft): Promise<void>;
+  /** By code; pass the previous page's cursor for the next one. */
+  accessPolicies(cursor?: string): Promise<AccessPolicyPage>;
+  /**
+   * Resolves to the new policy's id. A condition that is not JSON is refused before anything
+   * is sent, as an ApiProblem with the code `condition-not-json`.
+   */
+  createAccessPolicy(draft: AccessPolicyDraft): Promise<string>;
+  /** The code and the action stay; everything else is replaced. */
+  reviseAccessPolicy(id: string, changes: AccessPolicyChanges): Promise<void>;
+  deleteAccessPolicy(id: string): Promise<void>;
+  /** Documents of every partner, vehicle and driver lapsing within `withinDays`, soonest first. */
+  expiringDocuments(withinDays: number): Promise<Row[]>;
+  ownerDocuments(ownerType: DocumentOwnerType, ownerId: string): Promise<Row[]>;
+  /** Resolves to the new document's id. */
+  attachDocument(ownerType: DocumentOwnerType, ownerId: string, draft: DocumentDraft): Promise<string>;
+
+  // Commercial
+  /** Publishes a rate card version; resolves to its id. A card is never edited, only succeeded. */
+  publishTariff(orgUnitId: string, draft: TariffDraft): Promise<string>;
+  /** Adds a weight band to an open card; resolves to the band's id. */
+  addTariffSlab(tariffId: string, slab: SlabDraft): Promise<string>;
+  /** Records the surcharge for the month holding `month` (a `YYYY-MM-DD` day); resolves to its id. */
+  recordFuelSurcharge(month: string, surchargePct: number): Promise<string>;
+  /** Resolves to the new guide's id. */
+  defineRoutingGuide(orgUnitId: string, draft: GuideDraft): Promise<string>;
+  /** Rejects with a 404 problem for a guide that does not exist. */
+  routingGuide(id: string): Promise<RoutingGuideDetail>;
+  addGuideVendor(guideId: string, draft: GuideVendorDraft): Promise<void>;
+  retireRoutingGuide(id: string): Promise<void>;
+  /** One page of allocations, only those in `status` when one is given. */
+  allocations(status?: string): Promise<Row[]>;
+  /** The allocation and every offer made for it, in rank order. */
+  allocationDetail(id: string): Promise<AllocationDetail>;
+  /** Starts sourcing a planned load; resolves to the allocation's id. */
+  allocateLoad(loadId: string): Promise<string>;
+  acceptOffer(allocationId: string, vendorPartnerId: string): Promise<void>;
+  rejectOffer(allocationId: string, vendorPartnerId: string): Promise<void>;
+  cancelAllocation(id: string): Promise<void>;
+  /** One page of freight bills, only those in `status` when one is given. */
+  freightBillList(status?: string): Promise<Row[]>;
+  /** The bill and the arithmetic behind its total, in line order. */
+  freightBill(id: string): Promise<FreightBillDetail>;
+  /** Compares the vendor's claim with the bill; resolves to `APPROVED_FOR_PAYMENT` or `DISPUTED`. */
+  matchFreightBill(id: string, claimedAmount: number): Promise<string>;
+  /** Settles a dispute in the vendor's favour, with the reason on the record. */
+  resolveFreightBill(id: string, reason: string): Promise<void>;
+  // Control tower
+  /** Newest first, one page; an empty filter value means any. */
+  exceptionTickets(filter: ExceptionFilter): Promise<Row[]>;
+  /** Rejects with a 404 problem for a ticket that does not exist. */
+  exceptionTicket(id: string): Promise<Row>;
+  /** Every step the ticket has taken, oldest first. */
+  exceptionHistory(id: string): Promise<Row[]>;
+  /** Resolves to the new ticket's id. */
+  raiseException(draft: ExceptionDraft): Promise<string>;
+  /**
+   * The steps below are refused with the problem code `exception-illegal-transition` when the
+   * ticket has moved on since it was read, and closing a ticket that holds up settlement with
+   * `exception-close-needs-second-person` when the closer also resolved it.
+   */
+  assignException(id: string, assigneeUserId: string, note: string): Promise<void>;
+  investigateException(id: string, note: string): Promise<void>;
+  resolveException(id: string, resolution: string): Promise<void>;
+  reopenException(id: string, reason: string): Promise<void>;
+  closeException(id: string, note: string): Promise<void>;
+  /** The users a ticket can be assigned to: those the caller may see. */
+  userChoices(): Promise<Choice[]>;
+  detectorSettings(): Promise<DetectorSettingsView>;
+  saveDetectorSettings(etaSlipMinutes: number, temperatureExcursionMinutes: number): Promise<void>;
+  /** Null when the trip is not watched. */
+  tripWatch(tripId: string): Promise<TripWatchView | null>;
+  /** Replaces the trip's watch; blank fields are left out. */
+  setTripWatch(tripId: string, draft: TripWatchDraft): Promise<void>;
+  clearTripWatch(tripId: string): Promise<void>;
+  /** How far a trip has got, and the geofences it has crossed. */
+  tripActivity(tripId: string): Promise<TripActivity>;
+  /** Every vehicle's last reported position, as rows and on a map. */
+  vehiclePositions(): Promise<Mapped>;
+  /** Trips currently off their planned corridor. */
+  openDeviations(): Promise<Row[]>;
+
+  // Rate cards and rail tariffs
+  /** One page of rate card versions, newest first, narrowed by the filter's non-blank fields; pass `cursor` for the next. */
+  tariffs(filter: TariffFilter, cursor?: string): Promise<RateCardPage>;
+  /** A rate card version and its weight bands, lightest first. Rejects with a 404 problem when not found. */
+  tariffCard(id: string): Promise<TariffCardDetail>;
+  /** One page of rail rate card versions, newest first; pass `cursor` for the next. */
+  railTariffs(cursor?: string): Promise<RateCardPage>;
+  /** One rail rate card version. Rejects with a 404 problem when not found. */
+  railTariff(id: string): Promise<Row>;
+  /** Publishes a rail rate card version for a railhead pair; resolves to its id. */
+  publishRailTariff(draft: RailTariffDraft): Promise<string>;
+  // Pickers
+  /** One page of what a picker offers for the typed text; a blank `q` lists from the start. */
+  pick(query: PickQuery): Promise<PickPage>;
+}
+
+// Warehouse operations
+
+/** A warehouse record and its lines (ASN lines, order lines, unit contents or wave orders). */
+export interface WarehouseDocument {
+  header: Row;
+  lines: Row[];
+}
+
+export interface SkuDraft {
+  code: string;
+  description: string;
+  /** The 3PL client that owns the goods, or blank. */
+  ownerPartnerId: string;
+  uom: string;
+}
+
+/** Quantities stay as typed; blank lots are left out. */
+export interface AsnLineDraft {
+  skuId: string;
+  lotNo: string;
+  quantity: string;
+}
+
+export interface AsnDraft {
+  warehouseId: string;
+  asnNo: string;
+  /** Blank when the supplier is not on file. */
+  supplierPartnerId: string;
+  lines: AsnLineDraft[];
+}
+
+export interface ReceiptCountDraft {
+  lineNo: number;
+  receivedQty: string;
+  damagedQty: string;
+}
+
+/** A putaway, an adjustment (signed quantity) or a quarantine release or write-off. */
+export interface StockMoveDraft {
+  binId: string;
+  skuId: string;
+  lotNo: string;
+  quantity: string;
+  /** Required by adjustments and quarantine moves; a putaway ignores it. */
+  reason: string;
+}
+
+export interface OutboundLineDraft {
+  skuId: string;
+  quantity: string;
+}
+
+export interface OutboundDraft {
+  warehouseId: string;
+  orderNo: string;
+  shipTo: string;
+  lines: OutboundLineDraft[];
+}
+
+/** All blank but the reference is a plain dispatch; all four hand the unit to transport. */
+export interface DispatchDraft {
+  reference: string;
+  destinationTerminalId: string;
+  consigneePartnerId: string;
+  grossWeightKg: string;
+}
+
+// Administration
+
+/** A person who can sign in, as the administration desk lists them. */
+export interface AdminUser {
+  id: string;
+  email: string;
+  fullName: string;
+  status: string;
+  orgName: string;
+  lastLoginAt: string;
+}
+
+export const ACCESS_FREIGHT_MODES = ['FTL', 'LTL', 'RAIL', 'WAREHOUSE'] as const;
+export type AccessFreightMode = (typeof ACCESS_FREIGHT_MODES)[number];
+
+/**
+ * A user's access attributes as the desk edits them. Blank means unrestricted along that
+ * dimension; `approvalLimit` is a decimal string so a typed value is never rounded.
+ */
+export interface AccessAttributesDraft {
+  region: string;
+  freightModes: AccessFreightMode[];
+  partnerId: string;
+  approvalLimit: string;
+}
+
+export type PolicyEffect = 'PERMIT' | 'DENY';
+
+/** An access policy; `condition` is its JSON, laid out for reading and editing. */
+export interface AccessPolicyView {
+  id: string;
+  code: string;
+  action: string;
+  effect: PolicyEffect;
+  description: string;
+  condition: string;
+  enabled: boolean;
+  updatedAt: string;
+}
+
+export interface AccessPolicyChanges {
+  effect: PolicyEffect;
+  description: string;
+  /** JSON text, parsed by the gateway. */
+  condition: string;
+  enabled: boolean;
+}
+
+export interface AccessPolicyDraft extends AccessPolicyChanges {
+  code: string;
+  /** A permission code, such as `INVOICE_APPROVE`. */
+  action: string;
+}
+
+export interface AccessPolicyPage {
+  policies: AccessPolicyView[];
+  nextCursor: string | null;
+}
+
+export const DOCUMENT_OWNER_TYPES = ['PARTNER', 'VEHICLE', 'DRIVER'] as const;
+export type DocumentOwnerType = (typeof DOCUMENT_OWNER_TYPES)[number];
+
+/** A certificate to attach; dates are `YYYY-MM-DD`, blank when not known. */
+export interface DocumentDraft {
+  documentType: string;
+  documentNo: string;
+  issuingAuthority: string;
+  issuedOn: string;
+  expiresOn: string;
+}
+
+// Commercial
+
+/** A rate card to publish; blank optional figures are left out. */
+export interface TariffDraft {
+  code: string;
+  vendorPartnerId: string;
+  originTerminalId: string;
+  destinationTerminalId: string;
+  vehicleType: string;
+  /** A `YYYY-MM-DD` day. */
+  effectiveFrom: string;
+  currency: string;
+  minimumCharge: string;
+  detentionFreeHours: string;
+  detentionHourlyRate: string;
+  additionalDropFee: string;
+}
+
+export const SLAB_RATE_BASES = ['PER_KG', 'FLAT'] as const;
+export type SlabRateBasis = (typeof SLAB_RATE_BASES)[number];
+
+/** A weight band; a blank upper bound means no upper bound. */
+export interface SlabDraft {
+  minWeightKg: string;
+  maxWeightKg: string;
+  rateBasis: SlabRateBasis;
+  rateAmount: string;
+}
+
+export const GUIDE_STRATEGIES = ['CONTRACTUAL', 'ROUND_ROBIN'] as const;
+export type GuideStrategy = (typeof GUIDE_STRATEGIES)[number];
+
+/** A lane and vehicle type to source, and how vendors are tried. */
+export interface GuideDraft {
+  originTerminalId: string;
+  destinationTerminalId: string;
+  vehicleType: string;
+  strategy: GuideStrategy;
+}
+
+/** A vendor on a guide: its rank, how long it has to answer, and a blank or agreed rate. */
+export interface GuideVendorDraft {
+  vendorPartnerId: string;
+  rankNo: number;
+  responseSlaMinutes: number;
+  agreedRate: string;
+}
+
+/** A guide, its vendors in rank order. `guide.active` reads Yes or nothing. */
+export interface RoutingGuideDetail {
+  guide: Row;
+  entries: Row[];
+}
+
+/** An allocation and its offers; each offer row carries `vendorPartnerId` for a response. */
+export interface AllocationDetail {
+  allocation: Row;
+  offers: Row[];
+}
+
+/** A freight bill and the lines its total is made of. */
+export interface FreightBillDetail {
+  bill: Row;
+  lines: Row[];
+}
+
+// Control tower
+
+export const EXCEPTION_STATUSES = ['RAISED', 'ASSIGNED', 'UNDER_INVESTIGATION', 'RESOLVED', 'CLOSED'] as const;
+export const EXCEPTION_SEVERITIES = ['P1', 'P2', 'P3'] as const;
+/** The categories a person raises; the others are raised by the detectors and other modules. */
+export const MANUAL_EXCEPTION_CATEGORIES = [
+  'ACCIDENT', 'THEFT', 'BREAKDOWN', 'ROUTE_DEVIATION', 'EXTENDED_STOPPAGE', 'TEMPERATURE_EXCURSION', 'ETA_DELAY',
+  'DOCUMENT_MISMATCH',
+] as const;
+
+export interface ExceptionFilter {
+  status: string;
+  severity: string;
+}
+
+export interface ExceptionDraft {
+  tripId: string;
+  category: string;
+  description: string;
+}
+
+export interface DetectorSettingsView {
+  etaSlipMinutes: number;
+  temperatureExcursionMinutes: number;
+  /** False while the platform defaults apply. */
+  customised: boolean;
+}
+
+/** A trip's watch as typed; `committedArrivalAt` is a `datetime-local` value. */
+export interface TripWatchDraft {
+  committedArrivalAt: string;
+  tempMinC: string;
+  tempMaxC: string;
+}
+
+export interface TripWatchView {
+  committedArrivalAt: string;
+  tempMinC: string;
+  tempMaxC: string;
+  /** Empty while the readings are inside the band. */
+  outsideRangeSince: string;
+  lastReadingAt: string;
+}
+
+export interface TripActivity {
+  /** Null when no position has been reported for the trip yet. */
+  progress: Row | null;
+  crossings: Row[];
+}
+
+// Rate cards and rail tariffs
+
+/** Which rate card versions to list; blank fields do not narrow. */
+export interface TariffFilter {
+  vendorPartnerId: string;
+  /** `open` for versions still in force, `superseded` for closed ones, blank for both. */
+  state: '' | 'open' | 'superseded';
+}
+
+/** One page of rate cards, road or rail. */
+export interface RateCardPage {
+  rows: Row[];
+  /** Pass to read the next page; null on the last. */
+  nextCursor: string | null;
+}
+
+/** A rate card version and its weight bands. `card.superseded` reads Yes or nothing. */
+export interface TariffCardDetail {
+  card: Row;
+  slabs: Row[];
+}
+
+/** A rail rate card to publish; blank optional figures are left out. */
+export interface RailTariffDraft {
+  code: string;
+  carrierPartnerId: string;
+  originTerminalId: string;
+  destinationTerminalId: string;
+  /** A `YYYY-MM-DD` day. */
+  effectiveFrom: string;
+  currency: string;
+  perWagonRate: string;
+  perContainerRate: string;
+  minimumCharge: string;
+}
+// Pickers
+/**
+ * What a picker looks up. `customer` and `vendor` are partners of that type,
+ * `warehouse` is a terminal of that category, and `bin` needs the warehouse
+ * it belongs to. `consignment` is any consignment in any state; `unassigned`
+ * only those still waiting for a load.
+ */
+export type PickKind =
+  | 'partner' | 'customer' | 'vendor' | 'terminal' | 'warehouse' | 'vehicle' | 'driver' | 'sku' | 'bin'
+  | 'order' | 'load' | 'trip' | 'ticket' | 'allocation' | 'bill' | 'consignment' | 'unassigned'
+  | 'routing-guide';
+
+export interface PickQuery {
+  kind: PickKind;
+  /** The typed text; blank lists from the start. */
+  q: string;
+  /** The `nextCursor` of the page before; absent for the first page. */
+  cursor?: string | null;
+  /** Required for `bin`. */
+  warehouseId?: string;
+}
+
+export interface PickPage {
+  items: Choice[];
+  /** Null on the last page. */
+  nextCursor: string | null;
 }

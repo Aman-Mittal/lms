@@ -16,6 +16,7 @@
 
 import { useState, type FormEvent } from 'react';
 import type { DeliveryProofView, OtpIssued } from '../gateway/lmsGateway';
+import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
@@ -47,8 +48,8 @@ export function DeliveryDesk() {
       <h1>Delivery desk</h1>
       <p className="muted">Issue the consignee's one-time code, then record the proof when they give it back.</p>
       <form className="inline" onSubmit={lookUp} data-testid="lookup">
-        <input placeholder="Consignment id" aria-label="Consignment id" data-testid="consignment-id"
-          value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="consignment" placeholder="Consignment" ariaLabel="Consignment id" testId="consignment-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Look up</button>
       </form>
       {proof.error && <p className="error" role="alert">{proof.error}</p>}
