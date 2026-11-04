@@ -15,7 +15,8 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
-  apiSession, newConsignment, printed, signIn, splitEvenly, stubPrint, trackingRefOf, withoutPermissions,
+  amendParticulars, apiSession, newConsignment, printed, signIn, splitEvenly, stubPrint, trackingRefOf,
+  withoutPermissions,
 } from './support';
 
 /** Opens the consignment desk and looks a consignment up by its reference. */
@@ -133,8 +134,57 @@ test.describe('splitting a consignment across vehicles', () => {
   });
 });
 
+test.describe('correcting and cancelling a consignment', () => {
+  test('the particulars are corrected while it waits for a load, and a taken client reference is refused by code', async ({ page, request }) => {
+    const session = await apiSession(request);
+    const taken = `CLIENT-${crypto.randomUUID().slice(0, 8)}`;
+    await amendParticulars(request, session, await newConsignment(request, session, 800), { clientReference: taken });
+    const reference = await trackingRefOf(request, session, await newConsignment(request, session, 900));
+    await signIn(page);
+    await lookUp(page, reference);
+
+    const form = page.getByTestId('particulars-form');
+    await form.getByTestId('particular-contactName').fill('Meera, stores');
+    await form.getByTestId('particular-contactPhone').fill('+91 22 4000 1234');
+    await form.getByTestId('particular-deliveryWindowFrom').fill('2026-12-01T04:00:00Z');
+    await form.getByTestId('particular-deliveryWindowTo').fill('2026-12-01T12:00:00Z');
+    await form.getByTestId('particular-remarks').fill('Tail-lift needed');
+    await form.getByTestId('save-particulars').click();
+    await expect(page.getByTestId('consignment-contact')).toHaveText('Meera, stores, +91 22 4000 1234');
+    await expect(page.getByTestId('consignment-remarks')).toHaveText('Tail-lift needed');
+    await expect(page.getByTestId('consignment-window')).toContainText('2026-12-01T04:00:00Z');
+    await expect(page.getByTestId('consignment-weight')).toHaveText('900');
+
+    await form.getByTestId('particular-clientReference').fill(taken);
+    await form.getByTestId('save-particulars').click();
+    await expect(form.getByTestId('particulars-refusal')).toHaveText('client-reference-taken');
+    await expect(page.getByTestId('consignment-client-ref')).toHaveText('—');
+
+    await form.getByTestId('particular-clientReference').fill('');
+    await form.getByTestId('particular-contactPhone').fill('call me');
+    await form.getByTestId('save-particulars').click();
+    await expect(form.getByTestId('particulars-refusal')).toHaveText('consignment-amendment-invalid');
+    await expect(form.getByTestId('particulars-error')).toContainText('contactPhone');
+  });
+
+  test('a consignment is cancelled on its own, and can no longer be corrected or cancelled', async ({ page, request }) => {
+    const session = await apiSession(request);
+    const reference = await trackingRefOf(request, session, await newConsignment(request, session, 700));
+    await signIn(page);
+    await lookUp(page, reference);
+
+    const cancel = page.getByTestId('cancel-form');
+    await cancel.getByTestId('cancel-reason').fill('Consignee closed for stocktake');
+    await cancel.getByTestId('cancel-consignment').click();
+    await expect(page.getByTestId('consignment-status')).toHaveText('CANCELLED');
+    await expect(page.getByTestId('cancel-form')).toHaveCount(0);
+    await expect(page.getByTestId('particulars-form')).toHaveCount(0);
+    await expect(page.getByTestId('print-lr')).toBeVisible();
+  });
+});
+
 test.describe('what each person is offered', () => {
-  test('without the right to build loads, a consignment can be read and printed but not split', async ({ page, request }) => {
+  test('without the right to build loads, a consignment can be read and printed but not split, corrected or cancelled', async ({ page, request }) => {
     const session = await apiSession(request);
     const reference = await trackingRefOf(request, session, await newConsignment(request, session, 40_000));
     await withoutPermissions(page, ['LOAD_CREATE']);
@@ -143,6 +193,8 @@ test.describe('what each person is offered', () => {
 
     await expect(page.getByTestId('consignment-status')).toHaveText('PLANNED');
     await expect(page.getByTestId('split-form')).toHaveCount(0);
+    await expect(page.getByTestId('particulars-form')).toHaveCount(0);
+    await expect(page.getByTestId('cancel-form')).toHaveCount(0);
     await expect(page.getByTestId('print-lr')).toBeVisible();
   });
 

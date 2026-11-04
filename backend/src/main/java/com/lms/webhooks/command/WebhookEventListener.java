@@ -28,9 +28,11 @@ import com.lms.execution.events.TripCompleted;
 import com.lms.execution.events.TripDispatched;
 import com.lms.order.events.OrderAmended;
 import com.lms.order.events.OrderCancelled;
+import com.lms.order.events.OrderClosed;
 import com.lms.order.events.OrderFulfilled;
 import com.lms.order.events.OrderRaised;
 import com.lms.order.events.OrderValidated;
+import com.lms.planning.events.ConsignmentCancelled;
 import com.lms.planning.events.ConsignmentSplit;
 import com.lms.planning.events.ConsignmentsDelivered;
 import com.lms.planning.events.ConsignmentsGenerated;
@@ -105,6 +107,13 @@ public class WebhookEventListener {
     }
 
     @TransactionalEventListener
+    public void on(OrderClosed e) {
+        record(e.tenantId(), WebhookEventType.ORDER_CLOSED, e.orderId().toString(), e.occurredAt(),
+                fields("orderId", e.orderId(), "orderNo", e.orderNo(), "previousStatus", e.previousStatus(),
+                        "closeKind", e.closeKind(), "reason", e.reason(), "linesClosed", e.linesClosed()));
+    }
+
+    @TransactionalEventListener
     public void on(ConsignmentsGenerated e) {
         record(e.tenantId(), WebhookEventType.CONSIGNMENTS_GENERATED, e.orderId().toString(), e.occurredAt(),
                 fields("orderId", e.orderId(), "consignmentIds", e.consignmentIds().stream().map(UUID::toString).toList(),
@@ -118,6 +127,14 @@ public class WebhookEventListener {
                         "orderId", e.orderId(),
                         "partIds", e.partIds().stream().map(UUID::toString).toList(),
                         "partTrackingRefs", e.partTrackingRefs()));
+    }
+
+    /** One consignment cancelled on its own; one cancelled with its order is ORDER_CANCELLED. */
+    @TransactionalEventListener
+    public void on(ConsignmentCancelled e) {
+        record(e.tenantId(), WebhookEventType.CONSIGNMENT_CANCELLED, e.consignmentId().toString(),
+                e.cancelledAt(), fields("consignmentId", e.consignmentId(), "trackingRef", e.trackingRef(),
+                        "orderId", e.orderId(), "loadId", e.loadId(), "reason", e.reason()));
     }
 
     @TransactionalEventListener
