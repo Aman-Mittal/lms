@@ -71,13 +71,18 @@ public class ClientContractService {
      * same transaction, and cannot be added later: a rate list that could grow
      * after charges had been priced against it would be an edit by another
      * name.
+     *
+     * @param billOnDispatch whether trip transport is invoiceable as soon as the
+     *                       trip is dispatched, rather than once each consignment
+     *                       has a confirmed proof of delivery
      */
     @Transactional
     @PreAuthorize("hasAuthority('CLIENT_CONTRACT_MANAGE')"
             + " and @abac.permitsIn('CLIENT_CONTRACT_MANAGE', #orgUnitId)")
     public UUID publishContract(UUID orgUnitId, String code, UUID clientPartnerId,
                                 String currency, LocalDate effectiveFrom,
-                                ClientContract.Rates rates, List<ServiceRateTerm> valueAdded) {
+                                ClientContract.Rates rates, List<ServiceRateTerm> valueAdded,
+                                boolean billOnDispatch) {
         UUID tenantId = TenantContext.requireTenantId();
         requireCustomer(clientPartnerId);
 
@@ -101,7 +106,8 @@ public class ClientContractService {
         });
 
         ClientContract published = contracts.save(ClientContract.publish(UUID.randomUUID(),
-                tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom, rates));
+                tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom, rates,
+                billOnDispatch));
 
         for (ServiceRateTerm term : valueAdded == null ? List.<ServiceRateTerm>of() : valueAdded) {
             serviceRates.save(ContractServiceRate.of(UUID.randomUUID(), tenantId,
@@ -110,7 +116,8 @@ public class ClientContractService {
 
         audit.recordAtomically("CLIENT_CONTRACT_PUBLISHED", "CLIENT_CONTRACT", published.id(), null,
                 Json.object("code", code, "client", clientPartnerId.toString(),
-                        "effectiveFrom", effectiveFrom.toString()));
+                        "effectiveFrom", effectiveFrom.toString(),
+                        "billOnDispatch", String.valueOf(billOnDispatch)));
         return published.id();
     }
 
