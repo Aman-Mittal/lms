@@ -175,6 +175,34 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("an order is found by its exact number through the unique index")
+    void orderByNumber() {
+        assertIndexed("""
+                SELECT * FROM sales_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND order_no = 'ORD-2026-000001'
+                """, "sales_order");
+    }
+
+    @Test
+    @DisplayName("a record's history is index-served and pages without sorting")
+    void recordHistoryIsKeysetSeekable() {
+        String sql = """
+                SELECT a.id, a.action, a.occurred_at
+                  FROM audit_log a
+                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND a.resource_type = 'SalesOrder'
+                   AND a.resource_id = '00000000-0000-0000-0000-000000000002'
+                   AND (a.occurred_at, a.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                                '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY a.occurred_at DESC, a.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "audit_log");
+        assertNoSort(sql);
+    }
+
+    @Test
     @DisplayName("a customer-portal user's order listing is index-served")
     void partnerScopedOrderListing() {
         assertIndexed("""
@@ -1190,6 +1218,71 @@ class QueryPlanTest {
             return String.join("\n", jdbc.sql("EXPLAIN " + sql).query(String.class).list());
         });
         assertThat(plan).as("keyset page should not sort:%n%s", plan).doesNotContain("Sort");
+    }
+
+    @Test
+    @DisplayName("a customer's open orders, for its credit exposure, are index-served")
+    void openOrdersOfACustomer() {
+        // Asked on every validation, amendment and line add of a customer with
+        // a limit, so it must never walk the tenant's order history.
+        assertIndexed("""
+                SELECT o.id FROM sales_order o
+                 WHERE o.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND o.customer_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND o.status IN ('VALIDATED', 'PARTIALLY_PLANNED', 'FULLY_PLANNED')
+                """, "sales_order");
+    }
+
+    @Test
+    @DisplayName("a client's uninvoiced charges, for its credit exposure, are index-served")
+    void unbilledChargesOfAClient() {
+        assertIndexed("""
+                SELECT * FROM client_charge
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND invoice_id IS NULL
+                """, "client_charge");
+    }
+
+    @Test
+    @DisplayName("the weight of open orders already charged, for credit exposure, is index-served")
+    void chargedWeightOfOpenOrders() {
+        String sql = """
+                SELECT c.order_id, sum(c.chargeable_weight_kg) AS charged_kg
+                  FROM consignment c
+                  JOIN load_consignment lc ON lc.consignment_id = c.id
+                  JOIN trip t ON t.tenant_id = c.tenant_id AND t.load_id = lc.load_id
+                             AND t.status <> 'CANCELLED'
+                  JOIN client_charge ch ON ch.tenant_id = c.tenant_id
+                             AND ch.source_key = 'TRIP:' || t.id || ':00000000-0000-0000-0000-000000000002'
+                 WHERE c.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND c.order_id IN ('00000000-0000-0000-0000-000000000003')
+                   AND c.freight_mode <> 'LTL'
+                 GROUP BY c.order_id
+                """;
+        assertIndexed(sql, "consignment");
+        assertIndexed(sql, "client_charge");
+        assertIndexed(sql, "trip");
+    }
+
+    @Test
+    @DisplayName("the credit limit change queue pages newest first without a sort")
+    void creditLimitChangeQueue() {
+        assertIndexed("""
+                SELECT * FROM credit_limit_change c
+                 WHERE c.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND c.status = 'PENDING'
+                   AND (c.requested_at, c.id) < (now(), '00000000-0000-0000-0000-000000000003')
+                 ORDER BY c.requested_at DESC, c.id DESC
+                 LIMIT 51
+                """, "credit_limit_change");
+        assertIndexed("""
+                SELECT * FROM credit_limit_change c
+                 WHERE c.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND c.partner_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY c.requested_at DESC, c.id DESC
+                 LIMIT 51
+                """, "credit_limit_change");
     }
 
     private void assertIndexed(String sql, String table) {
