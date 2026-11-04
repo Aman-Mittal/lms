@@ -88,7 +88,11 @@ RaiseOrderRequest:
   properties:
     orgUnitId: { type: string, format: uuid }
     customerPartnerId: { type: string, format: uuid }
-    orderNo: { type: string }
+    orderNo:
+      type: string
+      description: The order's number, unique within the tenant (`order-no-taken`
+        otherwise). Optional; when omitted or blank the next number of the
+        tenant's sequence is assigned, `ORD-<year>-<000001>`.
     originTerminalId: { type: string, format: uuid }
     requestedPickupAt: { type: string, format: date-time }
     requestedDeliveryAt: { type: string, format: date-time }
@@ -107,7 +111,7 @@ RaiseOrderRequest:
       format: uuid
       description: Required for LTL, refused for FTL. Must be a HUB terminal,
         as the origin hub must.
-  required: [orgUnitId, customerPartnerId, orderNo, originTerminalId]
+  required: [orgUnitId, customerPartnerId, originTerminalId]
 
 AddOrderLineRequest:
   type: object

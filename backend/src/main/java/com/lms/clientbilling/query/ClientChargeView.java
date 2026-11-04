@@ -38,5 +38,12 @@ public record ClientChargeView(
         String reference,
         String sourceKey,
         UUID tripId,
-        UUID invoiceId) {
+        UUID invoiceId,
+        /**
+         * Whether the next billing run invoices it. False for a trip's
+         * transport while one of the client's consignments on the trip has
+         * neither a confirmed proof of delivery nor a manual mark, unless the
+         * client's contract bills on dispatch.
+         */
+        boolean billable) {
 }
