@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.clientbilling.command.domain.ClientCharge;
+import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
 import com.lms.clientbilling.query.ClientAccess;
 import com.lms.clientbilling.query.ClientDirectory;
@@ -145,6 +146,26 @@ public class ClientChargeService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int captureTransport(UUID tripId, String tripNo, UUID loadId, Instant dispatchedAt,
                                 Instant completedAt) {
+        return capture(tripId, tripNo, loadId, dispatchedAt, completedAt, false);
+    }
+
+    /**
+     * Captures a dispatched trip's transport for the clients whose contract
+     * bills on dispatch (advance billing), so their charge exists -- and is
+     * invoiceable -- before the trip completes. Every other client is charged
+     * on completion as before. The source key is the same either way, so the
+     * completion that follows captures nothing twice.
+     *
+     * @return how many charges this call created; zero on a redelivery
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int captureTransportOnDispatch(UUID tripId, String tripNo, UUID loadId,
+                                          Instant dispatchedAt) {
+        return capture(tripId, tripNo, loadId, dispatchedAt, null, true);
+    }
+
+    private int capture(UUID tripId, String tripNo, UUID loadId, Instant dispatchedAt,
+                        Instant completedAt, boolean onlyBillingOnDispatch) {
         UUID tenantId = TenantContext.requireTenantId();
         List<ClientDirectory.ClientShare> shares = directory.sharesOf(loadId);
         if (shares.isEmpty()) {
@@ -162,6 +183,10 @@ public class ClientChargeService {
         for (ClientDirectory.ClientShare share : shares) {
             UUID client = share.clientPartnerId();
             if (contracts.countForClient(tenantId, client) == 0) {
+                continue;
+            }
+            if (onlyBillingOnDispatch && !contracts.findInForceOn(tenantId, client, occurredOn)
+                    .map(ClientContract::billOnDispatch).orElse(false)) {
                 continue;
             }
             String key = "TRIP:" + tripId + ":" + client;
