@@ -22,12 +22,14 @@ import {
   type RegisterPartnerRequestPartnerTypeEnum,
   type AllocationRule, type AllocationRuleAction, type Load, type AllocationRuleRequest,
   type AddOrderLineRequest, type Order, type OrderLine, type UpdateOrderRequest,
+  type HistoryEntry,
   type AllocationRuleRequestMaterialClassEnum, type ListPartnersPartnerTypeEnum, type Terminal,
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
   type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
 } from '../api';
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
+import type { GoodsCondition as ApiGoodsCondition } from '../api';
 // Pickers
 import type { PickPage, PickQuery } from './lmsGateway';
 import {
@@ -54,6 +56,7 @@ import {
   type ParkedEventDetail, type ParkedFilter, type RateCardDraft,
   type WebhookChanges, type WebhookDeliveryPage, type WebhookDraft, type WebhookSecret, type WebhookView,
   type OrderDesk, type OrderHeaderDraft, type OrderLineDraft, type OrderRaiseDraft,
+  type HistoryEntryRow, type HistoryPage,
 } from './lmsGateway';
 // Warehouse operations
 import { ListTerminalsCategoryEnum, WarehouseApi } from '../api';
@@ -83,6 +86,15 @@ import {
   type TariffSlab as RateCardBand,
 } from '../api';
 import type { RailTariffDraft, RateCardPage, TariffCardDetail, TariffFilter } from './lmsGateway';
+
+// Credit
+import {
+  CreditApi, type CreditLimitChange, type CreditOverrideRequestSubjectTypeEnum, type CreditPosition,
+  type ListCreditLimitChangesStatusEnum,
+} from '../api';
+import type {
+  CreditChangeStatus, CreditLimitChangeDraft, CreditLimitState, CreditOverrideDraft, CreditPositionView,
+} from './lmsGateway';
 
 /** A ticket as the exception desk lists and opens it. */
 function ticketRow(e: ApiException): Row {
@@ -147,6 +159,7 @@ function contractRow(c: ClientContract): Row {
     effectiveTo: text(c.effectiveTo), transportRatePerKg: text(c.transportRatePerKg),
     handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
     storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+    billing: c.billOnDispatch ? 'On dispatch' : 'On proof of delivery',
   };
 }
 
@@ -156,6 +169,7 @@ function chargeRow(c: ClientCharge): Row {
     id: text(c.id), occurredOn: text(c.occurredOn), serviceType: text(c.serviceType), serviceCode: text(c.serviceCode),
     quantity: text(c.quantity), unit: text(c.unit), reference: text(c.reference),
     invoiced: c.invoiceId ? 'Yes' : '', late: c.late ? 'Yes' : '',
+    billable: c.billable === false ? 'Awaiting proof' : 'Yes',
   };
 }
 
@@ -232,6 +246,7 @@ function consignmentCard(c: Consignment): ConsignmentCard {
     chargeableWeightKg: text(c.chargeableWeightKg), loadNo: text(c.loadNo), freightMode: text(c.freightMode),
     parentId: text(c.parentConsignmentId), parentTrackingRef: text(c.parentTrackingRef),
     partCount: c.partCount ?? null, partsDelivered: c.partsDelivered ?? null, partsCancelled: c.partsCancelled ?? null,
+    proofStatus: text(c.proofStatus), proofCondition: text(c.proofCondition),
   };
 }
 
@@ -362,6 +377,31 @@ function lineRequest(l: OrderLineDraft): AddOrderLineRequest {
     widthM: numberOrAbsent(l.widthM), heightM: numberOrAbsent(l.heightM),
     volumetricDivisor: numberOrAbsent(l.volumetricDivisor), consigneePartnerId: blankAsAbsent(l.consigneePartnerId),
     destinationTerminalId: l.destinationTerminalId.trim(),
+  };
+}
+
+/** Who took a step, as far as the reader may know: a portal reader is never told staff names. */
+function actorOf(e: HistoryEntry): string {
+  if (e.actorName) {
+    return text(e.actorName);
+  }
+  if (e.actorKind === 'YOU') {
+    return 'you';
+  }
+  return e.actorKind === 'USER' ? text(e.actorId) || 'another user' : '';
+}
+
+/** A history entry as the desk lists it: the status move and any reason pulled out of the snapshots. */
+function historyRowOf(e: HistoryEntry): HistoryEntryRow {
+  const before = (e.before ?? {}) as Record<string, unknown>;
+  const after = (e.after ?? {}) as Record<string, unknown>;
+  const from = text(before['status']);
+  const to = text(after['status']);
+  return {
+    id: text(e.id), action: text(e.action), actor: actorOf(e),
+    occurredAt: text(e.occurredAt),
+    change: to && from !== to ? (from ? `${from} → ${to}` : to) : '',
+    reason: text(after['reason']),
   };
 }
 
@@ -580,6 +620,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           consignmentId,
           recordDeliveryProofRequest: {
             otp: draft.otp, recipientName: draft.recipientName, photoRef: draft.photoRef || undefined,
+            goodsCondition: draft.goodsCondition as ApiGoodsCondition | undefined, remark: draft.remark || undefined,
           },
         });
       }),
@@ -593,6 +634,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
             status: p.status === 'CONFIRMED' ? 'CONFIRMED' : 'OTP_ISSUED',
             recipientName: text(p.recipientName), photoRef: text(p.photoRef),
             deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
+            goodsCondition: text(p.goodsCondition) || 'CLEAN', remark: text(p.remark),
           };
         } catch (e) {
           if (e instanceof ResponseError && e.response.status === 404) {
@@ -983,7 +1025,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     raiseOrder: (orgUnitId: string, draft: OrderRaiseDraft) =>
       guard(async () => text((await orders.raiseOrder({
         raiseOrderRequest: {
-          orgUnitId, orderNo: draft.orderNo.trim(), customerPartnerId: draft.customerPartnerId.trim(),
+          orgUnitId, orderNo: blankAsAbsent(draft.orderNo), customerPartnerId: draft.customerPartnerId.trim(),
           originTerminalId: draft.originTerminalId.trim(), requestedPickupAt: instantOrAbsent(draft.requestedPickupAt),
           requestedDeliveryAt: instantOrAbsent(draft.requestedDeliveryAt),
         },
@@ -1019,6 +1061,11 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         await orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } });
       }),
+    orderHistory: (orderId: string, cursor?: string): Promise<HistoryPage> =>
+      guard(async () => {
+        const page = await orders.getOrderHistory({ id: orderId, cursor: cursor || undefined, limit: 20 });
+        return { entries: page.items.map(historyRowOf), nextCursor: page.nextCursor ?? null };
+      }),
     generateConsignments: (orderId: string) =>
       guard(async () => (await loads.generateConsignments({ id: orderId })).length),
 
@@ -1031,6 +1078,10 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     clientCharges: (clientId: string, period: string) =>
       guard(async () => (await clientBilling.listClientCharges({ clientId, period: day(period), limit: 200 }))
         .items.map(chargeRow)),
+    markConsignmentBillable: (consignmentId: string, reason: string) =>
+      guard(async () => {
+        await clientBilling.markConsignmentBillable({ consignmentId, billingEligibilityRequest: { reason } });
+      }),
     runClientBilling: (clientId: string, period: string) =>
       guard(async () => (await clientBilling.runClientBilling({
         clientId, clientBillingRunRequest: { period: day(period) },
@@ -1082,6 +1133,8 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...adminGateway(config),
     // Rate cards and rail tariffs
     ...rateCardVerbs(config),
+    // Credit
+    ...creditVerbs(config),
     // Pickers
     ...pickerVerbs({
       partners, terminals, vehicles, drivers, warehouse: new WarehouseApi(config), orders, loads, trips,
@@ -1173,6 +1226,10 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     resolveFreightBill: (id: string, reason: string) =>
       guard(async () => {
         await freightBills.resolveDispute({ id, resolveDisputeRequest: { reason } });
+      }),
+    releaseProofHold: (billId: string, reason: string) =>
+      guard(async () => {
+        await freightBills.releaseProofHold({ id: billId, releaseProofHoldRequest: { reason } });
       }),
 
     // Control tower
@@ -1635,6 +1692,7 @@ function commercialBillRow(b: CommercialFreightBill): Row {
     fuelSurchargeAmount: text(b.fuelSurchargeAmount), computedAmount: text(b.computedAmount),
     claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount), variancePct: text(b.variancePct),
     resolution: text(b.resolution), matchedAt: text(b.matchedAt), settlementHeldBy: text(b.settlementHeldBy),
+    awaitingProof: b.awaitingProof ? 'Yes' : '', proofHoldReleaseNote: text(b.proofHoldReleaseNote),
   };
 }
 
@@ -1824,4 +1882,68 @@ function pickerVerbs({
 function guideLabel(g: CommercialRoutingGuide): string {
   const lane = `${text(g.originTerminalCode)} → ${text(g.destinationTerminalCode)} · ${text(g.vehicleType)}`;
   return g.active === false ? `${lane} · retired` : lane;
+}
+
+// Credit
+
+type CreditVerbs = Pick<LmsGateway, 'creditPosition' | 'grantCreditOverride' | 'requestCreditLimitChange'
+  | 'creditLimitChanges' | 'partnerCreditLimitChanges' | 'approveCreditLimitChange' | 'rejectCreditLimitChange'>;
+
+/** A customer's credit position, every amount as text and a missing one blank. */
+function creditPositionOf(p: CreditPosition): CreditPositionView {
+  return {
+    partnerId: text(p.partnerId), partnerCode: text(p.partnerCode), partnerStatus: text(p.partnerStatus),
+    trading: p.trading, currency: text(p.currency), creditLimit: text(p.creditLimit), softLimit: text(p.softLimit),
+    openOrders: text(p.exposure.openOrders), openOrderCount: text(p.exposure.openOrderCount),
+    unpricedOpenOrderCount: text(p.exposure.unpricedOpenOrderCount),
+    unbilledCharges: text(p.exposure.unbilledCharges), unbilledChargeCount: text(p.exposure.unbilledChargeCount),
+    outstandingInvoices: text(p.exposure.outstandingInvoices), exposure: text(p.exposure.total),
+    headroom: text(p.headroom), limitState: text(p.limitState) as CreditLimitState,
+    pendingChangeId: text(p.pendingChangeId), asOf: text(p.asOf),
+  };
+}
+
+/** A credit limit change request as the administration desk lists it. */
+function creditChangeRow(c: CreditLimitChange): Row {
+  return {
+    id: text(c.id), partnerId: text(c.partnerId), partnerCode: text(c.partnerCode), status: text(c.status),
+    previousLimit: text(c.previousLimit), previousSoftLimit: text(c.previousSoftLimit),
+    requestedLimit: text(c.requestedLimit), requestedSoftLimit: text(c.requestedSoftLimit), reason: text(c.reason),
+    requestedBy: text(c.requestedBy), requestedAt: text(c.requestedAt), decidedBy: text(c.decidedBy),
+    decidedAt: text(c.decidedAt), decisionNote: text(c.decisionNote),
+  };
+}
+
+/** Credit positions, overrides and limit changes, over the same configuration as the rest of the gateway. */
+function creditVerbs(config: Configuration): CreditVerbs {
+  const credit = new CreditApi(config);
+  return {
+    creditPosition: (partnerId: string) =>
+      guard(async () => creditPositionOf(await credit.getCreditPosition({ id: partnerId }))),
+    grantCreditOverride: (partnerId: string, draft: CreditOverrideDraft) =>
+      guard(async () => text((await credit.grantCreditOverride({
+        id: partnerId,
+        creditOverrideRequest: {
+          subjectType: draft.subjectType as CreditOverrideRequestSubjectTypeEnum, orderId: draft.orderId || undefined,
+          period: draft.period ? day(draft.period) : undefined, upTo: draft.upTo,
+          reason: draft.reason.trim(),
+        },
+      })).id)),
+    requestCreditLimitChange: (partnerId: string, draft: CreditLimitChangeDraft) =>
+      guard(async () => text((await credit.requestCreditLimitChange({
+        id: partnerId,
+        creditLimitChangeRequest: { creditLimit: draft.creditLimit, softLimit: draft.softLimit, reason: draft.reason.trim() },
+      })).id)),
+    creditLimitChanges: (status?: CreditChangeStatus) =>
+      guard(async () => (await credit.listCreditLimitChanges({
+        status: status as ListCreditLimitChangesStatusEnum | undefined, limit: 100,
+      })).items.map(creditChangeRow)),
+    partnerCreditLimitChanges: (partnerId: string) =>
+      guard(async () => (await credit.listPartnerCreditLimitChanges({ id: partnerId, limit: 100 })).items
+        .map(creditChangeRow)),
+    approveCreditLimitChange: (id: string, note: string) =>
+      guard(async () => { await credit.approveCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }); }),
+    rejectCreditLimitChange: (id: string, note: string) =>
+      guard(async () => { await credit.rejectCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }); }),
+  };
 }
