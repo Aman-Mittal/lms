@@ -671,6 +671,15 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   `itinerary_leg_id`, expected amount the leg's recorded cost) and then follows
   the ordinary match, dispute and approval path. Settlement holds are per trip,
   so a control-tower hold does not freeze a rail leg's bill.
+- A proof of delivery decides money, not trip completion (V47). A completed trip
+  whose consignments are not all proved clean gets a `PROOF_OF_DELIVERY` row in
+  `settlement_hold`, lifted by the last clean proof or by
+  `POST /freight-bills/{id}/proof-hold/release` (`SETTLEMENT_HOLD_RELEASE`, reason
+  audited); a line haul is never held. A client's trip transport is invoiceable
+  once each of its consignments has a confirmed proof or a manual mark, unless
+  the contract bills on dispatch. The completion's hold decision and a proof's
+  re-evaluation take a per-trip advisory lock and re-read proofs under it, so a
+  hold never outlives clean proofs whichever commits first.
 - A warehouse hand-off consignment has no sales order, so trip charges skip it;
   client billing instead charges the hand-off itself from `warehouse::events`
   (`ClientHandOffListener`): handling out (a pallet per unit) and transport (gross
