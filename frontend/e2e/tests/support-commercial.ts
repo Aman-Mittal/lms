@@ -94,6 +94,8 @@ export interface DeliveredTrip {
   tripNo: string;
   billId: string;
   billNo: string;
+  /** The one consignment the trip carried. */
+  consignmentId: string;
 }
 
 /**
@@ -101,8 +103,15 @@ export interface DeliveredTrip {
  * delivered within the last two hours -- so its bill is a draft of 20 000 with one
  * base freight line. Completion raises the bill after the trip's transaction, so
  * this waits for it.
+ *
+ * The bill settles only once the consignment has a clean proof of delivery, so
+ * by default one is recorded the way the desk records it (the stack the specs
+ * run against hands the demo code back). `proof: 'none'` leaves the bill waiting
+ * for it, and `'DAMAGE'` records a proof that keeps it waiting.
  */
-export async function deliveredTrip(request: APIRequestContext, session: Session, salt: string): Promise<DeliveredTrip> {
+export async function deliveredTrip(
+  request: APIRequestContext, session: Session, salt: string, proof: 'CLEAN' | 'DAMAGE' | 'none' = 'CLEAN',
+): Promise<DeliveredTrip> {
   const org = session.orgUnitId;
   const { origin, destination } = await commercialLane(request, session, salt);
   const vendor = await commercialVendor(request, session, `ZZ-CM-V-${salt}`);
@@ -176,6 +185,14 @@ export async function deliveredTrip(request: APIRequestContext, session: Session
   await call(request, session, `${t}/in-transit`, {});
   await call(request, session, `${t}/arrival`, { at: at(-20) });
   await call(request, session, `${t}/completion`, { at: at(-10) });
+  const consignmentId = consignments[0].id as string;
+  if (proof !== 'none') {
+    const issued = await call(request, session, `/api/v1/deliveries/${consignmentId}/otp`, {});
+    await call(request, session, `/api/v1/deliveries/${consignmentId}/proof`, {
+      otp: issued.otp, recipientName: 'Receiving clerk', goodsCondition: proof,
+      remark: proof === 'DAMAGE' ? 'Two cartons crushed' : undefined,
+    });
+  }
 
   // Bills list in bill-number order, and the cursor is a bill number: start just below this one's.
   const billNo = `FB-${tripNo}`;
@@ -189,7 +206,7 @@ export async function deliveredTrip(request: APIRequestContext, session: Session
     billId = found?.id ?? '';
     return billId;
   }, { message: `the freight bill of ${tripNo}`, timeout: 30_000 }).not.toBe('');
-  return { tripNo, billId, billNo };
+  return { tripNo, billId, billNo, consignmentId };
 }
 
 // Rate cards and rail tariffs
