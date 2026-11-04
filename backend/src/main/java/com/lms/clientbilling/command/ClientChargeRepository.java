@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.clientbilling.command.domain.ClientCharge;
+import com.lms.clientbilling.query.ClientBillability;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
@@ -31,16 +32,32 @@ public interface ClientChargeRepository extends CrudRepository<ClientCharge, UUI
     Optional<ClientCharge> findBySourceKey(@Param("tenantId") UUID tenantId,
                                            @Param("sourceKey") String sourceKey);
 
-    /** What a billing run bills: the period's charges not yet on an invoice. */
+    /**
+     * What a billing run bills: the period's charges not yet on an invoice and
+     * billable now (see {@link ClientBillability}).
+     */
     @Query("""
-            SELECT * FROM client_charge
+            SELECT * FROM client_charge ch
              WHERE tenant_id = :tenantId
                AND client_partner_id = :clientPartnerId
                AND billing_period = :period
                AND invoice_id IS NULL
+               AND (""" + ClientBillability.BILLABLE + ")" + """
              ORDER BY occurred_on, service_type, id
             """)
     List<ClientCharge> findUnbilled(@Param("tenantId") UUID tenantId,
                                     @Param("clientPartnerId") UUID clientPartnerId,
                                     @Param("period") LocalDate period);
+
+    /** How many of the period's unbilled charges wait for proofs of delivery. */
+    @Query("""
+            SELECT count(*) FROM client_charge ch
+             WHERE tenant_id = :tenantId
+               AND client_partner_id = :clientPartnerId
+               AND billing_period = :period
+               AND invoice_id IS NULL
+               AND NOT (""" + ClientBillability.BILLABLE + ")")
+    long countAwaitingProof(@Param("tenantId") UUID tenantId,
+                            @Param("clientPartnerId") UUID clientPartnerId,
+                            @Param("period") LocalDate period);
 }

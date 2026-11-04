@@ -26,7 +26,7 @@ Feature: A delivered trip closes its order and a cancelled order releases its fr
 
   Scenario: A completed full-truckload trip delivers its consignment, completes its load and fulfils the order
     When a lifecycle order of 5000 kg is planned onto a load, awarded and dispatched
-    Then the lifecycle order is "FULLY_PLANNED" and its consignment is "ASSIGNED_TO_LOAD"
+    Then the lifecycle order is "FULLY_PLANNED" and its consignment is "IN_TRANSIT"
     When the lifecycle trip is completed
     Then the lifecycle order is "FULFILLED" and its consignment is "DELIVERED"
     And the lifecycle load is "COMPLETED"
@@ -42,5 +42,5 @@ Feature: A delivered trip closes its order and a cancelled order releases its fr
     When a lifecycle order of 5000 kg is planned onto a load, awarded and dispatched
     And the lifecycle order is cancelled without a reason
     Then the lifecycle cancellation is refused with "order-work-dispatched"
-    And the lifecycle order is "FULLY_PLANNED" and its consignment is "ASSIGNED_TO_LOAD"
+    And the lifecycle order is "FULLY_PLANNED" and its consignment is "IN_TRANSIT"
     And the lifecycle load is "DISPATCHED"

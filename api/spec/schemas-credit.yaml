@@ -1,0 +1,144 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+CreditPosition:
+  type: object
+  properties:
+    partnerId: { type: string, format: uuid }
+    partnerCode: { type: string }
+    partnerStatus:
+      type: string
+      enum: [DRAFT, PENDING_VERIFICATION, ACTIVE, SUSPENDED, BLACKLISTED]
+    trading:
+      type: boolean
+      description: False when the partner is SUSPENDED or BLACKLISTED, which
+        refuses new or changed orders whatever the limit says.
+    currency:
+      type: string
+      description: The currency of the client contract in force; null without one.
+    creditLimit:
+      type: number
+      description: The hard limit. Null means no limit is enforced.
+    softLimit:
+      type: number
+      description: Above this a warning event is raised. Null means none.
+    exposure: { $ref: "#/components/schemas/CreditExposure" }
+    headroom:
+      type: number
+      description: Hard limit minus exposure; negative once over. Null without a limit.
+    limitState:
+      type: string
+      enum: [NO_LIMIT, WITHIN, SOFT_EXCEEDED, HARD_EXCEEDED]
+    pendingChangeId:
+      type: string
+      format: uuid
+      description: The open credit-limit change request, if any.
+    asOf: { type: string, format: date-time }
+  required: [partnerId, partnerCode, partnerStatus, trading, exposure, limitState, asOf]
+
+CreditExposure:
+  type: object
+  description: |
+    What the customer owes or is committed to, in three parts. `openOrders`
+    is the order value of VALIDATED, PARTIALLY_PLANNED and FULLY_PLANNED
+    orders at the contract's transport rate per chargeable kg (with its
+    minimum charge per order). `unbilledCharges` is client charges not yet
+    on an invoice, priced as the billing run would. `outstandingInvoices` is
+    issued invoice totals less credit notes and payments, never below zero.
+  properties:
+    openOrders: { type: number }
+    openOrderCount: { type: integer }
+    unpricedOpenOrderCount:
+      type: integer
+      description: Open orders counted at zero because no client contract prices them.
+    unbilledCharges: { type: number }
+    unbilledChargeCount: { type: integer }
+    unpricedChargeCount: { type: integer }
+    outstandingInvoices: { type: number }
+    total: { type: number }
+  required: [openOrders, openOrderCount, unpricedOpenOrderCount, unbilledCharges,
+             unbilledChargeCount, unpricedChargeCount, outstandingInvoices, total]
+
+CreditLimitChange:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    partnerId: { type: string, format: uuid }
+    partnerCode: { type: string }
+    status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+    previousLimit: { type: number }
+    previousSoftLimit: { type: number }
+    requestedLimit: { type: number }
+    requestedSoftLimit: { type: number }
+    reason: { type: string }
+    requestedBy: { type: string }
+    requestedAt: { type: string, format: date-time }
+    decidedBy: { type: string }
+    decidedAt: { type: string, format: date-time }
+    decisionNote: { type: string }
+  required: [id, partnerId, partnerCode, status, requestedLimit, reason, requestedBy, requestedAt]
+
+CreditLimitChangeSlice:
+  type: object
+  description: One page. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/CreditLimitChange" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+CreditLimitChangeRequest:
+  type: object
+  properties:
+    creditLimit: { type: number, minimum: 0 }
+    softLimit:
+      type: number
+      minimum: 0
+      description: Optional; at most the credit limit.
+    reason: { type: string, maxLength: 500 }
+  required: [creditLimit, reason]
+
+CreditLimitDecisionRequest:
+  type: object
+  properties:
+    note: { type: string, maxLength: 500 }
+
+CreditOverrideRequest:
+  type: object
+  properties:
+    subjectType:
+      type: string
+      enum: [ORDER, CLIENT_INVOICE]
+      description: An order (validate, amend, line add) or a client billing run.
+    orderId:
+      type: string
+      format: uuid
+      description: Required when subjectType is ORDER.
+    period:
+      type: string
+      format: date
+      description: Any day of the billing month; required when subjectType is CLIENT_INVOICE.
+    upTo:
+      type: number
+      minimum: 0
+      description: The highest exposure the override lets through.
+    reason: { type: string, maxLength: 500 }
+  required: [subjectType, upTo, reason]

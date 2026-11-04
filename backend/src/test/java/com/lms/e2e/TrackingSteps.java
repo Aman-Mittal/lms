@@ -106,8 +106,7 @@ public class TrackingSteps {
                 lorry, driver, 5000);
         world.dispatch(trip, origin, 5000, OffsetDateTime.now(ZoneOffset.UTC).minusHours(5));
 
-        // The consignment itself stays ASSIGNED_TO_LOAD for a full truckload; what
-        // says it has left is the trip, which dispatch has just moved.
+        // Dispatch has moved the trip, and with it the full truckload to IN_TRANSIT.
         consignment = jdbc.sql("""
                         SELECT c.id FROM consignment c JOIN sales_order o ON o.id = c.order_id
                          WHERE o.order_no = :no
