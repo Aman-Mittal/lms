@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.support.JdbcTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.DefaultTransactionStatus;
 
 /**
  * Publishes the current tenant onto the database connection so that Postgres
@@ -54,6 +55,12 @@ import org.springframework.transaction.TransactionDefinition;
  * empty string rather than skipped. Skipping would leave whatever the previous
  * transaction set, and an empty value matches no tenant, which is the safe
  * outcome.
+ *
+ * <p>It also tells {@link AfterConnectionRelease} when a thread's transactions
+ * begin, complete and give their connection back, so that after-commit event
+ * listeners run once the thread holds no connection. Without that, every
+ * request publishing to a listener the event registry tracks needed two
+ * connections at commit, and a handful of them together starved the pool.
  */
 public class TenantAwareTransactionManager extends JdbcTransactionManager {
 
@@ -103,5 +110,36 @@ public class TenantAwareTransactionManager extends JdbcTransactionManager {
             statement.setString(1, tenantId);
             statement.execute();
         }
+    }
+
+    @Override
+    protected void doBegin(Object transaction, TransactionDefinition definition) {
+        super.doBegin(transaction, definition);
+        AfterConnectionRelease.opened();
+    }
+
+    @Override
+    protected void doCommit(DefaultTransactionStatus status) {
+        super.doCommit(status);
+        AfterConnectionRelease.completing();
+    }
+
+    @Override
+    protected void doRollback(DefaultTransactionStatus status) {
+        try {
+            super.doRollback(status);
+        } finally {
+            AfterConnectionRelease.completing();
+        }
+    }
+
+    /**
+     * The connection goes back to the pool here; once a thread has none left,
+     * the after-commit listeners it held back run (see AfterConnectionRelease).
+     */
+    @Override
+    protected void doCleanupAfterCompletion(Object transaction) {
+        super.doCleanupAfterCompletion(transaction);
+        AfterConnectionRelease.released();
     }
 }

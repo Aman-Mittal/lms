@@ -19,6 +19,7 @@ import java.util.List;
 
 import javax.sql.DataSource;
 
+import com.lms.shared.tenant.ReleasingEventListenerFactory;
 import com.lms.shared.tenant.TenantAwareTransactionManager;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -27,6 +28,7 @@ import org.springframework.data.jdbc.core.convert.JdbcCustomConversions;
 import org.springframework.data.jdbc.core.dialect.JdbcDialect;
 import org.springframework.data.jdbc.core.dialect.JdbcPostgresDialect;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.event.TransactionalEventListenerFactory;
 
 @Configuration(proxyBeanMethods = false)
 public class PersistenceConfig {
@@ -86,5 +88,20 @@ public class PersistenceConfig {
     @ConditionalOnMissingBean(PlatformTransactionManager.class)
     PlatformTransactionManager transactionManager(DataSource dataSource) {
         return new TenantAwareTransactionManager(dataSource);
+    }
+
+    /**
+     * Builds every {@code @TransactionalEventListener} so that an after-commit
+     * listener runs once the committing thread has returned its connection to
+     * the pool, not while it still holds it. The publication registry opens
+     * transactions of its own around each tracked listener; run in place, they
+     * made every event-publishing request need two connections at commit.
+     *
+     * <p>Static, because event listener factories are looked up while bean
+     * definitions are still being processed, before this configuration exists.
+     */
+    @Bean
+    static TransactionalEventListenerFactory releasingEventListenerFactory() {
+        return new ReleasingEventListenerFactory();
     }
 }

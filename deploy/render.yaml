@@ -48,7 +48,8 @@ services:
         sync: false
 
       # Sized for 0.1 CPU against a small Postgres. Raising these buys
-      # contention, not throughput.
+      # contention, not throughput. Each request holds at most one connection;
+      # see DOCS/adr/0006 for the sizing rule.
       - key: DB_POOL_MAX
         value: "5"
       - key: TOMCAT_THREADS_MAX

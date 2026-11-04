@@ -347,6 +347,15 @@ It gives at-least-once delivery, retry, and republication of incomplete events
 on restart. Do not add Kafka, RabbitMQ, or Redis — they do not fit the memory
 budget and the registry covers the MVP's needs.
 
+**A request holds at most one pooled connection at a time** (DOCS/adr/0006).
+The registry marks each listener's publication in `REQUIRES_NEW` transactions.
+`ReleasingEventListenerFactory` therefore holds `@TransactionalEventListener`
+processing back until the committing thread has returned its connection; the
+listeners still run on the request thread, in order, before the response. Do not
+open a `REQUIRES_NEW` transaction in a request path, and do not bring Spring's
+own listener factory back. `EventPublicationPoolApiTest` guards the rule against
+a pool of 5.
+
 ### There is no PostGIS
 
 PostGIS is GPLv2 and would compromise the Apache-2.0 distribution (see
