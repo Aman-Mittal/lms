@@ -21,6 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.lms.order.events.OrderAmended;
 import com.lms.order.events.OrderCancelled;
+import com.lms.order.events.OrderClosed;
 import com.lms.order.events.OrderFulfilled;
 import com.lms.order.events.OrderRaised;
 import com.lms.order.events.OrderValidated;
@@ -65,6 +66,11 @@ public class OrderEventProbe {
     @EventListener
     void on(OrderFulfilled event) {
         heard.add(new Heard("OrderFulfilled", event.orderId(), event));
+    }
+
+    @EventListener
+    void on(OrderClosed event) {
+        heard.add(new Heard("OrderClosed", event.orderId(), event));
     }
 
     /** Every event heard about one order, in publication order. */

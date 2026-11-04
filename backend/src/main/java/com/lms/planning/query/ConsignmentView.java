@@ -61,5 +61,17 @@ public record ConsignmentView(
          */
         String proofStatus,
         /** CLEAN, SHORTAGE or DAMAGE once a proof exists; null before. */
-        String proofCondition) {
+        String proofCondition,
+        /** Who to call at the consignee, and their reference; null until stated. */
+        String contactName,
+        String contactPhone,
+        String consigneeReference,
+        /** The client's own reference for it, unique within the tenant; null when none. */
+        String clientReference,
+        /** When the consignee will receive it; null until stated. */
+        Instant deliveryWindowFrom,
+        Instant deliveryWindowTo,
+        String remarks,
+        /** The optimistic-lock version: the ETag, and what an amendment sends back in If-Match. */
+        Long version) {
 }

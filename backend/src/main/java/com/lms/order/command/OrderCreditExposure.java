@@ -32,9 +32,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Weight comes from {@link OrderLine#chargeableWeightKg}, the figure the
  * order announces at validation, so the exposure and the order agree on what
- * was ordered. Open means accepted and not yet fulfilled or cancelled; the
+ * was ordered. Open means accepted and not yet fulfilled, closed or cancelled; the
  * partial index {@code sales_order_customer_open_idx} states exactly those
- * statuses.
+ * statuses. A cancelled line, and a line closed before it was planned, are
+ * not demand and are left out.
  */
 @Component
 class OrderCreditExposure implements OpenOrderDemandSource {
@@ -57,7 +58,10 @@ class OrderCreditExposure implements OpenOrderDemandSource {
                                SELECT o.id FROM sales_order o
                                 WHERE o.id = CAST(:alsoCount AS uuid)
                                   AND o.customer_partner_id = :customer
-                                  AND o.status NOT IN ('CANCELLED', 'FULFILLED'))
+                                  AND o.status NOT IN ('CANCELLED', 'FULFILLED', 'CLOSED'))
+                           AND l.cancelled = false
+                           -- A line closed before it was planned will never be carried.
+                           AND NOT (l.closed_at IS NOT NULL AND l.planned = false)
                          ORDER BY l.order_id, l.line_no
                         """)
                 .param("customer", customerPartnerId)

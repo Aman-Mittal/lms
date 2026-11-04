@@ -44,5 +44,9 @@ public record OrderView(
         String freightMode,
         Instant createdAt,
         /** The optimistic-lock version: the ETag, and what an edit sends back in If-Match. */
-        Long version) {
+        Long version,
+        /** How a CLOSED order was closed (NORMAL, SHORT, FORCE or AUTO); null otherwise. */
+        String closeKind,
+        String closeReason,
+        Instant closedAt) {
 }

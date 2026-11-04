@@ -80,4 +80,16 @@ public interface ConsignmentRepository extends CrudRepository<Consignment, UUID>
              ORDER BY tracking_ref
             """)
     List<Consignment> findParts(@Param("tenantId") UUID tenantId, @Param("parentId") UUID parentId);
+
+    /**
+     * Whether another consignment of the tenant already carries this client
+     * reference. Served by {@code consignment_client_reference_unique}.
+     */
+    @Query("""
+            SELECT EXISTS (SELECT 1 FROM consignment
+                            WHERE tenant_id = :tenantId AND client_reference = :reference
+                              AND id <> :exceptId)
+            """)
+    boolean clientReferenceTaken(@Param("tenantId") UUID tenantId, @Param("reference") String reference,
+                                 @Param("exceptId") UUID exceptId);
 }

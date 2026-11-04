@@ -50,8 +50,8 @@ class OrderCreditGateTest {
     private static OrderLine line(String kg) {
         return new OrderLine(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, "MAT",
                 "Material", MaterialClass.GENERAL, null, BigDecimal.ONE, "EA", new BigDecimal(kg),
-                null, null, null, null, UUID.randomUUID(), UUID.randomUUID(), false, null,
-                Instant.now());
+                null, null, null, null, UUID.randomUUID(), UUID.randomUUID(), false, false, null,
+                Instant.now(), null, null, null);
     }
 
     @Test

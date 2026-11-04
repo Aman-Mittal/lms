@@ -40,16 +40,22 @@ public interface OrderLineRepository extends CrudRepository<OrderLine, UUID> {
      * {@code WHERE planned = false} clause matches this predicate exactly --
      * Postgres will only use a partial index for a query it can prove is
      * covered by the index predicate, so the literal must stay literal here.
+     * A closed or cancelled line is not waiting for anything and is left out.
      */
     @Query("""
             SELECT * FROM order_line
              WHERE tenant_id = :tenantId AND order_id = :orderId AND planned = false
+               AND closed_at IS NULL AND cancelled = false
              ORDER BY line_no
             """)
     List<OrderLine> findUnplannedByOrder(@Param("tenantId") UUID tenantId,
                                          @Param("orderId") UUID orderId);
 
-    @Query("SELECT count(*) FROM order_line WHERE tenant_id = :tenantId AND order_id = :orderId")
+    /** Lines that are still demand: a cancelled line is not counted. */
+    @Query("""
+            SELECT count(*) FROM order_line
+             WHERE tenant_id = :tenantId AND order_id = :orderId AND cancelled = false
+            """)
     long countByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
 
     @Query("""
@@ -57,4 +63,12 @@ public interface OrderLineRepository extends CrudRepository<OrderLine, UUID> {
              WHERE tenant_id = :tenantId AND order_id = :orderId AND planned = true
             """)
     long countPlannedByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
+
+    /** Lines closed before any of them was planned: spoken for, but by no consignment. */
+    @Query("""
+            SELECT count(*) FROM order_line
+             WHERE tenant_id = :tenantId AND order_id = :orderId AND planned = false
+               AND closed_at IS NOT NULL AND cancelled = false
+            """)
+    long countClosedUnplannedByOrder(@Param("tenantId") UUID tenantId, @Param("orderId") UUID orderId);
 }
