@@ -48,7 +48,7 @@ public class PlanningQueryService {
                    round(l.planned_weight_kg * 100 / l.capacity_weight_kg, 2) AS weight_utilisation_pct,
                    round(l.planned_volume_m3 * 100 / l.capacity_volume_m3, 2) AS volume_utilisation_pct,
                    coalesce(lc.consignment_count, 0) AS consignment_count,
-                   l.requires_hazmat, l.freight_mode, l.ltl_leg, l.created_at
+                   l.requires_hazmat, l.freight_mode, l.ltl_leg, l.created_at, l.version
               FROM load_unit l
               JOIN terminal t ON t.id = l.origin_terminal_id
               LEFT JOIN vehicle v ON v.id = l.vehicle_id
@@ -72,7 +72,9 @@ public class PlanningQueryService {
                    c.parent_consignment_id, pc.tracking_ref AS parent_tracking_ref,
                    sp.part_count, sp.parts_delivered, sp.parts_cancelled,
                    c.created_at,
-                   dp.status AS proof_status, dp.goods_condition AS proof_condition
+                   dp.status AS proof_status, dp.goods_condition AS proof_condition,
+                   c.contact_name, c.contact_phone, c.consignee_reference, c.client_reference,
+                   c.delivery_window_from, c.delivery_window_to, c.remarks, c.version
               FROM consignment c
               LEFT JOIN sales_order o ON o.id = c.order_id
               LEFT JOIN handling_unit hu ON hu.id = c.handling_unit_id

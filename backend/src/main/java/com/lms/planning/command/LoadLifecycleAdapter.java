@@ -243,16 +243,22 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
 
     /**
      * Tells each order whose consignments are now all delivered, so that the
-     * order closes as fulfilled. One query decides which orders qualify, however
-     * many consignments were delivered; the order itself decides whether it
-     * has any demand still unplanned.
+     * order closes as fulfilled, and each other order with a delivery here
+     * that some of its freight has arrived, so that it can close within its
+     * tenant's tolerance. One query decides which orders are done, however
+     * many consignments were delivered; the order decides the rest.
      */
     private void fulfilOrders(UUID tenantId, List<Consignment> delivered) {
         Set<UUID> orderIds = delivered.stream().map(Consignment::orderId)
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
-        for (UUID orderId : links.orderIdsWithNothingLeftToCarry(tenantId, orderIds)) {
-            orderPlanning.recordFulfilled(orderId);
+        Set<UUID> done = new java.util.HashSet<>(links.orderIdsWithNothingLeftToCarry(tenantId, orderIds));
+        for (UUID orderId : orderIds) {
+            if (done.contains(orderId)) {
+                orderPlanning.recordFulfilled(orderId);
+            } else {
+                orderPlanning.recordPartlyDelivered(orderId);
+            }
         }
     }
 

@@ -361,6 +361,60 @@ public record LoadUnit(
                 planned.createdAt, Instant.now());
     }
 
+    /**
+     * Refuses once the load has left: a vehicle on the road, or one whose
+     * run is over, keeps the freight it carried.
+     */
+    public void requireNotLeft() {
+        if (status == LoadStatus.DISPATCHED || status == LoadStatus.COMPLETED) {
+            throw new BusinessRuleViolationException("load-dispatched",
+                    "Load " + loadNo + " is " + status + " and has already left");
+        }
+    }
+
+    /**
+     * Refuses unless consignments may be taken off: the load has not left,
+     * has not been cancelled, and has not been awarded. An awarded vendor took
+     * the load as it was; the award is withdrawn first (by cancelling the
+     * allocation), which returns the load to PLANNED.
+     */
+    public void requireFreightRemovable() {
+        requireNotLeft();
+        if (status == LoadStatus.CANCELLED) {
+            throw new BusinessRuleViolationException("load-cancelled",
+                    "Load " + loadNo + " is cancelled");
+        }
+        if (status == LoadStatus.AWARDED) {
+            throw new BusinessRuleViolationException("load-awarded",
+                    "Load " + loadNo + " is awarded; withdraw the award before changing its freight");
+        }
+    }
+
+    /**
+     * The planned load opened again for building: back to DRAFT, no longer
+     * sourceable until it is planned again.
+     */
+    public LoadUnit unplanned() {
+        requireFreightRemovable();
+        if (status != LoadStatus.PLANNED) {
+            throw new BusinessRuleViolationException("load-not-planned",
+                    "Load " + loadNo + " is " + status + "; only a PLANNED load can be un-planned");
+        }
+        return transitionTo(LoadStatus.DRAFT);
+    }
+
+    /**
+     * Refuses a direct cancellation of a load that has left, or a second one.
+     * A DRAFT, PLANNED or AWARDED load may be cancelled.
+     */
+    public void requireCancellable() {
+        requireNotLeft();
+        if (status == LoadStatus.CANCELLED) {
+            throw new BusinessRuleViolationException("load-already-cancelled",
+                    "Load " + loadNo + " is already cancelled");
+        }
+    }
+
     /** Percentage of weight capacity used, for the utilisation the platform exists to improve. */
     public BigDecimal weightUtilisationPct() {
         return plannedWeightKg.multiply(BigDecimal.valueOf(100))

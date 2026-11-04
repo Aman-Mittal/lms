@@ -196,6 +196,61 @@
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 
+/api/v1/orders/{id}/lines/{lineId}/cancellation:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the order.
+    - name: lineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the line.
+  post:
+    tags: [Orders]
+    operationId: cancelOrderLine
+    summary: Cancel one line of a validated order
+    description: |
+      The line stays on the order, marked cancelled, and no longer counts as
+      demand: it is never planned, and drops out of the order's line count,
+      weight, coverage and credit exposure. If it is on a consignment, that
+      consignment is cancelled too, exactly as `POST
+      /consignments/{id}/cancellation` would (taken off its load first), and
+      any other lines cut into it go back to waiting for a consignment. The
+      order's status steps back to match, and its version moves on. Audited
+      as `ORDER_LINE_CANCELLED`. Needs `ORDER_UPDATE`.
+
+      Refused with 409 and a code: `concurrent-modification` for a stale
+      `If-Match`; `order-not-validated` for a draft (remove the line instead);
+      `order-not-amendable` for a cancelled, fulfilled or closed order;
+      `order-line-already-cancelled` for a repeat; `order-line-already-closed`
+      for a line closed on its own; `order-line-last` for the only line still
+      live, neither cancelled nor closed (cancel or close the order instead);
+      `order-line-on-split-consignment` when its consignment was split; and
+      the consignment's own refusals -- `consignment-dispatched`,
+      `load-has-active-trip`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelOrderRequest" }
+    responses:
+      "200":
+        description: What the cancellation did.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderLineCancellation" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
 /api/v1/orders/{id}/amend:
   parameters:
     - name: id
@@ -291,6 +346,142 @@
           schema: { $ref: "#/components/schemas/CancelOrderRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/close:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the order.
+  post:
+    tags: [Orders]
+    operationId: closeOrder
+    summary: Close an order (normal, short or force)
+    description: |
+      Ends a validated order short of cancelling it, and closes every line still
+      open with it. A cancelled line is not open: it neither blocks the close nor
+      is closed with it. Consignments already cut are never touched: they carry on
+      and report their own delivery. The kind defaults to `NORMAL` when the body
+      or its kind is omitted.
+
+      - `NORMAL` (requires `ORDER_UPDATE`): every open line must be planned and
+        everything cut for it delivered; otherwise `order-not-complete`, whose
+        detail names each line and what is outstanding. The tenant's close
+        tolerance does not apply to a close asked for by hand.
+      - `SHORT` (requires `ORDER_UPDATE` and a reason): the lines not yet planned
+        are closed and never planned. Refused with `order-freight-pending` while
+        freight cut from an open line has not left (not on a load, or on one not
+        dispatched): dispatch it first, or force the close.
+      - `FORCE` (requires `ORDER_FORCE_CLOSE` as well, and a reason): closes
+        whatever the freight is doing.
+
+      Other refusals, all 409: `close-reason-required` (short or force without a
+      reason), `order-already-closed` (the order is CLOSED or FULFILLED),
+      `order-is-cancelled`, `order-not-validated` (a draft: cancel it instead).
+      `AUTO` is how the platform closes an order within tolerance and is refused
+      here with 400. Audited as `ORDER_CLOSED` and announced as `OrderClosed`
+      (webhook `ORDER_CLOSED`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CloseOrderRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/{id}/lines/{lineId}/close:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the order.
+    - name: lineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the line.
+  post:
+    tags: [Orders]
+    operationId: closeOrderLine
+    summary: Close one line of an order
+    description: |
+      The rules of `POST /orders/{id}/close`, applied to one line: `NORMAL`
+      needs the line planned and its freight delivered (`order-line-not-complete`),
+      `SHORT` needs a reason and no freight of the line waiting to leave
+      (`order-freight-pending`), `FORCE` needs `ORDER_FORCE_CLOSE` and a reason.
+      A line already closed is refused with `order-line-already-closed`, a
+      cancelled line with `order-line-already-cancelled`, and the
+      order must be open to closing (`order-already-closed`, `order-is-cancelled`,
+      `order-not-validated`). When every other line is then closed, cancelled or
+      planned and delivered, the order closes too, the same way; otherwise a closed line that
+      was never planned counts as spoken for, so the order may become fully
+      planned. Audited as `ORDER_LINE_CLOSED` on the order.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CloseOrderRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/orders/close-settings:
+  get:
+    tags: [Orders]
+    operationId: getOrderCloseSettings
+    summary: The tenant's order close policy
+    description: Requires `ORDER_READ`. A tolerance of 0 and automatic fulfilment on, until the tenant sets its own.
+    responses:
+      "200":
+        description: The policy in force.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCloseSettings" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+  put:
+    tags: [Orders]
+    operationId: setOrderCloseSettings
+    summary: Set the tenant's order close policy
+    description: |
+      Requires `ORDER_FORCE_CLOSE`. Applies from the next delivery on. When the
+      last consignment of a partly planned order is delivered and the quantity
+      of its lines still unplanned is no more than `tolerancePercent` of the
+      order's total line quantity, the platform closes the order (kind `AUTO`)
+      and its remaining lines with it. With `autoFulfil` false, delivering the
+      last consignment leaves the order open, fully planned, until a person
+      closes it. A tolerance outside 0 to 100, or finer than two decimal places,
+      is refused with `close-tolerance-out-of-range`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SetOrderCloseSettingsRequest" }
+    responses:
+      "200":
+        description: The policy now in force.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCloseSettings" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
