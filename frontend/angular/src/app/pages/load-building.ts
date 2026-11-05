@@ -20,8 +20,16 @@ import { ApiProblem, LmsGateway, LoadBuild, MAX_BULK_ASSIGNMENT, Row } from '../
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 
-/** A load's states in which more freight may still go on. */
+/** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
+/** A load's states in which it may still be cancelled: it has not left. */
+const CANCELLABLE = ['DRAFT', 'PLANNED', 'AWARDED'];
+
+/** A refused change as the screen shows it: the problem's stable name, then what it says. */
+interface Refusal {
+  code: string;
+  message: string;
+}
 
 /** What is aboard, in drop order; on screen and in the printed manifest alike. */
 @Component({
@@ -29,7 +37,10 @@ const BUILDABLE = ['DRAFT', 'PLANNED'];
   template: `
     <table [attr.data-testid]="testId()">
       <thead>
-        <tr><th>#</th><th>Tracking ref</th><th>Consignee</th><th>Destination</th><th>Weight kg</th><th>Classes</th><th>Hazmat</th></tr>
+        <tr>
+          <th>#</th><th>Tracking ref</th><th>Consignee</th><th>Destination</th><th>Weight kg</th><th>Classes</th><th>Hazmat</th>
+          @if (removable()) { <th>Action</th> }
+        </tr>
       </thead>
       <tbody>
         @for (c of rows(); track c['id']; let i = $index) {
@@ -41,6 +52,12 @@ const BUILDABLE = ['DRAFT', 'PLANNED'];
             <td>{{ c['totalDeadWeightKg'] }}</td>
             <td>{{ c['materialClasses'] }}</td>
             <td>{{ c['containsHazmat'] }}</td>
+            @if (removable()) {
+              <td>
+                <button type="button" class="link" data-testid="remove-consignment"
+                        [attr.aria-label]="'Remove ' + c['trackingRef']" (click)="remove.emit(c)">Remove</button>
+              </td>
+            }
           </tr>
         }
       </tbody>
@@ -51,6 +68,9 @@ export class ConsignmentTable {
   readonly rows = input.required<Row[]>();
   readonly testId = input.required<string>();
   readonly rowTestId = input.required<string>();
+  /** Offers a remove action per row; never on the printed manifest. */
+  readonly removable = input(false);
+  readonly remove = output<Row>();
 }
 
 /** Finds waiting consignments, picks them, and puts them on the load together. */
@@ -234,6 +254,30 @@ export class AddConsignments {
           </div>
           <div><dt>Consignments</dt><dd data-testid="load-count">{{ b.load['consignmentCount'] }}</dd></div>
         </dl>
+        @if (cancellable()) {
+          <p class="actions" data-testid="load-actions">
+            @if (b.load['status'] === 'PLANNED') {
+              <button type="button" data-testid="unplan-load"
+                      (click)="act('The load is open for building again.', gateway.unplanLoad(b.load['id'], b.load['version']))">
+                Un-plan
+              </button>
+            }
+            <input data-testid="cancel-reason" aria-label="Reason for cancelling" placeholder="Reason (optional)"
+                   [value]="reason()" (input)="reason.set($any($event.target).value)" />
+            <button type="button" data-testid="cancel-load"
+                    (click)="act('The load is cancelled and its consignments released.',
+                                 gateway.cancelLoad(b.load['id'], b.load['version'], reason()))">
+              Cancel load
+            </button>
+          </p>
+        }
+        @if (done()) { <p class="ok" role="status" data-testid="load-done">{{ done() }}</p> }
+        @if (refusal(); as r) {
+          <p class="error" role="alert" data-testid="load-error">
+            @if (r.code) { <code data-testid="load-refusal">{{ r.code }}</code> }
+            {{ r.message }}
+          </p>
+        }
         <p>
           <button type="button" class="link" data-testid="print-manifest" (click)="manifest.set(true)"
                   [disabled]="b.aboard.length === 0">
@@ -244,7 +288,8 @@ export class AddConsignments {
           <p class="muted" data-testid="nothing-aboard">Nothing is aboard yet.</p>
         } @else {
           <div class="table-scroll">
-            <app-consignment-table [rows]="b.aboard" testId="aboard-table" rowTestId="aboard-row" />
+            <app-consignment-table [rows]="b.aboard" testId="aboard-table" rowTestId="aboard-row"
+                                   [removable]="buildable()" (remove)="removeFromLoad(b, $event)" />
           </div>
         }
         @if (manifest()) {
@@ -269,7 +314,7 @@ export class AddConsignments {
   `,
 })
 export class LoadBuilding {
-  private readonly gateway = inject(LmsGateway);
+  protected readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
   readonly max = MAX_BULK_ASSIGNMENT;
@@ -282,12 +327,22 @@ export class LoadBuilding {
     const b = this.build();
     return !!b && this.session.can('LOAD_CREATE') && BUILDABLE.includes(b.load['status']);
   });
+  readonly cancellable = computed(() => {
+    const b = this.build();
+    return !!b && this.session.can('LOAD_CREATE') && CANCELLABLE.includes(b.load['status']);
+  });
+  readonly reason = signal('');
+  readonly done = signal('');
+  readonly refusal = signal<Refusal | null>(null);
 
   async open(): Promise<void> {
     const id = this.typed().trim().toLowerCase();
     if (id !== this.loadId()) {
       this.build.set(null);
       this.manifest.set(false);
+      this.done.set('');
+      this.refusal.set(null);
+      this.reason.set('');
     }
     this.loadId.set(id);
     await this.refresh();
@@ -302,6 +357,29 @@ export class LoadBuilding {
       this.build.set(null);
       this.loadError.set((e as Error).message);
     }
+  }
+
+  removeFromLoad(b: LoadBuild, consignment: Row): Promise<void> {
+    return this.act(`${consignment['trackingRef']} is off the load.`,
+      this.gateway.removeFromLoad(b.load['id'], b.load['version'], consignment['id']));
+  }
+
+  /**
+   * Makes a change at the version on screen, then reads the load again. The reason is cleared
+   * as soon as the change is made, before the re-read; a refusal is shown by its code and the
+   * load is read again too, so a stale screen catches up.
+   */
+  async act(outcome: string, change: Promise<void>): Promise<void> {
+    this.done.set('');
+    this.refusal.set(null);
+    try {
+      await change;
+      this.reason.set('');
+      this.done.set(outcome);
+    } catch (e) {
+      this.refusal.set({ code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message });
+    }
+    await this.refresh();
   }
 
   print(): void {
