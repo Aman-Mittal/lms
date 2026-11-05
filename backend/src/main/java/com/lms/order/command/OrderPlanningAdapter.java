@@ -22,12 +22,10 @@ import java.util.UUID;
 import com.lms.order.api.OrderPlanningPort;
 import com.lms.order.command.domain.OrderLine;
 import com.lms.order.command.domain.SalesOrder;
-import com.lms.order.events.OrderFulfilled;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,14 +44,14 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
     private final SalesOrderRepository orders;
     private final OrderLineRepository lines;
     private final TransitionAudit audit;
-    private final ApplicationEventPublisher events;
+    private final OrderCloseService closes;
 
     public OrderPlanningAdapter(SalesOrderRepository orders, OrderLineRepository lines,
-                                TransitionAudit audit, ApplicationEventPublisher events) {
+                                TransitionAudit audit, OrderCloseService closes) {
         this.orders = orders;
         this.lines = lines;
         this.audit = audit;
-        this.events = events;
+        this.closes = closes;
     }
 
     @Override
@@ -89,12 +87,52 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
             lines.saveAll(toMark);
         }
 
+        recover(tenantId, order);
+    }
+
+    @Override
+    @Transactional
+    public void releaseLines(UUID orderId, Set<UUID> releasedLineIds) {
+        UUID tenantId = TenantContext.requireTenantId();
+        SalesOrder order = require(orderId);
+
+        if (releasedLineIds != null && !releasedLineIds.isEmpty()) {
+            List<OrderLine> toRelease = lines.findByOrder(tenantId, orderId).stream()
+                    .filter(line -> releasedLineIds.contains(line.id()))
+                    .filter(OrderLine::planned)
+                    .map(OrderLine::released)
+                    .toList();
+            lines.saveAll(toRelease);
+        }
+        recover(tenantId, order);
+    }
+
+    /**
+     * Moves the order's status to match how many of its live lines are on a
+     * consignment, after something else changed its lines.
+     */
+    void recoverCoverage(UUID orderId) {
+        recover(TenantContext.requireTenantId(), require(orderId));
+    }
+
+    /** Moves the order's status to match how many of its live lines are on a consignment. */
+    private void recover(UUID tenantId, SalesOrder order) {
+        if (!order.isClosable()) {
+            // Ended (fulfilled, closed, cancelled) or still a draft: freight
+            // released from it afterwards -- a consignment cancelled after a
+            // forced close -- changes no status. Its lines stay closed.
+            return;
+        }
+        UUID orderId = order.id();
         // Recounted from the database rather than derived from the set that was
         // just passed in. The caller knows what it planned this time; only the
         // table knows what was planned before.
         long total = lines.countByOrder(tenantId, orderId);
         long planned = lines.countPlannedByOrder(tenantId, orderId);
-        SalesOrder covered = orders.save(order.withCoverage((int) planned, (int) total));
+        // A line closed before it was planned is spoken for: nothing more will be cut for it.
+        long closedUnplanned = lines.countClosedUnplannedByOrder(tenantId, orderId);
+        SalesOrder covered = orders.save(order.withCoverage((int) planned, (int) closedUnplanned,
+                (int) total));
         // Only a change of status is a transition. Planning a further line of
         // an order that was already partly planned, or being told the same
         // thing twice, moves nothing and audits nothing.
@@ -102,6 +140,7 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
             audit.record(switch (covered.status()) {
                         case PARTIALLY_PLANNED -> "ORDER_PARTIALLY_PLANNED";
                         case FULLY_PLANNED -> "ORDER_FULLY_PLANNED";
+                        case VALIDATED -> "ORDER_PLANNING_RELEASED";
                         default -> "ORDER_COVERAGE_CHANGED";
                     }, OrderCommandService.AUDIT_TYPE, orderId,
                     Json.object("status", order.status().name()),
@@ -111,18 +150,20 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
         }
     }
 
+    /**
+     * Fulfils the order, or leaves it open when the tenant has turned automatic
+     * fulfilment off; see {@link OrderCloseService#onEverythingDelivered}.
+     */
     @Override
     @Transactional
     public void recordFulfilled(UUID orderId) {
-        SalesOrder order = require(orderId);
-        if (order.status() == SalesOrder.OrderStatus.FULLY_PLANNED) {
-            orders.save(order.transitionTo(SalesOrder.OrderStatus.FULFILLED));
-            audit.record("ORDER_FULFILLED", OrderCommandService.AUDIT_TYPE, orderId,
-                    Json.object("status", order.status().name()),
-                    Json.object("status", "FULFILLED"));
-            events.publishEvent(new OrderFulfilled(order.tenantId(), orderId, order.orderNo(),
-                    java.time.Instant.now()));
-        }
+        closes.onEverythingDelivered(orderId);
+    }
+
+    @Override
+    @Transactional
+    public void recordPartlyDelivered(UUID orderId) {
+        closes.onPartDelivered(orderId);
     }
 
     @Override
@@ -131,7 +172,7 @@ public class OrderPlanningAdapter implements OrderPlanningPort {
         SalesOrder order = require(orderId);
         return new OrderTerms(order.id(), order.customerPartnerId(), order.freightMode(),
                 order.originTerminalId(), order.originHubTerminalId(),
-                order.destinationHubTerminalId());
+                order.destinationHubTerminalId(), order.orgUnitId());
     }
 
     private static PlannableLine toPlannable(OrderLine line) {
