@@ -17,7 +17,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  ApiProblem, HistoryEntryRow, LmsGateway, MATERIAL_CLASSES, OrderDesk, OrderHeaderDraft, OrderLineDraft,
+  ApiProblem, CloseKindChoice, HistoryEntryRow, LmsGateway, MATERIAL_CLASSES, OrderDesk, OrderHeaderDraft, OrderLineDraft,
   OrderLineView, OrderRaiseDraft,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
@@ -53,6 +53,9 @@ function editableLines(lines: OrderLineView[]): OrderLineDraft[] {
 
 /** Once consignments are cut from an order, its lines belong to them. */
 const PLANNED = ['PARTIALLY_PLANNED', 'FULLY_PLANNED'];
+
+/** An order may be closed from validation until it ends. */
+const CLOSABLE = ['VALIDATED', ...PLANNED];
 
 const BLANK_RAISE: OrderRaiseDraft = {
   orderNo: '', customerPartnerId: '', originTerminalId: '', requestedPickupAt: '', requestedDeliveryAt: '',
@@ -123,6 +126,15 @@ interface Refusal {
           <div><dt>Lines</dt><dd data-testid="order-line-count">{{ d.order['lineCount'] }}</dd></div>
           <div><dt>Weight kg</dt><dd data-testid="order-weight">{{ d.order['totalDeadWeightKg'] }}</dd></div>
           <div><dt>Pickup</dt><dd>{{ d.order['requestedPickupAt'] || '—' }}</dd></div>
+          @if (d.order['closeKind']) {
+            <div>
+              <dt>Closed</dt>
+              <dd data-testid="order-close-kind">{{ d.order['closeKind'] }}</dd>
+              @if (d.order['closeReason']) {
+                <dd class="muted" data-testid="order-close-reason">{{ d.order['closeReason'] }}</dd>
+              }
+            </div>
+          }
         </dl>
         <p class="actions">
           @if (isDraft() && session.can('ORDER_UPDATE')) {
@@ -196,7 +208,7 @@ interface Refusal {
         <div class="table-scroll">
           <table data-testid="order-lines">
             <thead>
-              <tr><th>#</th><th>Material</th><th>Class</th><th>Qty</th><th>Weight kg</th><th>L × W × H m</th><th>Consignee</th><th>Destination</th><th>Planned</th><th></th></tr>
+              <tr><th>#</th><th>Material</th><th>Class</th><th>Qty</th><th>Weight kg</th><th>L × W × H m</th><th>Consignee</th><th>Destination</th><th>Planned</th><th>Closed</th><th></th></tr>
             </thead>
             <tbody>
               @for (l of d.lines; track l.id) {
@@ -210,7 +222,16 @@ interface Refusal {
                   <td>{{ l.consigneeName }}</td>
                   <td>{{ l.destinationTerminalCode }}</td>
                   <td>{{ l.planned ? 'Yes' : '' }}</td>
+                  <td data-testid="line-closed">{{ l.cancelled ? 'CANCELLED' : l.closeKind }}</td>
                   <td>
+                    @if (closable() && !l.closeKind && !l.cancelled) {
+                      <button type="button" class="link" data-testid="close-line"
+                              (click)="close('Line ' + l.lineNo + ' closed.', 'SHORT', l.id)">Short-close line</button>
+                      @if (session.can('ORDER_FORCE_CLOSE')) {
+                        <button type="button" class="link" data-testid="force-close-line"
+                                (click)="close('Line ' + l.lineNo + ' closed.', 'FORCE', l.id)">Force-close line</button>
+                      }
+                    }
                     @if (isDraft() && session.can('ORDER_UPDATE') && d.lines.length > 1) {
                       <button type="button" class="link" data-testid="remove-line"
                               (click)="act('Line ' + l.lineNo + ' removed.', gateway.removeOrderLine(d.order['id'], d.version, l.id))">
@@ -224,6 +245,25 @@ interface Refusal {
           </table>
         </div>
 
+        @if (closable()) {
+          <section data-testid="close-order" aria-label="Close the order">
+            <h3>Close the order</h3>
+            <p class="muted">
+              A close needs every line planned and delivered. A short close gives up what is not yet planned once
+              cut freight has left; a forced close ends the order whatever its freight is doing. Both need a reason,
+              which also serves the line actions above. Consignments already cut carry on.
+            </p>
+            <div class="inline">
+              <input aria-label="Close reason" placeholder="Why it is closed" [value]="closeReason()"
+                     (input)="closeReason.set($any($event.target).value)" />
+              <button type="button" data-testid="close-normal" (click)="close('Order closed.', 'NORMAL')">Close</button>
+              <button type="button" data-testid="close-short" (click)="close('Order short-closed.', 'SHORT')">Short close</button>
+              @if (session.can('ORDER_FORCE_CLOSE')) {
+                <button type="button" data-testid="close-force" (click)="close('Order force-closed.', 'FORCE')">Force close</button>
+              }
+            </div>
+          </section>
+        }
         @if (isPlanned()) {
           <p class="muted" data-testid="not-amendable">
             Consignments have been cut from this order, so it can no longer be amended
@@ -373,6 +413,7 @@ export class OrderDeskPage {
   readonly refusal = signal<Refusal | null>(null);
   readonly done = signal('');
   readonly reason = signal('');
+  readonly closeReason = signal('');
   readonly slip = signal(false);
   readonly tab = signal<'details' | 'history'>('details');
   readonly history = signal<HistoryEntryRow[]>([]);
@@ -384,6 +425,8 @@ export class OrderDeskPage {
   readonly isValidated = computed(() => this.desk()?.order['status'] === 'VALIDATED');
   readonly isPlanned = computed(() => PLANNED.includes(this.desk()?.order['status'] ?? ''));
   readonly editable = computed(() => this.session.can('ORDER_UPDATE') && (this.isDraft() || this.isValidated()));
+  readonly closable = computed(() => this.session.can('ORDER_UPDATE')
+    && CLOSABLE.includes(this.desk()?.order['status'] ?? ''));
 
   async openTyped(): Promise<void> {
     await this.open(this.typed());
@@ -462,11 +505,16 @@ export class OrderDeskPage {
     this.lines.update((now) => now.filter((_, i) => i !== index));
   }
 
-  async act(outcome: string, action: Promise<unknown>): Promise<void> {
+  /**
+   * Runs an action and reads the order again. `cleared` empties the form the action came
+   * from, right after it succeeds and before the read, so nothing typed meanwhile is lost.
+   */
+  async act(outcome: string, action: Promise<unknown>, cleared?: () => void): Promise<void> {
     this.refusal.set(null);
     this.done.set('');
     try {
       await action;
+      cleared?.();
       this.done.set(outcome);
       await this.read();
     } catch (e) {
@@ -475,6 +523,19 @@ export class OrderDeskPage {
         errors: e instanceof ApiProblem ? e.errors : {},
       });
     }
+  }
+
+  /** Closes the order, or one line of it. */
+  async close(outcome: string, kind: CloseKindChoice, lineId?: string): Promise<void> {
+    const desk = this.desk();
+    if (!desk) {
+      return;
+    }
+    const id = desk.order['id'];
+    const reason = this.closeReason();
+    await this.act(outcome, lineId
+      ? this.gateway.closeOrderLine(id, lineId, kind, reason)
+      : this.gateway.closeOrder(id, kind, reason), () => this.closeReason.set(''));
   }
 
   /** An override is on record: a draft is validated again; a refused edit is the operator's to repeat. */
