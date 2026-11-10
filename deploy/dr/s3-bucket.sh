@@ -29,8 +29,15 @@ set -euo pipefail
 bucket="${DR_S3_BUCKET:-lms-dr}"
 [[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]{2,62}$ ]] || die "invalid bucket name $bucket"
 deadline=$(( $(date +%s) + 180 ))
+# The object store's own last words, for a failure report. Lines that could
+# name a credential are left out.
+objectstore_tail() {
+    dc ps -a objectstore 2>&1 | tail -n +2
+    dc logs --no-color --tail 25 objectstore 2>&1 | grep -viE 'key|secret|credential' || true
+}
 until dc logs objectstore 2>/dev/null | grep -q 'Start Seaweed S3 API Server'; do
-    [ "$(date +%s)" -lt "$deadline" ] || die "object store did not start"
+    [ "$(date +%s)" -lt "$deadline" ] || die "object store did not start; last output:
+$(objectstore_tail)"
     sleep 2
 done
 while :; do
