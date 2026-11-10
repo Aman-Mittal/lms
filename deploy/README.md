@@ -68,6 +68,15 @@ the generated password as the repository secret `DEMO_ADMIN_PASSWORD`. The same
 script runs in the test suite and against every native binary CI builds, so a
 broken check is noticed long before it is needed.
 
+## Backups and disaster recovery
+
+The free plan has no WAL archiving, backups or point-in-time recovery; on
+Render those come from the database provider's paid plans, and the backend's
+`walArchiving` health component reports UNKNOWN there. For a self-hosted
+database, `deploy/dr/` has continuous archiving and point-in-time restore with
+pgBackRest, logical backups, per-tenant export and a weekly restore drill; see
+[`deploy/dr/README.md`](dr/README.md).
+
 ## Why there is a demo seed
 
 Tenants have no self-service registration, so an empty database is a service
