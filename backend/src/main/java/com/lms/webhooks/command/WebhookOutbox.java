@@ -18,6 +18,7 @@ package com.lms.webhooks.command;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -69,6 +70,46 @@ public class WebhookOutbox {
                 .param("eventId", eventId)
                 .param("type", type.name())
                 .param("payload", body)
+                .update();
+    }
+
+    /** One event of a batch: what makes it itself, when it happened, and its fields. */
+    public record Event(String eventKey, Instant occurredAt, Map<String, Object> data) {
+    }
+
+    /**
+     * Records a batch of events of one type in a single statement, as
+     * {@link #record} would record each: a load of four hundred consignments
+     * delivered at once costs one insert, not four hundred.
+     *
+     * @return how many deliveries were recorded
+     */
+    public int recordAll(UUID tenantId, WebhookEventType type, List<Event> events) {
+        if (events.isEmpty()) {
+            return 0;
+        }
+        String[] eventIds = new String[events.size()];
+        String[] payloads = new String[events.size()];
+        for (int i = 0; i < events.size(); i++) {
+            Event e = events.get(i);
+            UUID eventId = eventId(type, e.eventKey(), e.occurredAt());
+            eventIds[i] = eventId.toString();
+            payloads[i] = body(eventId, type, e.occurredAt(), e.data());
+        }
+        return jdbc.sql("""
+                        INSERT INTO webhook_delivery (id, tenant_id, subscription_id, event_id, event_type, payload)
+                        SELECT gen_random_uuid(), :tenantId, s.id, CAST(e.event_id AS uuid), :type,
+                               CAST(e.payload AS jsonb)
+                          FROM unnest(CAST(:eventIds AS text[]), CAST(:payloads AS text[])) AS e (event_id, payload)
+                         CROSS JOIN webhook_subscription s
+                         WHERE s.active
+                           AND :type = ANY (s.event_types)
+                        ON CONFLICT (subscription_id, event_id) DO NOTHING
+                        """)
+                .param("tenantId", tenantId)
+                .param("eventIds", eventIds)
+                .param("payloads", payloads)
+                .param("type", type.name())
                 .update();
     }
 

@@ -16,7 +16,9 @@
 package com.lms.webhooks.command;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -166,28 +168,37 @@ public class WebhookEventListener {
                         "approvedAmount", e.approvedAmount()));
     }
 
-    /** One delivery per consignment, keyed on it: a consignment leaves once. */
+    /**
+     * One delivery per consignment, keyed on it: a consignment leaves once. A
+     * whole load's worth is recorded in one statement.
+     */
     @TransactionalEventListener
     public void on(ConsignmentsInTransit e) {
+        List<WebhookOutbox.Event> events = new ArrayList<>(e.consignmentIds().size());
         for (int i = 0; i < e.consignmentIds().size(); i++) {
             UUID consignmentId = e.consignmentIds().get(i);
-            record(e.tenantId(), WebhookEventType.CONSIGNMENT_IN_TRANSIT,
-                    consignmentId + ":" + e.loadId(), e.occurredAt(),
+            events.add(new WebhookOutbox.Event(consignmentId + ":" + e.loadId(), e.occurredAt(),
                     fields("consignmentId", consignmentId, "trackingRef", e.trackingRefs().get(i),
-                            "loadId", e.loadId()));
+                            "loadId", e.loadId())));
         }
+        recordAll(e.tenantId(), WebhookEventType.CONSIGNMENT_IN_TRANSIT, events);
     }
 
-    /** One delivery per consignment, keyed on it: a consignment is delivered once. */
+    /**
+     * One delivery per consignment, keyed on it: a consignment is delivered
+     * once. A whole load's worth is recorded in one statement.
+     */
     @TransactionalEventListener
     public void on(ConsignmentsDelivered e) {
+        List<WebhookOutbox.Event> events = new ArrayList<>(e.consignmentIds().size());
         for (int i = 0; i < e.consignmentIds().size(); i++) {
             UUID consignmentId = e.consignmentIds().get(i);
-            record(e.tenantId(), WebhookEventType.CONSIGNMENT_DELIVERED, consignmentId.toString(),
-                    e.deliveredAt(), fields("consignmentId", consignmentId,
+            events.add(new WebhookOutbox.Event(consignmentId.toString(), e.deliveredAt(),
+                    fields("consignmentId", consignmentId,
                             "trackingRef", e.trackingRefs().get(i), "loadId", e.loadId(),
-                            "trigger", e.trigger(), "deliveredAt", e.deliveredAt()));
+                            "trigger", e.trigger(), "deliveredAt", e.deliveredAt())));
         }
+        recordAll(e.tenantId(), WebhookEventType.CONSIGNMENT_DELIVERED, events);
     }
 
     private void record(UUID tenantId, WebhookEventType type, String key, Instant occurredAt,
@@ -195,6 +206,11 @@ public class WebhookEventListener {
         TenantContext.runWith(tenantId, null, () ->
                 transactions.executeWithoutResult(status ->
                         outbox.record(tenantId, type, key, occurredAt, data)));
+    }
+
+    private void recordAll(UUID tenantId, WebhookEventType type, List<WebhookOutbox.Event> events) {
+        TenantContext.runWith(tenantId, null, () ->
+                transactions.executeWithoutResult(status -> outbox.recordAll(tenantId, type, events)));
     }
 
     /** Alternating names and values; ids and times as strings, amounts as numbers. */
