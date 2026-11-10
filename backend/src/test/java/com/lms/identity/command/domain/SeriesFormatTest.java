@@ -60,6 +60,8 @@ class SeriesFormatTest {
         SeriesFormat gp = format("GP", YearCode.SPAN, "-", 4, 4);
         assertThat(gp.format(2026, 12)).isEqualTo("GP-2627-0012");
         assertThat(gp.format(2099, 1)).isEqualTo("GP-9900-0001");
+        assertThat(gp.format(Integer.MAX_VALUE, 1)).as("no overflow at the edge of int").isEqualTo("GP-4748-0001");
+        assertThat(gp.format(Integer.MIN_VALUE, 1)).isEqualTo("GP-5253-0001");
         assertThat(gp.parse("GP-2627-0012")).contains(new Parsed(2026, 12));
         // A span whose second half is not the next year is not this series' number.
         assertThat(gp.parse("GP-2628-0012")).isEmpty();

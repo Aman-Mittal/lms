@@ -116,8 +116,9 @@ public record SeriesFormat(String prefix, YearCode yearCode, String separator, i
         return switch (yearCode) {
             case NONE -> "";
             case START_YEAR -> "%04d".formatted(financialYear);
+            // Reduced before adding, so a year at the edge of int cannot overflow.
             case SPAN -> "%02d%02d".formatted(Math.floorMod(financialYear, 100),
-                    Math.floorMod(yearStartMonth == 1 ? financialYear : financialYear + 1, 100));
+                    (Math.floorMod(financialYear, 100) + (yearStartMonth == 1 ? 0 : 1)) % 100);
         };
     }
 
