@@ -44,5 +44,7 @@ public record LoadView(
         String freightMode,
         /** LINE_HAUL or DELIVERY; always LINE_HAUL for a full truckload. */
         String ltlLeg,
-        Instant createdAt) {
+        Instant createdAt,
+        /** The optimistic-lock version: the ETag, and what a change sends back in If-Match. */
+        Long version) {
 }

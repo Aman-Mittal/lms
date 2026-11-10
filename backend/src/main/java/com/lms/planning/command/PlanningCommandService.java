@@ -27,9 +27,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import com.lms.identity.numbering.DocumentNumbers;
+import com.lms.identity.numbering.DocumentType;
 import com.lms.masterdata.api.FleetCapacityPort;
 import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.order.api.FreightMode;
@@ -67,11 +70,13 @@ public class PlanningCommandService {
     private final ApplicationEventPublisher events;
     private final TransitionAudit audit;
     private final TerminalCategoryPort terminals;
+    private final DocumentNumbers documentNumbers;
 
     public PlanningCommandService(OrderPlanningPort orderPlanning, FleetCapacityPort fleetCapacity,
                                   ConsignmentRepository consignments, LoadUnitRepository loads,
                                   PlanningLinks links, ApplicationEventPublisher events,
-                                  TransitionAudit audit, TerminalCategoryPort terminals) {
+                                  TransitionAudit audit, TerminalCategoryPort terminals,
+                                  DocumentNumbers documentNumbers) {
         this.orderPlanning = orderPlanning;
         this.fleetCapacity = fleetCapacity;
         this.consignments = consignments;
@@ -80,6 +85,7 @@ public class PlanningCommandService {
         this.events = events;
         this.audit = audit;
         this.terminals = terminals;
+        this.documentNumbers = documentNumbers;
     }
 
     // ------------------------------------------------------------ 3.4.1
@@ -150,7 +156,7 @@ public class PlanningCommandService {
 
             Consignment consignment = consignments.save(Consignment.generate(
                     UUID.randomUUID(), tenantId, orderId,
-                    nextTrackingRef(tenantId, ltl ? "DKT-" : "LR-"),
+                    nextTrackingRef(tenantId, ltl, terms.orgUnitId()),
                     group.getKey().consigneePartnerId(), group.getKey().destinationTerminalId(),
                     deadWeight, volume, chargeable, hazmat, classes,
                     terms.freightMode(), terms.customerPartnerId(),
@@ -235,7 +241,7 @@ public class PlanningCommandService {
                             .setScale(3, RoundingMode.HALF_UP);
                     Consignment received = consignments.save(Consignment.fromHandlingUnit(
                             UUID.randomUUID(), tenantId, handlingUnitId,
-                            nextTrackingRef(tenantId, "LR-"), consigneePartnerId,
+                            nextTrackingRef(tenantId, false, null), consigneePartnerId,
                             destinationTerminalId, grossWeightKg, volume, chargeable));
                     audit.record("CONSIGNMENT_GENERATED", PlanningAudit.CONSIGNMENT,
                             received.id(), null, PlanningAudit.consignment(received));
@@ -713,8 +719,28 @@ public class PlanningCommandService {
      * how much freight a tenant moves to anyone who can see two references.
      * Collisions are caught by {@code consignment_ref_unique} rather than
      * assumed away.
+     *
+     * <p>A tenant that wants sequential, auditable numbers instead opts in by
+     * configuring a CONSIGNMENT_NOTE (and for part loads a DOCKET) number
+     * series; the most specific active one for the order's unit then numbers
+     * the consignment. A series number already used by hand is skipped, as an
+     * order number is.
+     *
+     * @param orgUnitId the unit the consignment's order was raised at; null for
+     *                  one with no order, which only a tenant-wide series covers
      */
-    private String nextTrackingRef(UUID tenantId, String series) {
+    private String nextTrackingRef(UUID tenantId, boolean docket, UUID orgUnitId) {
+        DocumentType type = docket ? DocumentType.DOCKET : DocumentType.CONSIGNMENT_NOTE;
+        for (int attempt = 0; attempt < MAX_SERIES_SKIPS; attempt++) {
+            Optional<String> numbered = documentNumbers.next(type, orgUnitId);
+            if (numbered.isEmpty()) {
+                break;
+            }
+            if (consignments.findByTrackingRef(tenantId, numbered.get()).isEmpty()) {
+                return numbered.get();
+            }
+        }
+        String series = docket ? "DKT-" : "LR-";
         for (int attempt = 0; attempt < 5; attempt++) {
             String candidate = series + UUID.randomUUID().toString()
                     .replace("-", "").substring(0, 10).toUpperCase(java.util.Locale.ROOT);
@@ -724,6 +750,9 @@ public class PlanningCommandService {
         }
         throw new IllegalStateException("Could not allocate a unique tracking reference");
     }
+
+    /** Series numbers skipped, at most, because they were already used by hand. */
+    private static final int MAX_SERIES_SKIPS = 1000;
 
     /** Same consignee, same destination -- the 3.4.1 grouping. */
     private record GroupKey(UUID consigneePartnerId, UUID destinationTerminalId) {

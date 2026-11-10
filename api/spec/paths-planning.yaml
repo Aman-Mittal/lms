@@ -58,7 +58,11 @@
     summary: One consignment
     responses:
       "200":
-        description: The consignment.
+        description: The consignment. Its `ETag` is the version to send in `If-Match` when amending it.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The consignment's version, quoted.
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Consignment" }
@@ -66,6 +70,168 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+  patch:
+    tags: [Planning]
+    operationId: amendConsignment
+    summary: Amend a consignment's particulars
+    description: |
+      Changes what is said about a consignment -- the consignee contact name,
+      phone and reference, the delivery window, the client's reference, and
+      remarks -- and nothing it carries. The body names only the fields that
+      change; a field set to empty text is cleared, and a field left out or
+      sent as null is kept, so a client whose model writes every property
+      changes only what it set. Needs `LOAD_CREATE`.
+
+      Allowed only while the consignment is PLANNED, which also means it is on
+      no load; refused with 409 `consignment-not-amendable` otherwise. The
+      version from the last read goes in `If-Match`; a stale one is 409
+      `concurrent-modification`.
+
+      Judged field by field and applied all or nothing. When any field is
+      refused, nothing changes and the 409 names every refused field in
+      `errors`. Its code is `consignment-contents-fixed` when a field naming
+      what the consignment carries is sent (weight, volume, chargeable
+      weight, lines, material, hazardous flag, consignee or destination are
+      fixed when it is generated: cancel it and generate it again instead),
+      and `consignment-amendment-invalid` otherwise -- a field that cannot be
+      amended, a value that is not text, too long, a malformed phone number,
+      client reference or instant, or a window that ends before it starts. A
+      client reference already on another consignment of the tenant is 409
+      `client-reference-taken`.
+
+      On success, each named field is reported APPLIED or UNCHANGED, and the
+      new version is the `ETag`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ConsignmentAmendmentRequest" }
+    responses:
+      "200":
+        description: Each named field's outcome, and the version now.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The consignment's version after the amendment, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentAmended" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/amendments:
+  post:
+    tags: [Planning]
+    operationId: amendConsignments
+    summary: Amend many consignments' particulars, each on its own
+    description: |
+      1 to 200 items, each a consignment, the version its caller read, and the
+      changes, judged exactly as one amendment is. Each item is amended or
+      refused by itself, in its own transaction, and reported in the order
+      asked: AMENDED with its fields and new version, or REFUSED with the code
+      a single amendment would have answered (`not-found` for a consignment
+      the caller cannot see). A consignment named twice is a 400. Needs
+      `LOAD_CREATE`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/BulkAmendConsignmentsRequest" }
+    responses:
+      "200":
+        description: Every item's outcome, in the order asked.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentBulkResult" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/{id}/cancellation:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Planning]
+    operationId: cancelConsignment
+    summary: Cancel one consignment, leaving its order standing
+    description: |
+      Allowed while the consignment is PLANNED or ASSIGNED_TO_LOAD and before
+      its load leaves. A consignment on a load is taken off it first: the load
+      is restated from the freight left aboard, and cancelled (with its open
+      offer and allocation withdrawn) when nothing is. The order lines it was
+      cut from go back to the order to be planned again, and the order's
+      status steps back to match. Audited as `CONSIGNMENT_CANCELLED` in the
+      consignment's history, and announced as the `CONSIGNMENT_CANCELLED`
+      webhook. Needs `LOAD_CREATE`.
+
+      Refused with 409 and a code: `consignment-already-cancelled` for a
+      repeat; `consignment-from-warehouse` for one carrying a warehouse
+      handling unit, which only the warehouse may withdraw;
+      `consignment-split` for a split consignment and
+      `consignment-is-split-part` for one of its parts;
+      `consignment-dispatched` once it, or the load it is on, has left;
+      `load-has-active-trip` while a trip that is not cancelled is raised
+      against its load.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelConsignmentRequest" }
+    responses:
+      "200":
+        description: What the cancellation did, with the load's totals now.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentCancellation" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/cancellations:
+  post:
+    tags: [Planning]
+    operationId: cancelConsignments
+    summary: Cancel many consignments, each on its own
+    description: |
+      1 to 200 distinct consignments, each cancelled or refused by itself, in
+      its own transaction, exactly as one cancellation is, and reported in the
+      order asked: CANCELLED, or REFUSED with the code a single cancellation
+      would have answered (`not-found` for a consignment the caller cannot
+      see). A consignment named twice is a 400. Needs `LOAD_CREATE`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/BulkCancelConsignmentsRequest" }
+    responses:
+      "200":
+        description: Every item's outcome, in the order asked.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConsignmentBulkResult" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/consignments/by-tracking-ref/{trackingRef}:
   parameters:
@@ -297,7 +463,11 @@
     summary: One load
     responses:
       "200":
-        description: The load.
+        description: The load. Its `ETag` is the version to send in `If-Match`.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The load's version, quoted.
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Load" }
@@ -418,6 +588,123 @@
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/loads/{id}/consignments/{consignmentId}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the load.
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment aboard.
+  delete:
+    tags: [Planning]
+    operationId: removeConsignmentFromLoad
+    summary: Take a consignment off a load before it is awarded or leaves
+    description: |
+      The consignment goes back to the status it boarded from -- PLANNED, or
+      ARRIVED_AT_HUB for a docket on a delivery load -- and can be put on
+      another load. The drops left behind are numbered again without a gap,
+      and the load's weight, volume and dangerous-goods flag are restated
+      from what is still aboard. Recorded in the history of the load
+      (`LOAD_CONSIGNMENT_REMOVED`) and of the consignment
+      (`CONSIGNMENT_REMOVED_FROM_LOAD`).
+
+      Refused with 409:
+      `load-dispatched` once the load has left;
+      `load-awarded` while it is awarded (cancel the allocation first, which
+      returns the load to PLANNED);
+      `load-allocated` while a PLANNED load is out with a vendor;
+      `load-cancelled` for a cancelled load;
+      `load-would-be-empty` for the last consignment of a PLANNED load
+      (un-plan or cancel the load instead);
+      `consignment-not-on-load` when the consignment is not aboard this load;
+      `concurrent-modification` when `If-Match` is not the load's current
+      version. An unknown load or consignment is 404 `not-found`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/loads/{id}/unplan:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Planning]
+    operationId: unplanLoad
+    summary: Open a planned load for building again
+    description: |
+      A PLANNED load goes back to DRAFT with its freight untouched, and can no
+      longer be offered to vendors until it is planned again. Recorded in the
+      load's history as `LOAD_UNPLANNED`.
+
+      Refused with 409: `load-not-planned` unless the load is PLANNED;
+      `load-awarded`, `load-allocated`, `load-dispatched` and
+      `load-cancelled` as for taking a consignment off;
+      `concurrent-modification` for a stale `If-Match`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/loads/{id}/cancel:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Planning]
+    operationId: cancelLoad
+    summary: Cancel a load that has not left
+    description: |
+      A DRAFT, PLANNED or AWARDED load is cancelled, which is final. Every
+      consignment aboard is released, as when one is taken off, rather than
+      cancelled: its order still wants it carried. An allocation that is out
+      with a vendor or awarded is cancelled with the load. Recorded in the
+      load's history as `LOAD_CANCELLED` with the reason, and in each released
+      consignment's as `CONSIGNMENT_REMOVED_FROM_LOAD`.
+
+      Refused with 409: `load-dispatched` once the load has left;
+      `load-already-cancelled` on a repeat; `load-has-active-trip` while a
+      trip that is not cancelled is raised against the load;
+      `concurrent-modification` for a stale `If-Match`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelLoadRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 

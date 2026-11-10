@@ -42,7 +42,7 @@ class ChargeableWeightTest {
                 w == null ? null : new BigDecimal(w),
                 h == null ? null : new BigDecimal(h),
                 divisor == null ? null : new BigDecimal(divisor),
-                UUID.randomUUID(), UUID.randomUUID(), false, null, Instant.now());
+                UUID.randomUUID(), UUID.randomUUID(), false, false, null, Instant.now(), null, null, null);
     }
 
     @Nested
@@ -97,7 +97,8 @@ class ChargeableWeightTest {
                     1, "MAT", "Ten boxes", MaterialClass.GENERAL, null,
                     BigDecimal.TEN, "EA", new BigDecimal("100"),
                     BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, null,
-                    UUID.randomUUID(), UUID.randomUUID(), false, null, Instant.now());
+                    UUID.randomUUID(), UUID.randomUUID(), false, false, null, Instant.now(), null, null,
+                    null);
 
             assertThat(tenBoxes.volumeM3()).isEqualByComparingTo("10.000");
             assertThat(tenBoxes.volumetricWeightKg()).isEqualByComparingTo("2000.000");

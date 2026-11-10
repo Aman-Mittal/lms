@@ -1285,6 +1285,34 @@ class QueryPlanTest {
                 """, "credit_limit_change");
     }
 
+    @Test
+    @DisplayName("the freight carrying each line of an order, for closing it, is index-served")
+    void freightByOrderLine() {
+        String sql = """
+                SELECT cl.order_line_id,
+                       count(*) FILTER (WHERE c.status NOT IN ('CANCELLED', 'SPLIT')) AS live,
+                       count(*) FILTER (WHERE c.status = 'PLANNED'
+                           OR (c.status = 'ASSIGNED_TO_LOAD' AND NOT EXISTS (
+                                SELECT 1 FROM load_consignment lc
+                                  JOIN load_unit l ON l.id = lc.load_id
+                                 WHERE lc.tenant_id = '00000000-0000-0000-0000-000000000001'
+                                   AND lc.consignment_id = c.id
+                                   AND l.status IN ('DISPATCHED', 'COMPLETED')))) AS waiting
+                  FROM consignment c
+                  JOIN consignment_line cl
+                    ON cl.tenant_id = '00000000-0000-0000-0000-000000000001' AND cl.consignment_id = c.id
+                 WHERE c.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND c.order_id = '00000000-0000-0000-0000-000000000003'
+                 GROUP BY cl.order_line_id
+                """;
+        assertIndexed(sql, "consignment");
+        assertIndexed(sql, "consignment_line");
+        assertIndexed(sql, "load_consignment");
+        assertIndexed("""
+                SELECT * FROM order_close_setting WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                """, "order_close_setting");
+    }
+
     private void assertIndexed(String sql, String table) {
         // Disabling seqscan is a probe, not a recommendation: on an empty table
         // the planner would otherwise always choose one, and the question here

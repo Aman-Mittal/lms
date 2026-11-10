@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { useState, type FormEvent } from 'react';
-import type { ConsignmentCard } from '../gateway/lmsGateway';
+import { ApiProblem, type ConsignmentCard, type ConsignmentParticularsDraft } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
@@ -22,7 +22,8 @@ import { compareWithWhole, splitByCapacity, type PlannedPart } from './splitPlan
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
- * print its lorry receipt, and split one too big for a single vehicle.
+ * print its lorry receipt, split one too big for a single vehicle, correct what
+ * is said about it while it waits for a load, and cancel it on its own.
  */
 export function ConsignmentDesk() {
   const { gateway } = useSession();
@@ -74,6 +75,9 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
   const parts = useLoad(() => (split ? gateway.consignmentParts(c.id) : Promise.resolve([])), `${c.id}:${c.status}`);
   const [slip, setSlip] = useState(false);
   const splittable = c.status === 'PLANNED' && c.freightMode === 'FTL' && !c.parentId && can('LOAD_CREATE');
+  const amendable = c.status === 'PLANNED' && can('LOAD_CREATE');
+  const cancellable = (c.status === 'PLANNED' || c.status === 'ASSIGNED_TO_LOAD') && !c.handlingUnitNo
+    && !c.parentId && can('LOAD_CREATE');
 
   return (
     <section data-testid="consignment">
@@ -97,7 +101,19 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
         <div><dt>Volume m³</dt><dd>{c.volumeM3}</dd></div>
         <div><dt>Chargeable kg</dt><dd>{c.chargeableWeightKg}</dd></div>
         <div><dt>Load</dt><dd>{c.loadNo || '—'}</dd></div>
+        <div><dt>Client reference</dt><dd data-testid="consignment-client-ref">{c.clientReference || '—'}</dd></div>
+        <div><dt>Consignee contact</dt><dd data-testid="consignment-contact">
+          {c.contactName || '—'}{c.contactPhone ? `, ${c.contactPhone}` : ''}
+        </dd></div>
+        <div><dt>Consignee reference</dt><dd>{c.consigneeReference || '—'}</dd></div>
+        <div><dt>Delivery window</dt><dd data-testid="consignment-window">
+          {c.deliveryWindowFrom || '…'} to {c.deliveryWindowTo || '…'}
+        </dd></div>
+        <div><dt>Remarks</dt><dd data-testid="consignment-remarks">{c.remarks || '—'}</dd></div>
       </dl>
+
+      {amendable && <ParticularsForm consignment={c} onSaved={onChanged} />}
+      {cancellable && <CancelForm consignment={c} onCancelled={onChanged} />}
 
       {split && c.partCount !== null && (
         <div data-testid="split-progress">
@@ -228,6 +244,117 @@ function SplitForm({ consignment: c, onSplit }: { consignment: ConsignmentCard; 
           </p>
         </>
       )}
+    </section>
+  );
+}
+
+const PARTICULAR_FIELDS: { key: keyof ConsignmentParticularsDraft; label: string }[] = [
+  { key: 'contactName', label: 'Contact name' },
+  { key: 'contactPhone', label: 'Contact phone' },
+  { key: 'consigneeReference', label: 'Consignee reference' },
+  { key: 'clientReference', label: 'Client reference' },
+  { key: 'deliveryWindowFrom', label: 'Deliver from' },
+  { key: 'deliveryWindowTo', label: 'Deliver by' },
+  { key: 'remarks', label: 'Remarks' },
+];
+
+interface Refusal {
+  code: string;
+  message: string;
+}
+
+/** A refusal as the desk shows it: the problem's code, when there is one, and its message. */
+function refusalOf(e: unknown): Refusal {
+  return { code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message };
+}
+
+function RefusalNote({ refusal, testId }: { refusal: Refusal; testId: string }) {
+  return (
+    <p className="error" role="alert" data-testid={`${testId}-error`}>
+      {refusal.code && <><code data-testid={`${testId}-refusal`}>{refusal.code}</code>{' '}</>}
+      {refusal.message}
+    </p>
+  );
+}
+
+/** Corrects what is said about a planned consignment; what it carries stays as cut. */
+function ParticularsForm({ consignment: c, onSaved }: { consignment: ConsignmentCard; onSaved: () => void }) {
+  const { gateway } = useSession();
+  const [draft, setDraft] = useState<ConsignmentParticularsDraft>({
+    contactName: c.contactName, contactPhone: c.contactPhone, consigneeReference: c.consigneeReference,
+    clientReference: c.clientReference, deliveryWindowFrom: c.deliveryWindowFrom,
+    deliveryWindowTo: c.deliveryWindowTo, remarks: c.remarks,
+  });
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setRefusal(null);
+    setBusy(true);
+    try {
+      await gateway.amendConsignment(c.id, c.version, draft);
+      onSaved();
+    } catch (e) {
+      setRefusal(refusalOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section data-testid="particulars-form">
+      <h3>Particulars</h3>
+      <p className="muted">
+        What it carries is fixed; who to call, the references, the delivery window and remarks can be corrected
+        until it is on a load. Times are ISO-8601, such as 2026-12-01T06:00:00Z.
+      </p>
+      <form onSubmit={save}>
+        {PARTICULAR_FIELDS.map((f) => (
+          <label key={f.key}>{f.label}
+            <input name={f.key} data-testid={`particular-${f.key}`} aria-label={f.label} value={draft[f.key]}
+              onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} />
+          </label>
+        ))}
+        <button type="submit" data-testid="save-particulars" disabled={busy}>Save particulars</button>
+      </form>
+      {refusal && <RefusalNote refusal={refusal} testId="particulars" />}
+    </section>
+  );
+}
+
+/** Cancels the consignment on its own, taking it off its load first. */
+function CancelForm({ consignment: c, onCancelled }: { consignment: ConsignmentCard; onCancelled: () => void }) {
+  const { gateway } = useSession();
+  const [reason, setReason] = useState('');
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function cancel(event: FormEvent) {
+    event.preventDefault();
+    setRefusal(null);
+    setBusy(true);
+    try {
+      await gateway.cancelConsignment(c.id, reason);
+      setReason('');
+      onCancelled();
+    } catch (e) {
+      setRefusal(refusalOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section data-testid="cancel-form">
+      <h3>Cancel this consignment</h3>
+      <p className="muted">Takes it off its load first; its order lines go back to be planned again.</p>
+      <form className="inline" onSubmit={cancel}>
+        <input placeholder="Reason" aria-label="Reason for cancelling" data-testid="cancel-reason"
+          value={reason} onChange={(e) => setReason(e.target.value)} />
+        <button type="submit" data-testid="cancel-consignment" disabled={busy}>Cancel consignment</button>
+      </form>
+      {refusal && <RefusalNote refusal={refusal} testId="cancel" />}
     </section>
   );
 }

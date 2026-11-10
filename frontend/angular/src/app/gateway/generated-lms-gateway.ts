@@ -19,6 +19,8 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import { DemoDataService } from '../api';
 import { GoodsCondition as ApiGoodsCondition } from '../api';
+import type { CloseKind as ApiCloseKind } from '../api';
+import type { CloseKindChoice } from './lms-gateway';
 import {
   ClientBillingService, ClientCharge, ClientContract, ClientInvoice, ClientInvoiceLine, ClientStatementEntry,
 } from '../api';
@@ -53,7 +55,7 @@ import {
   HistoryEntry,
 } from '../api';
 import {
-  AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ConsignmentPage, LoadBuild, ClaimMove, ConsignmentCard, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
+  AllocationRuleView, AllocationSummary, ApiProblem, Choice, ClaimDraft, ConsignmentPage, LoadBuild, ClaimMove, ConsignmentCard, ConsignmentParticularsDraft, ControlTowerSummary, Credentials, CustomFieldKind, CustomValues,
   DeliveryProofView, FieldChanges, FieldDefinition, FieldDraft, FieldType, IssuedTrackingLink, LmsGateway,
   OtpIssued, PartnerDraft, ProofDraft, PublicTrackingView, ResourceKey, Row, RuleAction, RuleDraft, RuleEvaluation,
   GeoPoint, MapFeature, Mapped, MappedDetail, SignedIn, SplitPart, SplitPartDraft, TrackingLinkView, TripRoute,
@@ -91,6 +93,16 @@ import type {
   CreditChangeStatus, CreditLimitChangeDraft, CreditLimitState, CreditOverrideDraft, CreditPositionView,
 } from './lms-gateway';
 
+// Number series
+import {
+  NumberedDocumentType as ApiNumberedDocumentType, NumberRelease, NumberSeries, NumberSeriesService,
+  NumberYearCode as ApiNumberYearCode,
+} from '../api';
+import type {
+  NumberedDocumentType, NumberFormatDraft, NumberFormatSample, NumberSeriesDraft, NumberSeriesScope,
+  NumberSeriesView, NumberVerdict, NumberYearCode,
+} from './lms-gateway';
+
 /** An instant as the React console shows one: `YYYY-MM-DD HH:mm` in UTC. */
 function instant(v: string | null | undefined): string {
   return v ? text(new Date(v)) : '';
@@ -107,6 +119,28 @@ function creditPositionOf(p: CreditPosition): CreditPositionView {
     outstandingInvoices: text(p.exposure.outstandingInvoices), exposure: text(p.exposure.total),
     headroom: text(p.headroom), limitState: text(p.limitState) as CreditLimitState,
     pendingChangeId: text(p.pendingChangeId), asOf: instant(p.asOf),
+  };
+}
+
+/** A number series as the administration desk lists it. */
+function numberSeriesOf(n: NumberSeries): NumberSeriesView {
+  return {
+    id: text(n.id), code: text(n.code), documentType: text(n.documentType) as NumberedDocumentType,
+    orgUnitId: text(n.orgUnitId), scope: n.orgUnitId ? text(n.orgUnitName) : 'Whole tenant', prefix: text(n.prefix),
+    yearCode: text(n.yearCode) as NumberYearCode, separator: text(n.separator), counterLength: text(n.counterLength),
+    yearStartMonth: text(n.yearStartMonth), timeZone: text(n.timeZone), reuseReleased: n.reuseReleased,
+    active: n.active, description: text(n.description), financialYear: text(n.financialYear),
+    issuedThisYear: text(n.issuedThisYear), lastIssued: text(n.lastIssued),
+    releasedAvailable: text(n.releasedAvailable), sample: text(n.sample),
+  };
+}
+
+/** A number given back to its series. */
+function numberReleaseRow(r: NumberRelease): Row {
+  return {
+    id: text(r.id), number: text(r.number), financialYear: text(r.financialYear), reason: text(r.reason),
+    releasedBy: text(r.releasedBy), releasedAt: instant(r.releasedAt),
+    reusedAt: r.reusedAt ? instant(r.reusedAt) : 'Not yet',
   };
 }
 
@@ -163,7 +197,7 @@ function loadRow(l: Load): Row {
     id: text(l.id), loadNo: text(l.loadNo), status: text(l.status), freightMode: text(l.freightMode),
     vehicleRegistrationNo: text(l.vehicleRegistrationNo), plannedWeightKg: text(l.plannedWeightKg),
     capacityWeightKg: text(l.capacityWeightKg), weightUtilisationPct: text(l.weightUtilisationPct),
-    consignmentCount: text(l.consignmentCount),
+    consignmentCount: text(l.consignmentCount), version: text(l.version),
   };
 }
 
@@ -411,6 +445,7 @@ function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
       lineCount: text(o.lineCount), plannedLineCount: text(o.plannedLineCount),
       totalDeadWeightKg: text(o.totalDeadWeightKg), containsHazmat: o.containsHazmat ? 'Yes' : '',
       requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
+      closeKind: text(o.closeKind), closeReason: text(o.closeReason),
     },
     version: text(o.version),
     header: {
@@ -426,7 +461,8 @@ function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
       heightM: text(l.heightM), volumetricDivisor: text(l.volumetricDivisor),
       consigneePartnerId: text(l.consigneePartnerId), destinationTerminalId: text(l.destinationTerminalId),
       consigneeName: text(l.consigneeName), destinationTerminalCode: text(l.destinationTerminalCode),
-      planned: l.planned ?? false,
+      planned: l.planned ?? false, closeKind: text(l.closeKind),
+      cancelled: l.cancelled ?? false,
     })),
   };
 }
@@ -440,6 +476,30 @@ function consignmentCard(c: Consignment): ConsignmentCard {
     parentId: text(c.parentConsignmentId), parentTrackingRef: text(c.parentTrackingRef),
     partCount: c.partCount ?? null, partsDelivered: c.partsDelivered ?? null, partsCancelled: c.partsCancelled ?? null,
     proofStatus: text(c.proofStatus), proofCondition: text(c.proofCondition),
+    handlingUnitNo: text(c.handlingUnitNo), version: text(c.version),
+    contactName: text(c.contactName), contactPhone: text(c.contactPhone),
+    consigneeReference: text(c.consigneeReference), clientReference: text(c.clientReference),
+    deliveryWindowFrom: isoInstant(c.deliveryWindowFrom), deliveryWindowTo: isoInstant(c.deliveryWindowTo),
+    remarks: text(c.remarks),
+  };
+}
+
+/** An instant as the amendment takes it back: ISO-8601 to the second, in UTC; empty when absent. */
+function isoInstant(v: unknown): string {
+  if (v === null || v === undefined || v === '') {
+    return '';
+  }
+  const at = v instanceof Date ? v : new Date(String(v));
+  return Number.isNaN(at.getTime()) ? String(v) : at.toISOString().replace('.000Z', 'Z');
+}
+
+/** Every particular, an empty one sent as empty text so the amendment clears it. */
+function particularsRequest(p: ConsignmentParticularsDraft) {
+  return {
+    contactName: p.contactName.trim(), contactPhone: p.contactPhone.trim(),
+    consigneeReference: p.consigneeReference.trim(), clientReference: p.clientReference.trim(),
+    deliveryWindowFrom: p.deliveryWindowFrom.trim(), deliveryWindowTo: p.deliveryWindowTo.trim(),
+    remarks: p.remarks.trim(),
   };
 }
 
@@ -661,6 +721,18 @@ export class GeneratedLmsGateway extends LmsGateway {
         parts: parts.map((p) => ({ deadWeightKg: Number(p.deadWeightKg), volumeM3: Number(p.volumeM3) })),
       },
     }), (made) => made.map((p) => ({ id: p.id, trackingRef: p.trackingRef })));
+  }
+
+  amendConsignment(id: string, version: string, particulars: ConsignmentParticularsDraft): Promise<void> {
+    return this.call(this.loads.amendConsignment({
+      id, ifMatch: version, consignmentAmendmentRequest: particularsRequest(particulars),
+    }), () => undefined);
+  }
+
+  cancelConsignment(id: string, reason: string): Promise<void> {
+    return this.call(this.loads.cancelConsignment({
+      id, cancelConsignmentRequest: reason.trim() ? { reason: reason.trim() } : undefined,
+    }), () => undefined);
   }
 
   issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink> {
@@ -995,6 +1067,21 @@ export class GeneratedLmsGateway extends LmsGateway {
       () => undefined);
   }
 
+  removeFromLoad(loadId: string, version: string, consignmentId: string): Promise<void> {
+    return this.call(this.loads.removeConsignmentFromLoad({ id: loadId, ifMatch: version, consignmentId }),
+      () => undefined);
+  }
+
+  unplanLoad(loadId: string, version: string): Promise<void> {
+    return this.call(this.loads.unplanLoad({ id: loadId, ifMatch: version }), () => undefined);
+  }
+
+  cancelLoad(loadId: string, version: string, reason: string): Promise<void> {
+    return this.call(this.loads.cancelLoad({
+      id: loadId, ifMatch: version, cancelLoadRequest: { reason: blankAsAbsent(reason) },
+    }), () => undefined);
+  }
+
   async orderDesk(orderId: string): Promise<OrderDesk> {
     const [order, lines] = await Promise.all([
       this.call(this.orders.getOrder({ id: orderId }), (o) => o),
@@ -1045,6 +1132,18 @@ export class GeneratedLmsGateway extends LmsGateway {
   cancelOrder(orderId: string, reason: string): Promise<void> {
     return this.call(this.orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } }),
       () => undefined);
+  }
+
+  closeOrder(orderId: string, kind: CloseKindChoice, reason: string): Promise<void> {
+    return this.call(this.orders.closeOrder({
+      id: orderId, closeOrderRequest: { kind: kind as ApiCloseKind, reason: blankAsAbsent(reason) },
+    }), () => undefined);
+  }
+
+  closeOrderLine(orderId: string, lineId: string, kind: CloseKindChoice, reason: string): Promise<void> {
+    return this.call(this.orders.closeOrderLine({
+      id: orderId, lineId, closeOrderRequest: { kind: kind as ApiCloseKind, reason: blankAsAbsent(reason) },
+    }), () => undefined);
   }
 
   orderHistory(orderId: string, cursor?: string): Promise<HistoryPage> {
@@ -1498,6 +1597,78 @@ export class GeneratedLmsGateway extends LmsGateway {
   rejectCreditLimitChange(id: string, note: string): Promise<void> {
     return this.call(this.credit.rejectCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }),
       () => undefined);
+  }
+
+  // Number series
+  private readonly numbering = inject(NumberSeriesService);
+
+  numberSeries(documentType?: NumberedDocumentType): Promise<NumberSeriesView[]> {
+    return this.call(this.numbering.listNumberSeries({
+      documentType: documentType as unknown as ApiNumberedDocumentType | undefined, limit: 200,
+    }), (s) => s.items.map(numberSeriesOf));
+  }
+
+  numberSeriesScopes(): Promise<NumberSeriesScope[]> {
+    return this.call(this.numbering.listNumberSeriesScopes({ limit: 200 }), (s) => s.items.map((u) => ({
+      id: text(u.id), name: text(u.name), path: text(u.path), unitType: text(u.unitType),
+    })));
+  }
+
+  createNumberSeries(draft: NumberSeriesDraft): Promise<string> {
+    return this.call(this.numbering.createNumberSeries({
+      createNumberSeriesRequest: {
+        code: draft.code.trim(), documentType: draft.documentType as unknown as ApiNumberedDocumentType,
+        orgUnitId: draft.orgUnitId || undefined, prefix: draft.prefix.trim(),
+        yearCode: draft.yearCode as unknown as ApiNumberYearCode, separator: draft.separator,
+        counterLength: draft.counterLength, yearStartMonth: draft.yearStartMonth,
+        timeZone: draft.timeZone.trim() || undefined, reuseReleased: draft.reuseReleased, active: draft.active,
+        description: draft.description.trim() || undefined,
+      },
+    }), (r) => text(r.id));
+  }
+
+  setNumberSeriesActive(id: string, active: boolean): Promise<void> {
+    return this.call(active ? this.numbering.activateNumberSeries({ id }) : this.numbering.deactivateNumberSeries({ id }),
+      () => undefined);
+  }
+
+  deleteNumberSeries(id: string): Promise<void> {
+    return this.call(this.numbering.deleteNumberSeries({ id }), () => undefined);
+  }
+
+  previewNumberFormat(format: NumberFormatDraft): Promise<NumberFormatSample> {
+    return this.call(this.numbering.previewNumberFormat({
+      prefix: format.prefix.trim(), yearCode: format.yearCode as unknown as ApiNumberYearCode,
+      separator: format.separator, counterLength: format.counterLength, yearStartMonth: format.yearStartMonth,
+      timeZone: format.timeZone.trim() || undefined,
+    }), (p) => ({ sample: text(p.sample), nextYearSample: text(p.nextYearSample) }));
+  }
+
+  nextNumber(id: string): Promise<string> {
+    return this.call(this.numbering.previewNextNumber({ id }), (p) => text(p.number));
+  }
+
+  issueNumber(id: string): Promise<string> {
+    return this.call(this.numbering.issueNumber({ id }), (n) => text(n.number));
+  }
+
+  releaseNumber(id: string, number: string, reason: string): Promise<void> {
+    return this.call(this.numbering.releaseNumber({
+      id, releaseNumberRequest: { number: number.trim(), reason: reason.trim() },
+    }), () => undefined);
+  }
+
+  numberReleases(id: string): Promise<Row[]> {
+    return this.call(this.numbering.listNumberReleases({ id, limit: 100 }), (s) => s.items.map(numberReleaseRow));
+  }
+
+  verifyNumber(documentType: NumberedDocumentType, number: string): Promise<NumberVerdict> {
+    return this.call(this.numbering.verifyDocumentNumber({
+      documentType: documentType as unknown as ApiNumberedDocumentType, number: number.trim(),
+    }), (v) => ({
+      belongs: v.belongs, seriesCode: text(v.seriesCode), financialYear: text(v.financialYear),
+      counter: text(v.counter), status: text(v.status),
+    }));
   }
 
   private async call<T, R>(request: Observable<T>, map: (value: T) => R): Promise<R> {

@@ -47,6 +47,10 @@ Order:
       format: int64
       description: The optimistic-lock version, also the `ETag`. Send it back in
         `If-Match` when editing the order.
+    closeKind:
+      $ref: "#/components/schemas/CloseKind"
+    closeReason: { type: string, description: Why the order was closed, when a reason was given. }
+    closedAt: { type: string, format: date-time }
 
 OrderLine:
   type: object
@@ -74,6 +78,74 @@ OrderLine:
     widthM: { type: number }
     heightM: { type: number }
     volumetricDivisor: { type: number }
+    closeKind:
+      $ref: "#/components/schemas/CloseKind"
+    closeReason: { type: string }
+    closedAt:
+      type: string
+      format: date-time
+      description: When the line was closed, on its own or with its order; null while open.
+    cancelled:
+      type: boolean
+      description: Cancelled on its own; it no longer counts towards the
+        order's lines, weight, coverage or credit exposure.
+
+CloseKind:
+  type: string
+  description: |
+    How an order or line was closed. `NORMAL`: everything was carried.
+    `SHORT`: the unplanned remainder will not be. `FORCE`: closed whatever the
+    freight was doing. `AUTO`: closed by the platform, the remainder being
+    within the tenant's tolerance (never accepted in a request). Null while
+    the order or line is open.
+  enum: [NORMAL, SHORT, FORCE, AUTO]
+
+CloseOrderRequest:
+  type: object
+  properties:
+    kind:
+      $ref: "#/components/schemas/CloseKind"
+    reason:
+      type: string
+      maxLength: 500
+      description: Why. Required for `SHORT` and `FORCE`; kept in the audit trail.
+
+OrderCloseSettings:
+  type: object
+  properties:
+    tolerancePercent:
+      type: number
+      description: Share of an order's total line quantity that may be left
+        unplanned when its last consignment is delivered for the order still to
+        close by itself.
+    autoFulfil:
+      type: boolean
+      description: False when delivering the last consignment leaves the order open.
+    customised:
+      type: boolean
+      description: False while the tenant has set nothing and the defaults apply.
+
+SetOrderCloseSettingsRequest:
+  type: object
+  properties:
+    tolerancePercent: { type: number, minimum: 0, maximum: 100 }
+    autoFulfil: { type: boolean }
+  required: [tolerancePercent, autoFulfil]
+
+OrderLineCancellation:
+  type: object
+  properties:
+    lineId: { type: string, format: uuid }
+    cancelledConsignmentIds:
+      type: array
+      description: The consignments cancelled with the line; empty when it was on none.
+      items: { type: string, format: uuid }
+    releasedLineIds:
+      type: array
+      description: Other lines of the order that were on a cancelled
+        consignment, now waiting to be planned again.
+      items: { type: string, format: uuid }
+  required: [lineId, cancelledConsignmentIds, releasedLineIds]
 
 CancelOrderRequest:
   type: object

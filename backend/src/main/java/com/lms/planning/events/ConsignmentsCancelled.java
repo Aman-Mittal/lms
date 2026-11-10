@@ -20,7 +20,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Consignments have been cancelled, because their order was.
+ * Consignments have been cancelled, because their order was or, one at a
+ * time, because a planner cancelled one consignment or one order line.
  *
  * <p>One event per cancellation rather than one per consignment: cancelling an
  * order of four hundred consignments is one fact, and one event per

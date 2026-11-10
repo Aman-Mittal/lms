@@ -56,15 +56,36 @@ public interface OrderPlanningPort {
     void markLinesPlanned(UUID orderId, Set<UUID> plannedLineIds);
 
     /**
+     * Records that these lines are no longer on any consignment -- the one
+     * they were on has been cancelled -- and steps the order's coverage back
+     * to match: a fully planned order becomes partially planned, or validated
+     * when nothing it asked for is on a consignment any more.
+     *
+     * <p>Idempotent by set semantics, like {@link #markLinesPlanned}: a line
+     * already waiting changes nothing.
+     */
+    void releaseLines(UUID orderId, Set<UUID> releasedLineIds);
+
+    /**
      * Records that every consignment cut from the order has been delivered, so
      * the order can be closed as fulfilled.
      *
      * <p>Planning knows what has been delivered; the order knows whether any
      * demand is still unplanned, and so whether "everything cut so far" is
-     * "everything". An order that is not FULLY_PLANNED is left as it is.
-     * Idempotent: an order already fulfilled, or cancelled, is not touched.
+     * "everything". An order that is not FULLY_PLANNED is left as it is, and
+     * so is every order when the tenant has turned automatic fulfilment off.
+     * Idempotent: an order already fulfilled, closed or cancelled is not touched.
      */
     void recordFulfilled(UUID orderId);
+
+    /**
+     * Records that some of the freight cut from the order has been delivered
+     * while some is still moving. Nothing happens unless the tenant has a close
+     * tolerance: then a fully planned order whose every line is delivered to
+     * within it is closed by the platform, and the freight still moving carries
+     * on. Idempotent: an order no longer open is not touched.
+     */
+    void recordPartlyDelivered(UUID orderId);
 
     /**
      * The order-level facts a consignment inherits: who is paying, in which
@@ -82,6 +103,8 @@ public interface OrderPlanningPort {
     /**
      * @param originHubTerminalId      null unless the order is LTL
      * @param destinationHubTerminalId null unless the order is LTL
+     * @param orgUnitId                the unit the order was raised at, which picks the number
+     *                                 series its consignment notes are drawn from
      */
     record OrderTerms(
             UUID orderId,
@@ -89,7 +112,8 @@ public interface OrderPlanningPort {
             FreightMode freightMode,
             UUID originTerminalId,
             UUID originHubTerminalId,
-            UUID destinationHubTerminalId) {
+            UUID destinationHubTerminalId,
+            UUID orgUnitId) {
     }
 
     /**

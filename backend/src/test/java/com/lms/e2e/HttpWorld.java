@@ -114,6 +114,11 @@ final class HttpWorld {
         return me.getOrgUnitId();
     }
 
+    /** The signed-in caller's bearer token, for a request the generated client cannot shape. */
+    String accessToken() {
+        return me.getAccessToken();
+    }
+
     <T extends ApiClient.Api> T api(Class<T> type) {
         return client(me.getAccessToken(), type);
     }

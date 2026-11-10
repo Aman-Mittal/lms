@@ -51,8 +51,17 @@ public record OrderLine(
         UUID consigneePartnerId,
         UUID destinationTerminalId,
         boolean planned,
+        /**
+         * Cancelled on its own after validation: no longer demand, never
+         * planned again, kept as the record of what was asked for.
+         */
+        boolean cancelled,
         @Version Long version,
-        Instant createdAt) {
+        Instant createdAt,
+        /** How the line was closed; null while it is open. */
+        CloseKind closeKind,
+        String closeReason,
+        Instant closedAt) {
 
     /**
      * Divisor applied when a line does not carry its own.
@@ -141,7 +150,64 @@ public record OrderLine(
         }
         return new OrderLine(id, tenantId, orderId, lineNo, materialCode, materialDescription,
                 materialClass, hazmatUnCode, quantity, uom, deadWeightKg, lengthM, widthM, heightM,
-                volumetricDivisor, consigneePartnerId, destinationTerminalId, true,
-                version, createdAt);
+                volumetricDivisor, consigneePartnerId, destinationTerminalId, true, cancelled,
+                version, createdAt, closeKind, closeReason, closedAt);
+    }
+
+    /** Whether the line has been closed, on its own or with its order. */
+    public boolean isClosed() {
+        return closedAt != null;
+    }
+
+    /**
+     * Whether the line is still demand: neither closed nor cancelled. Planning,
+     * coverage and credit exposure only count open lines.
+     */
+    public boolean isOpen() {
+        return !isClosed() && !cancelled;
+    }
+
+    /**
+     * The line, closed. A line that was never planned never will be: planning
+     * is offered only open lines.
+     */
+    public OrderLine closed(CloseKind kind, String reason, Instant at) {
+        if (isClosed()) {
+            return this;
+        }
+        return new OrderLine(id, tenantId, orderId, lineNo, materialCode, materialDescription,
+                materialClass, hazmatUnCode, quantity, uom, deadWeightKg, lengthM, widthM, heightM,
+                volumetricDivisor, consigneePartnerId, destinationTerminalId, planned, cancelled,
+                version, createdAt, kind, reason, at);
+    }
+
+    /**
+     * The line released from the consignment it was on, because that
+     * consignment was cancelled: it is demand waiting for a consignment again.
+     * Idempotent, like {@link #markPlanned}.
+     */
+    public OrderLine released() {
+        if (!planned) {
+            return this;
+        }
+        return new OrderLine(id, tenantId, orderId, lineNo, materialCode, materialDescription,
+                materialClass, hazmatUnCode, quantity, uom, deadWeightKg, lengthM, widthM, heightM,
+                volumetricDivisor, consigneePartnerId, destinationTerminalId, false, cancelled,
+                version, createdAt, closeKind, closeReason, closedAt);
+    }
+
+    /**
+     * The line cancelled. Its consignment, if it had one, must already have
+     * been cancelled and the line released from it: a cancelled line is never
+     * on a consignment, which the database also insists on.
+     */
+    public OrderLine cancel() {
+        if (planned) {
+            throw new IllegalStateException("Line " + lineNo + " is still on a consignment");
+        }
+        return new OrderLine(id, tenantId, orderId, lineNo, materialCode, materialDescription,
+                materialClass, hazmatUnCode, quantity, uom, deadWeightKg, lengthM, widthM, heightM,
+                volumetricDivisor, consigneePartnerId, destinationTerminalId, false, true,
+                version, createdAt, closeKind, closeReason, closedAt);
     }
 }

@@ -90,6 +90,185 @@ Consignment:
       enum: [CLEAN, SHORTAGE, DAMAGE]
       description: The goods' condition on the proof; absent before a code
         has been issued, and CLEAN until a proof says otherwise.
+    contactName:
+      type: string
+      description: Who to call at the consignee; absent until stated.
+    contactPhone: { type: string }
+    consigneeReference:
+      type: string
+      description: The consignee's own reference for the delivery.
+    clientReference:
+      type: string
+      description: The client's own reference for the consignment, unique
+        within the tenant; absent when none was given.
+    deliveryWindowFrom:
+      type: string
+      format: date-time
+      description: The earliest the consignee will receive it.
+    deliveryWindowTo:
+      type: string
+      format: date-time
+      description: The latest the consignee will receive it.
+    remarks: { type: string }
+    version:
+      type: integer
+      format: int64
+      description: The optimistic-lock version, also the `ETag`; what an
+        amendment sends back in `If-Match`.
+
+ConsignmentAmendmentRequest:
+  type: object
+  description: |
+    The particulars to change, by name; each is text, empty text to clear it,
+    or null (or left out) to keep it.
+    Amendable: `contactName` (at most 120 characters), `contactPhone` (digits,
+    spaces, brackets and dashes, optionally a leading +, 5 to 40 characters),
+    `consigneeReference` (at most 80), `clientReference` (letters, digits, dot,
+    slash, dash and underscore, starting with a letter or digit, at most 80),
+    `deliveryWindowFrom` and `deliveryWindowTo` (ISO-8601 instants, the window
+    never ending before it starts), and `remarks` (at most 500). Naming what
+    the consignment carries -- `totalDeadWeightKg`, `totalVolumeM3`,
+    `chargeableWeightKg`, `lines`, `materialClasses`, `containsHazmat`,
+    `consigneePartnerId`, `destinationTerminalId` and the like -- is refused
+    with `consignment-contents-fixed`, as is any other name with
+    `consignment-amendment-invalid`. At least one field.
+  properties:
+    contactName: { type: string }
+    contactPhone: { type: string }
+    consigneeReference: { type: string }
+    clientReference: { type: string }
+    deliveryWindowFrom: { type: string }
+    deliveryWindowTo: { type: string }
+    remarks: { type: string }
+
+AmendmentFieldResult:
+  type: object
+  properties:
+    field: { type: string }
+    outcome:
+      type: string
+      enum: [APPLIED, UNCHANGED, REFUSED]
+    code:
+      type: string
+      description: Why it was refused; absent otherwise.
+    message: { type: string }
+  required: [field, outcome]
+
+ConsignmentAmended:
+  type: object
+  properties:
+    consignmentId: { type: string, format: uuid }
+    version:
+      type: integer
+      format: int64
+      description: The version now; unchanged when every field was UNCHANGED.
+    fields:
+      type: array
+      description: Each named field's outcome, in the order named.
+      items: { $ref: "#/components/schemas/AmendmentFieldResult" }
+  required: [consignmentId, version, fields]
+
+BulkAmendConsignmentItem:
+  type: object
+  properties:
+    consignmentId: { type: string, format: uuid }
+    version:
+      type: integer
+      format: int64
+      description: The version the caller read, as `If-Match` carries it for one.
+    changes: { $ref: "#/components/schemas/ConsignmentAmendmentRequest" }
+  required: [consignmentId, version, changes]
+
+BulkAmendConsignmentsRequest:
+  type: object
+  properties:
+    items:
+      type: array
+      minItems: 1
+      maxItems: 200
+      items: { $ref: "#/components/schemas/BulkAmendConsignmentItem" }
+  required: [items]
+
+CancelConsignmentRequest:
+  type: object
+  properties:
+    reason:
+      type: string
+      maxLength: 500
+      description: Why, for the history and the webhook; optional.
+
+BulkCancelConsignmentsRequest:
+  type: object
+  properties:
+    consignmentIds:
+      type: array
+      minItems: 1
+      maxItems: 200
+      items: { type: string, format: uuid }
+    reason:
+      type: string
+      maxLength: 500
+      description: Recorded against every consignment cancelled.
+  required: [consignmentIds]
+
+ConsignmentItemResult:
+  type: object
+  properties:
+    consignmentId: { type: string, format: uuid }
+    outcome:
+      type: string
+      enum: [AMENDED, CANCELLED, REFUSED]
+    code:
+      type: string
+      description: For a refused item, the code one request would have answered.
+    message: { type: string }
+    version:
+      type: integer
+      format: int64
+      description: For an amended item, its version now.
+    fields:
+      type: array
+      description: For an amended item, each named field's outcome.
+      items: { $ref: "#/components/schemas/AmendmentFieldResult" }
+    errors:
+      type: object
+      additionalProperties: { type: string }
+      description: For an amendment refused field by field, each refused field
+        to its reason.
+  required: [consignmentId, outcome]
+
+ConsignmentBulkResult:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ConsignmentItemResult" }
+  required: [items]
+
+LoadAfterCancellation:
+  type: object
+  description: The load a cancelled consignment was taken off, as it now stands.
+  properties:
+    loadId: { type: string, format: uuid }
+    loadNo: { type: string }
+    status:
+      type: string
+      description: CANCELLED when nothing was left aboard.
+    plannedWeightKg: { type: number }
+    plannedVolumeM3: { type: number }
+  required: [loadId, loadNo, status, plannedWeightKg, plannedVolumeM3]
+
+ConsignmentCancellation:
+  type: object
+  properties:
+    consignmentId: { type: string, format: uuid }
+    trackingRef: { type: string }
+    releasedLineIds:
+      type: array
+      description: The order lines it was cut from, now waiting to be planned again.
+      items: { type: string, format: uuid }
+    load: { $ref: "#/components/schemas/LoadAfterCancellation" }
+  required: [consignmentId, trackingRef, releasedLineIds]
 
 SplitConsignmentRequest:
   type: object
@@ -144,6 +323,19 @@ Load:
     freightMode: { type: string }
     ltlLeg:
       $ref: "#/components/schemas/LtlLeg"
+    version:
+      type: integer
+      format: int64
+      description: The optimistic-lock version, also the `ETag`. Send it back in
+        `If-Match` to take a consignment off, un-plan or cancel the load.
+
+CancelLoadRequest:
+  type: object
+  properties:
+    reason:
+      type: string
+      maxLength: 500
+      description: Why the load is cancelled; kept in its history.
 
 OpenLoadRequest:
   type: object

@@ -63,9 +63,13 @@
  * docket only on its last leg). Every delivery, by trip or by proof, is
  * announced as {@code ConsignmentsDelivered}; consignments leaving on a
  * dispatched load as {@code ConsignmentsInTransit}.
+ *
+ * <p>{@code identity::numbering} numbers lorry receipts and dockets for a
+ * tenant that configured a CONSIGNMENT_NOTE or DOCKET number series; without
+ * one their references stay random.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Planning & Load Building",
         allowedDependencies = {"order::api", "masterdata::api", "warehouse::events",
-                "identity::access", "delivery::events"})
+                "identity::access", "identity::numbering", "delivery::events"})
 package com.lms.planning;

@@ -60,6 +60,23 @@ final class PlanningAudit {
                 "awardedVendorPartnerId", id(load.awardedVendorPartnerId()));
     }
 
+    /**
+     * A load with what it carries: for the steps that change its freight
+     * rather than only its status, so the history shows the totals move.
+     *
+     * @param note a fact about the step (which consignment, or why), or null
+     */
+    static Json loadContents(LoadUnit load, int consignmentCount, String noteKey, String note) {
+        return Json.object("status", load.status().name(),
+                "loadNo", load.loadNo(),
+                "awardedVendorPartnerId", id(load.awardedVendorPartnerId()),
+                "plannedWeightKg", load.plannedWeightKg().toPlainString(),
+                "plannedVolumeM3", load.plannedVolumeM3().toPlainString(),
+                "requiresHazmat", Boolean.toString(load.requiresHazmat()),
+                "consignmentCount", Integer.toString(consignmentCount),
+                noteKey, note);
+    }
+
     /** One entry per consignment, each from its own earlier state to its later one. */
     static TransitionAudit.Entry entry(Consignment before, Consignment after) {
         return new TransitionAudit.Entry(after.id(), consignment(before), consignment(after));

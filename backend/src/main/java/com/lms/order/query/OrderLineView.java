@@ -16,6 +16,7 @@
 package com.lms.order.query;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 /** One line of an order, with consignee and destination resolved to names. */
@@ -41,5 +42,11 @@ public record OrderLineView(
         BigDecimal lengthM,
         BigDecimal widthM,
         BigDecimal heightM,
-        BigDecimal volumetricDivisor) {
+        BigDecimal volumetricDivisor,
+        /** How the line was closed, on its own or with its order; null while open. */
+        String closeKind,
+        String closeReason,
+        Instant closedAt,
+        /** Cancelled on its own; it no longer counts towards the order's lines or weight. */
+        boolean cancelled) {
 }

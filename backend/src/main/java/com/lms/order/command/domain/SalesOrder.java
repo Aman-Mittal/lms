@@ -62,7 +62,12 @@ public record SalesOrder(
         UUID destinationHubTerminalId,
         @Version Long version,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        /** How a CLOSED order was closed; null for every other status. */
+        CloseKind closeKind,
+        /** Why, as the person closing it said; null when none was needed. */
+        String closeReason,
+        Instant closedAt) {
 
     /** How the demand reached the platform (3.3: manual, bulk upload, or ERP). */
     public enum OrderSource {
@@ -70,7 +75,7 @@ public record SalesOrder(
     }
 
     public enum OrderStatus {
-        DRAFT, VALIDATED, PARTIALLY_PLANNED, FULLY_PLANNED, FULFILLED, CANCELLED
+        DRAFT, VALIDATED, PARTIALLY_PLANNED, FULLY_PLANNED, FULFILLED, CANCELLED, CLOSED
     }
 
     private static final Map<OrderStatus, Set<OrderStatus>> TRANSITIONS = new EnumMap<>(OrderStatus.class);
@@ -79,20 +84,28 @@ public record SalesOrder(
         TRANSITIONS.put(OrderStatus.DRAFT,
                 EnumSet.of(OrderStatus.VALIDATED, OrderStatus.CANCELLED));
         TRANSITIONS.put(OrderStatus.VALIDATED,
-                EnumSet.of(OrderStatus.PARTIALLY_PLANNED, OrderStatus.FULLY_PLANNED, OrderStatus.CANCELLED));
+                EnumSet.of(OrderStatus.PARTIALLY_PLANNED, OrderStatus.FULLY_PLANNED, OrderStatus.CANCELLED,
+                        OrderStatus.CLOSED));
         // Planning can go backwards: cancelling a load releases its
         // consignments, and an order that was fully planned is then only
         // partially planned again. A forward-only machine would leave the order
         // claiming coverage it no longer has.
         TRANSITIONS.put(OrderStatus.PARTIALLY_PLANNED,
-                EnumSet.of(OrderStatus.FULLY_PLANNED, OrderStatus.VALIDATED, OrderStatus.CANCELLED));
+                EnumSet.of(OrderStatus.FULLY_PLANNED, OrderStatus.VALIDATED, OrderStatus.CANCELLED,
+                        OrderStatus.CLOSED));
+        // Back to VALIDATED when the only consignment cut from it is cancelled
+        // on its own: its lines are demand waiting to be planned again.
         TRANSITIONS.put(OrderStatus.FULLY_PLANNED,
-                EnumSet.of(OrderStatus.FULFILLED, OrderStatus.PARTIALLY_PLANNED, OrderStatus.CANCELLED));
+                EnumSet.of(OrderStatus.FULFILLED, OrderStatus.PARTIALLY_PLANNED, OrderStatus.VALIDATED,
+                        OrderStatus.CANCELLED, OrderStatus.CLOSED));
         // Terminal. A delivered order is history; a cancelled one is reopened by
         // raising a new order, not by editing this one, so that the audit trail
         // of what was promised stays intact.
         TRANSITIONS.put(OrderStatus.FULFILLED, EnumSet.noneOf(OrderStatus.class));
         TRANSITIONS.put(OrderStatus.CANCELLED, EnumSet.noneOf(OrderStatus.class));
+        // Closed by hand, or by the platform within the tenant's tolerance: what
+        // was not carried never will be. Terminal for the same reason.
+        TRANSITIONS.put(OrderStatus.CLOSED, EnumSet.noneOf(OrderStatus.class));
     }
 
     /** A full-truckload order: the behaviour every order had before freight modes. */
@@ -129,7 +142,7 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo,
                 OrderStatus.DRAFT, originTerminalId, requestedPickupAt, requestedDeliveryAt,
                 source == null ? OrderSource.MANUAL : source, mode,
-                originHubTerminalId, destinationHubTerminalId, null, Instant.now(), Instant.now());
+                originHubTerminalId, destinationHubTerminalId, null, Instant.now(), Instant.now(), null, null, null);
     }
 
     /**
@@ -190,7 +203,7 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, newCustomerPartnerId, orderNo, status,
                 newOriginTerminalId, newPickupAt, newDeliveryAt, source, freightMode,
                 newOriginHubTerminalId, newDestinationHubTerminalId,
-                expectedVersion, createdAt, Instant.now());
+                expectedVersion, createdAt, Instant.now(), closeKind, closeReason, closedAt);
     }
 
     /** The same order, its version replaced by the one the caller says it read. */
@@ -198,7 +211,7 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, status,
                 originTerminalId, requestedPickupAt, requestedDeliveryAt, source, freightMode,
                 originHubTerminalId, destinationHubTerminalId,
-                expectedVersion, createdAt, Instant.now());
+                expectedVersion, createdAt, Instant.now(), closeKind, closeReason, closedAt);
     }
 
     /** Whether lines may still be added or amended. */
@@ -223,7 +236,7 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, target,
                 originTerminalId, requestedPickupAt, requestedDeliveryAt, source,
                 freightMode, originHubTerminalId, destinationHubTerminalId,
-                version, createdAt, Instant.now());
+                version, createdAt, Instant.now(), closeKind, closeReason, closedAt);
     }
 
     /**
@@ -238,19 +251,55 @@ public record SalesOrder(
      * @param totalLines   lines on the order
      */
     public SalesOrder withCoverage(int plannedLines, int totalLines) {
+        return withCoverage(plannedLines, 0, totalLines);
+    }
+
+    /**
+     * As {@link #withCoverage(int, int)}, counting lines closed without being
+     * planned as spoken for: nothing more will be cut for them, so an order
+     * whose other lines are all planned is fully planned. An order with
+     * nothing planned stays VALIDATED whatever was closed.
+     *
+     * @param closedUnplannedLines lines closed before any of them was planned
+     */
+    public SalesOrder withCoverage(int plannedLines, int closedUnplannedLines, int totalLines) {
         if (totalLines <= 0) {
             throw new BusinessRuleViolationException("order-has-no-lines",
                     "Order " + orderNo + " has no lines to plan");
         }
-        if (plannedLines > totalLines) {
+        if (plannedLines + closedUnplannedLines > totalLines) {
             throw new IllegalArgumentException(
                     "Planned line count " + plannedLines + " exceeds the order's " + totalLines);
         }
         if (plannedLines == 0) {
             return transitionTo(OrderStatus.VALIDATED);
         }
-        return transitionTo(plannedLines == totalLines
+        return transitionTo(plannedLines + closedUnplannedLines == totalLines
                 ? OrderStatus.FULLY_PLANNED
                 : OrderStatus.PARTIALLY_PLANNED);
+    }
+
+    /** Whether the order is open to being closed: validated and not yet at an end. */
+    public boolean isClosable() {
+        return status == OrderStatus.VALIDATED || status == OrderStatus.PARTIALLY_PLANNED
+                || status == OrderStatus.FULLY_PLANNED;
+    }
+
+    /**
+     * The order, closed. The state machine decides whether it may be; the
+     * caller has already decided whether it should.
+     */
+    public SalesOrder closed(CloseKind kind, String reason, Instant at) {
+        if (status == OrderStatus.CLOSED) {
+            // Not the state machine's "already there" no-op: a second close
+            // would overwrite how and why the first one closed it.
+            throw new BusinessRuleViolationException("order-illegal-transition",
+                    "Order " + orderNo + " is already CLOSED");
+        }
+        SalesOrder moved = transitionTo(OrderStatus.CLOSED);
+        return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, moved.status,
+                originTerminalId, requestedPickupAt, requestedDeliveryAt, source,
+                freightMode, originHubTerminalId, destinationHubTerminalId,
+                version, createdAt, at, kind, reason, at);
     }
 }

@@ -27,6 +27,7 @@ public enum WebhookEventType {
     ORDER_AMENDED,
     ORDER_CANCELLED,
     ORDER_FULFILLED,
+    ORDER_CLOSED,
     CONSIGNMENTS_GENERATED,
     CONSIGNMENT_SPLIT,
     TRIP_DISPATCHED,
@@ -37,6 +38,7 @@ public enum WebhookEventType {
     CLAIM_STATUS_CHANGED,
     CONSIGNMENT_IN_TRANSIT,
     CONSIGNMENT_DELIVERED,
+    CONSIGNMENT_CANCELLED,
     PING;
 
     public boolean subscribable() {

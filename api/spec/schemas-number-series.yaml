@@ -1,0 +1,237 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+NumberedDocumentType:
+  type: string
+  description: |
+    The kinds of document a series can number. ORDER, CONSIGNMENT_NOTE (a
+    full-truckload lorry receipt) and DOCKET (a part load) draw from a series
+    when one covers the document's unit; without one they keep their built-in
+    numbering. The others can be configured, issued by hand and verified.
+  enum: [ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE]
+
+NumberYearCode:
+  type: string
+  description: |
+    How the financial year appears in a number. NONE -- not at all, and the
+    counter never restarts; START_YEAR -- the four-digit year it starts in
+    (2026); SPAN -- the last two digits of the first and last calendar years
+    it spans (2627).
+  enum: [NONE, START_YEAR, SPAN]
+
+NumberSeries:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    documentType: { $ref: "#/components/schemas/NumberedDocumentType" }
+    orgUnitId:
+      type: string
+      format: uuid
+      description: The unit whose subtree the series numbers; null for the whole tenant.
+    orgUnitName: { type: string }
+    orgUnitPath: { type: string }
+    prefix: { type: string }
+    yearCode: { $ref: "#/components/schemas/NumberYearCode" }
+    separator: { type: string }
+    counterLength: { type: integer }
+    yearStartMonth: { type: integer }
+    timeZone: { type: string }
+    reuseReleased:
+      type: boolean
+      description: Whether released numbers are handed out again before the counter advances.
+    active: { type: boolean }
+    description: { type: string }
+    financialYear:
+      type: integer
+      description: The current financial year, by the year it starts in; 0 for a series without a year code.
+    issuedThisYear:
+      type: integer
+      format: int64
+      description: How far the counter has advanced in the current financial year.
+    lastIssued:
+      type: string
+      description: The number the counter last gave this year; null when none yet.
+    releasedAvailable:
+      type: integer
+      format: int64
+      description: Numbers of this year given back and not issued again.
+    sample:
+      type: string
+      description: The first number of the current year, showing the format.
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+  required: [id, code, documentType, prefix, yearCode, separator, counterLength, yearStartMonth,
+             timeZone, reuseReleased, active, financialYear, issuedThisYear, releasedAvailable, sample]
+
+NumberSeriesSlice:
+  type: object
+  description: One page, in code order. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/NumberSeries" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+CreateNumberSeriesRequest:
+  type: object
+  properties:
+    code:
+      type: string
+      maxLength: 48
+      description: Unique in the tenant; letters, digits, '_' and '-'.
+    documentType: { $ref: "#/components/schemas/NumberedDocumentType" }
+    orgUnitId:
+      type: string
+      format: uuid
+      description: Scope the series to this unit and those beneath it. Omit for the whole tenant.
+    prefix:
+      type: string
+      maxLength: 16
+      description: 1-16 upper-case letters, digits, '/' or '-', unique per document type.
+    yearCode: { $ref: "#/components/schemas/NumberYearCode" }
+    separator:
+      type: string
+      maxLength: 1
+      description: One of '-', '/', '_', '.', or empty for none. Defaults to '-'.
+    counterLength: { type: integer, minimum: 1, maximum: 12, description: Defaults to 5. }
+    yearStartMonth: { type: integer, minimum: 1, maximum: 12, description: Defaults to 4 (April). }
+    timeZone: { type: string, maxLength: 64, description: An IANA zone id. Defaults to UTC. }
+    reuseReleased: { type: boolean, description: Defaults to false. }
+    active: { type: boolean, description: Defaults to true. }
+    description: { type: string, maxLength: 500 }
+  required: [code, documentType, prefix, yearCode]
+
+ReviseNumberSeriesRequest:
+  type: object
+  description: Every field restated. Omitted optional format fields take their defaults.
+  properties:
+    prefix: { type: string, maxLength: 16 }
+    yearCode: { $ref: "#/components/schemas/NumberYearCode" }
+    separator: { type: string, maxLength: 1 }
+    counterLength: { type: integer, minimum: 1, maximum: 12 }
+    yearStartMonth: { type: integer, minimum: 1, maximum: 12 }
+    timeZone: { type: string, maxLength: 64 }
+    reuseReleased: { type: boolean }
+    description: { type: string, maxLength: 500 }
+  required: [prefix, yearCode, reuseReleased]
+
+NextNumberPreview:
+  type: object
+  properties:
+    seriesId: { type: string, format: uuid }
+    number: { type: string }
+    financialYear: { type: integer }
+    fromPool:
+      type: boolean
+      description: True when it is a released number the series would hand out again.
+  required: [seriesId, number, financialYear, fromPool]
+
+NumberFormatPreview:
+  type: object
+  properties:
+    sample: { type: string, description: The first number of the current financial year. }
+    nextYearSample:
+      type: string
+      description: The first number of the next financial year (the same as `sample` without a year code).
+    financialYear: { type: integer }
+  required: [sample, nextYearSample, financialYear]
+
+IssuedNumber:
+  type: object
+  properties:
+    number: { type: string }
+  required: [number]
+
+NumberVerification:
+  type: object
+  properties:
+    number: { type: string }
+    documentType: { $ref: "#/components/schemas/NumberedDocumentType" }
+    belongs:
+      type: boolean
+      description: False when no series of the type could have produced the number; the rest is then null.
+    seriesId: { type: string, format: uuid }
+    seriesCode: { type: string }
+    financialYear: { type: integer }
+    counter: { type: integer, format: int64 }
+    status:
+      type: string
+      enum: [ISSUED, RELEASED, NOT_ISSUED]
+      description: |
+        ISSUED -- handed out and not given back since; RELEASED -- given back
+        and not issued again; NOT_ISSUED -- the counter has not reached it.
+  required: [number, documentType, belongs]
+
+ReleaseNumberRequest:
+  type: object
+  properties:
+    number: { type: string, maxLength: 64 }
+    reason: { type: string, maxLength: 500 }
+  required: [number, reason]
+
+NumberRelease:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    number: { type: string }
+    financialYear: { type: integer }
+    reason: { type: string }
+    releasedBy: { type: string, format: uuid }
+    releasedAt: { type: string, format: date-time }
+    reusedAt:
+      type: string
+      format: date-time
+      description: When the series handed it out again; null while it waits in the pool.
+  required: [id, number, financialYear, reason, releasedAt]
+
+NumberReleaseSlice:
+  type: object
+  description: One page, newest first. No total and no page number.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/NumberRelease" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+NumberSeriesScope:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    name: { type: string }
+    path: { type: string }
+    unitType: { type: string, enum: [HQ, LOB, REGION, BRANCH, HUB] }
+  required: [id, name, path, unitType]
+
+NumberSeriesScopeSlice:
+  type: object
+  description: One page, in path order.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/NumberSeriesScope" }
+    nextCursor: { type: string }
+    hasMore: { type: boolean }
+  required: [items, hasMore]

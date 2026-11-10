@@ -94,8 +94,10 @@ public class ProofOfDeliveryService {
                 List.of(delivered.trackingRef()), ConsignmentsDelivered.PROOF_OF_DELIVERY,
                 deliveredAt == null ? Instant.now() : deliveredAt));
         if (delivered.orderId() != null) {
-            for (UUID orderId : links.orderIdsWithNothingLeftToCarry(tenantId, List.of(delivered.orderId()))) {
-                orderPlanning.recordFulfilled(orderId);
+            if (links.orderIdsWithNothingLeftToCarry(tenantId, List.of(delivered.orderId())).isEmpty()) {
+                orderPlanning.recordPartlyDelivered(delivered.orderId());
+            } else {
+                orderPlanning.recordFulfilled(delivered.orderId());
             }
         }
         return true;

@@ -16,7 +16,8 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import {
-  apiSession, assignToLoad, newBulkOrder, printed, signIn, stubPrint, tag, withoutPermissions,
+  apiSession, assignToLoad, newBulkOrder, newPlannedLoad, offerLoad, planLoad, printed, removeFromLoadElsewhere,
+  signIn, stubPrint, tag, withoutPermissions,
 } from './support';
 
 const LARGE = 150;
@@ -118,6 +119,8 @@ test.describe('load building', () => {
 
     await expect(page.getByTestId('aboard-row')).toHaveCount(1);
     await expect(page.getByTestId('add-panel')).toHaveCount(0);
+    await expect(page.getByTestId('remove-consignment')).toHaveCount(0);
+    await expect(page.getByTestId('load-actions')).toHaveCount(0);
     await page.getByTestId('print-manifest').click();
     await page.getByTestId('print-now').click();
     expect(await printed(page)).toBe(1);
@@ -130,5 +133,87 @@ test.describe('load building', () => {
     await page.getByRole('button', { name: 'Open' }).click();
     await expect(page.getByRole('alert')).toBeVisible();
     await expect(page.getByTestId('load-panel')).toHaveCount(0);
+  });
+});
+
+test.describe('load maintenance', () => {
+  test('a consignment comes off a planned load, which is then un-planned and cancelled', async ({ page, request }, info) => {
+    const session = await apiSession(request);
+    const bulk = await newBulkOrder(request, session, tag(info), ['GENERAL', 'GENERAL', 'GENERAL']);
+    for (const c of bulk.consignments) {
+      await assignToLoad(request, session, bulk.loadId, c.id);
+    }
+    await planLoad(request, session, bulk.loadId);
+    const [first, middle, last] = bulk.consignments;
+    await signIn(page);
+    await openLoad(page, bulk.loadId);
+    await expect(page.getByTestId('load-status')).toHaveText('PLANNED');
+    await expect(page.getByTestId('aboard-row')).toHaveCount(3);
+
+    await test.step('the middle consignment comes off and the drops close up', async () => {
+      await page.getByRole('button', { name: `Remove ${middle.trackingRef}` }).click();
+      await expect(page.getByTestId('load-done')).toHaveText(`${middle.trackingRef} is off the load.`);
+      await expect(page.getByTestId('load-count')).toHaveText('2');
+      await expect(page.getByTestId('load-weight')).toContainText('200');
+      const aboard = page.getByTestId('aboard-table').getByTestId('aboard-row');
+      await expect(aboard).toHaveCount(2);
+      await expect(aboard.locator('td:nth-child(2)')).toHaveText([first.trackingRef, last.trackingRef]);
+      await expect(aboard.last().locator('td').first()).toHaveText('2');
+      await expect(page.getByTestId('load-status')).toHaveText('PLANNED');
+    });
+
+    await test.step('the load is opened for building again', async () => {
+      await page.getByTestId('unplan-load').click();
+      await expect(page.getByTestId('load-done')).toHaveText('The load is open for building again.');
+      await expect(page.getByTestId('load-status')).toHaveText('DRAFT');
+      await expect(page.getByTestId('unplan-load')).toHaveCount(0);
+    });
+
+    await test.step('the load is cancelled with a reason, and its freight released', async () => {
+      await page.getByTestId('cancel-reason').fill('the yard is closed today');
+      await page.getByTestId('cancel-load').click();
+      await expect(page.getByTestId('load-done')).toHaveText('The load is cancelled and its consignments released.');
+      await expect(page.getByTestId('load-status')).toHaveText('CANCELLED');
+      await expect(page.getByTestId('nothing-aboard')).toBeVisible();
+      await expect(page.getByTestId('load-actions')).toHaveCount(0);
+      await expect(page.getByTestId('add-panel')).toHaveCount(0);
+    });
+  });
+
+  test('a load out with a vendor is refused by code', async ({ page, request }, info) => {
+    const session = await apiSession(request);
+    const lane = await newPlannedLoad(request, session, tag(info));
+    await offerLoad(request, session, lane.loadId);
+    await signIn(page);
+    await openLoad(page, lane.loadId);
+
+    await page.getByTestId('unplan-load').click();
+    await expect(page.getByTestId('load-refusal')).toHaveText('load-allocated');
+    await expect(page.getByTestId('load-done')).toHaveCount(0);
+    await expect(page.getByTestId('load-status')).toHaveText('PLANNED');
+  });
+
+  test('a change made on a screen another planner has overtaken is refused, and the screen catches up', async ({ page, request }, info) => {
+    const session = await apiSession(request);
+    const bulk = await newBulkOrder(request, session, tag(info), ['GENERAL', 'GENERAL']);
+    for (const c of bulk.consignments) {
+      await assignToLoad(request, session, bulk.loadId, c.id);
+    }
+    const [taken, left] = bulk.consignments;
+    await signIn(page);
+    await openLoad(page, bulk.loadId);
+    await expect(page.getByTestId('aboard-row')).toHaveCount(2);
+
+    await removeFromLoadElsewhere(request, session, bulk.loadId, taken.id);
+    await page.getByRole('button', { name: `Remove ${left.trackingRef}` }).click();
+
+    await expect(page.getByTestId('load-refusal')).toHaveText('concurrent-modification');
+    await expect(page.getByTestId('aboard-row')).toHaveCount(1);
+    await expect(page.getByTestId('load-count')).toHaveText('1');
+    await test.step('at the version now on screen the change goes through', async () => {
+      await page.getByRole('button', { name: `Remove ${left.trackingRef}` }).click();
+      await expect(page.getByTestId('load-done')).toHaveText(`${left.trackingRef} is off the load.`);
+      await expect(page.getByTestId('nothing-aboard')).toBeVisible();
+    });
   });
 });

@@ -30,6 +30,8 @@ import {
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
 import type { GoodsCondition as ApiGoodsCondition } from '../api';
+import type { CloseKind as ApiCloseKind } from '../api';
+import type { CloseKindChoice } from './lmsGateway';
 // Pickers
 import type { PickPage, PickQuery } from './lmsGateway';
 import {
@@ -48,7 +50,7 @@ import type {
 } from './lmsGateway';
 import type { DemoResetOutcome } from './lmsGateway';
 import {
-  ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
+  ApiProblem, type AllocationRuleView, type ConsignmentPage, type LoadBuild, type AllocationSummary, type Choice, type ClaimDraft, type ClaimMove, type ConsignmentCard, type ConsignmentParticularsDraft, type ControlTowerSummary, type CustomFieldKind, type CustomValues, type Credentials,
   type DeliveryProofView, type FieldChanges, type FieldDefinition, type FieldDraft, type FieldType, type LmsGateway,
   type IssuedTrackingLink, type OtpIssued, type PartnerDraft, type ProofDraft, type PublicTrackingView,
   type ResourceKey, type Row, type RuleAction, type RuleDraft, type RuleEvaluation, type SignedIn, type SplitPart, type SplitPartDraft,
@@ -96,6 +98,15 @@ import type {
   CreditChangeStatus, CreditLimitChangeDraft, CreditLimitState, CreditOverrideDraft, CreditPositionView,
 } from './lmsGateway';
 
+// Number series
+import {
+  NumberSeriesApi, type NumberedDocumentType as ApiNumberedDocumentType, type NumberRelease,
+  type NumberSeries as ApiNumberSeries, type NumberYearCode as ApiNumberYearCode,
+} from '../api';
+import type {
+  NumberedDocumentType, NumberFormatDraft, NumberSeriesDraft, NumberSeriesView, NumberYearCode,
+} from './lmsGateway';
+
 /** A ticket as the exception desk lists and opens it. */
 function ticketRow(e: ApiException): Row {
   return {
@@ -138,7 +149,7 @@ function loadRow(l: Load): Row {
     id: text(l.id), loadNo: text(l.loadNo), status: text(l.status), freightMode: text(l.freightMode),
     vehicleRegistrationNo: text(l.vehicleRegistrationNo), plannedWeightKg: text(l.plannedWeightKg),
     capacityWeightKg: text(l.capacityWeightKg), weightUtilisationPct: text(l.weightUtilisationPct),
-    consignmentCount: text(l.consignmentCount),
+    consignmentCount: text(l.consignmentCount), version: text(l.version),
   };
 }
 
@@ -247,6 +258,30 @@ function consignmentCard(c: Consignment): ConsignmentCard {
     parentId: text(c.parentConsignmentId), parentTrackingRef: text(c.parentTrackingRef),
     partCount: c.partCount ?? null, partsDelivered: c.partsDelivered ?? null, partsCancelled: c.partsCancelled ?? null,
     proofStatus: text(c.proofStatus), proofCondition: text(c.proofCondition),
+    handlingUnitNo: text(c.handlingUnitNo), version: text(c.version),
+    contactName: text(c.contactName), contactPhone: text(c.contactPhone),
+    consigneeReference: text(c.consigneeReference), clientReference: text(c.clientReference),
+    deliveryWindowFrom: isoInstant(c.deliveryWindowFrom), deliveryWindowTo: isoInstant(c.deliveryWindowTo),
+    remarks: text(c.remarks),
+  };
+}
+
+/** An instant as the amendment takes it back: ISO-8601 to the second, in UTC; empty when absent. */
+function isoInstant(v: unknown): string {
+  if (v === null || v === undefined || v === '') {
+    return '';
+  }
+  const at = v instanceof Date ? v : new Date(String(v));
+  return Number.isNaN(at.getTime()) ? String(v) : at.toISOString().replace('.000Z', 'Z');
+}
+
+/** Every particular, an empty one sent as empty text so the amendment clears it. */
+function particularsRequest(p: ConsignmentParticularsDraft) {
+  return {
+    contactName: p.contactName.trim(), contactPhone: p.contactPhone.trim(),
+    consigneeReference: p.consigneeReference.trim(), clientReference: p.clientReference.trim(),
+    deliveryWindowFrom: p.deliveryWindowFrom.trim(), deliveryWindowTo: p.deliveryWindowTo.trim(),
+    remarks: p.remarks.trim(),
   };
 }
 
@@ -414,6 +449,7 @@ function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
       lineCount: text(o.lineCount), plannedLineCount: text(o.plannedLineCount),
       totalDeadWeightKg: text(o.totalDeadWeightKg), containsHazmat: o.containsHazmat ? 'Yes' : '',
       requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
+      closeKind: text(o.closeKind), closeReason: text(o.closeReason),
     },
     version: text(o.version),
     header: {
@@ -429,7 +465,8 @@ function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
       heightM: text(l.heightM), volumetricDivisor: text(l.volumetricDivisor),
       consigneePartnerId: text(l.consigneePartnerId), destinationTerminalId: text(l.destinationTerminalId),
       consigneeName: text(l.consigneeName), destinationTerminalCode: text(l.destinationTerminalCode),
-      planned: l.planned ?? false,
+      planned: l.planned ?? false, closeKind: text(l.closeKind),
+      cancelled: l.cancelled ?? false,
     })),
   };
 }
@@ -670,6 +707,20 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           parts: parts.map((p) => ({ deadWeightKg: Number(p.deadWeightKg), volumeM3: Number(p.volumeM3) })),
         },
       })).map((p) => ({ id: p.id, trackingRef: p.trackingRef }))),
+
+    amendConsignment: (id: string, version: string, particulars: ConsignmentParticularsDraft) =>
+      guard(async () => {
+        await loads.amendConsignment({
+          id, ifMatch: version, consignmentAmendmentRequest: particularsRequest(particulars),
+        });
+      }),
+
+    cancelConsignment: (id: string, reason: string) =>
+      guard(async () => {
+        await loads.cancelConsignment({
+          id, cancelConsignmentRequest: reason.trim() ? { reason: reason.trim() } : undefined,
+        });
+      }),
 
     issueTrackingLink: (consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink> =>
       guard(async () => {
@@ -1016,6 +1067,18 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         await loads.assignConsignmentsInBulk({ id: loadId, bulkAssignConsignmentsRequest: { consignmentIds } });
       }),
+    removeFromLoad: (loadId: string, version: string, consignmentId: string) =>
+      guard(async () => {
+        await loads.removeConsignmentFromLoad({ id: loadId, ifMatch: version, consignmentId });
+      }),
+    unplanLoad: (loadId: string, version: string) =>
+      guard(async () => {
+        await loads.unplanLoad({ id: loadId, ifMatch: version });
+      }),
+    cancelLoad: (loadId: string, version: string, reason: string) =>
+      guard(async () => {
+        await loads.cancelLoad({ id: loadId, ifMatch: version, cancelLoadRequest: { reason: blankAsAbsent(reason) } });
+      }),
     orderDesk: (orderId: string): Promise<OrderDesk> =>
       guard(async () => {
         const [order, lines] = await Promise.all([
@@ -1060,6 +1123,18 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     cancelOrder: (orderId: string, reason: string) =>
       guard(async () => {
         await orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } });
+      }),
+    closeOrder: (orderId: string, kind: CloseKindChoice, reason: string) =>
+      guard(async () => {
+        await orders.closeOrder({
+          id: orderId, closeOrderRequest: { kind: kind as ApiCloseKind, reason: blankAsAbsent(reason) },
+        });
+      }),
+    closeOrderLine: (orderId: string, lineId: string, kind: CloseKindChoice, reason: string) =>
+      guard(async () => {
+        await orders.closeOrderLine({
+          id: orderId, lineId, closeOrderRequest: { kind: kind as ApiCloseKind, reason: blankAsAbsent(reason) },
+        });
       }),
     orderHistory: (orderId: string, cursor?: string): Promise<HistoryPage> =>
       guard(async () => {
@@ -1135,6 +1210,8 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...rateCardVerbs(config),
     // Credit
     ...creditVerbs(config),
+    // Number series
+    ...numberingVerbs(config),
     // Pickers
     ...pickerVerbs({
       partners, terminals, vehicles, drivers, warehouse: new WarehouseApi(config), orders, loads, trips,
@@ -1945,5 +2022,92 @@ function creditVerbs(config: Configuration): CreditVerbs {
       guard(async () => { await credit.approveCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }); }),
     rejectCreditLimitChange: (id: string, note: string) =>
       guard(async () => { await credit.rejectCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }); }),
+  };
+}
+
+// Number series
+
+type NumberingVerbs = Pick<LmsGateway, 'numberSeries' | 'numberSeriesScopes' | 'createNumberSeries'
+  | 'setNumberSeriesActive' | 'deleteNumberSeries' | 'previewNumberFormat' | 'nextNumber' | 'issueNumber'
+  | 'releaseNumber' | 'numberReleases' | 'verifyNumber'>;
+
+/** A number series as the administration desk lists it. */
+function numberSeriesOf(n: ApiNumberSeries): NumberSeriesView {
+  return {
+    id: text(n.id), code: text(n.code), documentType: text(n.documentType) as NumberedDocumentType,
+    orgUnitId: text(n.orgUnitId), scope: n.orgUnitId ? text(n.orgUnitName) : 'Whole tenant', prefix: text(n.prefix),
+    yearCode: text(n.yearCode) as NumberYearCode, separator: text(n.separator), counterLength: text(n.counterLength),
+    yearStartMonth: text(n.yearStartMonth), timeZone: text(n.timeZone), reuseReleased: n.reuseReleased,
+    active: n.active, description: text(n.description), financialYear: text(n.financialYear),
+    issuedThisYear: text(n.issuedThisYear), lastIssued: text(n.lastIssued),
+    releasedAvailable: text(n.releasedAvailable), sample: text(n.sample),
+  };
+}
+
+/** A number given back to its series. */
+function numberReleaseRow(r: NumberRelease): Row {
+  return {
+    id: text(r.id), number: text(r.number), financialYear: text(r.financialYear), reason: text(r.reason),
+    releasedBy: text(r.releasedBy), releasedAt: text(r.releasedAt), reusedAt: r.reusedAt ? text(r.reusedAt) : 'Not yet',
+  };
+}
+
+/** Number series administration, over the same configuration as the rest of the gateway. */
+function numberingVerbs(config: Configuration): NumberingVerbs {
+  const numbering = new NumberSeriesApi(config);
+  const format = (f: NumberFormatDraft) => ({
+    prefix: f.prefix.trim(), yearCode: f.yearCode as unknown as ApiNumberYearCode, separator: f.separator,
+    counterLength: f.counterLength, yearStartMonth: f.yearStartMonth, timeZone: f.timeZone.trim() || undefined,
+  });
+  return {
+    numberSeries: (documentType?: NumberedDocumentType) =>
+      guard(async () => (await numbering.listNumberSeries({
+        documentType: documentType as unknown as ApiNumberedDocumentType | undefined, limit: 200,
+      })).items.map(numberSeriesOf)),
+    numberSeriesScopes: () =>
+      guard(async () => (await numbering.listNumberSeriesScopes({ limit: 200 })).items.map((u) => ({
+        id: text(u.id), name: text(u.name), path: text(u.path), unitType: text(u.unitType),
+      }))),
+    createNumberSeries: (draft: NumberSeriesDraft) =>
+      guard(async () => text((await numbering.createNumberSeries({
+        createNumberSeriesRequest: {
+          ...format(draft), code: draft.code.trim(),
+          documentType: draft.documentType as unknown as ApiNumberedDocumentType,
+          orgUnitId: draft.orgUnitId || undefined, reuseReleased: draft.reuseReleased, active: draft.active,
+          description: draft.description.trim() || undefined,
+        },
+      })).id)),
+    setNumberSeriesActive: (id: string, active: boolean) =>
+      guard(async () => {
+        if (active) {
+          await numbering.activateNumberSeries({ id });
+        } else {
+          await numbering.deactivateNumberSeries({ id });
+        }
+      }),
+    deleteNumberSeries: (id: string) => guard(async () => { await numbering.deleteNumberSeries({ id }); }),
+    previewNumberFormat: (f: NumberFormatDraft) =>
+      guard(async () => {
+        const p = await numbering.previewNumberFormat(format(f));
+        return { sample: text(p.sample), nextYearSample: text(p.nextYearSample) };
+      }),
+    nextNumber: (id: string) => guard(async () => text((await numbering.previewNextNumber({ id })).number)),
+    issueNumber: (id: string) => guard(async () => text((await numbering.issueNumber({ id })).number)),
+    releaseNumber: (id: string, number: string, reason: string) =>
+      guard(async () => {
+        await numbering.releaseNumber({ id, releaseNumberRequest: { number: number.trim(), reason: reason.trim() } });
+      }),
+    numberReleases: (id: string) =>
+      guard(async () => (await numbering.listNumberReleases({ id, limit: 100 })).items.map(numberReleaseRow)),
+    verifyNumber: (documentType: NumberedDocumentType, number: string) =>
+      guard(async () => {
+        const v = await numbering.verifyDocumentNumber({
+          documentType: documentType as unknown as ApiNumberedDocumentType, number: number.trim(),
+        });
+        return {
+          belongs: v.belongs, seriesCode: text(v.seriesCode), financialYear: text(v.financialYear),
+          counter: text(v.counter), status: text(v.status),
+        };
+      }),
   };
 }

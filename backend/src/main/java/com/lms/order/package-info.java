@@ -27,8 +27,12 @@
  * can say a terminal exists but not what kind of site it is. Otherwise orders
  * reference partners and terminals by identifier and let the database enforce
  * those references. Planning depends on orders, never the reverse.
+ *
+ * <p>{@code identity::numbering} numbers an order raised without a number,
+ * when the tenant has configured an ORDER series; without one the order's own
+ * sequence ({@code ORD-<yyyy>-<6 digits>}) still does.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Order Management",
-        allowedDependencies = {"identity::access", "masterdata::api"})
+        allowedDependencies = {"identity::access", "identity::numbering", "masterdata::api"})
 package com.lms.order;

@@ -35,6 +35,7 @@ import com.lms.order.api.MaterialClass;
 import com.lms.shared.error.BusinessRuleViolationException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
+import org.springframework.data.relational.core.mapping.Embedded;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
@@ -95,6 +96,13 @@ public record Consignment(
          * vehicle was split; null otherwise. See {@link #split}.
          */
         UUID parentConsignmentId,
+        /**
+         * What is said about the consignment rather than what it carries: the
+         * consignee's contact and reference, the delivery window, the client's
+         * reference and remarks. The one part that may be amended after
+         * generation; see {@link #amended}.
+         */
+        @Embedded.Empty ConsignmentParticulars particulars,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -210,7 +218,7 @@ public record Consignment(
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
                 containsHazmat, ConsignmentStatus.PLANNED, encodeClasses(materialClasses),
                 mode, customerPartnerId, originHubTerminalId, destinationHubTerminalId,
-                null, null, null, Instant.now(), Instant.now());
+                null, null, ConsignmentParticulars.NONE, null, Instant.now(), Instant.now());
     }
 
     /**
@@ -237,7 +245,7 @@ public record Consignment(
         return new Consignment(id, tenantId, null, trackingRef, consigneePartnerId,
                 destinationTerminalId, grossWeightKg, volumeM3, chargeableWeightKg, false,
                 ConsignmentStatus.PLANNED, "", FreightMode.FTL, null, null, null,
-                handlingUnitId, null, null, Instant.now(), Instant.now());
+                handlingUnitId, null, ConsignmentParticulars.NONE, null, Instant.now(), Instant.now());
     }
 
     /** Whether this is an LTL docket rather than a full-truckload consignment. */
@@ -284,12 +292,103 @@ public record Consignment(
                 destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
                 containsHazmat, target, materialClasses, freightMode, customerPartnerId,
                 originHubTerminalId, destinationHubTerminalId, handlingUnitId, parentConsignmentId,
-                version, createdAt, Instant.now());
+                particulars, version, createdAt, Instant.now());
+    }
+
+    /**
+     * The consignment taken off a load that has not left: back to the status
+     * it boarded from, so it can be planned onto another vehicle. PLANNED from
+     * a line haul or full truckload, ARRIVED_AT_HUB from a delivery load.
+     *
+     * <p>Anything else has already moved with its vehicle and is refused by
+     * the state machine.
+     */
+    public Consignment releasedFromLoad() {
+        if (status == ConsignmentStatus.ASSIGNED_TO_DELIVERY) {
+            return transitionTo(ConsignmentStatus.ARRIVED_AT_HUB);
+        }
+        if (status == ConsignmentStatus.ASSIGNED_TO_LOAD) {
+            return transitionTo(ConsignmentStatus.PLANNED);
+        }
+        throw new BusinessRuleViolationException("consignment-illegal-transition",
+                "Consignment " + trackingRef + " is " + status + " and cannot be taken off its load");
     }
 
     /** Whether this consignment is one part of a split one. */
     public boolean isPart() {
         return parentConsignmentId != null;
+    }
+
+    /** The particulars, never null: a row read before they existed has none. */
+    public ConsignmentParticulars particularsOrNone() {
+        return particulars == null ? ConsignmentParticulars.NONE : particulars;
+    }
+
+    /**
+     * The consignment with its particulars replaced and everything it carries
+     * kept.
+     *
+     * <p>Only while PLANNED, which also means it is on no load: once a load
+     * has been built around it, the vehicle, the drop order and the paperwork
+     * were planned against what it said, and changing it then is a conversation
+     * with the carrier rather than an edit. Refused with
+     * {@code consignment-not-amendable} otherwise. The contents -- lines,
+     * weight, volume, material -- are never amended here: they are fixed at
+     * generation, and the planner cancels and regenerates instead.
+     *
+     * @param expectedVersion the version the caller read; the save is guarded on it
+     */
+    public Consignment amended(ConsignmentParticulars next, Long expectedVersion) {
+        if (status != ConsignmentStatus.PLANNED) {
+            throw new BusinessRuleViolationException("consignment-not-amendable",
+                    "Consignment " + trackingRef + " is " + status + "; its particulars can be "
+                            + "amended only while it is planned and not on a load");
+        }
+        return new Consignment(id, tenantId, orderId, trackingRef, consigneePartnerId,
+                destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
+                containsHazmat, status, materialClasses, freightMode, customerPartnerId,
+                originHubTerminalId, destinationHubTerminalId, handlingUnitId, parentConsignmentId,
+                next, expectedVersion, createdAt, Instant.now());
+    }
+
+    /**
+     * Refuses, by code, a consignment that cannot be cancelled on its own.
+     *
+     * <p>Cancellable while PLANNED or ASSIGNED_TO_LOAD -- the load it is on is
+     * checked separately, since a load can leave before its consignments are
+     * moved on. Refused: a repeat ({@code consignment-already-cancelled}); a
+     * warehouse handling unit, which only the warehouse may withdraw
+     * ({@code consignment-from-warehouse}); a split consignment, whose
+     * progress is its parts' ({@code consignment-split}); a part, which is a
+     * share of the consignment the customer booked
+     * ({@code consignment-is-split-part}); and anything that has moved
+     * ({@code consignment-dispatched}).
+     */
+    public void requireCancellable() {
+        if (status == ConsignmentStatus.CANCELLED) {
+            throw new BusinessRuleViolationException("consignment-already-cancelled",
+                    "Consignment " + trackingRef + " is already cancelled");
+        }
+        if (handlingUnitId != null) {
+            throw new BusinessRuleViolationException("consignment-from-warehouse",
+                    "Consignment " + trackingRef + " carries a warehouse handling unit; only the "
+                            + "warehouse can withdraw it");
+        }
+        if (status == ConsignmentStatus.SPLIT) {
+            throw new BusinessRuleViolationException("consignment-split",
+                    "Consignment " + trackingRef + " has been split; cancel its order, or "
+                            + "its parts' loads, instead");
+        }
+        if (isPart()) {
+            throw new BusinessRuleViolationException("consignment-is-split-part",
+                    "Consignment " + trackingRef + " is one part of a split consignment and "
+                            + "is not cancelled on its own");
+        }
+        if (status != ConsignmentStatus.PLANNED && status != ConsignmentStatus.ASSIGNED_TO_LOAD) {
+            throw new BusinessRuleViolationException("consignment-dispatched",
+                    "Consignment " + trackingRef + " is " + status
+                            + " and can no longer be cancelled");
+        }
     }
 
     /** What one part carries, as the planner states it. */
@@ -392,7 +491,7 @@ public record Consignment(
                     consigneePartnerId, destinationTerminalId, spec.deadWeightKg(),
                     spec.volumeM3(), chargeable.get(i), containsHazmat, ConsignmentStatus.PLANNED,
                     materialClasses, freightMode, customerPartnerId, null, null, null, id,
-                    null, now, now));
+                    particularsOrNone().withoutClientReference(), null, now, now));
         }
         return new Split(transitionTo(ConsignmentStatus.SPLIT), List.copyOf(parts));
     }
