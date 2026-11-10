@@ -252,7 +252,7 @@ request after a quiet spell pays the start-up cost above.
   at a time by cursor, under the same read rules as the record itself (another
   tenant's record is a 404 `not-found`). The order desk in both consoles shows it
   on a History tab.
-- Document number series (V48, `NUMBER_SERIES_MANAGE`): a tenant numbers a
+- Document number series (V49, `NUMBER_SERIES_MANAGE`): a tenant numbers a
   document type (ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE)
   from a series that is tenant-wide or scoped to one organisational unit's
   subtree; the active series on the deepest unit covering the document wins.
@@ -270,7 +270,7 @@ request after a quiet spell pays the start-up cost above.
   series. Other modules use the two-call `identity::numbering` port
   (`DocumentNumbers.next` / `release`).
 - An order can be closed short of cancelling it (`POST /orders/{id}/close`,
-  V49). NORMAL needs every open line planned and its freight delivered
+  V50). NORMAL needs every open line planned and its freight delivered
   (`order-not-complete` names each line and what is outstanding). SHORT gives
   up the lines not yet planned -- they are closed and never planned -- but is
   refused while freight cut from an open line has not left
