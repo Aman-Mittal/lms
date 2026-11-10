@@ -1,0 +1,7 @@
+# Generated per machine by init-env.sh; never committed.
+secrets/
+# Logical backups and tenant exports hold tenant data.
+backups/
+exports/
+# Drill logs (CI uploads its own as an artifact).
+drill-*.log

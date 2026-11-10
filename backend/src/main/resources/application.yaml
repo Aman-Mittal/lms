@@ -211,6 +211,12 @@ lms:
     # absolute alone waves through a five-figure gap on a large one.
     match-tolerance-pct: ${INVOICE_TOLERANCE_PCT:2}
     match-tolerance-absolute: ${INVOICE_TOLERANCE_ABS:100}
+  dr:
+    # Recovery point objective for the walArchiving health indicator: DOWN
+    # when WAL has been written and nothing has reached the archive for this
+    # long. Only meaningful where this service's own database archives WAL
+    # (deploy/dr); on a managed database the indicator reports UNKNOWN.
+    rpo: ${LMS_DR_RPO:5m}
   demo:
     # Off by default. When on, every start ensures a "demo" tenant and one
     # administrator holding every permission (DemoTenantSeeder) -- the only way

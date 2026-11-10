@@ -1,0 +1,76 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+# The restore drill (deploy/dr/dr-drill.sh): builds the pgBackRest stack,
+# backs it up, restores to a point in time, to a named restore point and to
+# the latest WAL, round-trips a logical dump, exports one tenant, verifies the
+# repository and holds every restore against the one-hour RTO. Once per
+# repository type: the local volume and the S3 one.
+#
+# Weekly, on demand, and on a pull request that changes the DR material or the
+# migrations it applies. Uses only data the drill invents: nothing here ever
+# reads a deployed database. The secrets (repository passphrase, object-store
+# keys) are generated inside the drill for each run and deleted with it; they
+# are not repository secrets. Only the drill log -- timings and assertions --
+# is uploaded, never a backup or a dump.
+
+name: DR drill
+
+on:
+  schedule:
+    - cron: "41 4 * * 2"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "deploy/dr/**"
+      - "backend/src/main/resources/db/migration/**"
+      - ".github/workflows/dr-drill.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dr-drill-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drill:
+    name: Restore drill (${{ matrix.repo }} repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [posix, s3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the drill
+        env:
+          DR_REPO_TYPE: ${{ matrix.repo }}
+          DR_DRILL_LOG: ${{ runner.temp }}/dr-drill.log
+        run: bash deploy/dr/dr-drill.sh
+
+      - name: Upload the drill log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dr-drill-log-${{ matrix.repo }}
+          path: ${{ runner.temp }}/dr-drill.log
+          retention-days: 30
+          if-no-files-found: warn
