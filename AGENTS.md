@@ -709,7 +709,7 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   asks, a different holder of `CREDIT_LIMIT_APPROVE` decides, both within
   approval limits. A suspended or blacklisted customer gets no new or changed
   orders (`customer-not-trading`); the billing run checks headroom only.
-- Order close (V49) is the order module's: `OrderCloseService` asks planning
+- Order close (V50) is the order module's: `OrderCloseService` asks planning
   through `order::api::OrderFreightProbe` what the freight of each line is doing,
   and planning tells it of partial deliveries (`OrderPlanningPort.recordPartlyDelivered`)
   as well as complete ones. A close never touches consignments, so a short- or
@@ -719,7 +719,7 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   orders, because planning still cuts every line of an order in one call: an
   unplanned remainder cannot exist at delivery time, so it is not what the
   tolerance measures. Quantities are not mixed across units of measure anywhere.
-- A line is open only while it is neither closed nor cancelled (V50,
+- A line is open only while it is neither closed nor cancelled (V51,
   `OrderLine.isOpen`). Planning, coverage, credit exposure and every close rule
   count open lines only: a cancelled line never blocks a close or the automatic
   one, and is not closed with its order; a closed line cannot be cancelled
