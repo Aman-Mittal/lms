@@ -88,7 +88,11 @@ render_conf() {
                 echo "repo1-s3-key-secret=$(secret s3_secret_key)"
                 local ca="${DR_S3_CA_FILE-$SECRETS/s3_tls_cert}"
                 if [ -n "$ca" ]; then
-                    echo "repo1-storage-ca-file=$ca"
+                    # A certificate is public, but the mounted one keeps the
+                    # host's owner and mode 600, which postgres may not be
+                    # able to read. A readable copy sits beside the config.
+                    install -o root -g postgres -m 0644 "$ca" "$(dirname "$CONF")/s3-ca.crt"
+                    echo "repo1-storage-ca-file=$(dirname "$CONF")/s3-ca.crt"
                 fi
                 ;;
             *)

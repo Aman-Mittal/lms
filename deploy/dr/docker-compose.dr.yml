@@ -100,6 +100,12 @@ services:
   objectstore:
     profiles: ["s3"]
     image: chrislusf/seaweedfs:4.48
+    # The image's entrypoint drops to its own `seaweed` user, which cannot
+    # read the secrets: compose mounts them with the host owner and mode 600.
+    # This object store is the drill's and a development stand-in, so weed
+    # runs directly, as the container's root, rather than widening the
+    # secrets' permissions on the host.
+    entrypoint: ["/usr/bin/weed", "-logtostderr=true"]
     command:
       - server
       - -dir=/data
