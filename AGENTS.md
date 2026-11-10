@@ -499,6 +499,9 @@ cd backend
 # Whole stack locally
 docker compose -f deploy/docker-compose.yml up
 
+# Backup/restore drill: pgBackRest PITR, logical round trip (runbook: deploy/dr/README.md)
+bash deploy/dr/dr-drill.sh
+
 # License audit over the repo (same command CI runs)
 java -jar apache-rat-0.18.jar --input-exclude-file .rat-excludes -- .
 
