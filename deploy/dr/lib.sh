@@ -43,8 +43,22 @@ log() {
     printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*" >&2
 }
 
+# In GitHub Actions, also raise an annotation: annotations are readable on the
+# run page and through the API without access to the job log or artifacts.
+annotate() {
+    local level="$1"
+    shift
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then
+        # Newlines and percent signs must be escaped in a workflow command.
+        local text="${*//'%'/'%25'}"
+        text="${text//$'\n'/'%0A'}"
+        printf '::%s title=DR drill::%s\n' "$level" "$text"
+    fi
+}
+
 die() {
     log "ERROR: $*"
+    annotate error "$*"
     exit 1
 }
 

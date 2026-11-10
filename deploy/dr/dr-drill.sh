@@ -73,6 +73,7 @@ pass() {
 fail() {
     SUMMARY+=("FAIL  $*")
     log "FAIL $*"
+    annotate error "$*"
     FAILED=$((FAILED + 1))
 }
 
@@ -98,6 +99,7 @@ cleanup() {
     echo
     echo "== DR drill summary ($DR_REPO_TYPE repository, $(elapsed_since "$DRILL_STARTED")s) =="
     printf '%s\n' "${SUMMARY[@]}"
+    annotate notice "$(printf '%s\n' "${SUMMARY[@]}")"
     if [ "$status" -ne 0 ] || [ "$FAILED" -ne 0 ]; then
         echo "DRILL FAILED (exit $status, $FAILED failed check(s))"
         [ "$status" -ne 0 ] || status=1
@@ -112,6 +114,9 @@ if [ -n "$(dc ps -aq 2>/dev/null)" ] \
     die "compose project $DR_PROJECT already exists; remove it or set DR_PROJECT"
 fi
 trap cleanup EXIT
+# A command failing outside a check names itself, so a CI failure is readable
+# from the annotations alone.
+trap 'annotate error "line $LINENO: $BASH_COMMAND exited with $?"' ERR
 
 sql() {
     primary_psql -At "$@"
