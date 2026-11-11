@@ -1,0 +1,249 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/approvals:
+  get:
+    tags: [Approvals]
+    operationId: listApprovals
+    summary: The approvals inbox
+    description: |
+      Requires `APPROVAL_READ`. Newest first, keyset-paged. `scope`
+      narrows to what the caller can decide now or to what they asked for;
+      `MINE_TO_DECIDE` lists only open requests. `subjectType` and
+      `subjectId` find one subject's requests (an order's cancellation, say).
+    parameters:
+      - name: status
+        in: query
+        schema: { $ref: "#/components/schemas/ApprovalStatus" }
+      - name: subjectType
+        in: query
+        schema: { type: string }
+      - name: subjectId
+        in: query
+        schema: { type: string, format: uuid }
+      - name: scope
+        in: query
+        schema: { $ref: "#/components/schemas/ApprovalScope" }
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of approval requests.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/approvals/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the approval request.
+  get:
+    tags: [Approvals]
+    operationId: getApproval
+    summary: One approval request, its policy and its decision trail
+    description: |
+      Requires `APPROVAL_READ`. The policy is the one copied onto the request
+      when it was raised; a later change of the tenant's policy does not
+      change it. The `ETag` is the request's version, for `If-Match` on a
+      decision. Another tenant's request is 404.
+    responses:
+      "200":
+        description: The request.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The request's version.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDetail" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/approvals/{id}/approve:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the approval request.
+  post:
+    tags: [Approvals]
+    operationId: approveApproval
+    summary: Give an approval step
+    description: |
+      The caller must hold the permission of an open step of the request's
+      policy (403 otherwise). The last step closes the request APPROVED and
+      applies it, in the same transaction, through the module that owns the
+      subject -- which checks again that the action still makes sense. If it
+      does not, the decision is refused with that module's own 409 code
+      (`order-work-dispatched`, `pod-already-billed`, ...) and the request
+      stays open. Audited (`APPROVAL_STEP_GIVEN` or `APPROVAL_APPROVED`).
+
+      Refused with 409 and a code: `concurrent-modification` for a stale
+      `If-Match`; `approval-not-open` for a closed request;
+      `approval-self-decision` for the requester, unless the policy allows it;
+      `approval-already-given` for an approver who gave an earlier step.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApproveRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/approvals/{id}/reject:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the approval request.
+  post:
+    tags: [Approvals]
+    operationId: rejectApproval
+    summary: Reject a request, saying why
+    description: |
+      The caller must hold the permission of any step of the request's
+      policy (403 otherwise). Nothing is applied. A reason is required (400).
+      Audited as `APPROVAL_REJECTED`. 409 codes as for approving.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RejectApprovalRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/approvals/{id}/cancel:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the approval request.
+  post:
+    tags: [Approvals]
+    operationId: cancelApproval
+    summary: Withdraw your own request
+    description: |
+      Only the requester may (409 `approval-not-requester`). Nothing is
+      applied. Audited as `APPROVAL_CANCELLED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelApprovalRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/approvals/policies:
+  get:
+    tags: [Approvals]
+    operationId: listApprovalPolicies
+    summary: The approval policy in force for each subject type
+    description: Requires `APPROVAL_READ`. The code default, with the tenant's own values over it.
+    responses:
+      "200":
+        description: One policy per subject type.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ApprovalPolicyView" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+
+/api/v1/approvals/policies/{subjectType}:
+  parameters:
+    - name: subjectType
+      in: path
+      required: true
+      schema: { type: string }
+      description: The subject type, e.g. ORDER_CANCELLATION.
+  put:
+    tags: [Approvals]
+    operationId: setApprovalPolicy
+    summary: Set the tenant's own values for a subject type's policy
+    description: |
+      Requires `APPROVAL_POLICY_MANAGE`. Replaces whatever the tenant had
+      set; an omitted field keeps the code default. Applies to requests raised
+      afterwards -- an open request keeps the policy copied onto it. Refused
+      with 409: `approval-mandatory` to switch off a mandatory flow (a proof's
+      reversal), `approval-steps-invalid` for a step that names no permission,
+      `approval-due-out-of-range`. An unknown subject type is 404. Audited as
+      `APPROVAL_POLICY_SET`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApprovalPolicyRequest" }
+    responses:
+      "200":
+        description: The policy now in force.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalPolicyView" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  delete:
+    tags: [Approvals]
+    operationId: resetApprovalPolicy
+    summary: Go back to the code default for a subject type
+    description: Requires `APPROVAL_POLICY_MANAGE`. Audited as `APPROVAL_POLICY_RESET`.
+    responses:
+      "200":
+        description: The policy now in force.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalPolicyView" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }

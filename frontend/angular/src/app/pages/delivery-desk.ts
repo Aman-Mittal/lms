@@ -82,6 +82,15 @@ import { EntityPicker } from './entity-picker';
             </form>
           }
         }
+        @if (confirmed() && reverse()) {
+          <form class="inline" (ngSubmit)="askReversal()" data-testid="reverse-proof">
+            <input name="reversalReason" placeholder="Why the proof is wrong" aria-label="Reason to reverse"
+                   data-testid="reversal-reason" [value]="reversalReason()"
+                   (input)="reversalReason.set($any($event.target).value)" required />
+            <button type="submit">Reverse proof</button>
+          </form>
+        }
+        @if (reversal()) { <p class="ok" role="status" data-testid="reversal-requested">{{ reversal() }}</p> }
         @if (confirmed() && proof(); as p) {
           <p><button class="link" data-testid="print-proof" (click)="slip.set(true)">Print slip</button></p>
           @if (slip()) {
@@ -119,6 +128,10 @@ export class DeliveryDesk {
   readonly error = signal('');
   readonly slip = signal(false);
   readonly record = computed(() => this.session.can('POD_RECORD'));
+  /** A proof is reversed only through an approval; asking needs its own right. */
+  readonly reverse = computed(() => this.session.can('POD_REVERSE'));
+  readonly reversalReason = signal('');
+  readonly reversal = signal('');
   readonly confirmed = computed(() => this.proof()?.status === 'CONFIRMED');
   readonly conditions = GOODS_CONDITIONS;
   readonly condition = signal<GoodsCondition>('CLEAN');
@@ -135,6 +148,7 @@ export class DeliveryDesk {
     this.consignmentId.set(this.typed().trim());
     this.issued.set(null);
     this.slip.set(false);
+    this.reversal.set('');
     await this.refresh();
   }
 
@@ -156,6 +170,18 @@ export class DeliveryDesk {
         goodsCondition: this.condition(), remark: this.remark(),
       });
       await this.refresh();
+    } catch (e) {
+      this.error.set((e as Error).message);
+    }
+  }
+
+  async askReversal(): Promise<void> {
+    this.error.set('');
+    this.reversal.set('');
+    try {
+      await this.gateway.requestProofReversal(this.consignmentId(), this.reversalReason().trim());
+      this.reversal.set('Reversal requested: awaiting approval.');
+      this.reversalReason.set('');
     } catch (e) {
       this.error.set((e as Error).message);
     }

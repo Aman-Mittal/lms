@@ -85,6 +85,52 @@
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 
+/api/v1/deliveries/{consignmentId}/proof/reversal:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Delivery and claims]
+    operationId: requestProofReversal
+    summary: Ask for a confirmed proof of delivery to be reversed
+    description: |
+      Requires `POD_REVERSE`. Always goes through an approval: the answer is
+      202 with the request (subject type `POD_REVERSAL`), decided by a holder
+      of `POD_REVERSAL_APPROVE` other than the requester. Approving it marks
+      the proof REVERSED, puts the consignment back in transit (out for
+      delivery for a docket) unless a completed trip delivered it, holds again
+      a completed trip's settlement the proof had released, and audits
+      `DELIVERY_PROOF_REVERSED`.
+
+      Refused with 409 and a code: `proof-not-recorded` without a confirmed
+      proof; `pod-already-billed` once the carrier's bill for a trip that
+      carried it was approved for payment or the client's transport charge
+      for it was invoiced -- checked again when the request is approved, and
+      a refusal then leaves the request open; `approval-already-open` while a
+      reversal request is open. Another tenant's consignment is 404.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ProofReversalRequest" }
+    responses:
+      "202":
+        description: The approval request raised.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalTicket" }
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
 /api/v1/deliveries/{consignmentId}:
   parameters:
     - name: consignmentId

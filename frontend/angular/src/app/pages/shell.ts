@@ -57,6 +57,9 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Operations' && session.can('ORDER_READ')) {
                 <a routerLink="/order-desk" routerLinkActive="active" data-testid="nav-order-desk">Order desk</a>
               }
+              @if (group === 'Operations' && session.can('APPROVAL_READ')) {
+                <a routerLink="/approvals" routerLinkActive="active" data-testid="nav-approvals">Approvals</a>
+              }
               @if (group === 'Operations' && session.can('LOAD_READ')) {
                 <a routerLink="/load-building" routerLinkActive="active" data-testid="nav-load-building">Load building</a>
               }
