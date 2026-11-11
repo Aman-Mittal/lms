@@ -262,6 +262,13 @@
       departure date, hazmat certification where the load needs it, and the
       weighed payload against the manifest within tolerance.
 
+      The documents and the tolerance are the settings
+      `execution.dispatch.requiredDocuments` (dated: the rule in force on the
+      day of departure) and `execution.dispatch.weightTolerancePct`, resolved
+      for the trip's unit and vehicle and every customer whose freight is
+      aboard. Each missing document is named with the profile that required
+      it, or "the system default".
+
       Recorded once. Dispatching a trip that has already left is refused with
       409 `trip-already-dispatched` before any check runs; nothing is written
       to the gate log and nothing is announced again.

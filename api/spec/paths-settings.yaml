@@ -43,8 +43,8 @@
       profile, the latest version of a key in effect on `asOf` applies. Then
       folded least specific first: the platform's values (global, then
       `country`, then `state`), the organisation default, every
-      organisational unit at or above `orgUnitId` (deeper wins), the vehicle
-      and the customer. Per key, the most specific profile of a scope type the
+      organisational unit at or above `orgUnitId` (deeper wins), the vehicle,
+      the customer and the vendor. Per key, the most specific profile of a scope type the
       key allows wins; with none, the system default (`source.kind`
       `SYSTEM_DEFAULT`). An id naming nothing of the tenant's simply matches
       no profile.
@@ -64,6 +64,11 @@
         required: false
         schema: { type: string, format: uuid }
         description: The vehicle to resolve for.
+      - name: vendorId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: The vendor partner to resolve for.
       - name: asOf
         in: query
         required: false
@@ -154,7 +159,7 @@
     description: |
       Requires `SETTINGS_MANAGE`; a unit's profile also needs the decision
       point to allow the unit (403 for one outside the caller's reach or not
-      the tenant's). A customer or vehicle that is not the tenant's is 404.
+      the tenant's). A customer, vendor or vehicle that is not the tenant's is 404.
       A PLATFORM profile (no tenant; optionally a `country` and `state`)
       needs `PLATFORM_SETTINGS_MANAGE`, the platform operator's right.
       Refused with 409 `setting-profile-scope-taken` when the scope already

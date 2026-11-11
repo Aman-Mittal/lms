@@ -338,4 +338,21 @@ public class PlanningLinks {
                 .query(Boolean.class)
                 .single());
     }
+
+    /** The ordering customers of the consignments on a load, each once, by id. */
+    public List<UUID> customersOnLoad(UUID tenantId, UUID loadId) {
+        return jdbc.sql("""
+                        SELECT DISTINCT o.customer_partner_id
+                          FROM load_consignment lc
+                          JOIN consignment c ON c.id = lc.consignment_id
+                          JOIN sales_order o ON o.id = c.order_id
+                         WHERE lc.tenant_id = :tenantId
+                           AND lc.load_id = :loadId
+                         ORDER BY o.customer_partner_id
+                        """)
+                .param("tenantId", tenantId)
+                .param("loadId", loadId)
+                .query(UUID.class)
+                .list();
+    }
 }
