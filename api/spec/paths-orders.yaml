@@ -449,7 +449,11 @@
     tags: [Orders]
     operationId: getOrderCloseSettings
     summary: The tenant's order close policy
-    description: Requires `ORDER_READ`. A tolerance of 0 and automatic fulfilment on, until the tenant sets its own.
+    description: |
+      Requires `ORDER_READ`. A tolerance of 0 and automatic fulfilment on, until the tenant sets its own.
+      This is the organisation default of the settings `order.close.tolerancePercent` and
+      `order.close.autoFulfil`; a profile for an order's unit or customer (`/settings/profiles`)
+      overrides it for that order.
     responses:
       "200":
         description: The policy in force.
@@ -470,7 +474,8 @@
       and its remaining lines with it. With `autoFulfil` false, delivering the
       last consignment leaves the order open, fully planned, until a person
       closes it. A tolerance outside 0 to 100, or finer than two decimal places,
-      is refused with `close-tolerance-out-of-range`.
+      is refused with `close-tolerance-out-of-range`. Writes the organisation
+      default profile, whose history records the change.
     requestBody:
       required: true
       content:

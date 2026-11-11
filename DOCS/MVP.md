@@ -295,6 +295,32 @@ request after a quiet spell pays the start-up cost above.
   hand. The order desk in both consoles offers close, short close and force
   close, and a short or forced close per line, each only to whoever holds the
   right, and shows a refusal by its code.
+- Settings and profiles (V52, `com.lms.settings`). Every tunable value is a
+  setting a module registers in code with a type, a system default, bounds and
+  the scopes it may be set at; nothing else can be stored. Values are grouped
+  into profiles, one per scope: the platform operator's (for every tenant,
+  globally or per country and state), the organisation default, an
+  organisational unit, a vehicle, a customer, and each person's own
+  preferences. The value in force for a context folds them least specific
+  first -- platform < organisation < unit (deeper wins) < vehicle < customer <
+  user -- with the system default when none sets it, and says which profile
+  supplied it. A dated setting (every COMPLIANCE one) keeps versions from
+  their first day; resolution takes an `asOf` day, and a version in force is
+  never edited: a change is a new version from today or later. Every change is
+  on the profile's history, version by version. `GET /settings/definitions`,
+  `/settings/effective`, `/settings/profiles` (CRUD with `If-Match`, history),
+  `/settings/org-units`, `/settings/me`, and `GET /me` (who the caller is).
+  The order close policy and the detector tolerances moved onto it (their own
+  endpoints still work, writing the organisation default); the close policy is
+  now resolved per order, so a customer's own tolerance wins. Both consoles
+  have **My profile & preferences** (identity, theme, date format, time zone,
+  rows per page, landing page, notification choices -- recorded only, nothing
+  sends notifications yet) and **Administration > Profile settings** (profiles
+  by scope with the existing pickers, typed inputs, versions, history, and
+  what is in force for a unit, customer, vehicle and day). Theme, date format,
+  time zone, rows per page and landing page are applied by the consoles. No
+  compliance rule is registered yet; the platform scope and dating are there
+  for one.
 - An LTL load consolidates dockets from many customers gathered at one origin
   hub and bound for one destination hub; capacity, dangerous goods and
   compatibility rules apply as for any load. A docket then travels twice: line
