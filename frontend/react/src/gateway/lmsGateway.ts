@@ -1059,6 +1059,16 @@ export interface LmsGateway {
   effectiveSettings(context: SettingContextDraft): Promise<EffectiveSettingView[]>;
   /** What changed on a profile, newest first, one row per changed version. */
   settingProfileHistory(id: string): Promise<SettingHistoryRow[]>;
+  /** Replaces a combination profile's conditions at the version last read. */
+  updateSettingConditions(id: string, version: string, conditions: SettingConditions): Promise<SettingProfileView>;
+  // Organisation units
+  /** The caller's unit and every unit beneath it, parents first. */
+  orgUnits(): Promise<OrgUnitView[]>;
+  orgUnit(id: string): Promise<OrgUnitView>;
+  /** Resolves to the new unit's id. Needs ORG_UNIT_MANAGE. */
+  createOrgUnit(draft: OrgUnitDraft): Promise<string>;
+  /** Renames, retypes or recodes a unit at the version last read; resolves to the unit as saved. */
+  updateOrgUnit(id: string, version: string, edit: OrgUnitEdit): Promise<OrgUnitView>;
 }
 
 // Warehouse operations
@@ -1534,7 +1544,7 @@ export interface MeView {
 }
 
 /** The scopes an administrator keeps profiles for; PLATFORM is the operator's, USER a person's own. */
-export const SETTING_SCOPES = ['ORG_DEFAULT', 'ORG_UNIT', 'CUSTOMER', 'VENDOR', 'VEHICLE'] as const;
+export const SETTING_SCOPES = ['ORG_DEFAULT', 'ORG_UNIT', 'CUSTOMER', 'VENDOR', 'VEHICLE', 'COMBINATION'] as const;
 export type SettingScope = (typeof SETTING_SCOPES)[number] | 'PLATFORM' | 'USER';
 
 /** A setting's value as the API holds it: text, number, true/false, or a small object. */
@@ -1599,14 +1609,35 @@ export interface SettingProfileView {
   /** Key to the value in effect today, from this profile alone. */
   values: Record<string, SettingValue>;
   versions: SettingVersionView[];
+  /** A combination's conditions; null for every other scope. */
+  conditions: SettingConditions | null;
   updatedAt: string;
+}
+
+/** How freight moves; a combination may name one. */
+export const FREIGHT_MODES = ['FTL', 'LTL', 'RAIL', 'MILK_RUN'] as const;
+
+/**
+ * What a combination profile applies to: every id or mode named must hold for
+ * the context (the unit by its subtree); an empty one is left open. Two at least.
+ */
+export interface SettingConditions {
+  orgUnitId: string;
+  customerId: string;
+  vendorId: string;
+  vehicleId: string;
+  freightMode: string;
+  /** Settles combinations with as many conditions and an equally deep unit; higher wins. */
+  priority: number;
 }
 
 export interface SettingProfileDraft {
   scopeType: SettingScope;
-  /** The unit, customer or vehicle; empty for the organisation default. */
+  /** The unit, customer or vehicle; empty for the organisation default and a combination. */
   scopeId: string;
   name: string;
+  /** A combination's conditions. */
+  conditions?: SettingConditions;
 }
 
 /** A change to a profile: `effectiveFrom` empty for an undated value; a null value removes it. */
@@ -1623,6 +1654,8 @@ export interface SettingContextDraft {
   vehicleId: string;
   vendorId: string;
   asOf: string;
+  /** A freight mode, or empty for none. */
+  freightMode: string;
 }
 
 /** One version that changed on a profile: before and after, empty when absent. */
@@ -1635,4 +1668,55 @@ export interface SettingHistoryRow {
   setting: string;
   before: string;
   after: string;
+}
+
+// ---------------------------------------------------------------- organisation units
+
+/** The levels, highest first; REGION is the older name for a zone and ranks as one. */
+export const ORG_UNIT_TYPES = ['HQ', 'LOB', 'COUNTRY', 'ZONE', 'REGION', 'BRANCH', 'HUB'] as const;
+
+/** Each level in words, for labels such as "Branch: Gurgaon". */
+export const ORG_UNIT_WORDS: Record<string, string> = {
+  HQ: 'Head office', LOB: 'Line of business', COUNTRY: 'Country', ZONE: 'Zone', REGION: 'Region',
+  BRANCH: 'Branch', HUB: 'Hub',
+};
+
+/** Each level's rank: a unit ranks strictly below its parent. */
+export const ORG_UNIT_RANK: Record<string, number> = {
+  HQ: 0, LOB: 1, COUNTRY: 2, ZONE: 3, REGION: 3, BRANCH: 4, HUB: 5,
+};
+
+export interface OrgUnitView {
+  id: string;
+  /** Empty for the tenant's root. */
+  parentId: string;
+  slug: string;
+  path: string;
+  name: string;
+  unitType: string;
+  level: number;
+  /** A country's own code; empty otherwise. */
+  countryCode: string;
+  stateCode: string;
+  /** The nearest country and state at or above the unit; what platform settings follow. */
+  effectiveCountry: string;
+  effectiveState: string;
+  version: string;
+}
+
+export interface OrgUnitDraft {
+  parentId: string;
+  slug: string;
+  name: string;
+  unitType: string;
+  countryCode: string;
+  stateCode: string;
+}
+
+/** A unit's new name, type and codes; the slug and parent never change. */
+export interface OrgUnitEdit {
+  name: string;
+  unitType: string;
+  countryCode: string;
+  stateCode: string;
 }
