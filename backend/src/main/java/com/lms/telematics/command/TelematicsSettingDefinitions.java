@@ -68,17 +68,17 @@ public class TelematicsSettingDefinitions implements SettingContributor {
                                         + " the control tower raises an extended stoppage.")
                         .defaultValue(Duration.ofMinutes(defaultStoppageMinutes))
                         .between(Duration.ofMinutes(1), Duration.ofDays(7))
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER).build(),
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION).build(),
                 SettingDefinition.of(STOPPAGE_RADIUS, "Stoppage radius (m)",
                                 "How far a vehicle may drift, in metres, and still count as standing"
                                         + " still; GPS jitter and manoeuvring in a lay-by stay inside it.")
                         .defaultValue(defaultRadiusMetres).range(1, 10_000)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE).build(),
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.COMBINATION).build(),
                 SettingDefinition.of(ROUTE_CORRIDOR, "Route corridor (m)",
                                 "How far off the straight line from origin to destination, in metres, a"
                                         + " vehicle may be before it has strayed. Wide by default, because the"
                                         + " line is not a road.")
                         .defaultValue(defaultCorridorMetres).range(100, 1_000_000)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER).build());
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION).build());
     }
 }

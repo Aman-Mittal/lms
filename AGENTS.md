@@ -171,7 +171,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 
 | Module | Role |
 |---|---|
-| `identity` | Tenants, org hierarchy, users, authentication, RBAC, audit log, and attribute-based access control (policies as per-tenant data, decided by the `@abac` bean). Depends on nothing. |
+| `identity` | Tenants, org hierarchy (typed levels HQ < LOB < COUNTRY < ZONE/REGION < BRANCH < HUB, created and edited through `/org-units`), users, authentication, RBAC, audit log, and attribute-based access control (policies as per-tenant data, decided by the `@abac` bean). Depends on nothing. |
 | `masterdata` | Business partners and KYC, vehicles, drivers, dispatch readiness, terminals as geofences (including HUB, WAREHOUSE and RAILHEAD categories). |
 | `order` | Demand ingestion and validation: orders, lines, chargeable weight, dangerous goods, freight mode (FTL or LTL with hubs). |
 | `planning` | Consignment generation (lorry receipts and LTL dockets), load building, consolidation; turns a warehouse hand-off into a consignment. |
@@ -184,7 +184,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
 | `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
-| `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
+| `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, combination, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
 | `approvals` | One approvals module for every flow: requests with a frozen payload, a policy per subject type (copied onto each request), decisions applied in-process by the owning module's handler, the inbox, expiry. Depends on `identity::access` only. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
@@ -311,7 +311,11 @@ record of its own. A module that owns a setting declares it, nowhere else:
   vehicle and the customers aboard); a threshold is read for the only
   customer aboard, the dispatch checklist for every one of them. Read once per
   record per request, not once per row of a batch (telematics resolves once
-  per trip per ingested batch).
+  per trip per ingested batch). An order's context carries its freight mode
+  and a trip's its load's (`withFreightMode`, `TripScope.freightMode`), so a
+  combination naming a mode applies; `SettingContext.FREIGHT_MODES` mirrors
+  `order::api` `FreightMode` (settings cannot import it: order depends on
+  settings) and `SettingCombinationTest` holds the two equal.
 
 Registered so far: `order.close.*` (unit, customer);
 `controltower.detector.etaSlipTolerance` and `.temperatureExcursionTolerance`
@@ -323,21 +327,62 @@ known document types), `execution.dispatch.weightTolerancePct` and
 `execution.tracking.autoDeparture` / `.autoArrival` / `.autoCompleteOnExit`
 (unit, vehicle, customer); `finance.match.tolerancePercent` and
 `.toleranceAbsolute` (unit, vendor); and the calendar, UI and notification
-preferences.
+preferences. COMBINATION is opted into (V55) by the tracking thresholds, the
+dispatch checklist and weight tolerance, both match tolerances, the order
+close tolerance and both detector tolerances -- not by the tracking switches,
+`order.close.autoFulfil` or any preference.
 
 The fold is fixed. Per profile, of a key's versions the latest one effective
 on the context's `asOf` (default: today in the tenant's `settings.timeZone`)
 applies; an undated value applies since always. Across profiles the most
 specific one the key allows wins:
-PLATFORM (global < country < state) < ORG_DEFAULT < ORG_UNIT (deeper wins) <
-VEHICLE < CUSTOMER < VENDOR < USER. With none, the system default answers.
+PLATFORM (global < country < state) < ORG_DEFAULT < ORG_UNIT (deeper wins:
+country < zone < branch < hub) < VEHICLE < CUSTOMER < VENDOR < COMBINATION
+(more conditions, then the deeper unit, then the higher priority) < USER.
+With none, the system default answers. Every source carries a `label` in
+words with the unit's level ("Country: India", "Zone: North", "Branch:
+Gurgaon") or a combination's conditions ("Branch Gurgaon + Customer Acme");
+consoles show it as given.
+
 VENDOR (V54) names a business partner of type VENDOR, as CUSTOMER names one of
 type CUSTOMER; it sits next to CUSTOMER because no key a customer's context
 reads is one a vendor's does (a freight bill names a vendor, a trip a
 customer), so their relative order decides nothing. Every
-resolution is one statement however many profiles apply (`SettingsApiTest`
-counts it with `pg_stat_statements`). A stored value the definition now
+resolution is one statement however many profiles apply, units, jurisdiction
+and combinations included (`SettingsApiTest` and `SettingsHierarchyApiTest`
+count it with `pg_stat_statements`). A stored value the definition now
 refuses is skipped, never applied.
+
+Org units (V55) are typed HQ 0, LOB 1, COUNTRY 2, ZONE and REGION 3, BRANCH 4,
+HUB 5; `OrgUnitService` (identity, `ORG_UNIT_MANAGE`, audited, `If-Match` on
+`PUT /org-units/{id}`) refuses a unit that does not rank strictly below its
+parent and above its children (`org-unit-level-invalid`), a COUNTRY without
+an alpha-2 `country_code` or a code on another type
+(`org-unit-country-invalid`), a `state_code` on HQ, LOB or COUNTRY
+(`org-unit-state-invalid`) and a taken slug (`org-unit-slug-taken`). There is
+no move and the slug never changes, so a path never changes. The rank rule is
+not a database constraint: trees written before V55 were never held to it and
+still load and rename; only new writes (create, retype) are checked. A
+context that names a unit (or an org path) but neither country nor state
+takes the unit's jurisdiction for PLATFORM profiles: the nearest
+`country_code` at or above it, and the nearest `state_code` beneath that
+country, both read inside the one resolving statement through the unit's
+ancestors by `(tenant_id, path)`.
+
+COMBINATION profiles (V55) carry conditions instead of a scope id
+(`match_org_unit_id` by subtree, `match_customer_id`, `match_vendor_id`,
+`match_vehicle_id`, `match_freight_mode`; two or more) and a `priority`
+(-1000..1000); `scope_id` is the profile's own id so a tenant keeps many and
+the one-per-scope index stays. Conditions are checked as scope ids are (404
+for a record not the tenant's, 403 for a unit outside the caller's reach,
+`setting-combination-invalid` for fewer than two, an unknown mode or a
+priority out of bounds). A write is refused with
+`setting-combination-ambiguous` when another combination could match the
+same context (no dimension where both name different values, and units, if
+both name one, on one line) with as many conditions, an equally deep unit
+and the same priority, and sets one of the same keys; `CombinationRules`
+takes a per-tenant transaction advisory lock first so two writes cannot both
+pass.
 
 Writes: unknown keys (`setting-unknown`), keys outside their scopes
 (`setting-scope-not-allowed`), platform-only keys at a tenant scope
@@ -725,6 +770,8 @@ includes production, after the image has been built and pushed.
 - Two audit mechanisms now exist side by side: `TransitionAudit` (batched, for
   bulk transitions) and `AuditTrail.recordAtomically` (single). They should be
   one.
+- Org units cannot be moved or deleted, and nothing yet enforces the rank rule
+  on trees written before V55 (see the settings section).
 - Telematics is deliberately not audited (a stoppage or deviation already
   becomes a control-tower ticket with its own history). Order coverage changes
   (`ORDER_PARTIALLY_PLANNED`, `ORDER_FULLY_PLANNED`) and LTL docket movements
