@@ -175,7 +175,7 @@ class SettingsApiTest {
         com.lms.client.model.SettingDefinition tolerance = all.stream().filter(d -> d.getKey().equals(TOLERANCE)).findFirst()
                 .orElseThrow();
         assertThat(tolerance.getScopes()).containsExactly(SettingScopeType.ORG_DEFAULT, SettingScopeType.ORG_UNIT,
-                SettingScopeType.CUSTOMER);
+                SettingScopeType.CUSTOMER, SettingScopeType.COMBINATION);
         assertThat(tolerance.getMax()).isEqualByComparingTo("100");
         assertThat(tolerance.getUserPreference()).isFalse();
         com.lms.client.model.SettingDefinition theme = all.stream().filter(d -> d.getKey().equals("ui.theme")).findFirst().orElseThrow();
@@ -198,7 +198,7 @@ class SettingsApiTest {
         Outcome read = kit.get(acme, PROFILES + "/" + id, READ);
         assertThat(read.status()).isEqualTo(200);
         JsonNode body = kit.parse(read);
-        assertThat(body.get("scopeLabel").asString()).isEqualTo("North (" + acme.orgPath() + "north/)");
+        assertThat(body.get("scopeLabel").asString()).isEqualTo("Region: North (" + acme.orgPath() + "north/)");
         assertThat(body.get("values").get(TOLERANCE).decimalValue()).isEqualByComparingTo("2.5");
         assertThat(read.body()).contains("\"version\":1");
         String etag = etag(acme, id);
@@ -338,7 +338,7 @@ class SettingsApiTest {
         assertSource(effective(acme, "orgUnitId=" + northBranch), TOLERANCE, "2", "ORG_UNIT", region);
 
         // Through the generated client too: the contract carries the provenance.
-        List<EffectiveSetting> items = settings(acme, READ).getEffectiveSettings(null, customer, null, null, null, null, null).getItems();
+        List<EffectiveSetting> items = settings(acme, READ).getEffectiveSettings(null, customer, null, null, null, null, null, null).getItems();
         EffectiveSetting viaClient = items.stream().filter(i -> i.getKey().equals(TOLERANCE)).findFirst()
                 .orElseThrow();
         assertThat(viaClient.getSource().getProfileId()).isEqualTo(forCustomer);
@@ -640,7 +640,7 @@ class SettingsApiTest {
         JsonNode read = kit.parse(kit.get(acme, PROFILES + "/" + forVendor, READ));
         assertThat(read.get("scopeType").asString()).isEqualTo("VENDOR");
         assertThat(read.get("scopeLabel").asString()).contains("VEN");
-        assertThat(settings(acme, READ).getEffectiveSettings(null, null, null, vendor, null, null, null).getItems()
+        assertThat(settings(acme, READ).getEffectiveSettings(null, null, null, vendor, null, null, null, null).getItems()
                 .stream().filter(i -> i.getKey().equals(match)).findFirst().orElseThrow()
                 .getSource().getScopeType()).isEqualTo(SettingScopeType.VENDOR);
     }

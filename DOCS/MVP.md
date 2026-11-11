@@ -343,6 +343,36 @@ request after a quiet spell pays the start-up cost above.
   one compliance rule registered so far is the dispatch checklist's required
   documents; the platform scope is there for rules the operator keeps for all
   tenants.
+- Organisational levels and the settings hierarchy (V55). Org units are typed
+  HQ, LOB, COUNTRY, ZONE (or the older REGION, which ranks as a zone), BRANCH
+  and HUB, ranked 0 to 5, and a unit ranks strictly below its parent. A
+  COUNTRY carries its ISO 3166-1 alpha-2 code; a zone, region, branch or hub
+  may carry a state code. `GET/POST /org-units`, `GET/PUT /org-units/{id}`
+  (`ORG_UNIT_MANAGE`, `If-Match`, audited `ORG_UNIT_CREATED`/`_UPDATED`)
+  create a unit beneath a parent and rename, retype or recode it; a unit is
+  never moved, so paths never change. The rank rule is the application's and
+  bites on new writes only: trees written before V55 are not checked (the
+  demo seed and older tenants have an HQ and whatever was put under it).
+  Settings follow the tree: organisation < country < zone < branch (deeper
+  wins), and the provenance says the level ("Country: India", "Zone: North",
+  "Branch: Gurgaon"). A resolution that names a unit but no country or state
+  takes the unit's: the nearest country at or above it, and the nearest state
+  beneath that country, so the platform's rules for that jurisdiction apply
+  by themselves. Above the vehicle's, customer's and vendor's own profiles
+  sit **combination** profiles: conditions over an org unit (its subtree), a
+  customer, a vendor, a vehicle and a freight mode, two or more, applying
+  when all hold. Among those that match, more conditions win, then the
+  deeper unit, then the higher priority; two combinations that could meet
+  with equal standing may not set the same key (409
+  `setting-combination-ambiguous`). Keys opt in: tracking thresholds, the
+  dispatch checklist and weight tolerance, the invoice match tolerances, the
+  order close tolerance and the detector tolerances. Orders resolve with
+  their freight mode, trips with their load's. Both consoles have
+  **Administration > Organisation units** (the tree, add a child, edit) and
+  combination profiles (dimension pickers, freight mode, priority) on
+  **Profile settings**, whose "in force for" form takes a freight mode and
+  whose unit picker shows each unit's level. Still one statement per
+  resolution.
 - An LTL load consolidates dockets from many customers gathered at one origin
   hub and bound for one destination hub; capacity, dangerous goods and
   compatibility rules apply as for any load. A docket then travels twice: line
