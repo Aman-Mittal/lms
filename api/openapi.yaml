@@ -114,6 +114,8 @@ tags:
     description: Customer standing, credit limits and their exposure, overrides and maker-checker limit changes.
   - name: Number series
     description: How a tenant numbers its documents -- per type and scope, by financial year, with released numbers kept, reused when configured, and verifiable.
+  - name: Settings
+    description: Typed settings grouped into profiles per scope (organisation, unit, customer, vehicle, user), their effective values with provenance, and each person's own preferences.
   - name: Control tower
     description: Exception tickets and their lifecycle (vision document 3.8).
   - name: Custom fields

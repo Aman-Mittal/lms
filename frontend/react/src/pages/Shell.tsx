@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { resetDisplay } from '../display';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { GROUPS, RESOURCES } from './resources';
@@ -24,6 +25,7 @@ export function Shell() {
 
   function signOut() {
     end();
+    resetDisplay();
     navigate('/login');
   }
 
@@ -108,7 +110,8 @@ export function Shell() {
           )}
           {/* Administration */}
           {(can('ACCESS_POLICY_MANAGE') || can('VEHICLE_READ') || can('CREDIT_LIMIT_REQUEST')
-            || can('CREDIT_LIMIT_APPROVE') || can('NUMBER_SERIES_MANAGE')) && (
+            || can('CREDIT_LIMIT_APPROVE') || can('NUMBER_SERIES_MANAGE')
+            || can('SETTINGS_READ') || can('SETTINGS_MANAGE')) && (
             <div className="group" data-testid="nav-admin">
               <h6>Administration</h6>
               {can('ACCESS_POLICY_MANAGE') && (
@@ -124,12 +127,16 @@ export function Shell() {
               {can('NUMBER_SERIES_MANAGE') && (
                 <NavLink to="/admin/number-series" data-testid="nav-admin-number-series">Number series</NavLink>
               )}
+              {(can('SETTINGS_READ') || can('SETTINGS_MANAGE')) && (
+                <NavLink to="/admin/settings" data-testid="nav-admin-settings">Profile settings</NavLink>
+              )}
             </div>
           )}
         </nav>
       </aside>
       <div className="main">
         <header className="topbar">
+          <NavLink to="/me" data-testid="nav-me">My profile</NavLink>
           <span className="muted" data-testid="who">{auth?.permissions.length ?? 0} permissions</span>
           <button className="link" onClick={signOut} data-testid="sign-out">Sign out</button>
         </header>

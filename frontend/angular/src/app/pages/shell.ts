@@ -17,6 +17,7 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Session } from '../session';
+import { resetDisplay } from '../display';
 import { GROUPS, RESOURCES } from './resources';
 
 @Component({
@@ -109,7 +110,8 @@ import { GROUPS, RESOURCES } from './resources';
           }
           <!-- Administration -->
           @if (session.can('ACCESS_POLICY_MANAGE') || session.can('VEHICLE_READ') || session.can('CREDIT_LIMIT_REQUEST')
-               || session.can('CREDIT_LIMIT_APPROVE') || session.can('NUMBER_SERIES_MANAGE')) {
+               || session.can('CREDIT_LIMIT_APPROVE') || session.can('NUMBER_SERIES_MANAGE')
+               || session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE')) {
             <div class="group" data-testid="nav-admin">
               <h6>Administration</h6>
               @if (session.can('ACCESS_POLICY_MANAGE')) {
@@ -127,12 +129,17 @@ import { GROUPS, RESOURCES } from './resources';
                 <a routerLink="/admin/number-series" routerLinkActive="active"
                    data-testid="nav-admin-number-series">Number series</a>
               }
+              @if (session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE')) {
+                <a routerLink="/admin/settings" routerLinkActive="active"
+                   data-testid="nav-admin-settings">Profile settings</a>
+              }
             </div>
           }
         </nav>
       </aside>
       <div class="main">
         <header class="topbar">
+          <a routerLink="/me" routerLinkActive="active" data-testid="nav-me">My profile</a>
           <span class="muted" data-testid="who">{{ session.permissionCount() }} permissions</span>
           <button class="link" (click)="signOut()" data-testid="sign-out">Sign out</button>
         </header>
@@ -152,6 +159,7 @@ export class Shell {
 
   signOut(): void {
     this.session.end();
+    resetDisplay();
     this.router.navigateByUrl('/login');
   }
 }
