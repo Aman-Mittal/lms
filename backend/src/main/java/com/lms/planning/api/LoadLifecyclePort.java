@@ -95,6 +95,13 @@ public interface LoadLifecyclePort {
     List<UUID> customersAboard(UUID loadId);
 
     /**
+     * The name of the load's freight mode ({@code FTL}, {@code LTL}), or null
+     * when there is no such load. What a combination setting profile naming a
+     * freight mode is matched against for the load's trip.
+     */
+    String freightModeOf(UUID loadId);
+
+    /**
      * What other contexts are allowed to know about a load.
      *
      * @param plannedWeightKg the aggregate weight the load was built to, which

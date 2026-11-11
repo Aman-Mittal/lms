@@ -58,6 +58,7 @@ const AdminDesk = lazy(() => import('./pages/AdminDesk').then((m) => ({ default:
 const CreditLimits = lazy(() => import('./pages/Credit').then((m) => ({ default: m.CreditLimits })));
 const NumberSeries = lazy(() => import('./pages/NumberSeries').then((m) => ({ default: m.NumberSeries })));
 const ProfileSettings = lazy(() => import('./pages/ProfileSettings').then((m) => ({ default: m.ProfileSettings })));
+const OrgUnits = lazy(() => import('./pages/OrgUnits').then((m) => ({ default: m.OrgUnits })));
 const MyProfile = lazy(() => import('./pages/MyProfile').then((m) => ({ default: m.MyProfile })));
 
 function Deferred({ children }: { children: ReactNode }) {
@@ -108,6 +109,7 @@ export function App() {
           <Route path="admin/credit-limits" element={<Deferred><CreditLimits /></Deferred>} />
           <Route path="admin/number-series" element={<Deferred><NumberSeries /></Deferred>} />
           <Route path="admin/settings" element={<Deferred><ProfileSettings /></Deferred>} />
+          <Route path="admin/org-units" element={<Deferred><OrgUnits /></Deferred>} />
           <Route path="me" element={<Deferred><MyProfile /></Deferred>} />
           {/* Control tower */}
           <Route path="exception-desk" element={<ExceptionDesk />} />

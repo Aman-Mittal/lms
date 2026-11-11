@@ -81,6 +81,21 @@ public class ScopeReferences {
         return scopeType == ScopeType.ORG_UNIT ? scopeId : null;
     }
 
+    /** The unit a new profile is for: an ORG_UNIT's own, a COMBINATION's condition; else null. */
+    @Reflective
+    public UUID unitOfScope(SettingProfileService.Scope scope) {
+        if (scope.type() == ScopeType.COMBINATION) {
+            return scope.conditions() == null ? null : scope.conditions().orgUnitId();
+        }
+        return unitOf(scope.type(), scope.id());
+    }
+
+    /** The unit new combination conditions name, or null when they name none or none are given. */
+    @Reflective
+    public UUID unitOfConditions(SettingProfileService.Conditions conditions) {
+        return conditions == null ? null : conditions.orgUnitId();
+    }
+
     /**
      * The unit an existing profile is for, or null when it is not a unit's (or
      * is not the tenant's). Read in a transaction of its own making, because
@@ -90,8 +105,23 @@ public class ScopeReferences {
     @Reflective
     @Transactional(readOnly = true)
     public UUID unitOfProfile(UUID profileId) {
-        return jdbc.sql("SELECT scope_id FROM setting_profile WHERE id = :id AND scope_type = 'ORG_UNIT'")
+        return jdbc.sql("""
+                        SELECT CASE scope_type WHEN 'ORG_UNIT' THEN scope_id ELSE match_org_unit_id END
+                          FROM setting_profile
+                         WHERE id = :id AND scope_type IN ('ORG_UNIT', 'COMBINATION')
+                        """)
                 .param("id", profileId).query(UUID.class).optional().orElse(null);
+    }
+
+    /**
+     * The materialised path of a unit of the tenant's, read under row-level security.
+     *
+     * @throws ResourceNotFoundException when the unit is not the tenant's
+     */
+    public String requireUnitPath(UUID orgUnitId) {
+        return jdbc.sql("SELECT path FROM org_unit WHERE id = :id").param("id", orgUnitId).query(String.class)
+                .optional().orElseThrow(() -> new ResourceNotFoundException(label(ScopeType.ORG_UNIT) + " "
+                        + orgUnitId + " was not found"));
     }
 
     /** @throws ResourceNotFoundException when the scope's record is not the tenant's */
@@ -101,7 +131,7 @@ public class ScopeReferences {
             case CUSTOMER -> "SELECT 1 FROM business_partner WHERE id = :id AND partner_type = 'CUSTOMER'";
             case VENDOR -> "SELECT 1 FROM business_partner WHERE id = :id AND partner_type = 'VENDOR'";
             case VEHICLE -> "SELECT 1 FROM vehicle WHERE id = :id";
-            case PLATFORM, ORG_DEFAULT, USER -> null;
+            case PLATFORM, ORG_DEFAULT, COMBINATION, USER -> null;
         };
         if (sql == null) {
             return;

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.lms.order.api.FreightMode;
 import com.lms.settings.api.EffectiveSettings;
 import com.lms.settings.api.SettingContext;
 import com.lms.settings.api.SettingKey;
@@ -72,7 +73,17 @@ public class OrderCloseSettings {
     /** What applies to an order raised at {@code orgUnitId} for {@code customerId}. Unguarded. */
     @Transactional(readOnly = true)
     public Policy effectiveFor(UUID orgUnitId, UUID customerId) {
-        return policy(SettingContext.ofOrgUnit(orgUnitId).withCustomer(customerId));
+        return effectiveFor(orgUnitId, customerId, null);
+    }
+
+    /**
+     * As {@link #effectiveFor(UUID, UUID)}, for an order moving by {@code mode},
+     * so a combination profile naming the mode applies. Unguarded.
+     */
+    @Transactional(readOnly = true)
+    public Policy effectiveFor(UUID orgUnitId, UUID customerId, FreightMode mode) {
+        return policy(SettingContext.ofOrgUnit(orgUnitId).withCustomer(customerId)
+                .withFreightMode(mode == null ? null : mode.name()));
     }
 
     @Transactional(readOnly = true)

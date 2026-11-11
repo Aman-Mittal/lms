@@ -27,6 +27,7 @@ import com.lms.execution.command.domain.Trip;
 import com.lms.planning.api.LoadLifecyclePort;
 import com.lms.settings.api.EffectiveSettings;
 import com.lms.settings.api.Resolved;
+import com.lms.settings.api.ScopeType;
 import com.lms.settings.api.SettingContext;
 import com.lms.settings.api.SettingKey;
 import com.lms.settings.api.SettingSource;
@@ -73,13 +74,14 @@ class TripSettings {
         if (customers.isEmpty()) {
             customers.add(null);
         }
+        String mode = loads.freightModeOf(trip.loadId());
         Map<String, String> requiredBy = new LinkedHashMap<>();
         BigDecimal tolerance = null;
         String toleranceFrom = null;
         for (UUID customer : customers) {
             EffectiveSettings resolved = settings.resolveAll(
                     List.of(ExecutionSettingDefinitions.REQUIRED_DOCUMENTS, ExecutionSettingDefinitions.WEIGHT_TOLERANCE),
-                    context(trip, customer).asOf(day));
+                    context(trip, customer).withFreightMode(mode).asOf(day));
             Resolved<Map<String, Object>> documents = resolved.resolved(ExecutionSettingDefinitions.REQUIRED_DOCUMENTS);
             for (String type : ExecutionSettingDefinitions.required(documents.value())) {
                 requiredBy.putIfAbsent(type, describe(documents.source()));
@@ -117,9 +119,12 @@ class TripSettings {
             case VEHICLE -> "vehicle";
             case CUSTOMER -> "customer";
             case VENDOR -> "vendor";
+            case COMBINATION -> "combination";
             case USER -> "user";
         };
         return scope + " profile \"" + source.profileName() + "\""
+                + (source.scopeType() == ScopeType.COMBINATION && source.label() != null
+                        ? " (" + source.label() + ")" : "")
                 + (source.effectiveFrom() == null ? "" : " from " + source.effectiveFrom());
     }
 }

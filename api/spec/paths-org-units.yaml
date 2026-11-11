@@ -1,0 +1,134 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+
+/api/v1/org-units:
+  get:
+    tags: [Organisation units]
+    operationId: listOrgUnits
+    summary: The caller's unit and every unit beneath it, in path order
+    description: |
+      Any signed-in caller, within their own subtree. A parent always comes
+      before its children. Each unit carries its effective jurisdiction: the
+      nearest country at or above it and the nearest state beneath that
+      country, which is what a settings resolution for the unit uses when it
+      names no country of its own.
+    parameters:
+      - name: q
+        in: query
+        required: false
+        schema: { type: string, maxLength: 100 }
+        description: Part of the unit's name or path, any case.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of units.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrgUnitSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Organisation units]
+    operationId: createOrgUnit
+    summary: Add a unit beneath an existing one
+    description: |
+      Requires `ORG_UNIT_MANAGE`, and the parent within the caller's subtree
+      (404 for one outside it or not the tenant's). Refused with 409
+      `org-unit-level-invalid` when the type does not rank strictly below the
+      parent's (HQ, LOB, COUNTRY, ZONE or REGION, BRANCH, HUB),
+      `org-unit-slug-invalid`, `org-unit-slug-taken` for a slug the parent
+      already has beneath it, `org-unit-name-required`,
+      `org-unit-country-invalid` for a COUNTRY without an ISO 3166-1 alpha-2
+      code or a code on any other type, and `org-unit-state-invalid` for a
+      malformed state code or one on an HQ, LOB or COUNTRY. Audited as
+      `ORG_UNIT_CREATED`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateOrgUnitRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/org-units/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the unit.
+  get:
+    tags: [Organisation units]
+    operationId: getOrgUnit
+    summary: One unit
+    description: Any signed-in caller, for a unit at or beneath their own; 404 for any other.
+    responses:
+      "200":
+        description: The unit. Its `ETag` is the version to send in `If-Match`.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The unit's version, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrgUnit" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Organisation units]
+    operationId: updateOrgUnit
+    summary: Rename, retype or recode a unit
+    description: |
+      Requires `ORG_UNIT_MANAGE` and the unit within the caller's subtree. The
+      slug and the parent, and so the path, never change: a unit is not moved.
+      A new type must still rank strictly below the parent's and above every
+      child's (409 `org-unit-level-invalid`); the codes are refused as on
+      creation. 409 `concurrent-modification` when `If-Match` is not the
+      current version. Audited as `ORG_UNIT_UPDATED`, before and after.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateOrgUnitRequest" }
+    responses:
+      "200":
+        description: The unit as changed. Its `ETag` is the new version.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The unit's new version, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrgUnit" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

@@ -83,13 +83,15 @@ public class ExecutionSettingDefinitions implements SettingContributor {
                                 + " {\"EWAY_BILL\": true, ...}; a type set false or left out is not"
                                 + " required. Dated: a dispatch is judged by the rule in force on its day.")
                 .defaultValue(Map.of("CONSIGNMENT_NOTE", true, "EWAY_BILL", true))
-                .category(SettingCategory.COMPLIANCE).effectiveDated().alsoAt(TRIP_SCOPES);
+                .category(SettingCategory.COMPLIANCE).effectiveDated().alsoAt(TRIP_SCOPES)
+                .alsoAt(ScopeType.COMBINATION);
         DOCUMENT_TYPES.stream().sorted().forEach(type -> documents.property(type, SettingType.BOOLEAN, false));
         return List.of(documents.build(),
                 SettingDefinition.of(WEIGHT_TOLERANCE, "Dispatch weight tolerance (%)",
                                 "How far the weighed payload may differ from the planned weight before"
                                         + " dispatch is refused.")
-                        .defaultValue(defaultWeightTolerance).range(0, 50).scale(2).alsoAt(TRIP_SCOPES).build(),
+                        .defaultValue(defaultWeightTolerance).range(0, 50).scale(2).alsoAt(TRIP_SCOPES)
+                        .alsoAt(ScopeType.COMBINATION).build(),
                 SettingDefinition.of(AUTO_DEPARTURE, "Depart on leaving the origin",
                                 "Whether a dispatched trip goes in transit by itself when its vehicle"
                                         + " leaves the origin's geofence; off leaves it for a person.")
