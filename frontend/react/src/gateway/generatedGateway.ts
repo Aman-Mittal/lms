@@ -39,6 +39,11 @@ import type {
 } from './lmsGateway';
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
+import {
+  ApprovalsApi, type Approval as ApiApproval, type ApprovalScope as ApiApprovalScope,
+  type ApprovalStatus as ApiApprovalStatus,
+} from '../api';
+import type { ApprovalDetail, ApprovalFilter, ApprovalPending } from './lmsGateway';
 import type { GoodsCondition as ApiGoodsCondition } from '../api';
 import type { CloseKind as ApiCloseKind } from '../api';
 import type { CloseKindChoice } from './lmsGateway';
@@ -502,6 +507,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   const milkRuns = new MilkRunsApi(config);
   const ltl = new LTLRatingApi(config);
   const deadLetters = new EventDeadLetterApi(config);
+  const approvalsApi = new ApprovalsApi(config);
   const webhooks = new WebhooksApi(config);
   const delivery = new DeliveryAndClaimsApi(config);
   const links = new TrackingLinksApi(config);
@@ -678,7 +684,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           const p = await delivery.getDeliveryProof({ consignmentId });
           return {
             consignmentId: p.consignmentId ?? consignmentId,
-            status: p.status === 'CONFIRMED' ? 'CONFIRMED' : 'OTP_ISSUED',
+            status: p.status === 'CONFIRMED' || p.status === 'REVERSED' ? p.status : 'OTP_ISSUED',
             recipientName: text(p.recipientName), photoRef: text(p.photoRef),
             deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
             goodsCondition: text(p.goodsCondition) || 'CLEAN', remark: text(p.remark),
@@ -1013,6 +1019,49 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
         return { outcome: text(r.outcome), attempts: r.attempts ?? 0 };
       }),
 
+    approvals: (filter: ApprovalFilter) =>
+      guard(async () => (await approvalsApi.listApprovals({
+        status: filter.status as ApiApprovalStatus | undefined, scope: filter.scope as ApiApprovalScope | undefined,
+        subjectType: filter.subjectType || undefined, subjectId: filter.subjectId || undefined, limit: 50,
+      })).items.map(approvalRow)),
+
+    approval: (id: string): Promise<ApprovalDetail> =>
+      guard(async () => {
+        const d = await approvalsApi.getApproval({ id });
+        return {
+          summary: approvalRow(d.approval), version: d.approval.version, open: d.approval.status === 'REQUESTED',
+          mineToDecide: d.approval.mineToDecide, requestedByMe: d.approval.requestedByMe,
+          payload: keyValues(d.approval.payload), policy: keyValues(d.policy).replace(/\n/g, '; '),
+          trail: d.trail.map((t) => ({
+            id: text(t.id), step: text(t.step), decision: text(t.decision), permission: text(t.permission),
+            decidedBy: text(t.decidedBy) || 'platform', decidedAt: text(t.decidedAt), note: text(t.note),
+          })),
+        };
+      }),
+
+    approveApproval: (id: string, version: number, note: string) =>
+      guard(async () => {
+        await approvalsApi.approveApproval({ id, ifMatch: String(version), approveRequest: { note: blankAsAbsent(note) } });
+      }),
+
+    rejectApproval: (id: string, version: number, reason: string) =>
+      guard(async () => {
+        await approvalsApi.rejectApproval({ id, ifMatch: String(version), rejectApprovalRequest: { reason } });
+      }),
+
+    cancelApproval: (id: string, version: number, reason: string) =>
+      guard(async () => {
+        await approvalsApi.cancelApproval({
+          id, ifMatch: String(version), cancelApprovalRequest: { reason: blankAsAbsent(reason) },
+        });
+      }),
+
+    requestProofReversal: (consignmentId: string, reason: string): Promise<ApprovalPending> =>
+      guard(async () => {
+        const t = await delivery.requestProofReversal({ consignmentId, proofReversalRequest: { reason } });
+        return { id: text(t?.id), status: text(t?.status) };
+      }),
+
     discardParkedEvent: (id: string, reason: string) =>
       guard(async () => {
         await deadLetters.discardParkedEvent({ id, discardParkedEventRequest: { reason } });
@@ -1130,9 +1179,15 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         await orders.validateOrder({ id: orderId });
       }),
-    cancelOrder: (orderId: string, reason: string) =>
+    cancelOrder: (orderId: string, reason: string): Promise<ApprovalPending | null> =>
       guard(async () => {
-        await orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } });
+        // 204 when cancelled, 202 with the approval request when one is needed first.
+        const raw = await orders.cancelOrderRaw({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } });
+        if (raw.raw.status !== 202) {
+          return null;
+        }
+        const t = await raw.value();
+        return { id: text(t.id), status: text(t.status) };
       }),
     closeOrder: (orderId: string, kind: CloseKindChoice, reason: string) =>
       guard(async () => {
@@ -1426,6 +1481,23 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
         distanceM: text(d.distanceM), corridorM: text(d.corridorM),
       }))),
   };
+}
+
+/** An approval request as an inbox row. */
+function approvalRow(a: ApiApproval): Row {
+  return {
+    id: text(a.id), subjectType: text(a.subjectType), subjectId: text(a.subjectId), action: text(a.action),
+    summary: text(a.summary), status: text(a.status), requestedAt: text(a.requestedAt), dueAt: text(a.dueAt),
+    approvals: `${a.approvalsGiven}/${a.approvalsRequired}`, waitingFor: (a.pendingPermissions ?? []).join(', '),
+    decidedAt: text(a.decidedAt), reason: text(a.reason), mine: a.mineToDecide ? 'yes' : '',
+  };
+}
+
+/** A payload or policy as readable `key: value` lines. */
+function keyValues(value: object | null | undefined): string {
+  return Object.entries(value ?? {})
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`).join('\n');
 }
 
 /** Runs a call and turns whatever it throws into an ApiProblem. */
