@@ -153,7 +153,7 @@ export type GoodsCondition = (typeof GOODS_CONDITIONS)[number];
 /** A consignment's proof of delivery, every cell already formatted for display. */
 export interface DeliveryProofView {
   consignmentId: string;
-  status: 'OTP_ISSUED' | 'CONFIRMED';
+  status: 'OTP_ISSUED' | 'CONFIRMED' | 'REVERSED';
   recipientName: string;
   photoRef: string;
   deliveredAt: string;
@@ -427,6 +427,43 @@ export interface ParkedEventDetail {
   payload: string;
 }
 
+// ---------------------------------------------------------------- approvals
+
+export const APPROVAL_STATUSES = ['REQUESTED', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED'] as const;
+export type ApprovalStatusName = (typeof APPROVAL_STATUSES)[number];
+/** `MINE_TO_DECIDE`: open requests the caller could approve now. */
+export const APPROVAL_SCOPES = ['MINE_TO_DECIDE', 'REQUESTED_BY_ME', 'ALL'] as const;
+export type ApprovalScopeName = (typeof APPROVAL_SCOPES)[number];
+
+/** What narrows the approvals inbox. Anything left out is not filtered on. */
+export interface ApprovalFilter {
+  status?: ApprovalStatusName;
+  scope?: ApprovalScopeName;
+  subjectType?: string;
+  subjectId?: string;
+}
+
+/** One request in full: its row, the policy it is decided under, and its trail. */
+export interface ApprovalDetail {
+  summary: Row;
+  /** The version a decision sends back as If-Match. */
+  version: number;
+  open: boolean;
+  mineToDecide: boolean;
+  requestedByMe: boolean;
+  /** The frozen payload, as readable `key: value` lines. */
+  payload: string;
+  /** The policy copied onto the request, in one line. */
+  policy: string;
+  trail: Row[];
+}
+
+/** A request raised in place of the action asked for. */
+export interface ApprovalPending {
+  id: string;
+  status: string;
+}
+
 // ---------------------------------------------------------------- webhooks
 
 /** What a subscription can ask for. `PING` is what a test ping sends and cannot be subscribed to. */
@@ -436,6 +473,7 @@ export const WEBHOOK_EVENT_TYPES = [
   'CONSIGNMENTS_GENERATED', 'CONSIGNMENT_SPLIT', 'TRIP_DISPATCHED', 'TRIP_COMPLETED', 'TRIP_CANCELLED',
   'DELIVERY_PROOF_RECORDED', 'CLAIM_RAISED', 'CLAIM_STATUS_CHANGED',
   'CONSIGNMENT_IN_TRANSIT', 'CONSIGNMENT_DELIVERED', 'CONSIGNMENT_CANCELLED',
+  'APPROVAL_REQUESTED', 'APPROVAL_DECIDED',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
@@ -715,6 +753,17 @@ export interface LmsGateway {
   /** A reason is required; the event is kept, marked discarded. */
   discardParkedEvent(id: string, reason: string): Promise<void>;
 
+  /** The approvals inbox, newest first. */
+  approvals(filter: ApprovalFilter): Promise<Row[]>;
+  approval(id: string): Promise<ApprovalDetail>;
+  approveApproval(id: string, version: number, note: string): Promise<void>;
+  /** A reason is required. */
+  rejectApproval(id: string, version: number, reason: string): Promise<void>;
+  /** The requester only. */
+  cancelApproval(id: string, version: number, reason: string): Promise<void>;
+  /** Always asks for approval: resolves to the request raised. */
+  requestProofReversal(consignmentId: string, reason: string): Promise<ApprovalPending>;
+
   webhooks(): Promise<WebhookView[]>;
   /** Shown once: the secret in the result cannot be read again. */
   subscribeWebhook(draft: WebhookDraft): Promise<WebhookSecret>;
@@ -761,7 +810,8 @@ export interface LmsGateway {
   amendOrder(orderId: string, version: string, header: OrderHeaderDraft | null,
     lines: OrderLineDraft[] | null): Promise<void>;
   validateOrder(orderId: string): Promise<void>;
-  cancelOrder(orderId: string, reason: string): Promise<void>;
+  /** Null when the order is cancelled; the approval request when the tenant asks for one first. */
+  cancelOrder(orderId: string, reason: string): Promise<ApprovalPending | null>;
   /**
    * Closes the order: NORMAL needs everything delivered, SHORT and FORCE need a reason, FORCE
    * needs ORDER_FORCE_CLOSE. A refusal is an ApiProblem whose code says why (`order-not-complete`,
