@@ -1,0 +1,354 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+
+/api/v1/settings/definitions:
+  get:
+    tags: [Settings]
+    operationId: listSettingDefinitions
+    summary: Every setting the platform has, in key order
+    description: |
+      Any signed-in caller. The registry is code: each module registers its
+      keys with a type, a system default, bounds and the scope types the key
+      may be set at. One slice, no cursor.
+    responses:
+      "200":
+        description: The definitions.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingDefinitionSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+
+/api/v1/settings/effective:
+  get:
+    tags: [Settings]
+    operationId: getEffectiveSettings
+    summary: Every setting's effective value for a context, and where it came from
+    description: |
+      Requires `SETTINGS_READ` or `SETTINGS_MANAGE`. Within each applicable
+      profile, the latest version of a key in effect on `asOf` applies. Then
+      folded least specific first: the platform's values (global, then
+      `country`, then `state`), the organisation default, every
+      organisational unit at or above `orgUnitId` (deeper wins), the vehicle
+      and the customer. Per key, the most specific profile of a scope type the
+      key allows wins; with none, the system default (`source.kind`
+      `SYSTEM_DEFAULT`). An id naming nothing of the tenant's simply matches
+      no profile.
+    parameters:
+      - name: orgUnitId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: The organisational unit to resolve for.
+      - name: customerId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: The customer to resolve for.
+      - name: vehicleId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: The vehicle to resolve for.
+      - name: asOf
+        in: query
+        required: false
+        schema: { type: string, format: date }
+        description: The day to judge by; today in the tenant's `settings.timeZone` when omitted.
+      - name: country
+        in: query
+        required: false
+        schema: { type: string, maxLength: 2 }
+        description: The jurisdiction's country, for platform values kept per country.
+      - name: state
+        in: query
+        required: false
+        schema: { type: string, maxLength: 3 }
+        description: A state within `country`.
+    responses:
+      "200":
+        description: One entry per setting, in key order.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EffectiveSettings" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/settings/org-units:
+  get:
+    tags: [Settings]
+    operationId: listSettingOrgUnits
+    summary: The organisational units a profile can be scoped to
+    description: |
+      Requires `SETTINGS_READ` or `SETTINGS_MANAGE`. The caller's own unit and
+      every unit beneath it, in path order.
+    parameters:
+      - name: q
+        in: query
+        required: false
+        schema: { type: string, maxLength: 100 }
+        description: Part of the unit's name or path, any case.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of units.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingOrgUnitSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/settings/profiles:
+  get:
+    tags: [Settings]
+    operationId: listSettingProfiles
+    summary: A page of the tenant's setting profiles, by scope type then age
+    description: |
+      Requires `SETTINGS_READ` or `SETTINGS_MANAGE`. Users' own preference
+      profiles are never listed; platform profiles only with
+      `scopeType=PLATFORM`, to the platform operator.
+    parameters:
+      - name: scopeType
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/SettingScopeType" }
+        description: Only profiles of this scope type.
+      - name: q
+        in: query
+        required: false
+        schema: { type: string, maxLength: 100 }
+        description: Part of the profile's name, any case.
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of profiles.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingProfileSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  post:
+    tags: [Settings]
+    operationId: createSettingProfile
+    summary: Add the profile of one scope
+    description: |
+      Requires `SETTINGS_MANAGE`; a unit's profile also needs the decision
+      point to allow the unit (403 for one outside the caller's reach or not
+      the tenant's). A customer or vehicle that is not the tenant's is 404.
+      A PLATFORM profile (no tenant; optionally a `country` and `state`)
+      needs `PLATFORM_SETTINGS_MANAGE`, the platform operator's right.
+      Refused with 409 `setting-profile-scope-taken` when the scope already
+      has a profile, `setting-scope-invalid` for a USER scope (a person sets
+      their own, through `/settings/me`) or a scope id or jurisdiction given
+      or missing wrongly, `setting-unknown` for a key no module registered,
+      `setting-not-overridable` for a key only the platform sets,
+      `setting-scope-not-allowed` for a key that may not be set at the scope,
+      `setting-effective-date-required` for an effective-dated key given
+      without a day, `setting-effective-date-past` for a new version dated
+      before today, and `setting-invalid-value` for a value outside its
+      definition; every refused key is listed in `errors`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateSettingProfileRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/settings/profiles/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the profile.
+  get:
+    tags: [Settings]
+    operationId: getSettingProfile
+    summary: One profile and its values
+    description: Requires `SETTINGS_READ` or `SETTINGS_MANAGE`. A user's preference profile is 404 here.
+    responses:
+      "200":
+        description: The profile. Its `ETag` is the version to send in `If-Match`.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The profile's version, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingProfile" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  patch:
+    tags: [Settings]
+    operationId: updateSettingProfile
+    summary: Set, remove or keep each named key; rename
+    description: |
+      Requires `SETTINGS_MANAGE` (`PLATFORM_SETTINGS_MANAGE` for a platform
+      profile). In `values` a key with a value sets its undated value, a key
+      with null removes it, a key not mentioned is kept; `versions` add,
+      change or remove dated versions. A version already in force (dated
+      today or earlier) is never changed or removed: 409
+      `setting-value-in-force` -- add a new version dated today or later.
+      Refused as creation refuses values, and with 409
+      `concurrent-modification` when `If-Match` is not the current version.
+      Only the versions that changed are recorded on the history, each as
+      `key` or `key@date`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateSettingProfileRequest" }
+    responses:
+      "200":
+        description: The profile as changed. Its `ETag` is the new version.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The profile's new version, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettingProfile" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  delete:
+    tags: [Settings]
+    operationId: deleteSettingProfile
+    summary: Delete a profile, so its scope falls back to the next one out
+    description: |
+      Requires `SETTINGS_MANAGE` (`PLATFORM_SETTINGS_MANAGE` for a platform
+      profile). The organisation default is not deleted (409
+      `setting-profile-org-default`): remove its values instead, so its
+      history stays on one record; nor is a profile holding a version in force
+      (409 `setting-value-in-force`). 409 `concurrent-modification` for a
+      stale `If-Match`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/settings/profiles/{id}/history:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the profile.
+  get:
+    tags: [Settings]
+    operationId: getSettingProfileHistory
+    summary: What was changed on a profile, newest first, key by key
+    description: |
+      Requires `SETTINGS_READ` or `SETTINGS_MANAGE`. `SETTING_PROFILE_CREATED`,
+      `SETTING_PROFILE_UPDATED` and `SETTING_PROFILE_DELETED`; `before` and
+      `after` hold only the keys that changed (and `name` when it did), a key
+      that was absent shown as null.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of the history.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HistorySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/settings/me:
+  get:
+    tags: [Settings]
+    operationId: getMyPreferences
+    summary: The caller's own preferences, and what is in force for them
+    description: |
+      Any signed-in user, for themself only. `values` are what the caller has
+      set; `effective` is every personal preference as it applies to them:
+      their own value, else their unit's (deeper wins), else the organisation
+      default, else the system default.
+    responses:
+      "200":
+        description: The preferences. Their `ETag` is "0" until the first save.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The version of the caller's preferences, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MyPreferences" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+  patch:
+    tags: [Settings]
+    operationId: updateMyPreferences
+    summary: Set or clear the caller's own preferences
+    description: |
+      Any signed-in user, for themself only; no permission is needed and no one
+      can set another person's. Only keys whose definition is a user
+      preference are accepted (409 `setting-scope-not-allowed` otherwise); a
+      null value clears one. 409 `concurrent-modification` when `If-Match` is
+      not the version last read.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateMyPreferencesRequest" }
+    responses:
+      "200":
+        description: The preferences as saved.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The new version, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MyPreferences" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

@@ -196,7 +196,8 @@ public class OrderCloseService {
     public void onEverythingDelivered(UUID orderId) {
         SalesOrder order = orders.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
-        if (order.status() != SalesOrder.OrderStatus.FULLY_PLANNED || !settings.effective().autoFulfil()) {
+        if (order.status() != SalesOrder.OrderStatus.FULLY_PLANNED
+                || !settings.effectiveFor(order.orgUnitId(), order.customerPartnerId()).autoFulfil()) {
             return;
         }
         orders.save(order.transitionTo(SalesOrder.OrderStatus.FULFILLED));
@@ -211,18 +212,19 @@ public class OrderCloseService {
      * When the tenant has a close tolerance and every open line of a fully
      * planned order is delivered to within it, the platform closes the order
      * (kind AUTO) and its lines; the freight still moving is not touched. The
-     * settings are read first, so a tenant without a tolerance pays one
-     * indexed read per order and nothing more.
+     * policy is the one in force for the order's unit and customer, read in
+     * one statement after the order, so an order with no tolerance costs two
+     * indexed reads and nothing more.
      */
     @Transactional
     public void onPartDelivered(UUID orderId) {
-        OrderCloseSettings.Policy policy = settings.effective();
-        if (!policy.autoFulfil() || policy.tolerancePercent().signum() <= 0) {
-            return;
-        }
         SalesOrder order = orders.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         if (order.status() != SalesOrder.OrderStatus.FULLY_PLANNED) {
+            return;
+        }
+        OrderCloseSettings.Policy policy = settings.effectiveFor(order.orgUnitId(), order.customerPartnerId());
+        if (!policy.autoFulfil() || policy.tolerancePercent().signum() <= 0) {
             return;
         }
         List<OrderLine> open = lines.findByOrder(order.tenantId(), orderId).stream()
