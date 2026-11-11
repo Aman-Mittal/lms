@@ -57,7 +57,7 @@ class TrackingThresholds {
     Thresholds forTrip(UUID tripId, UUID vehicleId) {
         SettingContext context = trips.scopeOf(tripId)
                 .map(scope -> SettingContext.ofOrgUnit(scope.orgUnitId()).withVehicle(scope.vehicleId())
-                        .withCustomer(scope.soleCustomerId()))
+                        .withCustomer(scope.soleCustomerId()).withFreightMode(scope.freightMode()))
                 .orElseGet(() -> SettingContext.tenant().withVehicle(vehicleId));
         EffectiveSettings resolved = settings.resolveAll(KEYS, context);
         return new Thresholds(resolved.get(TelematicsSettingDefinitions.STOPPAGE_THRESHOLD),

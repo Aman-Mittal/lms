@@ -1,0 +1,98 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+
+OrgUnitType:
+  type: string
+  enum: [HQ, LOB, COUNTRY, ZONE, REGION, BRANCH, HUB]
+  description: |
+    The organisational level, highest first: HQ 0, LOB 1, COUNTRY 2, ZONE and
+    REGION 3 (REGION is the older name for a zone), BRANCH 4, HUB 5. A unit
+    ranks strictly below its parent.
+
+OrgUnit:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    parentId:
+      type: string
+      format: uuid
+      description: Absent for the tenant's root unit.
+    slug: { type: string, description: "The unit's own path segment; never changes." }
+    path: { type: string, description: "Materialised ancestry, e.g. `/acme/in/north/gurgaon/`; never changes." }
+    name: { type: string }
+    unitType: { $ref: "#/components/schemas/OrgUnitType" }
+    level:
+      type: integer
+      description: The type's rank, 0 for HQ to 5 for a hub.
+    countryCode:
+      type: string
+      description: A COUNTRY unit's ISO 3166-1 alpha-2 code.
+    stateCode:
+      type: string
+      description: The state code a ZONE, REGION, BRANCH or HUB carries, if any.
+    effectiveCountry:
+      type: string
+      description: The nearest country at or above the unit; what platform settings are resolved by.
+    effectiveState:
+      type: string
+      description: The nearest state at or above the unit and beneath that country.
+    version:
+      type: integer
+      format: int64
+      description: The optimistic-lock version, also the `ETag`.
+  required: [id, slug, path, name, unitType, level, version]
+
+OrgUnitSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/OrgUnit" }
+    nextCursor: { type: string }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+CreateOrgUnitRequest:
+  type: object
+  properties:
+    parentId: { type: string, format: uuid, description: The unit it sits beneath. }
+    slug:
+      type: string
+      maxLength: 63
+      description: Lowercase letters, digits and hyphens; unique beneath the parent.
+    name: { type: string, maxLength: 100 }
+    unitType: { $ref: "#/components/schemas/OrgUnitType" }
+    countryCode:
+      type: string
+      maxLength: 2
+      description: Required for, and only for, a COUNTRY.
+    stateCode:
+      type: string
+      maxLength: 3
+      description: ZONE, REGION, BRANCH or HUB only; 1 to 3 capital letters or digits.
+  required: [parentId, slug, name, unitType]
+
+UpdateOrgUnitRequest:
+  type: object
+  description: The unit's new name, type and codes, all of them; the slug and parent never change.
+  properties:
+    name: { type: string, maxLength: 100 }
+    unitType: { $ref: "#/components/schemas/OrgUnitType" }
+    countryCode: { type: string, maxLength: 2 }
+    stateCode: { type: string, maxLength: 3 }
+  required: [name, unitType]

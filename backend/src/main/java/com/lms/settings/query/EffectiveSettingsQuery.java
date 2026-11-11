@@ -33,6 +33,7 @@ import com.lms.settings.api.ScopeType;
 import com.lms.settings.api.SettingContext;
 import com.lms.settings.api.SettingDefinition;
 import com.lms.settings.command.CalendarSettings;
+import com.lms.settings.command.ScopeLabels;
 import com.lms.settings.command.SettingFold;
 import com.lms.settings.command.SettingRegistry;
 import com.lms.settings.command.SettingValueRules;
@@ -113,38 +114,91 @@ public class EffectiveSettingsQuery {
         }
     }
 
+    /**
+     * Every version of the wanted keys held by a profile that applies to the
+     * context, in one statement. {@code ctx} is the context unit's path;
+     * {@code ancestor} its ancestors-or-self, read by (tenant, path) through
+     * {@code org_unit_path_unique}; {@code jur} the jurisdiction: the
+     * context's own, or when it names none, the unit's (the nearest country at
+     * or above it, and the nearest state beneath that country).
+     */
+    public static final String RESOLVE = """
+            WITH ctx AS (
+                SELECT coalesce(CAST(:unitPath AS text),
+                                (SELECT t.path FROM org_unit t
+                                  WHERE t.tenant_id = :tenantId AND t.id = CAST(:unitId AS uuid))) AS path),
+            ancestor AS (
+                SELECT a.path, a.country_code, a.state_code
+                  FROM ctx
+                 CROSS JOIN LATERAL generate_series(2, length(ctx.path)) AS i
+                  JOIN org_unit a ON a.tenant_id = :tenantId AND a.path = left(ctx.path, i)
+                 WHERE substr(ctx.path, i, 1) = '/'),
+            jur AS (
+                SELECT CASE WHEN CAST(:country AS text) IS NOT NULL OR CAST(:state AS text) IS NOT NULL
+                            THEN CAST(:country AS text)
+                            ELSE (SELECT c.country_code FROM ancestor c WHERE c.country_code IS NOT NULL
+                                   ORDER BY length(c.path) DESC LIMIT 1)
+                       END AS country,
+                       CASE WHEN CAST(:country AS text) IS NOT NULL OR CAST(:state AS text) IS NOT NULL
+                            THEN CAST(:state AS text)
+                            ELSE (SELECT s.state_code FROM ancestor s
+                                   WHERE s.state_code IS NOT NULL
+                                     AND length(s.path) > (SELECT max(length(c.path)) FROM ancestor c
+                                                            WHERE c.country_code IS NOT NULL)
+                                   ORDER BY length(s.path) DESC LIMIT 1)
+                       END AS state)
+            SELECT p.id, p.scope_type, p.scope_id, p.name, p.country, p.state, p.priority,
+                   v.setting_key, v.effective_from, v.value::text AS value,
+                   CASE p.scope_type
+                       WHEN 'ORG_UNIT' THEN coalesce(length(u.path), 0)
+                       WHEN 'COMBINATION' THEN coalesce(length(cu.path) - length(replace(cu.path, '/', '')) - 1, 0)
+                       WHEN 'PLATFORM' THEN (CASE WHEN p.country IS NULL THEN 0 ELSE 1 END)
+                                            + (CASE WHEN p.state IS NULL THEN 0 ELSE 1 END)
+                       ELSE 0
+                   END AS depth,
+                   (CASE WHEN p.match_org_unit_id IS NULL THEN 0 ELSE 1 END
+                       + CASE WHEN p.match_customer_id IS NULL THEN 0 ELSE 1 END
+                       + CASE WHEN p.match_vendor_id IS NULL THEN 0 ELSE 1 END
+                       + CASE WHEN p.match_vehicle_id IS NULL THEN 0 ELSE 1 END
+                       + CASE WHEN p.match_freight_mode IS NULL THEN 0 ELSE 1 END) AS dimensions,
+                   coalesce(u.unit_type, cu.unit_type) AS unit_type, coalesce(u.name, cu.name) AS unit_name,
+                   CASE WHEN p.match_customer_id IS NOT NULL THEN
+                       (SELECT b.legal_name FROM business_partner b WHERE b.id = p.match_customer_id) END AS customer,
+                   CASE WHEN p.match_vendor_id IS NOT NULL THEN
+                       (SELECT b.legal_name FROM business_partner b WHERE b.id = p.match_vendor_id) END AS vendor,
+                   CASE WHEN p.match_vehicle_id IS NOT NULL THEN
+                       (SELECT x.registration_no FROM vehicle x WHERE x.id = p.match_vehicle_id) END AS vehicle,
+                   p.match_freight_mode
+              FROM setting_profile p
+              JOIN setting_value v ON v.profile_id = p.id
+             CROSS JOIN ctx
+             CROSS JOIN jur
+              LEFT JOIN org_unit u ON p.scope_type = 'ORG_UNIT' AND u.id = p.scope_id
+              LEFT JOIN org_unit cu ON p.scope_type = 'COMBINATION' AND cu.id = p.match_org_unit_id
+             WHERE v.setting_key = ANY (string_to_array(:keys, ','))
+               AND ((p.tenant_id = :tenantId
+                     AND (p.scope_type = 'ORG_DEFAULT'
+                          OR (p.scope_type = 'ORG_UNIT' AND starts_with(ctx.path, u.path))
+                          OR (p.scope_type = 'CUSTOMER' AND p.scope_id = CAST(:customerId AS uuid))
+                          OR (p.scope_type = 'VEHICLE' AND p.scope_id = CAST(:vehicleId AS uuid))
+                          OR (p.scope_type = 'VENDOR' AND p.scope_id = CAST(:vendorId AS uuid))
+                          OR (p.scope_type = 'USER' AND p.scope_id = CAST(:userId AS uuid))
+                          OR (p.scope_type = 'COMBINATION'
+                              AND (p.match_org_unit_id IS NULL OR starts_with(ctx.path, cu.path))
+                              AND (p.match_customer_id IS NULL OR p.match_customer_id = CAST(:customerId AS uuid))
+                              AND (p.match_vendor_id IS NULL OR p.match_vendor_id = CAST(:vendorId AS uuid))
+                              AND (p.match_vehicle_id IS NULL OR p.match_vehicle_id = CAST(:vehicleId AS uuid))
+                              AND (p.match_freight_mode IS NULL
+                                   OR p.match_freight_mode = CAST(:freightMode AS text)))))
+                    OR (p.tenant_id IS NULL AND p.scope_type = 'PLATFORM'
+                        AND (p.country IS NULL
+                             OR (p.country = jur.country AND (p.state IS NULL OR p.state = jur.state)))))
+            """;
+
     private List<SettingFold.Candidate> candidates(Collection<SettingDefinition> keys, SettingContext context) {
         String keyList = keys.stream().map(SettingDefinition::key).collect(Collectors.joining(","));
         List<SettingFold.Candidate> out = new ArrayList<>();
-        jdbc.sql("""
-                        SELECT p.id, p.scope_type, p.scope_id, p.name, v.setting_key, v.effective_from,
-                               v.value::text AS value,
-                               CASE p.scope_type
-                                   WHEN 'ORG_UNIT' THEN coalesce(length(u.path), 0)
-                                   WHEN 'PLATFORM' THEN (CASE WHEN p.country IS NULL THEN 0 ELSE 1 END)
-                                                        + (CASE WHEN p.state IS NULL THEN 0 ELSE 1 END)
-                                   ELSE 0
-                               END AS depth
-                          FROM setting_profile p
-                          JOIN setting_value v ON v.profile_id = p.id
-                          LEFT JOIN org_unit u ON p.scope_type = 'ORG_UNIT' AND u.id = p.scope_id
-                         WHERE v.setting_key = ANY (string_to_array(:keys, ','))
-                           AND ((p.tenant_id = :tenantId
-                                 AND (p.scope_type = 'ORG_DEFAULT'
-                                      OR (p.scope_type = 'ORG_UNIT' AND starts_with(
-                                              coalesce(CAST(:unitPath AS text),
-                                                       (SELECT t.path FROM org_unit t
-                                                         WHERE t.id = CAST(:unitId AS uuid))),
-                                              u.path))
-                                      OR (p.scope_type = 'CUSTOMER' AND p.scope_id = CAST(:customerId AS uuid))
-                                      OR (p.scope_type = 'VEHICLE' AND p.scope_id = CAST(:vehicleId AS uuid))
-                                      OR (p.scope_type = 'VENDOR' AND p.scope_id = CAST(:vendorId AS uuid))
-                                      OR (p.scope_type = 'USER' AND p.scope_id = CAST(:userId AS uuid))))
-                                OR (p.tenant_id IS NULL AND p.scope_type = 'PLATFORM'
-                                    AND (p.country IS NULL
-                                         OR (p.country = CAST(:country AS text)
-                                             AND (p.state IS NULL OR p.state = CAST(:state AS text))))))
-                        """)
+        jdbc.sql(RESOLVE)
                 .param("tenantId", TenantContext.requireTenantId())
                 .param("keys", keyList)
                 .param("unitPath", context.orgUnitId() == null ? context.orgPath() : null)
@@ -155,13 +209,26 @@ public class EffectiveSettingsQuery {
                 .param("userId", context.userId())
                 .param("country", context.country())
                 .param("state", context.state())
+                .param("freightMode", context.freightMode())
                 .query((rs, row) -> {
                     String key = rs.getString("setting_key");
                     Object value = applicable(key, rs.getString("value"));
-                    return value == null ? null : new SettingFold.Candidate(
-                            rs.getObject("id", UUID.class), ScopeType.valueOf(rs.getString("scope_type")),
-                            rs.getObject("scope_id", UUID.class), rs.getString("name"),
-                            rs.getInt("depth"), key, rs.getObject("effective_from", LocalDate.class), value);
+                    if (value == null) {
+                        return null;
+                    }
+                    ScopeType type = ScopeType.valueOf(rs.getString("scope_type"));
+                    String name = rs.getString("name");
+                    String combined = type == ScopeType.COMBINATION
+                            ? ScopeLabels.combination(new ScopeLabels.Parts(rs.getString("unit_type"),
+                                    rs.getString("unit_name"), rs.getString("customer"), rs.getString("vendor"),
+                                    rs.getString("vehicle"), rs.getString("match_freight_mode")))
+                            : null;
+                    String label = ScopeLabels.source(type, name, rs.getString("unit_type"),
+                            rs.getString("unit_name"), rs.getString("country"), rs.getString("state"), combined);
+                    return new SettingFold.Candidate(rs.getObject("id", UUID.class), type,
+                            rs.getObject("scope_id", UUID.class), name, rs.getInt("depth"), key,
+                            rs.getObject("effective_from", LocalDate.class), value, rs.getInt("dimensions"),
+                            rs.getInt("priority"), label);
                 })
                 .list()
                 .forEach(c -> {

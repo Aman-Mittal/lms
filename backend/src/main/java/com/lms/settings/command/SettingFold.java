@@ -50,12 +50,23 @@ public final class SettingFold {
      *
      * @param depth         how specific the profile is within its scope type: an
      *                      ORG_UNIT's depth, a PLATFORM profile's jurisdiction (0
-     *                      global, 1 country, 2 state); 0 otherwise
+     *                      global, 1 country, 2 state), a COMBINATION's unit
+     *                      depth (0 with no unit); 0 otherwise
      * @param effectiveFrom the version's first day; null for an undated value
      * @param value         already canonical
+     * @param dimensions    a COMBINATION's number of conditions; 0 otherwise
+     * @param priority      a COMBINATION's priority; 0 otherwise
+     * @param label         the provenance in words, see {@link ScopeLabels}; null
+     *                      to leave it to the caller
      */
     public record Candidate(UUID profileId, ScopeType scopeType, UUID scopeId, String profileName,
-                            int depth, String key, LocalDate effectiveFrom, Object value) {
+                            int depth, String key, LocalDate effectiveFrom, Object value,
+                            int dimensions, int priority, String label) {
+
+        public Candidate(UUID profileId, ScopeType scopeType, UUID scopeId, String profileName,
+                         int depth, String key, LocalDate effectiveFrom, Object value) {
+            this(profileId, scopeType, scopeId, profileName, depth, key, effectiveFrom, value, 0, 0, null);
+        }
 
         public Candidate(UUID profileId, ScopeType scopeType, UUID scopeId, String profileName,
                          int depth, String key, Object value) {
@@ -63,9 +74,18 @@ public final class SettingFold {
         }
     }
 
+    /**
+     * Scope type first; within COMBINATION more dimensions, then the deeper
+     * unit, then the higher priority; within ORG_UNIT and PLATFORM the deeper
+     * one. The profile id settles what nothing else does, so the answer is
+     * at least stable; the write path refuses combinations it would have to
+     * settle.
+     */
     private static final Comparator<Candidate> SPECIFICITY = Comparator
             .comparingInt((Candidate c) -> c.scopeType().precedence())
+            .thenComparingInt(Candidate::dimensions)
             .thenComparingInt(Candidate::depth)
+            .thenComparingInt(Candidate::priority)
             .thenComparing(Candidate::profileId);
 
     private static final Comparator<LocalDate> UNDATED_FIRST = Comparator.nullsFirst(Comparator.naturalOrder());
@@ -110,7 +130,9 @@ public final class SettingFold {
             out.put(d.key(), c == null
                     ? new Resolved<>(d.key(), defaults.get(d.key()), SettingSource.SYSTEM_DEFAULT)
                     : new Resolved<>(d.key(), c.value(), new SettingSource(c.scopeType(), c.scopeId(),
-                            c.profileId(), c.profileName(), c.effectiveFrom())));
+                            c.profileId(), c.profileName(), c.effectiveFrom(), c.label() != null ? c.label()
+                                    : ScopeLabels.source(c.scopeType(), c.profileName(), null, null, null, null,
+                                            null))));
         }
         return out;
     }

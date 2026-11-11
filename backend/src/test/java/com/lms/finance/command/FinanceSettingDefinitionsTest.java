@@ -38,6 +38,6 @@ class FinanceSettingDefinitionsTest {
         assertThat(definitions).extracting(SettingDefinition::defaultValue)
                 .containsExactly(new BigDecimal("2"), new BigDecimal("100"));
         assertThat(definitions).allSatisfy(d -> assertThat(d.scopes())
-                .containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT, ScopeType.VENDOR));
+                .containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT, ScopeType.VENDOR, ScopeType.COMBINATION));
     }
 }

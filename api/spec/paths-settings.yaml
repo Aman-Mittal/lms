@@ -43,11 +43,16 @@
       profile, the latest version of a key in effect on `asOf` applies. Then
       folded least specific first: the platform's values (global, then
       `country`, then `state`), the organisation default, every
-      organisational unit at or above `orgUnitId` (deeper wins), the vehicle,
-      the customer and the vendor. Per key, the most specific profile of a scope type the
-      key allows wins; with none, the system default (`source.kind`
-      `SYSTEM_DEFAULT`). An id naming nothing of the tenant's simply matches
-      no profile.
+      organisational unit at or above `orgUnitId` (country, zone, branch...:
+      deeper wins), the vehicle, the customer, the vendor, then every
+      combination whose conditions all hold (more conditions win, then the
+      deeper unit, then the higher priority). Per key, the most specific
+      profile of a scope type the key allows wins; with none, the system
+      default (`source.kind` `SYSTEM_DEFAULT`). `source.label` says where in
+      words. With `orgUnitId` and neither `country` nor `state`, the unit's
+      own jurisdiction applies: the nearest country at or above it and the
+      nearest state beneath that country. An id naming nothing of the
+      tenant's simply matches no profile.
     parameters:
       - name: orgUnitId
         in: query
@@ -84,6 +89,11 @@
         required: false
         schema: { type: string, maxLength: 3 }
         description: A state within `country`.
+      - name: freightMode
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/FreightMode" }
+        description: How the freight moves; only combination profiles naming a mode look at it. Omit for none.
     responses:
       "200":
         description: One entry per setting, in key order.
@@ -101,7 +111,7 @@
     summary: The organisational units a profile can be scoped to
     description: |
       Requires `SETTINGS_READ` or `SETTINGS_MANAGE`. The caller's own unit and
-      every unit beneath it, in path order.
+      every unit beneath it, in path order, each with its type and level.
     parameters:
       - name: q
         in: query
@@ -168,6 +178,13 @@
       or missing wrongly, `setting-unknown` for a key no module registered,
       `setting-not-overridable` for a key only the platform sets,
       `setting-scope-not-allowed` for a key that may not be set at the scope,
+      `setting-combination-invalid` for COMBINATION conditions naming fewer
+      than two dimensions, an unknown freight mode or a priority out of
+      bounds (a unit, customer, vendor or vehicle that is not the tenant's is
+      404, a unit outside the caller's reach 403),
+      `setting-combination-ambiguous` when another combination could match
+      the same context with as many conditions, an equally deep unit and the
+      same priority and sets one of the same keys,
       `setting-effective-date-required` for an effective-dated key given
       without a day, `setting-effective-date-past` for a new version dated
       before today, and `setting-invalid-value` for a value outside its
@@ -224,8 +241,10 @@
       change or remove dated versions. A version already in force (dated
       today or earlier) is never changed or removed: 409
       `setting-value-in-force` -- add a new version dated today or later.
-      Refused as creation refuses values, and with 409
-      `concurrent-modification` when `If-Match` is not the current version.
+      A combination's `conditions`, when given, replace its conditions and
+      priority. Refused as creation refuses values and conditions, and with
+      409 `concurrent-modification` when `If-Match` is not the current
+      version.
       Only the versions that changed are recorded on the history, each as
       `key` or `key@date`.
     parameters:

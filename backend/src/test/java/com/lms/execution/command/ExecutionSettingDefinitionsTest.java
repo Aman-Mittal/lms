@@ -60,7 +60,7 @@ class ExecutionSettingDefinitionsTest {
         assertThat(documents().category()).isEqualTo(SettingCategory.COMPLIANCE);
         assertThat(documents().effectiveDated()).isTrue();
         assertThat(documents().scopes()).containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT,
-                ScopeType.VEHICLE, ScopeType.CUSTOMER);
+                ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION);
     }
 
     @Test
@@ -97,5 +97,8 @@ class ExecutionSettingDefinitionsTest {
                 .isEqualTo("customer profile \"Acme terms\" from 2027-04-01");
         assertThat(TripSettings.describe(new SettingSource(ScopeType.ORG_UNIT, UUID.randomUUID(), UUID.randomUUID(),
                 "North", null))).isEqualTo("org unit profile \"North\"");
+        assertThat(TripSettings.describe(new SettingSource(ScopeType.COMBINATION, UUID.randomUUID(), UUID.randomUUID(),
+                "North LTL", null, "Zone North + Mode LTL")))
+                .isEqualTo("combination profile \"North LTL\" (Zone North + Mode LTL)");
     }
 }

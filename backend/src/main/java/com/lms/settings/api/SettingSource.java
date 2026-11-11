@@ -21,15 +21,25 @@ import java.util.UUID;
 /**
  * Where an effective value came from.
  *
- * @param scopeType null when no profile set the key and the system default answered
- * @param scopeId   the scope's record; null for the organisation default and the system default
- * @param profileId the profile that supplied it; null for the system default
+ * @param scopeType     null when no profile set the key and the system default answered
+ * @param scopeId       the scope's record; null for the organisation default and the system default
+ * @param profileId     the profile that supplied it; null for the system default
  * @param effectiveFrom the version's first day; null for an undated value
+ * @param label         the scope in words, with its level: "Country: India", "Branch: Gurgaon",
+ *                      "Customer: Terms", or for a combination its conditions, "Branch Gurgaon +
+ *                      Customer Acme"; "System default" for the system default
  */
 public record SettingSource(ScopeType scopeType, UUID scopeId, UUID profileId, String profileName,
-                            LocalDate effectiveFrom) {
+                            LocalDate effectiveFrom, String label) {
 
-    public static final SettingSource SYSTEM_DEFAULT = new SettingSource(null, null, null, null, null);
+    public static final SettingSource SYSTEM_DEFAULT = new SettingSource(null, null, null, null, null,
+            "System default");
+
+    /** With the label of a profile kept per scope record: its scope and its name. */
+    public SettingSource(ScopeType scopeType, UUID scopeId, UUID profileId, String profileName,
+                         LocalDate effectiveFrom) {
+        this(scopeType, scopeId, profileId, profileName, effectiveFrom, null);
+    }
 
     public boolean isSystemDefault() {
         return profileId == null;

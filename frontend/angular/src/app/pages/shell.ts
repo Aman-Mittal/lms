@@ -114,7 +114,7 @@ import { GROUPS, RESOURCES } from './resources';
           <!-- Administration -->
           @if (session.can('ACCESS_POLICY_MANAGE') || session.can('VEHICLE_READ') || session.can('CREDIT_LIMIT_REQUEST')
                || session.can('CREDIT_LIMIT_APPROVE') || session.can('NUMBER_SERIES_MANAGE')
-               || session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE')) {
+               || session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE') || session.can('ORG_UNIT_MANAGE')) {
             <div class="group" data-testid="nav-admin">
               <h6>Administration</h6>
               @if (session.can('ACCESS_POLICY_MANAGE')) {
@@ -131,6 +131,10 @@ import { GROUPS, RESOURCES } from './resources';
               @if (session.can('NUMBER_SERIES_MANAGE')) {
                 <a routerLink="/admin/number-series" routerLinkActive="active"
                    data-testid="nav-admin-number-series">Number series</a>
+              }
+              @if (session.can('ORG_UNIT_MANAGE')) {
+                <a routerLink="/admin/org-units" routerLinkActive="active"
+                   data-testid="nav-admin-org-units">Organisation units</a>
               }
               @if (session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE')) {
                 <a routerLink="/admin/settings" routerLinkActive="active"

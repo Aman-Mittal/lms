@@ -149,7 +149,7 @@ public class SettingsFlowSteps {
 
     @Then("the close tolerance in force for that customer is {int} percent, from its own profile")
     public void inForce(int percent) {
-        EffectiveSetting tolerance = entry(api().getEffectiveSettings(world.orgUnitId(), customer, null, null, null, null, null).getItems(),
+        EffectiveSetting tolerance = entry(api().getEffectiveSettings(world.orgUnitId(), customer, null, null, null, null, null, null).getItems(),
                 TOLERANCE);
         assertThat(((Number) tolerance.getValue()).intValue()).isEqualTo(percent);
         assertThat(tolerance.getSource().getProfileId()).isEqualTo(profileId);

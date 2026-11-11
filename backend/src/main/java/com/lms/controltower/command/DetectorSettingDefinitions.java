@@ -63,11 +63,11 @@ public class DetectorSettingDefinitions implements SettingContributor {
                                 "How much later than committed a projected arrival may be before the"
                                         + " control tower raises an ETA delay.")
                         .defaultValue(Duration.ofMinutes(defaultEtaSlipMinutes)).between(SHORTEST, LONGEST)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER).build(),
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION).build(),
                 SettingDefinition.of(TEMPERATURE_EXCURSION, "Temperature excursion tolerance",
                                 "How long a watched trip's cargo may stay outside its band before the"
                                         + " control tower raises a temperature excursion.")
                         .defaultValue(Duration.ofMinutes(defaultTemperatureMinutes)).between(SHORTEST, LONGEST)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER).build());
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION).build());
     }
 }

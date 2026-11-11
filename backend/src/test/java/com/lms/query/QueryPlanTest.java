@@ -16,6 +16,11 @@
 package com.lms.query;
 
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import com.lms.settings.query.EffectiveSettingsQuery;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -1367,28 +1372,26 @@ class QueryPlanTest {
     @Test
     @DisplayName("resolving a context's settings and listing profiles are index-served")
     void settingProfiles() {
-        String resolve = """
-                SELECT p.id, p.scope_type, p.scope_id, p.name, v.setting_key,
-                       v.value::text AS value, coalesce(length(u.path), 0) AS depth
-                  FROM setting_profile p
-                  JOIN setting_value v ON v.tenant_id = p.tenant_id AND v.profile_id = p.id
-                  LEFT JOIN org_unit u ON p.scope_type = 'ORG_UNIT' AND u.id = p.scope_id
-                 WHERE p.tenant_id = '00000000-0000-0000-0000-000000000001'
-                   AND v.setting_key = ANY (string_to_array('order.close.tolerancePercent,ui.theme', ','))
-                   AND (p.scope_type = 'ORG_DEFAULT'
-                        OR (p.scope_type = 'ORG_UNIT' AND starts_with(
-                                coalesce(CAST(NULL AS text),
-                                         (SELECT t.path FROM org_unit t
-                                           WHERE t.id = '00000000-0000-0000-0000-000000000002')),
-                                u.path))
-                        OR (p.scope_type = 'CUSTOMER' AND p.scope_id = '00000000-0000-0000-0000-000000000003')
-                        OR (p.scope_type = 'VEHICLE' AND p.scope_id = CAST(NULL AS uuid))
-                        OR (p.scope_type = 'VENDOR' AND p.scope_id = '00000000-0000-0000-0000-000000000005')
-                        OR (p.scope_type = 'USER' AND p.scope_id = CAST(NULL AS uuid)))
-                """;
+        // The statement itself, with literals for its parameters: the
+        // jurisdiction CTEs, the ancestors read by path and the combination
+        // conditions are all part of it.
+        String resolve = literal(EffectiveSettingsQuery.RESOLVE, Map.ofEntries(
+                Map.entry("tenantId", "'00000000-0000-0000-0000-000000000001'"),
+                Map.entry("keys", "'order.close.tolerancePercent,ui.theme'"),
+                Map.entry("unitPath", "NULL"),
+                Map.entry("unitId", "'00000000-0000-0000-0000-000000000002'"),
+                Map.entry("customerId", "'00000000-0000-0000-0000-000000000003'"),
+                Map.entry("vehicleId", "NULL"),
+                Map.entry("vendorId", "'00000000-0000-0000-0000-000000000005'"),
+                Map.entry("userId", "NULL"),
+                Map.entry("country", "NULL"),
+                Map.entry("state", "NULL"),
+                Map.entry("freightMode", "'LTL'")));
         assertIndexed(resolve, "setting_profile");
         assertIndexed(resolve, "setting_value");
         assertIndexed(resolve, "org_unit");
+        assertIndexed(resolve, "business_partner");
+        assertIndexed(resolve, "vehicle");
         assertIndexed("""
                 SELECT p.id FROM setting_profile p
                  WHERE p.tenant_id = '00000000-0000-0000-0000-000000000001'
@@ -1406,6 +1409,59 @@ class QueryPlanTest {
                  ORDER BY path
                  LIMIT 51
                 """, "org_unit");
+    }
+
+    @Test
+    @DisplayName("the tenant's other combinations, read to refuse an ambiguous one, and the org-unit tree are index-served")
+    void combinationsAndOrgTree() {
+        String others = """
+                SELECT p.id, p.name, p.match_org_unit_id, u.path, p.priority,
+                       (SELECT string_agg(DISTINCT v.setting_key, ',') FROM setting_value v
+                         WHERE v.profile_id = p.id) AS keys
+                  FROM setting_profile p
+                  LEFT JOIN org_unit u ON u.id = p.match_org_unit_id
+                 WHERE p.tenant_id = '00000000-0000-0000-0000-000000000001' AND p.scope_type = 'COMBINATION'
+                   AND p.id <> '00000000-0000-0000-0000-000000000002'
+                """;
+        assertIndexed(others, "setting_profile");
+        assertIndexed(others, "setting_value");
+        assertIndexed(others, "org_unit");
+        String tree = """
+                SELECT u.id, c.country_code, s.state_code
+                  FROM org_unit u
+                  LEFT JOIN LATERAL (
+                       SELECT a.country_code, a.path FROM org_unit a
+                        WHERE a.tenant_id = u.tenant_id AND a.country_code IS NOT NULL
+                          AND a.path = ANY (ARRAY(SELECT left(u.path, i) FROM generate_series(2, length(u.path)) i
+                                                   WHERE substr(u.path, i, 1) = '/'))
+                        ORDER BY length(a.path) DESC LIMIT 1) c ON true
+                  LEFT JOIN LATERAL (
+                       SELECT a.state_code FROM org_unit a
+                        WHERE a.tenant_id = u.tenant_id AND a.state_code IS NOT NULL
+                          AND length(a.path) > length(c.path)
+                          AND a.path = ANY (ARRAY(SELECT left(u.path, i) FROM generate_series(2, length(u.path)) i
+                                                   WHERE substr(u.path, i, 1) = '/'))
+                        ORDER BY length(a.path) DESC LIMIT 1) s ON true
+                 WHERE u.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND u.path LIKE '/acme/' || '%'
+                   AND u.path > '/acme/a/'
+                 ORDER BY u.path
+                 LIMIT 51
+                """;
+        assertIndexed(tree, "org_unit");
+    }
+
+    /** {@code sql} with each {@code :name} parameter replaced by its literal. */
+    private static String literal(String sql, Map<String, String> values) {
+        Matcher m = Pattern.compile("(?<!:):([a-zA-Z]+)").matcher(sql);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String value = values.get(m.group(1));
+            assertThat(value).as("a literal for :%s", m.group(1)).isNotNull();
+            m.appendReplacement(out, Matcher.quoteReplacement(value));
+        }
+        m.appendTail(out);
+        return out.toString();
     }
 
     @Test

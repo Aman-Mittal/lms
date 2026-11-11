@@ -355,4 +355,14 @@ public class PlanningLinks {
                 .query(UUID.class)
                 .list();
     }
+
+    /** A load's freight mode by name; null when the tenant has no such load. Served by the primary key. */
+    public String freightModeOf(UUID tenantId, UUID loadId) {
+        return jdbc.sql("SELECT coalesce(freight_mode, 'FTL') FROM load_unit WHERE tenant_id = :tenantId AND id = :loadId")
+                .param("tenantId", tenantId)
+                .param("loadId", loadId)
+                .query(String.class)
+                .optional()
+                .orElse(null);
+    }
 }

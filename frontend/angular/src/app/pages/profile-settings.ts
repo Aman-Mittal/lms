@@ -17,8 +17,8 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  EffectiveSettingView, LmsGateway, PickKind, SETTING_SCOPES, SettingChange, SettingDefinitionView,
-  SettingHistoryRow, SettingProfileView, SettingScope,
+  EffectiveSettingView, FREIGHT_MODES, LmsGateway, PickKind, SETTING_SCOPES, SettingChange, SettingConditions,
+  SettingDefinitionView, SettingHistoryRow, SettingProfileView, SettingScope,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settings-form';
@@ -26,15 +26,19 @@ import { EntityPicker } from './entity-picker';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
-  VEHICLE: 'Vehicle',
+  VEHICLE: 'Vehicle', COMBINATION: 'Combination',
 };
+
+const noConditions = (): SettingConditions =>
+  ({ orgUnitId: '', customerId: '', vendorId: '', vehicleId: '', freightMode: '', priority: 0 });
 const PICKER: Record<string, PickKind> = {
   ORG_UNIT: 'org-unit', CUSTOMER: 'customer', VENDOR: 'vendor', VEHICLE: 'vehicle',
 };
 
 /**
  * Administration > Profile settings: the company's setting profiles, one per
- * scope (the organisation, a unit, a customer, a vendor, a vehicle), their
+ * scope (the organisation, a unit, a customer, a vendor, a vehicle) and any
+ * number of combinations (a unit's subtree and a customer, say), their
  * values with an input for each setting's type, the history of each, and what
  * is in force for a context and where it comes from. A dated setting changes
  * only by a new version from today or later; versions already in force are
@@ -45,8 +49,9 @@ const PICKER: Record<string, PickKind> = {
   imports: [FormsModule, EntityPicker],
   template: `
     <h1>Profile settings</h1>
-    <p class="muted">The most specific profile that sets a value wins: organisation, then unit (deeper first),
-      then vehicle, customer or vendor. A person's own preferences sit on top of those, under My profile.</p>
+    <p class="muted">The most specific profile that sets a value wins: organisation, then unit (country, zone,
+      branch: deeper first), then vehicle, customer or vendor, then a combination of those (more conditions first,
+      then the deeper unit, then the higher priority). A person's own preferences sit on top, under My profile.</p>
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 
     <label>
@@ -78,7 +83,23 @@ const PICKER: Record<string, PickKind> = {
         <select name="scope" aria-label="Scope" data-testid="new-scope" [(ngModel)]="newScope">
           @for (s of scopes; track s) { <option [value]="s">{{ scopeLabel(s) }}</option> }
         </select>
-        @if (newScope !== 'ORG_DEFAULT') {
+        @if (newScope === 'COMBINATION') {
+          <app-entity-picker [kind]="'org-unit'" ariaLabel="Condition unit" testId="cond-unit" placeholder="Unit"
+                             [(value)]="newCond.orgUnitId" />
+          <app-entity-picker [kind]="'customer'" ariaLabel="Condition customer" testId="cond-customer"
+                             placeholder="Customer" [(value)]="newCond.customerId" />
+          <app-entity-picker [kind]="'vendor'" ariaLabel="Condition vendor" testId="cond-vendor" placeholder="Vendor"
+                             [(value)]="newCond.vendorId" />
+          <app-entity-picker [kind]="'vehicle'" ariaLabel="Condition vehicle" testId="cond-vehicle"
+                             placeholder="Vehicle" [(value)]="newCond.vehicleId" />
+          <select name="condMode" aria-label="Condition freight mode" data-testid="cond-mode"
+                  [(ngModel)]="newCond.freightMode">
+            <option value="">Any mode</option>
+            @for (m of modes; track m) { <option [value]="m">{{ m }}</option> }
+          </select>
+          <input type="number" name="condPriority" aria-label="Priority" data-testid="cond-priority"
+                 [(ngModel)]="newCond.priority" />
+        } @else if (newScope !== 'ORG_DEFAULT') {
           <app-entity-picker [kind]="pickerOf(newScope)" ariaLabel="Profile scope" testId="new-scope-id"
                              placeholder="Which one" [(value)]="newScopeId" />
         }
@@ -90,6 +111,26 @@ const PICKER: Record<string, PickKind> = {
     @if (picked(); as p) {
       <section class="panel in-flow" data-testid="profile-panel">
         <header><h2>{{ p.name }}</h2><span class="muted">{{ scopeLabel(p.scopeType) }} {{ p.scopeLabel }}</span></header>
+        @if (p.scopeType === 'COMBINATION') {
+          <form class="inline" (ngSubmit)="saveConditions()" data-testid="profile-conditions">
+            <app-entity-picker [kind]="'org-unit'" ariaLabel="Unit condition" testId="edit-cond-unit" placeholder="Unit"
+                               [(value)]="editCond.orgUnitId" />
+            <app-entity-picker [kind]="'customer'" ariaLabel="Customer condition" testId="edit-cond-customer"
+                               placeholder="Customer" [(value)]="editCond.customerId" />
+            <app-entity-picker [kind]="'vendor'" ariaLabel="Vendor condition" testId="edit-cond-vendor"
+                               placeholder="Vendor" [(value)]="editCond.vendorId" />
+            <app-entity-picker [kind]="'vehicle'" ariaLabel="Vehicle condition" testId="edit-cond-vehicle"
+                               placeholder="Vehicle" [(value)]="editCond.vehicleId" />
+            <select name="editMode" aria-label="Freight mode condition" data-testid="edit-cond-mode"
+                    [(ngModel)]="editCond.freightMode" [disabled]="!manage">
+              <option value="">Any mode</option>
+              @for (m of modes; track m) { <option [value]="m">{{ m }}</option> }
+            </select>
+            <input type="number" name="editPriority" aria-label="Priority condition" data-testid="edit-cond-priority"
+                   [(ngModel)]="editCond.priority" [disabled]="!manage" />
+            @if (manage) { <button type="submit" data-testid="save-conditions">Save conditions</button> }
+          </form>
+        }
         <form (ngSubmit)="saveProfile()" data-testid="profile-values">
           <table>
             <thead><tr><th>Setting</th><th>Value</th>@if (hasDated()) { <th>From</th> }<th></th></tr></thead>
@@ -172,6 +213,10 @@ const PICKER: Record<string, PickKind> = {
                          [(value)]="ctxVehicle" />
       <app-entity-picker [kind]="'vendor'" ariaLabel="Context vendor" testId="ctx-vendor" placeholder="Vendor"
                          [(value)]="ctxVendor" />
+      <select name="ctxMode" aria-label="Freight mode" data-testid="ctx-freight-mode" [(ngModel)]="ctxMode">
+        <option value="">Any mode</option>
+        @for (m of modes; track m) { <option [value]="m">{{ m }}</option> }
+      </select>
       <input type="date" name="asOf" aria-label="As of" data-testid="ctx-as-of" [(ngModel)]="ctxAsOf" />
       <button type="submit" data-testid="show-effective">Show</button>
     </form>
@@ -194,6 +239,7 @@ export class ProfileSettingsPage implements OnInit {
   private readonly session = inject(Session);
 
   readonly scopes = SETTING_SCOPES;
+  readonly modes = FREIGHT_MODES;
   readonly filter = signal<string>('');
   readonly profiles = signal<SettingProfileView[]>([]);
   readonly picked = signal<SettingProfileView | null>(null);
@@ -207,6 +253,8 @@ export class ProfileSettingsPage implements OnInit {
   newScope: SettingScope = 'ORG_DEFAULT';
   newScopeId = '';
   newName = '';
+  newCond: SettingConditions = noConditions();
+  editCond: SettingConditions = noConditions();
   typed: Record<string, string> = {};
   from: Record<string, string> = {};
   private loaded: Record<string, string> = {};
@@ -215,6 +263,7 @@ export class ProfileSettingsPage implements OnInit {
   ctxVehicle = '';
   ctxVendor = '';
   ctxAsOf = '';
+  ctxMode = '';
 
   get manage(): boolean {
     return this.session.can('SETTINGS_MANAGE');
@@ -265,11 +314,15 @@ export class ProfileSettingsPage implements OnInit {
   async create(): Promise<void> {
     this.error.set('');
     try {
+      const combination = this.newScope === 'COMBINATION';
       const id = await this.gateway.createSettingProfile({
-        scopeType: this.newScope, scopeId: this.newScope === 'ORG_DEFAULT' ? '' : this.newScopeId, name: this.newName,
+        scopeType: this.newScope, scopeId: this.newScope === 'ORG_DEFAULT' || combination ? '' : this.newScopeId,
+        name: this.newName, conditions: combination ? { ...this.newCond, priority: Number(this.newCond.priority) || 0 }
+          : undefined,
       });
       this.newName = '';
       this.newScopeId = '';
+      this.newCond = noConditions();
       await this.reload();
       await this.open(id);
     } catch (e) {
@@ -325,6 +378,25 @@ export class ProfileSettingsPage implements OnInit {
     }
   }
 
+  /** Replaces a combination's conditions; refused, like a value, when it would tie with another. */
+  async saveConditions(): Promise<void> {
+    const p = this.picked();
+    if (!p) {
+      return;
+    }
+    this.error.set('');
+    this.notice.set('');
+    try {
+      this.show(await this.gateway.updateSettingConditions(p.id, p.version,
+        { ...this.editCond, priority: Number(this.editCond.priority) || 0 }));
+      this.history.set(await this.gateway.settingProfileHistory(p.id));
+      this.notice.set('Saved.');
+      await this.reload();
+    } catch (e) {
+      this.error.set((e as Error).message);
+    }
+  }
+
   async remove(): Promise<void> {
     const p = this.picked();
     if (!p) {
@@ -345,7 +417,7 @@ export class ProfileSettingsPage implements OnInit {
     try {
       this.effective.set(await this.gateway.effectiveSettings({
         orgUnitId: this.ctxUnit, customerId: this.ctxCustomer, vehicleId: this.ctxVehicle, vendorId: this.ctxVendor,
-        asOf: this.ctxAsOf,
+        asOf: this.ctxAsOf, freightMode: this.ctxMode,
       }));
     } catch (e) {
       this.error.set((e as Error).message);
@@ -362,6 +434,7 @@ export class ProfileSettingsPage implements OnInit {
 
   private show(p: SettingProfileView): void {
     this.picked.set(p);
+    this.editCond = p.conditions ? { ...p.conditions } : noConditions();
     this.allowed.set(this.definitions.filter((d) => d.scopes.includes(p.scopeType)));
     this.typed = {};
     this.from = {};

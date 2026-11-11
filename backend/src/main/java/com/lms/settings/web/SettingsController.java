@@ -114,9 +114,11 @@ public class SettingsController {
                                    @RequestParam(required = false) UUID vendorId,
                                    @RequestParam(required = false) LocalDate asOf,
                                    @RequestParam(required = false) String country,
-                                   @RequestParam(required = false) String state) {
+                                   @RequestParam(required = false) String state,
+                                   @RequestParam(required = false) String freightMode) {
         SettingContext context = SettingContext.ofOrgUnit(orgUnitId).withCustomer(customerId)
-                .withVehicle(vehicleId).withVendor(vendorId).asOf(asOf).inJurisdiction(blankToNull(country), blankToNull(state));
+                .withVehicle(vehicleId).withVendor(vendorId).asOf(asOf)
+                .inJurisdiction(blankToNull(country), blankToNull(state)).withFreightMode(blankToNull(freightMode));
         return new EffectiveView(entries(registry.all(), context));
     }
 
@@ -139,7 +141,8 @@ public class SettingsController {
     @PostMapping("/profiles")
     public ResponseEntity<IdResponse> create(@Valid @RequestBody CreateProfileRequest request) {
         UUID id = profiles.create(new SettingProfileService.Scope(request.scopeType(), request.scopeId(),
-                blankToNull(request.country()), blankToNull(request.state())), request.name(),
+                blankToNull(request.country()), blankToNull(request.state()),
+                conditions(request.conditions())), request.name(),
                 requested(request.values(), request.versions()));
         return ResponseEntity.created(URI.create("/api/v1/settings/profiles/" + id)).body(new IdResponse(id));
     }
@@ -157,7 +160,7 @@ public class SettingsController {
                                               @RequestHeader(value = "If-Match", required = false) String ifMatch,
                                               @Valid @RequestBody UpdateProfileRequest request) {
         profiles.update(id, IfMatch.version(ifMatch, PROFILE_VERSION), request.name(),
-                requested(request.values(), request.versions()));
+                conditions(request.conditions()), requested(request.values(), request.versions()));
         return get(id);
     }
 
@@ -217,6 +220,11 @@ public class SettingsController {
         return out;
     }
 
+    private static SettingProfileService.Conditions conditions(ConditionsRequest c) {
+        return c == null ? null : new SettingProfileService.Conditions(c.orgUnitId(), c.customerId(), c.vendorId(),
+                c.vehicleId(), c.freightMode(), c.priority() == null ? 0 : c.priority());
+    }
+
     private static String blankToNull(String text) {
         return text == null || text.isBlank() ? null : text.strip().toUpperCase(java.util.Locale.ROOT);
     }
@@ -261,15 +269,18 @@ public class SettingsController {
                                  boolean tenantOverridable) {
     }
 
-    /** @param kind {@code SYSTEM_DEFAULT} when no profile set the key, else {@code PROFILE} */
+    /**
+     * @param kind  {@code SYSTEM_DEFAULT} when no profile set the key, else {@code PROFILE}
+     * @param label where it came from in words, with the unit's level or a combination's conditions
+     */
     public record SourceView(String kind, ScopeType scopeType, UUID scopeId, UUID profileId,
-                             String profileName, LocalDate effectiveFrom) {
+                             String profileName, LocalDate effectiveFrom, String label) {
 
         static SourceView of(SettingSource source) {
             return source.isSystemDefault()
-                    ? new SourceView("SYSTEM_DEFAULT", null, null, null, null, null)
+                    ? new SourceView("SYSTEM_DEFAULT", null, null, null, null, null, "System default")
                     : new SourceView("PROFILE", source.scopeType(), source.scopeId(), source.profileId(),
-                            source.profileName(), source.effectiveFrom());
+                            source.profileName(), source.effectiveFrom(), source.label());
         }
     }
 
@@ -288,13 +299,20 @@ public class SettingsController {
                                  Object value) {
     }
 
+    /** A combination's conditions: two or more; a priority of null is 0. */
+    public record ConditionsRequest(UUID orgUnitId, UUID customerId, UUID vendorId, UUID vehicleId,
+                                    @Size(max = 10) String freightMode, Integer priority) {
+    }
+
     public record CreateProfileRequest(@NotNull ScopeType scopeType, UUID scopeId, @Size(max = 100) String name,
                                        @Size(max = 2) String country, @Size(max = 3) String state,
+                                       @Valid ConditionsRequest conditions,
                                        @Size(max = 200) Map<String, Object> values,
                                        @Size(max = 200) List<@Valid VersionRequest> versions) {
     }
 
-    public record UpdateProfileRequest(@Size(max = 100) String name, @Size(max = 200) Map<String, Object> values,
+    public record UpdateProfileRequest(@Size(max = 100) String name, @Valid ConditionsRequest conditions,
+                                       @Size(max = 200) Map<String, Object> values,
                                        @Size(max = 200) List<@Valid VersionRequest> versions) {
     }
 

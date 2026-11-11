@@ -97,6 +97,12 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public String freightModeOf(UUID loadId) {
+        return loadId == null ? null : links.freightModeOf(TenantContext.requireTenantId(), loadId);
+    }
+
+    @Override
     @Transactional
     public void recordAwarded(UUID loadId, UUID vendorPartnerId) {
         LoadUnit before = require(loadId);

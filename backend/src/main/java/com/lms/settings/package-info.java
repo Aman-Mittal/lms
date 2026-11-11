@@ -26,14 +26,18 @@
  * refused when written, so nothing is stored that nothing reads.
  *
  * <p>A profile holds values for one scope: the organisation default, an
- * organisational unit, a customer, a vendor, a vehicle, or one user's own
- * preferences.
+ * organisational unit (head office, line of business, country, zone or
+ * region, branch, hub), a customer, a vendor, a vehicle, a combination of
+ * several of those (and a freight mode), or one user's own preferences.
  * The effective value of a key for a context is folded from the profiles that
- * apply to it, least specific first: organisation default, then organisational
- * units from the root down (a deeper unit beats a shallower one), then vehicle,
- * customer, vendor and user. The most specific profile that sets the key wins; with
- * none, the system default answers. Every resolution reads all applicable
- * profiles in one statement.
+ * apply to it, least specific first: the platform's (global, country, state:
+ * the context's jurisdiction, or its unit's), organisation default, then
+ * organisational units from the root down (a deeper unit beats a shallower
+ * one), then vehicle, customer, vendor, combination and user. Among
+ * combinations, more conditions win, then the deeper unit, then the higher
+ * priority. The most specific profile that sets the key wins; with none, the
+ * system default answers. Every resolution reads all applicable profiles in
+ * one statement.
  *
  * <p>Depends on nothing. Other modules reach it through {@code settings::api}
  * only. That a scope's record exists for the caller's tenant is checked with a

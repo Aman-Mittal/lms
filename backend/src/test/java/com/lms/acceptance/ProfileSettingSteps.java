@@ -141,7 +141,7 @@ public class ProfileSettingSteps {
                     type.name().toLowerCase() + " terms " + world.uniqueCode("P"), requested));
         } else {
             long version = profileQueries.find(existing).orElseThrow().version();
-            profiles.update(existing, version, null, requested);
+            profiles.update(existing, version, null, null, requested);
         }
     }
 
