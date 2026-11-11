@@ -62,6 +62,9 @@ export function Shell() {
               {group === 'Operations' && can('ORDER_READ') && (
                 <NavLink to="/order-desk" data-testid="nav-order-desk">Order desk</NavLink>
               )}
+              {group === 'Operations' && can('APPROVAL_READ') && (
+                <NavLink to="/approvals" data-testid="nav-approvals">Approvals</NavLink>
+              )}
               {group === 'Operations' && can('LOAD_READ') && (
                 <NavLink to="/load-building" data-testid="nav-load-building">Load building</NavLink>
               )}

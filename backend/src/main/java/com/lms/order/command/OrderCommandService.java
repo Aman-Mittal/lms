@@ -25,6 +25,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.lms.approvals.api.ApprovalRequests;
+import com.lms.approvals.api.ApprovalSubject;
+import com.lms.approvals.api.ApprovalSubjectTypes;
+import com.lms.approvals.api.ApprovalTicket;
 import com.lms.identity.numbering.DocumentNumbers;
 import com.lms.identity.numbering.DocumentType;
 import com.lms.masterdata.api.PartnerStandingPort;
@@ -48,6 +52,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -78,6 +83,7 @@ public class OrderCommandService {
     private final OrderNumberSequence numbers;
     private final DocumentNumbers documentNumbers;
     private final OrderCreditGate creditGate;
+    private final ApprovalRequests approvals;
 
     /**
      * How many assigned numbers are skipped, at most, because a caller already
@@ -93,7 +99,7 @@ public class OrderCommandService {
                                List<OrderCancellationHook> cancellationHooks,
                                List<OrderAmendmentGuard> amendmentGuards, TransitionAudit audit,
                                OrderNumberSequence numbers, OrderCreditGate creditGate,
-                               DocumentNumbers documentNumbers) {
+                               DocumentNumbers documentNumbers, ApprovalRequests approvals) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
@@ -105,6 +111,7 @@ public class OrderCommandService {
         this.numbers = numbers;
         this.creditGate = creditGate;
         this.documentNumbers = documentNumbers;
+        this.approvals = approvals;
     }
 
     /** Raises a full-truckload order, which is what an order without a mode has always been. */
@@ -320,18 +327,73 @@ public class OrderCommandService {
      * after a lost response is harmless. An order that was delivered cannot be
      * cancelled (the state machine refuses it).
      *
+     * <p>When the tenant's approval policy for {@code ORDER_CANCELLATION}
+     * asks for approval, nothing is cancelled here: an approval request is
+     * raised (one open per order; a second is {@code approval-already-open})
+     * and returned, and approving it cancels the order through
+     * {@link #applyCancellation}, re-checking everything above at that moment.
+     *
      * @param reason why, for the audit trail; optional, so that existing
      *               callers that send nothing keep working
      */
     @Transactional
     @PreAuthorize("hasAuthority('ORDER_UPDATE')")
-    public void cancel(UUID orderId, String reason) {
+    public Cancellation cancel(UUID orderId, String reason) {
+        SalesOrder order = require(orderId);
+        if (order.status() == SalesOrder.OrderStatus.CANCELLED) {
+            return Cancellation.DONE;
+        }
+        // Legality first, so a delivered order is refused for being delivered
+        // before anything downstream is asked about it -- and before an
+        // approval is asked for something that could never happen.
+        order.transitionTo(SalesOrder.OrderStatus.CANCELLED);
+        if (approvals.isRequired(ApprovalSubjectTypes.ORDER_CANCELLATION)) {
+            String why = reason == null || reason.isBlank() ? null : reason.strip();
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("orderNo", order.orderNo());
+            payload.put("statusAtRequest", order.status().name());
+            payload.put("reason", why);
+            ApprovalTicket ticket = approvals.request(
+                    new ApprovalSubject(ApprovalSubjectTypes.ORDER_CANCELLATION, orderId, order.orgUnitId()),
+                    CANCEL_ACTION, payload,
+                    "Cancel order " + order.orderNo() + (why == null ? "" : ": " + abbreviate(why)));
+            audit.record("ORDER_CANCELLATION_REQUESTED", AUDIT_TYPE, orderId,
+                    Json.object("status", order.status().name()),
+                    Json.object("status", order.status().name(), "approvalId", ticket.id().toString(),
+                            "reason", why));
+            return new Cancellation(false, ticket);
+        }
+        applyCancellation(orderId, reason);
+        return Cancellation.DONE;
+    }
+
+    /** The action an order cancellation is requested as. */
+    public static final String CANCEL_ACTION = "CANCEL";
+
+    /**
+     * What asking to cancel did.
+     *
+     * @param cancelled true when the order is cancelled now (or already was)
+     * @param approval  the request raised instead, when the tenant's policy
+     *                  asks for approval; null otherwise
+     */
+    public record Cancellation(boolean cancelled, ApprovalTicket approval) {
+        static final Cancellation DONE = new Cancellation(true, null);
+    }
+
+    /**
+     * Cancels the order through the one cancellation path, in the caller's
+     * transaction: the state machine, planning's hooks, the audit row and
+     * the event. Unguarded: the caller is either {@link #cancel} or an
+     * approved request, whose decider's right the approvals module checked.
+     * Already cancelled is a no-op.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void applyCancellation(UUID orderId, String reason) {
         SalesOrder order = require(orderId);
         if (order.status() == SalesOrder.OrderStatus.CANCELLED) {
             return;
         }
-        // Legality first, so a delivered order is refused for being delivered
-        // before anything downstream is asked about it.
         SalesOrder cancelled = order.transitionTo(SalesOrder.OrderStatus.CANCELLED);
         cancellationHooks.forEach(hook -> hook.onOrderCancelling(orderId));
         orders.save(cancelled);
@@ -344,6 +406,10 @@ public class OrderCommandService {
         events.publishEvent(new OrderCancelled(order.tenantId(), orderId, order.orderNo(),
                 order.status().name(), reason == null || reason.isBlank() ? null : reason.strip(),
                 Instant.now()));
+    }
+
+    private static String abbreviate(String text) {
+        return text.length() <= 200 ? text : text.substring(0, 199) + "…";
     }
 
     // ---------------------------------------------------------------- editing

@@ -53,9 +53,13 @@ public record DeliveryProof(
                 GoodsCondition.CLEAN, null);
     }
 
-    /** A fresh code replaces the old one and starts the count of wrong attempts again. */
+    /**
+     * A fresh code replaces the old one and starts the count of wrong attempts
+     * again. A reversed proof is waiting for a code once more.
+     */
     public DeliveryProof withNewCode(String otpHash, Instant now, Instant expiresAt) {
-        return new DeliveryProof(id, tenantId, consignmentId, status, otpHash, now, expiresAt, 0,
+        ProofStatus next = status == ProofStatus.REVERSED ? ProofStatus.OTP_ISSUED : status;
+        return new DeliveryProof(id, tenantId, consignmentId, next, otpHash, now, expiresAt, 0,
                 recipientName, photoRef, deliveredAt, lat, lon, version, createdAt, goodsCondition, remark);
     }
 
@@ -79,6 +83,16 @@ public record DeliveryProof(
         return new DeliveryProof(id, tenantId, consignmentId, ProofStatus.CONFIRMED, otpHash,
                 otpIssuedAt, otpExpiresAt, otpAttempts, recipientName, photoRef, deliveredAt, lat,
                 lon, version, createdAt, received, received == GoodsCondition.CLEAN ? null : remark);
+    }
+
+    /** The confirmed proof, reversed: kept on file, no longer a proof. */
+    public DeliveryProof reversed() {
+        if (status != ProofStatus.CONFIRMED) {
+            throw new IllegalStateException("Only a confirmed proof can be reversed");
+        }
+        return new DeliveryProof(id, tenantId, consignmentId, ProofStatus.REVERSED, otpHash, otpIssuedAt,
+                otpExpiresAt, otpAttempts, recipientName, photoRef, deliveredAt, lat, lon, version, createdAt,
+                goodsCondition, remark);
     }
 
     /** Whether the goods were received with nothing short or damaged. */

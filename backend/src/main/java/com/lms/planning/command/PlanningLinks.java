@@ -323,4 +323,19 @@ public class PlanningLinks {
                 .query(UUID.class)
                 .list();
     }
+
+    /** Whether a completed trip carries the consignment, which delivers it whatever its proof says. */
+    public boolean carriedByCompletedTrip(UUID tenantId, UUID consignmentId) {
+        return Boolean.TRUE.equals(jdbc.sql("""
+                        SELECT EXISTS (SELECT 1
+                                         FROM load_consignment lc
+                                         JOIN trip t ON t.load_id = lc.load_id
+                                        WHERE lc.tenant_id = :tenantId AND lc.consignment_id = :consignmentId
+                                          AND t.status = 'COMPLETED')
+                        """)
+                .param("tenantId", tenantId)
+                .param("consignmentId", consignmentId)
+                .query(Boolean.class)
+                .single());
+    }
 }

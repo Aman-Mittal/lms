@@ -337,6 +337,13 @@
       part-load docket is cancelled. Cancelling an order that is already
       cancelled changes nothing. The body, and the reason in it, are optional;
       a reason is kept in the audit trail.
+
+      When the tenant's approval policy for `ORDER_CANCELLATION` asks for
+      approval (off by default), nothing is cancelled: the answer is 202 with
+      the approval request raised instead, audited `ORDER_CANCELLATION_REQUESTED`.
+      Approving it cancels the order exactly as above, checking everything
+      again at that moment; rejecting it leaves the order as it is. A second
+      request while one is open is 409 `approval-already-open`.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -345,6 +352,11 @@
         application/json:
           schema: { $ref: "#/components/schemas/CancelOrderRequest" }
     responses:
+      "202":
+        description: Approval is required; the request raised.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalTicket" }
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }

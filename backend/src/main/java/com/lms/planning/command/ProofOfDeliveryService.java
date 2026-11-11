@@ -103,6 +103,33 @@ public class ProofOfDeliveryService {
         return true;
     }
 
+    /**
+     * A reversed proof takes back the delivery it made.
+     *
+     * <p>Only a delivery the proof made: if a completed trip carries the
+     * consignment, completion delivers it whatever the proof says, so it stays
+     * DELIVERED. Otherwise it goes back to IN_TRANSIT (a full truckload) or
+     * OUT_FOR_DELIVERY (a docket) to await a new proof. The order's coverage
+     * is not rewound: a fulfilled order stays fulfilled, and is closed or
+     * reopened by a person. Unguarded and safe to repeat -- a consignment not
+     * DELIVERED is left alone.
+     *
+     * @return whether this call moved the consignment
+     */
+    @Transactional
+    public boolean undeliverOnReversal(UUID consignmentId) {
+        UUID tenantId = TenantContext.requireTenantId();
+        Consignment before = consignments.findById(consignmentId).orElse(null);
+        if (before == null || before.status() != ConsignmentStatus.DELIVERED
+                || links.carriedByCompletedTrip(tenantId, consignmentId)) {
+            return false;
+        }
+        Consignment restored = consignments.save(before.proofReversed());
+        audit.recordAll("CONSIGNMENT_DELIVERY_REVERSED", PlanningAudit.CONSIGNMENT,
+                List.of(PlanningAudit.entry(before, restored)));
+        return true;
+    }
+
     /** Whether a proof can deliver this consignment now; see the class comment. */
     static boolean deliverable(Consignment consignment) {
         if (consignment.isDocket()) {

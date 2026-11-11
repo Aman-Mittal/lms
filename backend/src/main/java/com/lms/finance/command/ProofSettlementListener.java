@@ -18,6 +18,7 @@ package com.lms.finance.command;
 import java.time.Instant;
 
 import com.lms.delivery.events.DeliveryProofRecorded;
+import com.lms.delivery.events.DeliveryProofReversed;
 import com.lms.execution.events.TripCompleted;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Component;
@@ -51,6 +52,13 @@ public class ProofSettlementListener {
         Instant at = event.completedAt() == null ? event.occurredAt() : event.completedAt();
         TenantContext.runWith(event.tenantId(), null, () ->
                 holds.holdForProofs(event.tripId(), at == null ? Instant.now() : at));
+    }
+
+    /** A reversed proof holds again the completed trips it had released. */
+    @TransactionalEventListener
+    public void onProofReversed(DeliveryProofReversed event) {
+        TenantContext.runWith(event.tenantId(), null, () ->
+                holds.reholdWhereReversed(event.consignmentId(), Instant.now()));
     }
 
     @TransactionalEventListener

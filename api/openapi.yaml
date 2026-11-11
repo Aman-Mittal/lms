@@ -122,6 +122,11 @@ tags:
     description: Attributes a tenant defines for itself on partners, vehicles, drivers, terminals, orders, loads and trips, and the values it records.
   - name: Delivery and claims
     description: Proof of delivery with a one-time code, and claims against a consignment.
+  - name: Approvals
+    description: |
+      One approvals inbox for every flow that needs a person to agree first --
+      an order's cancellation, a proof of delivery's reversal -- with a policy
+      per flow, a decision trail and expiry.
   - name: Allocation rules
     description: Tenant-written preferences for which vendors a load is offered to first, or never.
   - name: Webhooks

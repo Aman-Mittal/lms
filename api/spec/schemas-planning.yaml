@@ -82,7 +82,7 @@ Consignment:
         cancelled.
     proofStatus:
       type: string
-      enum: [OTP_ISSUED, CONFIRMED]
+      enum: [OTP_ISSUED, CONFIRMED, REVERSED]
       description: Where its proof of delivery stands; absent before a code
         has been issued.
     proofCondition:

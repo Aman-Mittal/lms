@@ -186,6 +186,21 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
     });
   }
 
+  /**
+   * Cancels the order, or -- where the tenant asks for approval first --
+   * raises the request and says so; the order stays as it is until somebody
+   * else approves it in the Approvals inbox.
+   */
+  async function cancelOrder() {
+    const result = { pending: false };
+    await act('Order cancelled.', async () => {
+      result.pending = (await gateway.cancelOrder(order.id, reason)) !== null;
+    });
+    if (result.pending) {
+      setDone('Cancellation requested: awaiting approval.');
+    }
+  }
+
   async function act(outcome: string, action: () => Promise<unknown>) {
     setRefusal(null);
     setDone('');
@@ -439,7 +454,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
             )}
           </p>
           <form className="inline" data-testid="cancel-order"
-            onSubmit={(e) => { e.preventDefault(); void act('Order cancelled.', () => gateway.cancelOrder(order.id, reason)); }}>
+            onSubmit={(e) => { e.preventDefault(); void cancelOrder(); }}>
             <input aria-label="Cancellation reason" placeholder="Why it is cancelled (optional)" value={reason}
               onChange={(e) => setReason(e.target.value)} />
             <button type="submit">Cancel order</button>

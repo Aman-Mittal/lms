@@ -39,6 +39,8 @@ public enum WebhookEventType {
     CONSIGNMENT_IN_TRANSIT,
     CONSIGNMENT_DELIVERED,
     CONSIGNMENT_CANCELLED,
+    APPROVAL_REQUESTED,
+    APPROVAL_DECIDED,
     PING;
 
     public boolean subscribable() {

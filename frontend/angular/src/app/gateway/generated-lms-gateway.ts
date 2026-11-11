@@ -19,6 +19,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import { DemoDataService } from '../api';
+import {
+  Approval as ApiApproval, ApprovalScope as ApiApprovalScope, ApprovalStatus as ApiApprovalStatus, ApprovalsService,
+} from '../api';
+import type { ApprovalDetail, ApprovalFilter, ApprovalPending } from './lms-gateway';
 import { GoodsCondition as ApiGoodsCondition } from '../api';
 import type { CloseKind as ApiCloseKind } from '../api';
 import type { CloseKindChoice } from './lms-gateway';
@@ -591,6 +595,28 @@ function changesRequest(changes: SettingChange[]) {
   return { values, versions };
 }
 
+/** A proof's status as the delivery desk knows it. */
+function proofStatus(raw: string): 'OTP_ISSUED' | 'CONFIRMED' | 'REVERSED' {
+  return raw === 'CONFIRMED' || raw === 'REVERSED' ? raw : 'OTP_ISSUED';
+}
+
+/** An approval request as an inbox row. */
+function approvalRow(a: ApiApproval): Row {
+  return {
+    id: text(a.id), subjectType: text(a.subjectType), subjectId: text(a.subjectId), action: text(a.action),
+    summary: text(a.summary), status: text(a.status), requestedAt: instant(a.requestedAt), dueAt: instant(a.dueAt),
+    approvals: `${a.approvalsGiven}/${a.approvalsRequired}`, waitingFor: (a.pendingPermissions ?? []).join(', '),
+    decidedAt: instant(a.decidedAt), reason: text(a.reason), mine: a.mineToDecide ? 'yes' : '',
+  };
+}
+
+/** A payload or policy as readable `key: value` lines. */
+function keyValues(value: object | null | undefined): string {
+  return Object.entries(value ?? {})
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`).join('\n');
+}
+
 @Injectable()
 export class GeneratedLmsGateway extends LmsGateway {
   private readonly auth = inject(AuthenticationService);
@@ -615,6 +641,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly milkRuns = inject(MilkRunsService);
   private readonly ltl = inject(LTLRatingService);
   private readonly deadLetters = inject(EventDeadLetterService);
+  private readonly approvalsApi = inject(ApprovalsService);
   private readonly hooks = inject(WebhooksService);
   private readonly clientBilling = inject(ClientBillingService);
 
@@ -768,7 +795,7 @@ export class GeneratedLmsGateway extends LmsGateway {
     try {
       return await this.call(this.delivery.getDeliveryProof({ consignmentId }), (p) => ({
         consignmentId: p.consignmentId ?? consignmentId,
-        status: (p.status as unknown as string) === 'CONFIRMED' ? 'CONFIRMED' as const : 'OTP_ISSUED' as const,
+        status: proofStatus(p.status as unknown as string),
         recipientName: text(p.recipientName), photoRef: text(p.photoRef),
         deliveredAt: text(p.deliveredAt), otpExpiresAt: text(p.otpExpiresAt),
         goodsCondition: text(p.goodsCondition) || 'CLEAN', remark: text(p.remark),
@@ -1094,6 +1121,50 @@ export class GeneratedLmsGateway extends LmsGateway {
       (r) => ({ outcome: text(r.outcome), attempts: r.attempts ?? 0 }));
   }
 
+  approvals(filter: ApprovalFilter): Promise<Row[]> {
+    return this.call(this.approvalsApi.listApprovals({
+      status: filter.status as unknown as ApiApprovalStatus | undefined,
+      scope: filter.scope as unknown as ApiApprovalScope | undefined,
+      subjectType: filter.subjectType || undefined, subjectId: filter.subjectId || undefined, limit: 50,
+    }), (s) => s.items.map(approvalRow));
+  }
+
+  approval(id: string): Promise<ApprovalDetail> {
+    return this.call(this.approvalsApi.getApproval({ id }), (d) => ({
+      summary: approvalRow(d.approval), version: d.approval.version,
+      open: (d.approval.status as unknown as string) === 'REQUESTED',
+      mineToDecide: d.approval.mineToDecide, requestedByMe: d.approval.requestedByMe,
+      payload: keyValues(d.approval.payload), policy: keyValues(d.policy).replace(/\n/g, '; '),
+      trail: d.trail.map((t) => ({
+        id: text(t.id), step: text(t.step), decision: text(t.decision), permission: text(t.permission),
+        decidedBy: text(t.decidedBy) || 'platform', decidedAt: instant(t.decidedAt), note: text(t.note),
+      })),
+    }));
+  }
+
+  approveApproval(id: string, version: number, note: string): Promise<void> {
+    return this.call(this.approvalsApi.approveApproval({
+      id, ifMatch: String(version), approveRequest: { note: blankAsAbsent(note) },
+    }), () => undefined);
+  }
+
+  rejectApproval(id: string, version: number, reason: string): Promise<void> {
+    return this.call(this.approvalsApi.rejectApproval({
+      id, ifMatch: String(version), rejectApprovalRequest: { reason },
+    }), () => undefined);
+  }
+
+  cancelApproval(id: string, version: number, reason: string): Promise<void> {
+    return this.call(this.approvalsApi.cancelApproval({
+      id, ifMatch: String(version), cancelApprovalRequest: { reason: blankAsAbsent(reason) },
+    }), () => undefined);
+  }
+
+  requestProofReversal(consignmentId: string, reason: string): Promise<ApprovalPending> {
+    return this.call(this.delivery.requestProofReversal({ consignmentId, proofReversalRequest: { reason } }),
+      (t) => ({ id: text(t?.id), status: text(t?.status) }));
+  }
+
   discardParkedEvent(id: string, reason: string): Promise<void> {
     return this.call(this.deadLetters.discardParkedEvent({ id, discardParkedEventRequest: { reason } }),
       () => undefined);
@@ -1216,9 +1287,9 @@ export class GeneratedLmsGateway extends LmsGateway {
     return this.call(this.orders.validateOrder({ id: orderId }), () => undefined);
   }
 
-  cancelOrder(orderId: string, reason: string): Promise<void> {
+  cancelOrder(orderId: string, reason: string): Promise<ApprovalPending | null> {
     return this.call(this.orders.cancelOrder({ id: orderId, cancelOrderRequest: { reason: blankAsAbsent(reason) } }),
-      () => undefined);
+      (t) => (t ? { id: text(t.id), status: text(t.status) } : null));
   }
 
   closeOrder(orderId: string, kind: CloseKindChoice, reason: string): Promise<void> {

@@ -31,9 +31,13 @@
  * <p>{@code identity::numbering} numbers an order raised without a number,
  * when the tenant has configured an ORDER series; without one the order's own
  * sequence ({@code ORD-<yyyy>-<6 digits>}) still does.
+ *
+ * <p>{@code approvals::api} is asked whether cancelling an order needs an
+ * approval under the tenant's policy, and raises the request when it does;
+ * {@code OrderCancellationApproval} applies an approved one.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Order Management",
         allowedDependencies = {"identity::access", "identity::numbering", "masterdata::api",
-                "settings::api"})
+                "settings::api", "approvals::api"})
 package com.lms.order;

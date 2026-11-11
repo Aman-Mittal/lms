@@ -90,12 +90,28 @@ function Desk({ consignmentId, proof, consignmentStatus, issued, onIssued, onCha
   const [remark, setRemark] = useState('');
   const [slip, setSlip] = useState(false);
   const confirmed = proof?.status === 'CONFIRMED';
+  const [reversalReason, setReversalReason] = useState('');
+  const [reversal, setReversal] = useState('');
 
   async function issue() {
     setError('');
     try {
       onIssued(await gateway.issueDeliveryOtp(consignmentId));
       onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  /** A proof is reversed only through an approval; asking needs its own right. */
+  async function askReversal(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    setReversal('');
+    try {
+      await gateway.requestProofReversal(consignmentId, reversalReason.trim());
+      setReversal('Reversal requested: awaiting approval.');
+      setReversalReason('');
     } catch (e) {
       setError((e as Error).message);
     }
@@ -165,6 +181,14 @@ function Desk({ consignmentId, proof, consignmentStatus, issued, onIssued, onCha
           )}
         </>
       )}
+      {confirmed && can('POD_REVERSE') && (
+        <form className="inline" onSubmit={askReversal} data-testid="reverse-proof">
+          <input placeholder="Why the proof is wrong" aria-label="Reason to reverse" data-testid="reversal-reason"
+            value={reversalReason} onChange={(e) => setReversalReason(e.target.value)} required />
+          <button type="submit">Reverse proof</button>
+        </form>
+      )}
+      {reversal && <p className="ok" role="status" data-testid="reversal-requested">{reversal}</p>}
       {confirmed && proof && (
         <>
           <p><button className="link" data-testid="print-proof" onClick={() => setSlip(true)}>Print slip</button></p>

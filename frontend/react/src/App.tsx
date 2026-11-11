@@ -32,6 +32,7 @@ import { ClientBilling } from './pages/ClientBilling';
 import { Commercial } from './pages/Commercial';
 import { Login } from './pages/Login';
 import { ParkedEvents } from './pages/ParkedEvents';
+import { ApprovalsPage } from './pages/ApprovalsPage';
 import { Shell } from './pages/Shell';
 import { TrackingLinks } from './pages/TrackingLinks';
 import { TrackPage } from './pages/TrackPage';
@@ -97,6 +98,7 @@ export function App() {
           <Route path="milk-runs" element={<Deferred><MilkRuns /></Deferred>} />
           <Route path="ltl" element={<LtlRating />} />
           <Route path="parked-events" element={<ParkedEvents />} />
+          <Route path="approvals" element={<ApprovalsPage />} />
           {/* Warehouse operations */}
           <Route path="warehouse" element={<WarehouseDesk />} />
           {/* Administration */}
