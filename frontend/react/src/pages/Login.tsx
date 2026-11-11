@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { applyDisplay, landingRoute, resetDisplay } from '../display';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEMO_TENANT } from '../config';
@@ -41,7 +42,13 @@ export function Login() {
     try {
       const result = await gateway.signIn({ tenantCode, email, password });
       start(result);
-      navigate('/');
+      // Preferences come next: a failure here must not keep a person out.
+      try {
+        applyDisplay((await gateway.myPreferences()).effective);
+      } catch {
+        resetDisplay();
+      }
+      navigate(landingRoute());
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

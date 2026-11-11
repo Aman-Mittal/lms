@@ -52,5 +52,5 @@
         displayName = "Exception & Control Tower",
         allowedDependencies = {"execution::api", "telematics::api", "telematics::events",
                 "multimodal::events", "milkrun::events", "warehouse::events",
-                "identity::access"})
+                "identity::access", "settings::api"})
 package com.lms.controltower;

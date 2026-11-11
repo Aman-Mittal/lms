@@ -54,7 +54,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     auth,
     gateway,
     can: (permission) => auth?.permissions.includes(permission) ?? false,
-    start: setAuth,
+    // The token is published to the gateway at once, so a call made right
+    // after signing in (the person's preferences) is already authenticated.
+    start: (result) => { tokenRef.current = result.token; setAuth(result); },
     end: () => setAuth(null),
   };
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

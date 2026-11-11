@@ -34,5 +34,6 @@
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Order Management",
-        allowedDependencies = {"identity::access", "identity::numbering", "masterdata::api"})
+        allowedDependencies = {"identity::access", "identity::numbering", "masterdata::api",
+                "settings::api"})
 package com.lms.order;
