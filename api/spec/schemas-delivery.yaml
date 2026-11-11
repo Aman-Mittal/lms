@@ -63,7 +63,10 @@ DeliveryProof:
   type: object
   properties:
     consignmentId: { type: string, format: uuid }
-    status: { type: string, enum: [OTP_ISSUED, CONFIRMED] }
+    status:
+      type: string
+      enum: [OTP_ISSUED, CONFIRMED, REVERSED]
+      description: REVERSED once an approved reversal undid a confirmed proof; a fresh code may be issued.
     recipientName: { type: string }
     photoRef: { type: string }
     deliveredAt: { type: string, format: date-time }
@@ -133,3 +136,9 @@ TransitionClaimRequest:
       type: string
       description: Required to reject.
   required: [target]
+
+ProofReversalRequest:
+  type: object
+  properties:
+    reason: { type: string, maxLength: 500, description: Why the proof is wrong. Required. }
+  required: [reason]

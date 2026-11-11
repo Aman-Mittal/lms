@@ -20,5 +20,11 @@ public enum ProofStatus {
     /** A one-time code was issued and has not been matched. */
     OTP_ISSUED,
     /** The code matched and the proof was recorded. */
-    CONFIRMED
+    CONFIRMED,
+    /**
+     * A confirmed proof was reversed through an approved request (V53). The
+     * recipient and time stay on file; a fresh code may be issued and a new
+     * proof recorded.
+     */
+    REVERSED
 }

@@ -26,8 +26,12 @@
  * and whether it is in transit, is read with a lookup under row-level security
  * rather than by importing the module that owns it: all that is needed is a
  * status, not a type.
+ *
+ * <p>{@code approvals::api}: a confirmed proof is reversed only through an
+ * approved request ({@code POD_REVERSAL}), and only while billing has not
+ * used it -- which is likewise read with a lookup rather than an import.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Delivery and Claims",
-        allowedDependencies = {})
+        allowedDependencies = {"approvals::api"})
 package com.lms.delivery;

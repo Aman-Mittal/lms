@@ -16,6 +16,7 @@
 package com.lms.planning.command;
 
 import com.lms.delivery.events.DeliveryProofRecorded;
+import com.lms.delivery.events.DeliveryProofReversed;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -48,5 +49,12 @@ public class DeliveryProofListener {
         TenantContext.runWith(event.tenantId(), null, () ->
                 transactions.execute(status ->
                         deliveries.deliverOnProof(event.consignmentId(), event.deliveredAt())));
+    }
+
+    /** A reversed proof takes back the delivery it made; see {@link ProofOfDeliveryService#undeliverOnReversal}. */
+    @TransactionalEventListener
+    public void onProofReversed(DeliveryProofReversed event) {
+        TenantContext.runWith(event.tenantId(), null, () ->
+                transactions.execute(status -> deliveries.undeliverOnReversal(event.consignmentId())));
     }
 }

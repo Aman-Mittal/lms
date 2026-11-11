@@ -40,5 +40,5 @@
 @org.springframework.modulith.ApplicationModule(
         displayName = "Webhooks",
         allowedDependencies = {"order::events", "planning::events", "execution::events",
-                "delivery::events", "settings::api"})
+                "delivery::events", "settings::api", "approvals::events"})
 package com.lms.webhooks;
