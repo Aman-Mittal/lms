@@ -184,6 +184,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  shared
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
 | `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
+| `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
 - A context **must not** call another context's classes directly. Cross-context
@@ -263,6 +264,62 @@ Rules that make the split worth having:
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
+
+### Settings are registered in code and resolved by profile
+
+`com.lms.settings` (V52) holds every tenant-tunable value that is not a
+record of its own. A module that owns a setting declares it, nowhere else:
+
+- a `SettingKey<T>` constant (`order.close.tolerancePercent`, dotted, owner
+  first) and a `SettingContributor` bean returning `SettingDefinition`s: type
+  (BOOLEAN, INTEGER, DECIMAL, STRING, ENUM, DURATION, JSON with named, typed
+  properties), system default, bounds, category (OPERATIONS, UI,
+  NOTIFICATIONS, COMPLIANCE), and the scope types it may be set at
+  (`alsoAt(...)`; ORG_DEFAULT always, PLATFORM only when asked,
+  `platformOnly()` for a key tenants cannot override). `effectiveDated()`
+  makes every value carry the day it takes effect; COMPLIANCE requires it.
+  The registry refuses to start on a duplicate key or a default its own
+  bounds refuse, so a definition defect is a boot failure, not bad data.
+- the module declares `allowedDependencies = "settings::api"` and reads values
+  through the `Settings` port: `effective(key, context)`, `resolve(...)` (with
+  provenance) or `resolveAll(keys, context)` for several in one read. The port
+  joins the caller's transaction (ADR 0006) and checks no permission.
+  `setOrgDefaults(...)` writes the organisation default for a module that
+  keeps its own endpoint (`/orders/close-settings`, `/exceptions/detector-settings`).
+
+The fold is fixed. Per profile, of a key's versions the latest one effective
+on the context's `asOf` (default: today in the tenant's `settings.timeZone`)
+applies; an undated value applies since always. Across profiles the most
+specific one the key allows wins:
+PLATFORM (global < country < state) < ORG_DEFAULT < ORG_UNIT (deeper wins) <
+VEHICLE < CUSTOMER < USER. With none, the system default answers. Every
+resolution is one statement however many profiles apply (`SettingsApiTest`
+counts it with `pg_stat_statements`). A stored value the definition now
+refuses is skipped, never applied.
+
+Writes: unknown keys (`setting-unknown`), keys outside their scopes
+(`setting-scope-not-allowed`), platform-only keys at a tenant scope
+(`setting-not-overridable`), bad values (`setting-invalid-value`) and an
+undated value for a dated key (`setting-effective-date-required`) are 409s
+with every refused key in `errors`. A dated version on or before today is in
+force and is never changed or removed (`setting-value-in-force`); a change is
+a new version dated today or later (`setting-effective-date-past` otherwise).
+One profile per scope (`setting-profile-scope-taken`); edits carry `If-Match`;
+the organisation default and a profile holding a version in force are not
+deleted. Every change is audited (resource type `SettingProfile`) with only
+the versions that changed, named `key` or `key@date`.
+
+PLATFORM profiles have no tenant (`tenant_id` NULL: the one deliberate
+exception to the rule below). Every tenant reads them; row-level security lets
+a row with no tenant be written only in a transaction that called
+`set_config('app.platform_write', 'on', true)`, which only
+`SettingProfileService` does, after checking `PLATFORM_SETTINGS_MANAGE`. That
+permission is the platform operator's; no migration grants it, and only the
+bootstrap (demo) administrator holds it, through the seeder's grant of every
+permission. Do not grant it to a tenant role.
+
+USER profiles are a person's own: `GET/PATCH /settings/me`, no permission, never
+another person's, and invisible to the administrative endpoints.
 
 ### Idempotency is required on every state-changing endpoint
 
@@ -669,9 +726,12 @@ reporting altogether is therefore not caught. The ETA and temperature detectors
 `TemperatureReported` (one per probe reading) events and judge only a trip with
 a `trip_watch` row, which the desk sets through
 `PUT /api/v1/exceptions/trip-watches/{tripId}` (committed arrival, temperature
-band). Tolerances are per tenant in `detector_setting`, defaulting to
-`lms.controltower.eta-slip-minutes` (60) and
-`lms.controltower.temperature-excursion-minutes` (15). One unclosed ticket per
+band). Tolerances are settings (`controltower.detector.etaSlipTolerance`,
+`controltower.detector.temperatureExcursionTolerance`, the second also per
+vehicle), defaulting to `lms.controltower.eta-slip-minutes` (60) and
+`lms.controltower.temperature-excursion-minutes` (15); V52 copied the old
+`detector_setting` rows into organisation-default profiles and nothing reads
+that table any more. One unclosed ticket per
 trip and kind is enforced by `exception_ticket_open_detector_idx`.
 
 Gaps the freight-mode, warehouse and billing work left open on purpose:
@@ -722,6 +782,12 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   orders, because planning still cuts every line of an order in one call: an
   unplanned remainder cannot exist at delivery time, so it is not what the
   tolerance measures. Quantities are not mixed across units of measure anywhere.
+  The tolerance and the automatic-fulfilment switch are settings
+  (`order.close.tolerancePercent`, `order.close.autoFulfil`) resolved for the
+  order's unit and customer, so a customer's profile beats the tenant's; V52
+  copied `order_close_setting` into organisation-default profiles and the table
+  is read by nothing (kept until no deployment can roll back to code that
+  reads it).
 - A line is open only while it is neither closed nor cancelled (V51,
   `OrderLine.isOpen`). Planning, coverage, credit exposure and every close rule
   count open lines only: a cancelled line never blocks a close or the automatic
