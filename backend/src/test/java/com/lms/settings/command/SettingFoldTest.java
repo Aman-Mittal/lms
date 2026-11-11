@@ -182,4 +182,76 @@ class SettingFoldTest {
         assertThat(fold(List.of(TENANT_ONLY), value(ORG, ScopeType.ORG_DEFAULT, 0, "test.every", 3)))
                 .containsOnlyKeys("test.tenant");
     }
+
+    @Test
+    @DisplayName("a combination beats vehicle, customer and vendor but not the user; more conditions, then the deeper"
+            + " unit, then the higher priority win among combinations, and the source names the combination")
+    void combinations() {
+        SettingDefinition combined = SettingDefinition.of(SettingKey.integer("test.combined"), "Combined",
+                "Kept per combination").defaultValue(0)
+                .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER, ScopeType.VEHICLE, ScopeType.VENDOR,
+                        ScopeType.COMBINATION, ScopeType.USER).build();
+        Map<String, Object> defaults = Map.of("test.combined", 0);
+        UUID a = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+        UUID b = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+        UUID c = UUID.fromString("00000000-0000-0000-0000-0000000000c3");
+        UUID d = UUID.fromString("00000000-0000-0000-0000-0000000000c4");
+        Candidate customer = value(CUSTOMER, ScopeType.CUSTOMER, 0, "test.combined", 40);
+        Candidate user = value(USER, ScopeType.USER, 0, "test.combined", 90);
+        // Two conditions under the branch (depth 3), priority 0.
+        Candidate branchAndCustomer = combo(a, 2, 3, 0, 60, "Branch Gurgaon + Customer Delta Foods");
+        // Two conditions under the region (depth 2), higher priority: depth still wins.
+        Candidate regionAndCustomer = combo(b, 2, 2, 50, 61, "Zone North + Customer Delta Foods");
+        // Three conditions under the region: more conditions win over a deeper unit.
+        Candidate three = combo(c, 3, 2, 0, 70, "Zone North + Customer Delta Foods + Mode LTL");
+        // Same as the first but a higher priority.
+        Candidate prioritised = combo(d, 2, 3, 5, 65, "Branch Gurgaon + Vehicle HR26X");
+
+        Resolved<Object> r = SettingFold.fold(List.of(combined), defaults,
+                List.of(customer, regionAndCustomer, branchAndCustomer)).get("test.combined");
+        assertThat(r.value()).isEqualTo(60);
+        assertThat(r.source().scopeType()).isEqualTo(ScopeType.COMBINATION);
+        assertThat(r.source().label()).isEqualTo("Branch Gurgaon + Customer Delta Foods");
+        assertThat(SettingFold.fold(List.of(combined), defaults, List.of(branchAndCustomer, three, regionAndCustomer))
+                .get("test.combined").value()).isEqualTo(70);
+        assertThat(SettingFold.fold(List.of(combined), defaults, List.of(prioritised, branchAndCustomer))
+                .get("test.combined").value()).isEqualTo(65);
+        assertThat(SettingFold.fold(List.of(combined), defaults, List.of(three, user))
+                .get("test.combined").value()).isEqualTo(90);
+        assertThat(ScopeType.COMBINATION.precedence()).isGreaterThan(ScopeType.VENDOR.precedence())
+                .isGreaterThan(ScopeType.VEHICLE.precedence()).isGreaterThan(ScopeType.CUSTOMER.precedence())
+                .isLessThan(ScopeType.USER.precedence());
+        assertThat(ScopeType.COMBINATION.needsScopeId()).isFalse();
+        // A key that does not allow COMBINATION ignores a combination's value.
+        assertThat(SettingFold.fold(List.of(EVERYWHERE), Map.of("test.every", 1),
+                List.of(new Candidate(a, ScopeType.COMBINATION, a, "c", 3, "test.every", null, 5, 2, 0, "x"),
+                        value(CUSTOMER, ScopeType.CUSTOMER, 0, "test.every", 40)))
+                .get("test.every").value()).isEqualTo(40);
+    }
+
+    @Test
+    @DisplayName("the provenance label names the unit's level, or what a profile is for")
+    void labels() {
+        assertThat(ScopeLabels.source(ScopeType.ORG_UNIT, "North rules", "COUNTRY", "India", null, null, null))
+                .isEqualTo("Country: India");
+        assertThat(ScopeLabels.source(ScopeType.ORG_UNIT, "x", "ZONE", "North", null, null, null))
+                .isEqualTo("Zone: North");
+        assertThat(ScopeLabels.source(ScopeType.ORG_UNIT, "x", "BRANCH", "Gurgaon", null, null, null))
+                .isEqualTo("Branch: Gurgaon");
+        assertThat(ScopeLabels.source(ScopeType.CUSTOMER, "Terms", null, null, null, null, null))
+                .isEqualTo("Customer: Terms");
+        assertThat(ScopeLabels.source(ScopeType.PLATFORM, "p", null, null, "IN", "KA", null))
+                .isEqualTo("Platform: IN-KA");
+        assertThat(ScopeLabels.combination(new ScopeLabels.Parts("BRANCH", "Gurgaon", "Delta Foods", null, null,
+                "LTL"))).isEqualTo("Branch Gurgaon + Customer Delta Foods + Mode LTL");
+        Resolved<Object> fallback = fold(List.of(EVERYWHERE), value(CUSTOMER, ScopeType.CUSTOMER, 0, "test.every", 4))
+                .get("test.every");
+        assertThat(fallback.source().label()).isEqualTo("Customer: CUSTOMER profile");
+        assertThat(fold(List.of(EVERYWHERE)).get("test.every").source().label()).isEqualTo("System default");
+    }
+
+    private static Candidate combo(UUID id, int dimensions, int depth, int priority, Object value, String label) {
+        return new Candidate(id, ScopeType.COMBINATION, id, "combination", depth, "test.combined", null, value,
+                dimensions, priority, label);
+    }
 }

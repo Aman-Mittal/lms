@@ -38,7 +38,7 @@ class TelematicsSettingDefinitionsTest {
         SettingDefinition stoppage = byKey.get(TelematicsSettingDefinitions.STOPPAGE_THRESHOLD.name());
         assertThat(stoppage.defaultValue()).isEqualTo(Duration.ofMinutes(45));
         assertThat(stoppage.scopes()).containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT, ScopeType.VEHICLE,
-                ScopeType.CUSTOMER);
+                ScopeType.CUSTOMER, ScopeType.COMBINATION);
         SettingDefinition radius = byKey.get(TelematicsSettingDefinitions.STOPPAGE_RADIUS.name());
         assertThat(radius.defaultValue()).isEqualTo(100);
         assertThat(radius.scopes()).doesNotContain(ScopeType.CUSTOMER);
