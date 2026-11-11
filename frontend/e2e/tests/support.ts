@@ -64,7 +64,7 @@ export async function registerPartner(page: Page, code: string): Promise<void> {
   await expect(page.getByTestId('row').filter({ hasText: code })).toBeVisible();
 }
 
-const API = process.env.E2E_API_URL ?? 'http://localhost:8080';
+export const API = process.env.E2E_API_URL ?? 'http://localhost:8080';
 
 /**
  * Retires custom fields straight through the API, whatever state the page is
