@@ -43,6 +43,7 @@ import com.lms.order.events.OrderAmended;
 import com.lms.order.events.OrderCancelled;
 import com.lms.order.events.OrderRaised;
 import com.lms.order.events.OrderValidated;
+import com.lms.settings.api.SettingContext;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
@@ -347,7 +348,10 @@ public class OrderCommandService {
         // before anything downstream is asked about it -- and before an
         // approval is asked for something that could never happen.
         order.transitionTo(SalesOrder.OrderStatus.CANCELLED);
-        if (approvals.isRequired(ApprovalSubjectTypes.ORDER_CANCELLATION)) {
+        SettingContext policyContext = SettingContext.ofOrgUnit(order.orgUnitId())
+                .withCustomer(order.customerPartnerId())
+                .withFreightMode(order.freightMode() == null ? null : order.freightMode().name());
+        if (approvals.isRequired(ApprovalSubjectTypes.ORDER_CANCELLATION, policyContext)) {
             String why = reason == null || reason.isBlank() ? null : reason.strip();
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("orderNo", order.orderNo());
@@ -355,7 +359,7 @@ public class OrderCommandService {
             payload.put("reason", why);
             ApprovalTicket ticket = approvals.request(
                     new ApprovalSubject(ApprovalSubjectTypes.ORDER_CANCELLATION, orderId, order.orgUnitId()),
-                    CANCEL_ACTION, payload,
+                    policyContext, CANCEL_ACTION, payload,
                     "Cancel order " + order.orderNo() + (why == null ? "" : ": " + abbreviate(why)));
             audit.record("ORDER_CANCELLATION_REQUESTED", AUDIT_TYPE, orderId,
                     Json.object("status", order.status().name()),

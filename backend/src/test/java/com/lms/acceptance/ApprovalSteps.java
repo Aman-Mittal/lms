@@ -16,6 +16,7 @@
 package com.lms.acceptance;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -28,6 +29,9 @@ import com.lms.approvals.api.ApprovalTicket;
 import com.lms.approvals.command.ApprovalCommandService;
 import com.lms.approvals.command.ApprovalPolicyService;
 import com.lms.order.command.OrderCommandService;
+import com.lms.settings.api.ScopeType;
+import com.lms.settings.command.SettingProfileService;
+import com.lms.settings.command.SettingRegistry;
 import com.lms.shared.error.BusinessRuleViolationException;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
@@ -61,6 +65,8 @@ public class ApprovalSteps {
     @Autowired
     private ApprovalPolicyService policies;
     @Autowired
+    private SettingProfileService profiles;
+    @Autowired
     private JdbcClient jdbc;
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -72,6 +78,14 @@ public class ApprovalSteps {
     public void requireApproval() {
         policies.set(ApprovalSubjectTypes.ORDER_CANCELLATION,
                 new ApprovalPolicyService.Change(true, null, null, null, null, null));
+    }
+
+    @Given("the unit {string} requires approval to cancel an order")
+    public void unitRequiresApproval(String orgPath) {
+        as("Admin");
+        profiles.create(new SettingProfileService.Scope(ScopeType.ORG_UNIT, world.orgUnitId(orgPath), null, null),
+                "Approvals for " + orgPath, List.of(new SettingRegistry.Requested(
+                        "approvals.policy.orderCancellation", null, Map.of("required", true))));
     }
 
     @When("{string} asks to cancel order {string}")

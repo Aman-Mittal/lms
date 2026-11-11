@@ -512,8 +512,8 @@ request after a quiet spell pays the start-up cost above.
   refusal.
 
 **Approvals (V53)** — `approvals`, one module for every flow that needs a person to agree first
-- A flow asks `approvals::api` (`ApprovalRequests.isRequired`) whether its
-  tenant's policy wants an approval; if so it raises a request instead of
+- A flow asks `approvals::api` (`ApprovalRequests.isRequired(type, context)`)
+  whether the policy for its subject (unit, customer, freight mode) wants an approval; if so it raises a request instead of
   acting -- subject type, subject id, action, a frozen payload and a one-line
   summary -- and answers **202** with it. One open request per subject and
   action (`approval-already-open`).
@@ -531,10 +531,17 @@ request after a quiet spell pays the start-up cost above.
   approval step (N distinct approvers, in order or any order), self-approval,
   due duration and expiry outcome (EXPIRE or AUTO_APPROVE). Code defaults in
   `ApprovalPolicyDefaults`; read only through `ApprovalPolicyResolver`, which
-  today overlays the tenant's row in `approval_policy_override`
-  (`PUT /api/v1/approvals/policies/{type}`, `APPROVAL_POLICY_MANAGE`) and is the
-  seam profile settings will plug into. The policy in force is **copied onto
-  each request**, so a later change never alters an open one.
+  resolves the type's profile setting (V56: `approvals.policy.orderCancellation`,
+  `approvals.policy.podReversal`; a JSON value of `required`, `steps`, `ordered`,
+  `selfApproval`, `dueAfter`, `onExpiry`) for the subject's context, so a branch,
+  a customer or a combination (unit + customer + freight mode) can require
+  approval where the organisation default does not. A profile value is refused
+  (`setting-invalid-value`) for a step that names no permission or a bad shape,
+  and `POD_REVERSAL` stays mandatory: no profile can switch it off. The legacy
+  `GET/PUT/DELETE /api/v1/approvals/policies` (`APPROVAL_POLICY_MANAGE`) read and
+  write the organisation default profile; V56 copied the old
+  `approval_policy_override` rows there and left the table unread. The policy in
+  force is **copied onto each request**, so a later change never alters an open one.
 - Expiry: `ApprovalExpirySweep`, in-process, per tenant through `TenantSweep`,
   every minute and shortly after start; idempotent.
 - Inbox: `GET /api/v1/approvals` (`APPROVAL_READ`), keyset-paged newest first,

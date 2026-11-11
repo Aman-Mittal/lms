@@ -66,15 +66,18 @@ public class SettingRegistry {
 
     private final Map<String, SettingDefinition> definitions;
     private final Map<String, Object> defaults;
+    private final Map<String, SettingContributor> owners;
 
     public SettingRegistry(List<SettingContributor> contributors) {
         Map<String, SettingDefinition> byKey = new TreeMap<>();
         Map<String, Object> canonicalDefaults = new LinkedHashMap<>();
+        Map<String, SettingContributor> byOwner = new TreeMap<>();
         for (SettingContributor contributor : contributors) {
             for (SettingDefinition d : contributor.definitions()) {
                 if (byKey.putIfAbsent(d.key(), d) != null) {
                     throw new IllegalStateException("Setting " + d.key() + " is registered twice");
                 }
+                byOwner.put(d.key(), contributor);
                 try {
                     canonicalDefaults.put(d.key(), SettingValueRules.coerce(d, d.defaultValue()));
                 } catch (SettingValueRules.InvalidValue e) {
@@ -85,6 +88,7 @@ public class SettingRegistry {
         }
         this.definitions = byKey;
         this.defaults = canonicalDefaults;
+        this.owners = byOwner;
     }
 
     /** In key order. */
@@ -161,8 +165,13 @@ public class SettingRegistry {
                 changes.add(new Change(key, entry.effectiveFrom(), Optional.empty()));
             } else {
                 try {
-                    changes.add(new Change(key, entry.effectiveFrom(),
-                            Optional.of(SettingValueRules.coerce(d, entry.value()))));
+                    Object canonical = SettingValueRules.coerce(d, entry.value());
+                    Optional<String> refused = owners.get(key).refusal(d, canonical);
+                    if (refused.isPresent()) {
+                        invalid.put(label, refused.get());
+                    } else {
+                        changes.add(new Change(key, entry.effectiveFrom(), Optional.of(canonical)));
+                    }
                 } catch (SettingValueRules.InvalidValue e) {
                     invalid.put(label, e.getMessage());
                 }

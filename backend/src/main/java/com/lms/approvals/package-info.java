@@ -30,17 +30,20 @@
  * <p>The policy of each subject type -- whether approval is required at all,
  * which permissions decide and in what order, whether a requester may decide
  * their own request, how long it may stay open and what expiry does -- has a
- * code default in {@code ApprovalPolicyDefaults} and is read only through
- * {@link com.lms.approvals.api.ApprovalPolicyResolver}. The policy that applied
- * is copied onto every request when it is raised.
+ * code default in {@code ApprovalPolicyDefaults}, registered as one profile
+ * setting per type ({@code approvals.policy.*}), and is read only through
+ * {@link com.lms.approvals.api.ApprovalPolicyResolver}, for the subject's
+ * context (unit, customer, freight mode). The policy that applied is copied
+ * onto every request when it is raised.
  *
- * <p>Depends on {@code identity::access} only: who is calling and with what
+ * <p>Depends on {@code identity::access}: who is calling and with what
  * permissions, and the hook through which the decision point learns a
- * request's organisational unit. It depends on no module that uses it --
+ * request's organisational unit; and on {@code settings::api}, which holds
+ * the policies' values. It depends on no module that uses it --
  * {@code order} and {@code delivery} depend on its {@code api}, and
  * {@code webhooks} on its {@code events}.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Approvals",
-        allowedDependencies = {"identity::access"})
+        allowedDependencies = {"identity::access", "settings::api"})
 package com.lms.approvals;

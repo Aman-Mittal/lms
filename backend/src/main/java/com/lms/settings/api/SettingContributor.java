@@ -16,6 +16,7 @@
 package com.lms.settings.api;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Implemented by a module that owns settings, as a bean: the registry reads
@@ -25,4 +26,17 @@ import java.util.List;
 public interface SettingContributor {
 
     List<SettingDefinition> definitions();
+
+    /**
+     * A further check on a value submitted for one of this contributor's keys,
+     * after the definition's own rules accepted it: a rule only the owning
+     * module can judge (a name that must exist, a flag it keeps fixed). Called
+     * on writes only, in the writer's transaction, with the canonical value;
+     * a stored value is never run through it again.
+     *
+     * @return why the value is refused, in words a person can act on, or empty
+     */
+    default Optional<String> refusal(SettingDefinition definition, Object canonicalValue) {
+        return Optional.empty();
+    }
 }

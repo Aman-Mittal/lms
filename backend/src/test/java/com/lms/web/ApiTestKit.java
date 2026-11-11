@@ -123,6 +123,10 @@ public final class ApiTestKit {
         return json.readTree(outcome.body());
     }
 
+    public JsonNode parseText(String text) {
+        return json.readTree(text);
+    }
+
     public Outcome send(HttpRequest request) {
         long started = System.nanoTime();
         try {

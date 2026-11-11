@@ -56,3 +56,12 @@ Feature: One approvals module decides every flow that needs a person to agree fi
     And "Bilal" rejects the cancellation of order "AP-3" because "customer confirmed by phone"
     Then order "AP-3" now stands DRAFT
     And the cancellation request of order "AP-3" is REJECTED
+
+  Scenario: A unit's profile asks for approval where the organisation default does not
+    Given the unit "/acme/" requires approval to cancel an order
+    And an order "AP-4" for "CUST" from "ORIGIN"
+    When "Asha" asks to cancel order "AP-4"
+    Then order "AP-4" now stands DRAFT
+    And the cancellation of order "AP-4" awaits approval
+    When "Bilal" approves the cancellation of order "AP-4"
+    Then order "AP-4" now stands CANCELLED

@@ -15,19 +15,19 @@
  */
 package com.lms.approvals.api;
 
+import com.lms.settings.api.SettingContext;
+
 /**
- * The policy in force for a subject type, for the tenant in scope.
+ * The policy in force for a subject type, for the tenant in scope and the
+ * context of the subject.
  *
  * <p>The one place any flow learns its policy, including whether it needs
- * approval at all: no flow reads a default or a setting of its own. Today's
- * implementation is the code default from {@code ApprovalPolicyDefaults}
- * overlaid with the tenant's row in {@code approval_policy_override}.
- *
- * <p><b>Where profile settings plug in.</b> When the effective-dated settings
- * module lands, it provides this interface (or the default implementation
- * delegates to it) and the override table is migrated into settings. No flow
- * changes, because no flow reads anything but this. A mandatory flag in the
- * code default is not overridable by any source.
+ * approval at all: no flow reads a default or a setting of its own. The
+ * implementation resolves the type's profile setting ({@code approvals.policy.*})
+ * for the context, so a branch's, a customer's or a combination's profile may
+ * differ from the organisation default; with none, the code default from
+ * {@code ApprovalPolicyDefaults} answers. A mandatory flag in the code default
+ * is not overridable by any profile.
  */
 public interface ApprovalPolicyResolver {
 
@@ -35,5 +35,10 @@ public interface ApprovalPolicyResolver {
      * @throws IllegalArgumentException for a subject type that has no default
      *                                  policy: a programming error, not input
      */
-    ApprovalPolicy resolve(String subjectType);
+    ApprovalPolicy resolve(String subjectType, SettingContext context);
+
+    /** The organisation-wide policy: no unit, customer or freight mode. */
+    default ApprovalPolicy resolve(String subjectType) {
+        return resolve(subjectType, SettingContext.tenant());
+    }
 }

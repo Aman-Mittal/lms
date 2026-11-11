@@ -27,6 +27,7 @@ import com.lms.approvals.api.ApprovalTicket;
 import com.lms.delivery.command.domain.DeliveryProof;
 import com.lms.delivery.command.domain.ProofStatus;
 import com.lms.delivery.events.DeliveryProofReversed;
+import com.lms.settings.api.SettingContext;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
@@ -90,11 +91,11 @@ public class ProofReversalService {
             throw new BusinessRuleViolationException("reversal-reason-required",
                     "A reversal says why, in 1 to " + MAX_REASON + " characters");
         }
-        UUID orgUnitId = consignmentUnit(consignmentId);
+        SettingContext scope = consignmentScope(consignmentId);
         DeliveryProof proof = requireConfirmed(consignmentId);
         requireUnbilled(consignmentId);
 
-        if (!approvals.isRequired(ApprovalSubjectTypes.POD_REVERSAL)) {
+        if (!approvals.isRequired(ApprovalSubjectTypes.POD_REVERSAL, scope)) {
             reverse(proof, why, null);
             return null;
         }
@@ -105,8 +106,9 @@ public class ProofReversalService {
         payload.put("goodsCondition", proof.goodsCondition() == null ? null : proof.goodsCondition().name());
         payload.put("reason", why);
         ApprovalTicket ticket = approvals.request(
-                new ApprovalSubject(ApprovalSubjectTypes.POD_REVERSAL, consignmentId, orgUnitId),
-                REVERSE_ACTION, payload, "Reverse proof of delivery: " + abbreviate(why));
+                new ApprovalSubject(ApprovalSubjectTypes.POD_REVERSAL, consignmentId,
+                        scope.orgUnitId()),
+                scope, REVERSE_ACTION, payload, "Reverse proof of delivery: " + abbreviate(why));
         audit.record("DELIVERY_PROOF_REVERSAL_REQUESTED", AUDIT_TYPE, proof.id(), null,
                 Json.object("consignmentId", consignmentId.toString(), "approvalId", ticket.id().toString(),
                         "reason", why));
@@ -151,24 +153,24 @@ public class ProofReversalService {
     }
 
     /**
-     * The unit of the order the consignment was cut from, read under row-level
-     * security: another tenant's consignment is absent. A consignment with no
-     * order (a warehouse hand-off) has no unit.
+     * What the consignment's order says about where the policy applies: its
+     * unit, customer and freight mode, read under row-level security (another
+     * tenant's consignment is absent). A consignment with no order (a
+     * warehouse hand-off) has none of them.
      */
-    private UUID consignmentUnit(UUID consignmentId) {
-        record Unit(UUID id) {
-        }
+    private SettingContext consignmentScope(UUID consignmentId) {
         return jdbc.sql("""
-                        SELECT so.org_unit_id
+                        SELECT so.org_unit_id, so.customer_partner_id, so.freight_mode
                           FROM consignment c
                           LEFT JOIN sales_order so ON so.id = c.order_id
                          WHERE c.id = :id
                         """)
                 .param("id", consignmentId)
-                .query((rs, row) -> new Unit(rs.getObject("org_unit_id", UUID.class)))
+                .query((rs, row) -> SettingContext.ofOrgUnit(rs.getObject("org_unit_id", UUID.class))
+                        .withCustomer(rs.getObject("customer_partner_id", UUID.class))
+                        .withFreightMode(rs.getString("freight_mode")))
                 .optional()
-                .orElseThrow(() -> new ResourceNotFoundException("Consignment", consignmentId))
-                .id();
+                .orElseThrow(() -> new ResourceNotFoundException("Consignment", consignmentId));
     }
 
     /**

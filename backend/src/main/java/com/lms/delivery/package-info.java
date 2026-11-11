@@ -30,8 +30,12 @@
  * <p>{@code approvals::api}: a confirmed proof is reversed only through an
  * approved request ({@code POD_REVERSAL}), and only while billing has not
  * used it -- which is likewise read with a lookup rather than an import.
+ *
+ * <p>{@code settings::api}: only the {@code SettingContext} (the order's unit,
+ * customer and freight mode) handed to approvals, whose policy is a profile
+ * setting.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Delivery and Claims",
-        allowedDependencies = {"approvals::api"})
+        allowedDependencies = {"approvals::api", "settings::api"})
 package com.lms.delivery;

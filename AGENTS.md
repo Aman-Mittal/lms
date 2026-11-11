@@ -253,13 +253,22 @@ Rules that make the split worth having:
 - **Anything that needs a person to agree first goes through `approvals`.**
   Never build a second maker-checker. To add a flow: a constant in
   `approvals.api.ApprovalSubjectTypes`, its code default in
-  `approvals.command.ApprovalPolicyDefaults` (the one registry), and an
+  `approvals.command.ApprovalPolicyDefaults` (the one registry; each type is
+  registered as the profile setting `approvals.policy.<camelCaseType>` with that
+  default, scopes unit, customer and combination), and an
   `ApprovalOutcomeHandler` bean in the owning module (which declares
-  `approvals::api`). The flow asks `ApprovalRequests.isRequired(type)` and, when
-  true, `request(subject, action, payload, summary)` in its own transaction and
-  answers 202 with the ticket; it never reads a policy value or a setting of
-  its own -- `ApprovalPolicyResolver` is the only source, so profile settings
-  can back it later without touching flows. The handler's `onApproved` runs in
+  `approvals::api` and `settings::api`). The flow builds a `SettingContext` for
+  its subject (unit, customer, freight mode where it knows them) and asks
+  `ApprovalRequests.isRequired(type, context)` and, when true,
+  `request(subject, context, action, payload, summary)` in its own transaction
+  and answers 202 with the ticket; the overloads without a context resolve for
+  the organisation alone. It never reads a policy value or a setting of its
+  own -- `ApprovalPolicyResolver` is the only source, and resolves the setting
+  for that context (a profile value is a flat JSON object: `steps` is a comma
+  separated list, `dueAfter` an ISO-8601 duration; a property left out is the
+  code default's). A mandatory type (`POD_REVERSAL`) stays required whatever a
+  profile says, and a write that sets it false is `setting-invalid-value`.
+  `GET/PUT/DELETE /approvals/policies` read and write the organisation default. The handler's `onApproved` runs in
   the deciding transaction: re-validate current state and throw the owning
   module's `BusinessRuleViolationException` when the action no longer makes
   sense (the request then stays open), and apply through an unguarded
@@ -327,9 +336,13 @@ known document types), `execution.dispatch.weightTolerancePct` and
 `execution.tracking.autoDeparture` / `.autoArrival` / `.autoCompleteOnExit`
 (unit, vehicle, customer); `finance.match.tolerancePercent` and
 `.toleranceAbsolute` (unit, vendor); and the calendar, UI and notification
-preferences. COMBINATION is opted into (V55) by the tracking thresholds, the
+preferences; `approvals.policy.orderCancellation` and `.podReversal` (unit,
+customer, combination; a JSON policy, refused for an unknown permission through
+`SettingContributor.refusal`, a write-time check only the owning module can
+make). COMBINATION is opted into (V55) by the tracking thresholds, the
 dispatch checklist and weight tolerance, both match tolerances, the order
-close tolerance and both detector tolerances -- not by the tracking switches,
+close tolerance, both detector tolerances and the approval policies -- not by
+the tracking switches,
 `order.close.autoFulfil` or any preference.
 
 The fold is fixed. Per profile, of a key's versions the latest one effective
