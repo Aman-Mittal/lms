@@ -138,6 +138,15 @@ request after a quiet spell pays the start-up cost above.
   statutory documents, the vehicle's and driver's documents *against the
   departure date*, hazmat certification when the load carries dangerous goods,
   and the weighed payload against the manifest within tolerance.
+- The dispatch checklist (the "loading profile") is settings, resolved for the
+  trip's unit, vehicle and the customers whose freight is aboard: the required
+  documents (`execution.dispatch.requiredDocuments`, a dated COMPLIANCE
+  setting, by default a consignment note and an e-way bill) and the weight
+  tolerance (`execution.dispatch.weightTolerancePct`, by default
+  `lms.execution.weight-tolerance-pct`, 5). A load of several customers'
+  freight must satisfy every one of their checklists. A dispatch is judged by
+  the checklist in force on its own day, and a refusal names each missing
+  document and the profile that required it.
 
 **Telematics (vision §3.7)**
 - Batched ingest with a sanity filter: a point implying an impossible speed, or
@@ -148,9 +157,15 @@ request after a quiet spell pays the start-up cost above.
 - Geofence crossings drive the trip machine. Leaving the origin puts a trip in
   transit; entering the destination marks it arrived. A vehicle sitting on a
   boundary generates one crossing, not one per ping, because presence is a set
-  comparison rather than a per-point test.
+  comparison rather than a per-point test. Each move is a setting of the
+  trip's unit, vehicle or customer (`execution.tracking.autoDeparture`,
+  `.autoArrival`, both on by default; `.autoCompleteOnExit`, off by default,
+  completes an arrived trip when it leaves the destination).
 - Route deviation against the planned corridor, opened once and closed on
-  return. Retention collapses a finished trip's raw points into a simplified
+  return. The corridor and the stoppage threshold and radius are settings
+  (`telematics.routeDeviation.corridorMetres`, `telematics.stoppage.threshold`,
+  `telematics.stoppage.radiusMetres`), defaulting to the `lms.telematics.*`
+  properties and resolved once per trip per ingested batch. Retention collapses a finished trip's raw points into a simplified
   polyline — what makes a 1 GB database survive a fleet.
 
 **Rating and settlement (vision §3.9)**
@@ -170,7 +185,10 @@ request after a quiet spell pays the start-up cost above.
   greater. The percentage alone disputes a rounding difference on a small bill;
   the absolute alone waves through a five-figure gap on a large one. An
   underclaim beyond tolerance is disputed too — it is not free money, it means
-  the two sides' understanding of the rate has diverged.
+  the two sides' understanding of the rate has diverged. Both are settings
+  (`finance.match.tolerancePercent`, `finance.match.toleranceAbsolute`,
+  defaulting to `lms.finance.match-tolerance-pct` and `-absolute`) resolved
+  for the bill's unit and vendor, so one vendor can be given its own allowance.
 - A lane with no card produces an UNPRICED bill that says so, rather than
   silence. A trip with no bill looks exactly like one nobody has got to yet.
 
@@ -300,10 +318,10 @@ request after a quiet spell pays the start-up cost above.
   the scopes it may be set at; nothing else can be stored. Values are grouped
   into profiles, one per scope: the platform operator's (for every tenant,
   globally or per country and state), the organisation default, an
-  organisational unit, a vehicle, a customer, and each person's own
-  preferences. The value in force for a context folds them least specific
-  first -- platform < organisation < unit (deeper wins) < vehicle < customer <
-  user -- with the system default when none sets it, and says which profile
+  organisational unit, a vehicle, a customer, a vendor (V54), and each
+  person's own preferences. The value in force for a context folds them least
+  specific first -- platform < organisation < unit (deeper wins) < vehicle <
+  customer < vendor < user -- with the system default when none sets it, and says which profile
   supplied it. A dated setting (every COMPLIANCE one) keeps versions from
   their first day; resolution takes an `asOf` day, and a version in force is
   never edited: a change is a new version from today or later. Every change is
@@ -312,15 +330,19 @@ request after a quiet spell pays the start-up cost above.
   `/settings/org-units`, `/settings/me`, and `GET /me` (who the caller is).
   The order close policy and the detector tolerances moved onto it (their own
   endpoints still work, writing the organisation default); the close policy is
-  now resolved per order, so a customer's own tolerance wins. Both consoles
+  now resolved per order, so a customer's own tolerance wins. The tracking
+  thresholds and switches, the dispatch checklist and the invoice match
+  tolerance followed (above); the ETA-slip and temperature tolerances are
+  resolved for the trip's unit, vehicle and customer. Both consoles
   have **My profile & preferences** (identity, theme, date format, time zone,
   rows per page, landing page, notification choices -- recorded only, nothing
   sends notifications yet) and **Administration > Profile settings** (profiles
   by scope with the existing pickers, typed inputs, versions, history, and
-  what is in force for a unit, customer, vehicle and day). Theme, date format,
-  time zone, rows per page and landing page are applied by the consoles. No
-  compliance rule is registered yet; the platform scope and dating are there
-  for one.
+  what is in force for a unit, customer, vehicle, vendor and day). Theme, date format,
+  time zone, rows per page and landing page are applied by the consoles. The
+  one compliance rule registered so far is the dispatch checklist's required
+  documents; the platform scope is there for rules the operator keeps for all
+  tenants.
 - An LTL load consolidates dockets from many customers gathered at one origin
   hub and bound for one destination hub; capacity, dangerous goods and
   compatibility rules apply as for any load. A docket then travels twice: line

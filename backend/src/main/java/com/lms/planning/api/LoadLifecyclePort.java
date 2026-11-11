@@ -16,6 +16,7 @@
 package com.lms.planning.api;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -83,6 +84,15 @@ public interface LoadLifecyclePort {
      * are left alone, so a repeated call changes nothing.
      */
     void recordTripCompleted(UUID loadId);
+
+    /**
+     * The customers whose freight is aboard: the ordering customer of each
+     * consignment on the load, each once, in a stable order. Empty for a load
+     * with nothing aboard, and for freight no sales order stands behind (a
+     * warehouse hand-off). What a trip is judged by when a setting is kept
+     * per customer.
+     */
+    List<UUID> customersAboard(UUID loadId);
 
     /**
      * What other contexts are allowed to know about a load.
