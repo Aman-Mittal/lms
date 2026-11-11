@@ -79,6 +79,7 @@ export const routes: Routes = [
       { path: 'admin/compliance', loadComponent: adminDesk, data: { section: 'compliance' } },
       { path: 'admin/credit-limits', loadComponent: () => import('./pages/credit').then((m) => m.CreditLimitsPage) },
       { path: 'admin/settings', loadComponent: () => import('./pages/profile-settings').then((m) => m.ProfileSettingsPage) },
+      { path: 'admin/org-units', loadComponent: () => import('./pages/org-units').then((m) => m.OrgUnitsPage) },
       { path: 'me', loadComponent: () => import('./pages/my-profile').then((m) => m.MyProfilePage) },
       { path: 'admin/number-series', loadComponent: () => import('./pages/number-series').then((m) => m.NumberSeriesPage) },
       // Control tower

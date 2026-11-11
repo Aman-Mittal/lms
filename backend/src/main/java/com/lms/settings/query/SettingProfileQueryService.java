@@ -31,6 +31,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 import com.lms.settings.api.ScopeType;
+import com.lms.settings.command.ScopeLabels;
 import com.lms.settings.command.ScopeReferences;
 import com.lms.settings.command.SettingCalendar;
 import com.lms.shared.error.BusinessRuleViolationException;
@@ -61,7 +62,18 @@ public class SettingProfileQueryService {
 
     private static final String SELECT = """
             SELECT p.id, p.scope_type, p.scope_id, p.country, p.state, p.name, p.version,
-                   p.created_at, p.updated_at,
+                   p.created_at, p.updated_at, p.match_org_unit_id, p.match_customer_id, p.match_vendor_id,
+                   p.match_vehicle_id, p.match_freight_mode, p.priority,
+                   (SELECT u.unit_type || '|' || u.name
+                      FROM org_unit u
+                     WHERE u.id = CASE p.scope_type WHEN 'ORG_UNIT' THEN p.scope_id
+                                                    ELSE p.match_org_unit_id END) AS unit,
+                   CASE WHEN p.match_customer_id IS NOT NULL THEN
+                       (SELECT b.legal_name FROM business_partner b WHERE b.id = p.match_customer_id) END AS customer,
+                   CASE WHEN p.match_vendor_id IS NOT NULL THEN
+                       (SELECT b.legal_name FROM business_partner b WHERE b.id = p.match_vendor_id) END AS vendor,
+                   CASE WHEN p.match_vehicle_id IS NOT NULL THEN
+                       (SELECT x.registration_no FROM vehicle x WHERE x.id = p.match_vehicle_id) END AS vehicle,
                    CASE p.scope_type
                        WHEN 'ORG_UNIT' THEN (SELECT u.name || ' (' || u.path || ')'
                                                FROM org_unit u WHERE u.id = p.scope_id)
@@ -186,15 +198,34 @@ public class SettingProfileQueryService {
                     : Objects.equals(inForce.get(key), from) ? "IN_FORCE" : "SUPERSEDED";
             versions.add(new SettingProfileView.VersionView(key, from, v.get("value"), status));
         }
+        String unit = rs.getString("unit");
+        String unitType = unit == null ? null : unit.substring(0, unit.indexOf('|'));
+        String unitName = unit == null ? null : unit.substring(unit.indexOf('|') + 1);
+        String scopeLabel = rs.getString("scope_label");
+        SettingProfileView.ConditionsView conditions = null;
+        if (scopeType == ScopeType.ORG_UNIT && scopeLabel != null) {
+            scopeLabel = ScopeLabels.level(unitType) + ": " + scopeLabel;
+        } else if (scopeType == ScopeType.COMBINATION) {
+            scopeLabel = ScopeLabels.combination(new ScopeLabels.Parts(unitType, unitName, rs.getString("customer"),
+                    rs.getString("vendor"), rs.getString("vehicle"), rs.getString("match_freight_mode")));
+            conditions = new SettingProfileView.ConditionsView(rs.getObject("match_org_unit_id", UUID.class),
+                    rs.getObject("match_customer_id", UUID.class), rs.getObject("match_vendor_id", UUID.class),
+                    rs.getObject("match_vehicle_id", UUID.class), rs.getString("match_freight_mode"),
+                    rs.getInt("priority"));
+        }
         return new SettingProfileView(rs.getObject("id", UUID.class), scopeType,
-                rs.getObject("scope_id", UUID.class), rs.getString("scope_label"), rs.getString("country"),
-                rs.getString("state"), rs.getString("name"), values, versions, rs.getLong("version"),
+                rs.getObject("scope_id", UUID.class), scopeLabel, rs.getString("country"),
+                rs.getString("state"), rs.getString("name"), values, versions, conditions, rs.getLong("version"),
                 rs.getObject("created_at", OffsetDateTime.class).toInstant(),
                 rs.getObject("updated_at", OffsetDateTime.class).toInstant());
     }
 
-    /** An organisational unit a profile can be scoped to. */
-    public record OrgUnitChoice(UUID id, String name, String path, String unitType) {
+    /**
+     * An organisational unit a profile can be scoped to.
+     *
+     * @param level the unit type's rank, 0 for HQ to 5 for a hub; -1 for a type this module does not know
+     */
+    public record OrgUnitChoice(UUID id, String name, String path, String unitType, int level) {
     }
 
     /**
@@ -221,7 +252,7 @@ public class SettingProfileQueryService {
                 .param("q", Search.containsPattern(q))
                 .param("limit", pageSize + 1)
                 .query((rs, row) -> new OrgUnitChoice(rs.getObject("id", UUID.class), rs.getString("name"),
-                        rs.getString("path"), rs.getString("unit_type")))
+                        rs.getString("path"), rs.getString("unit_type"), ScopeLabels.rank(rs.getString("unit_type"))))
                 .list();
         return Slice.of(rows, pageSize, OrgUnitChoice::path);
     }

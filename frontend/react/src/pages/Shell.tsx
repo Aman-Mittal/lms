@@ -114,7 +114,7 @@ export function Shell() {
           {/* Administration */}
           {(can('ACCESS_POLICY_MANAGE') || can('VEHICLE_READ') || can('CREDIT_LIMIT_REQUEST')
             || can('CREDIT_LIMIT_APPROVE') || can('NUMBER_SERIES_MANAGE')
-            || can('SETTINGS_READ') || can('SETTINGS_MANAGE')) && (
+            || can('SETTINGS_READ') || can('SETTINGS_MANAGE') || can('ORG_UNIT_MANAGE')) && (
             <div className="group" data-testid="nav-admin">
               <h6>Administration</h6>
               {can('ACCESS_POLICY_MANAGE') && (
@@ -129,6 +129,9 @@ export function Shell() {
               )}
               {can('NUMBER_SERIES_MANAGE') && (
                 <NavLink to="/admin/number-series" data-testid="nav-admin-number-series">Number series</NavLink>
+              )}
+              {can('ORG_UNIT_MANAGE') && (
+                <NavLink to="/admin/org-units" data-testid="nav-admin-org-units">Organisation units</NavLink>
               )}
               {(can('SETTINGS_READ') || can('SETTINGS_MANAGE')) && (
                 <NavLink to="/admin/settings" data-testid="nav-admin-settings">Profile settings</NavLink>
