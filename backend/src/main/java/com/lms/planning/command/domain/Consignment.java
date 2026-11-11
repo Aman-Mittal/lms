@@ -275,6 +275,26 @@ public record Consignment(
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(MaterialClass.class)));
     }
 
+    /**
+     * A delivery that rested on a proof the platform has since reversed: back
+     * to where the proof found it -- in transit for a full truckload, out for
+     * delivery for a docket. Only a DELIVERED consignment moves; the state
+     * machine has no edge out of DELIVERED otherwise, and this is not one a
+     * person can take by hand.
+     */
+    public Consignment proofReversed() {
+        if (status != ConsignmentStatus.DELIVERED) {
+            throw new BusinessRuleViolationException("consignment-illegal-transition",
+                    "Consignment " + trackingRef + " is " + status + ", not delivered");
+        }
+        ConsignmentStatus back = isDocket() ? ConsignmentStatus.OUT_FOR_DELIVERY : ConsignmentStatus.IN_TRANSIT;
+        return new Consignment(id, tenantId, orderId, trackingRef, consigneePartnerId,
+                destinationTerminalId, totalDeadWeightKg, totalVolumeM3, chargeableWeightKg,
+                containsHazmat, back, materialClasses, freightMode, customerPartnerId,
+                originHubTerminalId, destinationHubTerminalId, handlingUnitId, parentConsignmentId,
+                particulars, version, createdAt, Instant.now());
+    }
+
     public Consignment transitionTo(ConsignmentStatus target) {
         if (status == target) {
             return this;

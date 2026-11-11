@@ -357,7 +357,7 @@ interface Refusal {
               }
             </p>
             <form class="inline" data-testid="cancel-order"
-                  (ngSubmit)="act('Order cancelled.', gateway.cancelOrder(d.order['id'], reason()))">
+                  (ngSubmit)="cancelOrder(d.order['id'])">
               <input name="reason" aria-label="Cancellation reason" placeholder="Why it is cancelled (optional)"
                      [value]="reason()" (input)="reason.set($any($event.target).value)" />
               <button type="submit">Cancel order</button>
@@ -522,6 +522,21 @@ export class OrderDeskPage {
         code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message,
         errors: e instanceof ApiProblem ? e.errors : {},
       });
+    }
+  }
+
+  /**
+   * Cancels the order, or -- where the tenant asks for approval first --
+   * raises the request and says so; the order stays as it is until somebody
+   * else approves it in the Approvals inbox.
+   */
+  async cancelOrder(orderId: string): Promise<void> {
+    const result = { pending: false };
+    await this.act('Order cancelled.', this.gateway.cancelOrder(orderId, this.reason()).then((p) => {
+      result.pending = p !== null;
+    }));
+    if (result.pending) {
+      this.done.set('Cancellation requested: awaiting approval.');
     }
   }
 
