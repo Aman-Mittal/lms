@@ -1,0 +1,172 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+ApprovalStatus:
+  type: string
+  description: |
+    REQUESTED until it closes; every other state is final. APPROVED (every
+    step given, or approved by its policy at expiry), REJECTED (with a
+    reason), CANCELLED (by its requester), EXPIRED (fell due undecided).
+  enum: [REQUESTED, APPROVED, REJECTED, CANCELLED, EXPIRED]
+
+ApprovalScope:
+  type: string
+  description: |
+    `ALL` (the default); `MINE_TO_DECIDE`: open requests whose next approval
+    the caller could give now -- a step's permission held, not the caller's
+    own request (unless its policy allows that), not already approved by the
+    caller; `REQUESTED_BY_ME`: the caller's own requests.
+  enum: [ALL, MINE_TO_DECIDE, REQUESTED_BY_ME]
+
+ApprovalExpiry:
+  type: string
+  description: What the expiry sweep does with a request still open when it falls due.
+  enum: [EXPIRE, AUTO_APPROVE]
+
+ApprovalTicket:
+  type: object
+  description: |
+    An approval request just raised in place of the action asked for. Follow
+    `id` to `GET /api/v1/approvals/{id}`.
+  properties:
+    id: { type: string, format: uuid }
+    subjectType: { type: string, description: "ORDER_CANCELLATION, POD_REVERSAL, ..." }
+    subjectId: { type: string, format: uuid }
+    action: { type: string }
+    status: { $ref: "#/components/schemas/ApprovalStatus" }
+    requestedAt: { type: string, format: date-time }
+    dueAt: { type: string, format: date-time }
+    version: { type: integer, format: int64 }
+  required: [id, subjectType, subjectId, action, status, requestedAt, version]
+
+Approval:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    subjectType: { type: string }
+    subjectId: { type: string, format: uuid }
+    action: { type: string }
+    summary: { type: string }
+    payload:
+      type: object
+      additionalProperties: true
+      description: What approving will do, frozen when the request was raised.
+    status: { $ref: "#/components/schemas/ApprovalStatus" }
+    orgUnitId: { type: string, format: uuid }
+    requestedBy: { type: string, format: uuid }
+    requestedAt: { type: string, format: date-time }
+    dueAt: { type: string, format: date-time }
+    pendingPermissions:
+      type: array
+      items: { type: string }
+      description: The permissions the next approval may be given under; empty once closed.
+    approvalsGiven: { type: integer }
+    approvalsRequired: { type: integer }
+    decidedBy: { type: string, format: uuid }
+    decidedAt: { type: string, format: date-time }
+    reason: { type: string }
+    mineToDecide: { type: boolean, description: Whether the caller could give the next approval now. }
+    requestedByMe: { type: boolean }
+    version: { type: integer, format: int64, description: Also the `ETag`; send it in `If-Match`. }
+  required: [id, subjectType, subjectId, action, summary, payload, status, requestedAt, pendingPermissions,
+             approvalsGiven, approvalsRequired, mineToDecide, requestedByMe, version]
+
+ApprovalSlice:
+  type: object
+  description: One page. No total and no page number -- both need the scan
+    keyset pagination exists to avoid.
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Approval" }
+    nextCursor:
+      type: string
+      description: Pass as `cursor` for the next page. Null on the last.
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+ApprovalDecision:
+  type: object
+  description: One entry of a request's decision trail.
+  properties:
+    id: { type: string, format: uuid }
+    step: { type: integer, description: The approval step filled, from 1; null for anything else. }
+    decision: { type: string, enum: [APPROVED, AUTO_APPROVED, REJECTED, CANCELLED, EXPIRED] }
+    permission: { type: string }
+    decidedBy: { type: string, format: uuid }
+    decidedAt: { type: string, format: date-time }
+    note: { type: string }
+  required: [id, decision, decidedAt]
+
+ApprovalPolicyView:
+  type: object
+  description: |
+    How requests of one subject type are decided. `decidePermissions` has one
+    entry per approval step: a request needs that many distinct approvers,
+    each holding the permission of the step they fill -- in the listed order
+    when `ordered`, in any order otherwise. A `mandatory` flow always needs
+    approval, whatever the tenant sets.
+  properties:
+    subjectType: { type: string }
+    required: { type: boolean }
+    mandatory: { type: boolean }
+    decidePermissions:
+      type: array
+      items: { type: string }
+    ordered: { type: boolean }
+    allowSelfApproval: { type: boolean }
+    dueMinutes: { type: integer, format: int64 }
+    onExpiry: { $ref: "#/components/schemas/ApprovalExpiry" }
+  required: [subjectType, required, mandatory, decidePermissions, ordered, allowSelfApproval, onExpiry]
+
+ApprovalDetail:
+  type: object
+  properties:
+    approval: { $ref: "#/components/schemas/Approval" }
+    policy: { $ref: "#/components/schemas/ApprovalPolicyView" }
+    trail:
+      type: array
+      items: { $ref: "#/components/schemas/ApprovalDecision" }
+  required: [approval, policy, trail]
+
+ApproveRequest:
+  type: object
+  properties:
+    note: { type: string, maxLength: 500 }
+
+RejectApprovalRequest:
+  type: object
+  properties:
+    reason: { type: string, maxLength: 500, description: Required. }
+  required: [reason]
+
+CancelApprovalRequest:
+  type: object
+  properties:
+    reason: { type: string, maxLength: 500 }
+
+ApprovalPolicyRequest:
+  type: object
+  description: Every field optional; an omitted one keeps the code default.
+  properties:
+    required: { type: boolean }
+    decidePermissions:
+      type: array
+      minItems: 1
+      maxItems: 5
+      items: { type: string }
+    ordered: { type: boolean }
+    allowSelfApproval: { type: boolean }
+    dueMinutes: { type: integer, minimum: 1, maximum: 129600 }
+    onExpiry: { $ref: "#/components/schemas/ApprovalExpiry" }

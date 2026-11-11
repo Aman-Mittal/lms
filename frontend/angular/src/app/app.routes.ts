@@ -32,6 +32,7 @@ import { OrderDeskPage } from './pages/order-desk';
 import { ClientBilling } from './pages/client-billing';
 import { LtlRating } from './pages/ltl-rating';
 import { ParkedEvents } from './pages/parked-events';
+import { Approvals } from './pages/approvals';
 import { FieldsSettings } from './pages/fields-settings';
 import { Webhooks } from './pages/webhooks';
 
@@ -69,6 +70,7 @@ export const routes: Routes = [
       { path: 'milk-runs', loadComponent: () => import('./pages/milk-runs').then((m) => m.MilkRuns) },
       { path: 'ltl', component: LtlRating },
       { path: 'parked-events', component: ParkedEvents },
+      { path: 'approvals', component: Approvals },
       // Warehouse operations
       { path: 'warehouse', loadComponent: () => import('./pages/warehouse-desk').then((m) => m.WarehouseDesk) },
       // Administration: loaded on first visit, like the maps; few sessions open it.

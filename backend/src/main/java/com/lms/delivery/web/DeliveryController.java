@@ -22,8 +22,10 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.lms.approvals.api.ApprovalTicket;
 import com.lms.delivery.command.ClaimService;
 import com.lms.delivery.command.DeliveryService;
+import com.lms.delivery.command.ProofReversalService;
 import com.lms.delivery.command.domain.ClaimStatus;
 import com.lms.delivery.command.domain.ClaimType;
 import com.lms.delivery.command.domain.GoodsCondition;
@@ -38,6 +40,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,12 +60,14 @@ public class DeliveryController {
     private final DeliveryService delivery;
     private final ClaimService claims;
     private final DeliveryQueryService queries;
+    private final ProofReversalService reversals;
 
     public DeliveryController(DeliveryService delivery, ClaimService claims,
-                              DeliveryQueryService queries) {
+                              DeliveryQueryService queries, ProofReversalService reversals) {
         this.delivery = delivery;
         this.claims = claims;
         this.queries = queries;
+        this.reversals = reversals;
     }
 
     // ------------------------------------------------------ proof of delivery
@@ -80,6 +85,20 @@ public class DeliveryController {
                 request.photoRef(), request.deliveredAt(), request.lat(), request.lon(),
                 request.goodsCondition(), request.remark());
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Asks for the proof to be reversed: 202 with the approval request, which
+     * reverses it when approved.
+     */
+    @PostMapping("/deliveries/{consignmentId}/proof/reversal")
+    public ResponseEntity<ApprovalTicket> requestReversal(@PathVariable UUID consignmentId,
+                                                          @Valid @RequestBody ReversalRequest request) {
+        ApprovalTicket ticket = reversals.requestReversal(consignmentId, request.reason());
+        if (ticket == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.accepted().location(URI.create("/api/v1/approvals/" + ticket.id())).body(ticket);
     }
 
     @GetMapping("/deliveries/{consignmentId}")
@@ -134,6 +153,9 @@ public class DeliveryController {
             /** Omitted is CLEAN. */
             GoodsCondition goodsCondition,
             String remark) {
+    }
+
+    public record ReversalRequest(@NotBlank @Size(max = 500) String reason) {
     }
 
     public record RaiseClaimRequest(
