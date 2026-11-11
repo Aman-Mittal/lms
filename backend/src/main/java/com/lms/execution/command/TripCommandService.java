@@ -29,7 +29,6 @@ import com.lms.execution.command.domain.Trip;
 import com.lms.execution.command.domain.TripDocument;
 import com.lms.execution.command.domain.WeighbridgeReading;
 import com.lms.execution.events.TripCancelled;
-import com.lms.execution.events.TripCompleted;
 import com.lms.execution.events.TripDispatched;
 import com.lms.masterdata.api.FleetCompliancePort;
 import com.lms.planning.api.LoadLifecyclePort;
@@ -38,7 +37,6 @@ import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,17 +52,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TripCommandService {
 
-    /**
-     * Documents that must be aboard before any trip may leave.
-     *
-     * <p>Deliberately a small, fixed set rather than configuration. Making it
-     * configurable would make "may this vehicle leave" depend on a row somebody
-     * can edit, and the first time a tenant empties the list the check becomes
-     * decorative. A per-tenant policy belongs here as a considered feature, not
-     * as a default that can be switched off by accident.
-     */
-    private static final Set<String> MANDATORY_DOCUMENTS = Set.of("CONSIGNMENT_NOTE", "EWAY_BILL");
-
     private final TripRepository trips;
     private final TripDocumentRepository documents;
     private final GateEventRepository gateEvents;
@@ -75,23 +62,29 @@ public class TripCommandService {
     private final AuditTrail audit;
 
     /**
-     * How far the weighed payload may differ from the planned weight before
-     * dispatch is refused, as a percentage.
+     * The dispatch checklist: the documents that must be aboard and how far
+     * the weighed payload may differ from the plan, resolved per trip from
+     * settings ({@link ExecutionSettingDefinitions}).
      *
-     * <p>Not zero. Weighbridges have a tolerance, pallets absorb moisture, and
-     * a system that refused every load half a percent off its manifest would be
-     * switched off within a week.
+     * <p>The documents are a dated compliance setting rather than a constant,
+     * so a regulation that changes on a known day changes the gate on that
+     * day. The system default still demands a consignment note and an e-way
+     * bill, and a tenant that wants to relax that has to say so in a profile
+     * whose change is audited -- the check cannot be emptied by accident.
+     * The tolerance is not zero by default: weighbridges have a tolerance,
+     * pallets absorb moisture, and a gate that refused every load half a
+     * percent off its manifest would be switched off within a week.
      */
-    private final BigDecimal weightTolerancePct;
+    private final TripSettings tripSettings;
+    private final TripCompletion completion;
 
     public TripCommandService(TripRepository trips, TripDocumentRepository documents,
                               GateEventRepository gateEvents,
                               WeighbridgeReadingRepository weighings,
                               LoadLifecyclePort loads, FleetCompliancePort compliance,
                               org.springframework.context.ApplicationEventPublisher events,
-                              AuditTrail audit,
-                              @Value("${lms.execution.weight-tolerance-pct:5}")
-                              BigDecimal weightTolerancePct) {
+                              AuditTrail audit, TripSettings tripSettings,
+                              TripCompletion completion) {
         this.trips = trips;
         this.documents = documents;
         this.gateEvents = gateEvents;
@@ -100,7 +93,8 @@ public class TripCommandService {
         this.compliance = compliance;
         this.events = events;
         this.audit = audit;
-        this.weightTolerancePct = weightTolerancePct;
+        this.tripSettings = tripSettings;
+        this.completion = completion;
     }
 
     /** Raises a trip against an awarded load. */
@@ -288,11 +282,16 @@ public class TripCommandService {
         LoadLifecyclePort.LoadSummary load = loads.summarise(trip.loadId())
                 .orElseThrow(() -> new ResourceNotFoundException("Load", trip.loadId()));
 
+        // Judged by the checklist in force on the day of departure, as the
+        // fleet documents are: a rule that takes effect tomorrow does not
+        // hold back a lorry leaving today.
+        TripSettings.Checklist checklist = tripSettings.checklistFor(trip,
+                at == null ? null : when.atZone(ZoneOffset.UTC).toLocalDate());
         List<String> blockers = new ArrayList<>();
-        blockers.addAll(missingDocuments(tenantId, tripId));
+        blockers.addAll(missingDocuments(tenantId, tripId, checklist));
         blockers.addAll(fleetBlockers(trip, when));
         blockers.addAll(hazmatBlockers(trip, load));
-        blockers.addAll(weightBlockers(trip, load));
+        blockers.addAll(weightBlockers(trip, load, checklist));
 
         if (!blockers.isEmpty()) {
             throw new BusinessRuleViolationException("dispatch-blocked",
@@ -347,20 +346,7 @@ public class TripCommandService {
     @Transactional
     @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void complete(UUID tripId, Instant at) {
-        UUID tenantId = TenantContext.requireTenantId();
-        Trip trip = require(tripId);
-        Instant when = at == null ? Instant.now() : at;
-
-        Trip completed = trips.save(trip.complete(when));
-        // Synchronous, in this transaction, like dispatch: planning moves the
-        // freight aboard -- a part-load line haul's dockets have now arrived
-        // at their destination hub -- and a refusal there must undo this.
-        loads.recordTripCompleted(completed.loadId());
-        auditTransition("TRIP_COMPLETED", trip, completed, "at", when.toString());
-
-        events.publishEvent(new TripCompleted(tenantId, completed.id(), completed.tripNo(),
-                completed.loadId(), completed.vendorPartnerId(), completed.dispatchedAt(),
-                when, completed.originDwell(), completed.payloadWeightKg(), Instant.now()));
+        completion.complete(require(tripId), at == null ? Instant.now() : at);
     }
 
     // ---------------------------------------------------------------- cancel
@@ -424,7 +410,7 @@ public class TripCommandService {
                 before == null ? null : snapshot(before), afterState);
     }
 
-    private static Json snapshot(Trip trip, String... extra) {
+    static Json snapshot(Trip trip, String... extra) {
         List<String> pairs = new ArrayList<>();
         add(pairs, "tripNo", trip.tripNo());
         add(pairs, "status", trip.status().name());
@@ -447,16 +433,16 @@ public class TripCommandService {
 
     // -------------------------------------------------------------- blockers
 
-    private List<String> missingDocuments(UUID tenantId, UUID tripId) {
+    /** Each required document not attached, naming the profile that required it. */
+    private List<String> missingDocuments(UUID tenantId, UUID tripId, TripSettings.Checklist checklist) {
         Set<String> present = documents.findByTrip(tenantId, tripId).stream()
                 .map(TripDocument::documentType)
                 .collect(java.util.stream.Collectors.toSet());
 
-        return MANDATORY_DOCUMENTS.stream()
-                .filter(required -> !present.contains(required))
-                .sorted()
-                .map(missing -> "no " + missing.toLowerCase(java.util.Locale.ROOT)
-                        .replace('_', ' ') + " attached")
+        return checklist.requiredBy().entrySet().stream()
+                .filter(required -> !present.contains(required.getKey()))
+                .map(missing -> "no " + missing.getKey().toLowerCase(java.util.Locale.ROOT)
+                        .replace('_', ' ') + " attached (required by " + missing.getValue() + ")")
                 .toList();
     }
 
@@ -491,17 +477,19 @@ public class TripCommandService {
         return verdict.dispatchable() ? List.of() : List.copyOf(verdict.blockingReasons());
     }
 
-    private List<String> weightBlockers(Trip trip, LoadLifecyclePort.LoadSummary load) {
+    private List<String> weightBlockers(Trip trip, LoadLifecyclePort.LoadSummary load,
+                                        TripSettings.Checklist checklist) {
         if (!trip.hasBothWeighings()) {
             return List.of("the vehicle has not been weighed both empty and laden");
         }
 
         BigDecimal variance = trip.payloadVariancePct(load.plannedWeightKg());
-        if (variance != null && variance.compareTo(weightTolerancePct) > 0) {
+        BigDecimal tolerance = checklist.weightTolerance();
+        if (variance != null && variance.compareTo(tolerance) > 0) {
             return List.of("weighed payload of " + trip.payloadWeightKg()
                     + " kg differs from the planned " + load.plannedWeightKg()
-                    + " kg by " + variance + "%, beyond the " + weightTolerancePct
-                    + "% tolerance");
+                    + " kg by " + variance + "%, beyond the " + tolerance.toPlainString()
+                    + "% tolerance (set by " + checklist.toleranceFrom() + ")");
         }
         return List.of();
     }

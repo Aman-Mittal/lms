@@ -17,6 +17,8 @@ package com.lms.acceptance;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +32,8 @@ import com.lms.execution.command.TripCommandService;
 import com.lms.execution.query.TripQueryService;
 import com.lms.execution.query.TripView;
 import com.lms.finance.command.BillingService;
+import com.lms.finance.command.TariffCommandService;
+import com.lms.finance.command.domain.TariffSlab;
 import com.lms.finance.query.FinanceQueryService;
 import com.lms.finance.query.FreightBillView;
 import com.lms.identity.access.SubjectAttributes;
@@ -87,6 +91,8 @@ public class AccessSteps {
     private ScenarioWorld world;
     @Autowired
     private BillingService billing;
+    @Autowired
+    private TariffCommandService tariffs;
     @Autowired
     private FinanceQueryService finance;
     @Autowired
@@ -248,6 +254,26 @@ public class AccessSteps {
     public void layOutBin(String warehouseCode) {
         UUID warehouse = world.ref("warehouse:" + warehouseCode);
         attempt(() -> warehouseSetup.createBin(warehouse, "B-01", 100));
+    }
+
+    @Given("a rate card {string} is published under {string}")
+    public void rateCardUnder(String code, String orgPath) {
+        world.putRef("tariff:" + code, tariffs.publishTariff(unit(orgPath), world.uniqueCode(code),
+                world.ref("VENDOR-1"), world.ref("ORIGIN"), world.ref("DEST-A"), "TRAILER-" + code, "INR",
+                LocalDate.now(ZoneOffset.UTC), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO));
+    }
+
+    @When("a weight band is added to rate card {string}")
+    public void addBand(String code) {
+        UUID tariff = world.ref("tariff:" + code);
+        attempt(() -> tariffs.addSlab(tariff, BigDecimal.ZERO, null, TariffSlab.RateBasis.PER_KG,
+                BigDecimal.ONE));
+    }
+
+    @When("this month's fuel surcharge is recorded")
+    public void recordFuelSurcharge() {
+        attempt(() -> tariffs.recordFuelSurcharge(LocalDate.now(ZoneOffset.UTC), new BigDecimal("6.5")));
     }
 
     // ------------------------------------------------- reads for portal users

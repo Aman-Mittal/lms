@@ -27,6 +27,8 @@ import java.util.stream.Collectors;
 import com.lms.acceptance.TestFixtures;
 import com.lms.client.ApiClient;
 import com.lms.client.api.SettlementApi;
+import com.lms.client.model.AddSlabRequest;
+import com.lms.client.model.FuelSurchargeRequest;
 import com.lms.client.model.Tariff;
 import com.lms.client.model.TariffCard;
 import com.lms.client.model.TariffSlab;
@@ -298,6 +300,31 @@ class TariffReadApiTest {
                         e -> assertThat(e.contentUTF8()).contains("invalid-cursor"));
     }
 
+    @Test
+    @DisplayName("a band is added only to a card in the caller's subtree, as publishing one is")
+    void addingABandIsHeldToTheCardsUnit() {
+        SettlementApi north = client(rootPath + "north/", MANAGER);
+        AddSlabRequest band = new AddSlabRequest().minWeightKg(BigDecimal.ZERO)
+                .rateBasis(AddSlabRequest.RateBasisEnum.PER_KG).rateAmount(new BigDecimal("2.00"));
+
+        assertForbidden(() -> north.addTariffSlab(southCard, band, null));
+        assertThat(client(rootPath + "south/", MANAGER).getTariff(southCard).getSlabs())
+                .as("the refused band was not written").isEmpty();
+        assertThat(north.addTariffSlab(northCard, band, null).getId()).as("its own unit's card").isNotNull();
+        assertThat(client(rootPath, MANAGER).addTariffSlab(southCard, band, null).getId())
+                .as("the head office reaches every unit beneath it").isNotNull();
+    }
+
+    @Test
+    @DisplayName("the tenant's fuel index is changed only by a caller whose reach is the whole organisation")
+    void fuelIndexIsTheWholeTenants() {
+        FuelSurchargeRequest index = new FuelSurchargeRequest().month(LocalDate.now())
+                .surchargePct(new BigDecimal("6.5"));
+
+        assertForbidden(() -> client(rootPath + "north/", MANAGER).recordFuelSurcharge(index, null));
+        assertThat(client(rootPath, MANAGER).recordFuelSurcharge(index, null).getId()).isNotNull();
+    }
+
     // ------------------------------------------------------------- helpers
 
     /**
@@ -320,6 +347,11 @@ class TariffReadApiTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private static void assertForbidden(Runnable call) {
+        assertThatThrownBy(call::run).isInstanceOfSatisfying(FeignException.class,
+                e -> assertThat(e.status()).isEqualTo(403));
     }
 
     private static void assertNotFound(Runnable call) {
