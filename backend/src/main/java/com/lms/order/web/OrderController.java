@@ -26,6 +26,7 @@ import com.lms.order.command.OrderCloseService;
 import com.lms.order.command.OrderCloseSettings;
 import com.lms.order.command.OrderCommandService;
 import com.lms.order.command.OrderHeaderChange;
+import com.lms.approvals.api.ApprovalTicket;
 import com.lms.order.command.OrderLineCancellationService;
 import com.lms.order.command.OrderLineSpec;
 import com.lms.order.command.domain.CloseKind;
@@ -170,10 +171,19 @@ public class OrderController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * 204 when the order is cancelled; 202 with the approval request when the
+     * tenant's policy asks for approval first.
+     */
     @PostMapping("/{id}/cancel")
-    public ResponseEntity<Void> cancel(@PathVariable UUID id,
-                                       @RequestBody(required = false) @Valid CancelOrderRequest request) {
-        orders.cancel(id, request == null ? null : request.reason());
+    public ResponseEntity<ApprovalTicket> cancel(@PathVariable UUID id,
+                                                 @RequestBody(required = false) @Valid CancelOrderRequest request) {
+        OrderCommandService.Cancellation outcome = orders.cancel(id, request == null ? null : request.reason());
+        if (outcome.approval() != null) {
+            return ResponseEntity.accepted()
+                    .location(URI.create("/api/v1/approvals/" + outcome.approval().id()))
+                    .body(outcome.approval());
+        }
         return ResponseEntity.noContent().build();
     }
 
