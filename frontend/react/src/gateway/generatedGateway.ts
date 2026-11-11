@@ -2208,7 +2208,7 @@ type SettingsVerbs = Pick<LmsGateway, 'me' | 'settingDefinitions' | 'myPreferenc
 
 const SCOPE_WORDS: Record<string, string> = {
   PLATFORM: 'Platform', ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer',
-  VEHICLE: 'Vehicle', USER: 'You',
+  VENDOR: 'Vendor', VEHICLE: 'Vehicle', USER: 'You',
 };
 
 /** A `date` field as the generated client gives it (a Date at midnight UTC), as `YYYY-MM-DD`. */
@@ -2331,7 +2331,7 @@ function settingsVerbs(config: Configuration): SettingsVerbs {
     effectiveSettings: (context: SettingContextDraft) =>
       guard(async () => (await settings.getEffectiveSettings({
         orgUnitId: context.orgUnitId || undefined, customerId: context.customerId || undefined,
-        vehicleId: context.vehicleId || undefined,
+        vehicleId: context.vehicleId || undefined, vendorId: context.vendorId || undefined,
         asOf: context.asOf ? new Date(`${context.asOf}T00:00:00Z`) : undefined,
       })).items.map(effectiveOf)),
     settingProfileHistory: (id: string) =>
