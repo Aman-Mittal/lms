@@ -181,7 +181,7 @@ test.describe('compliance', () => {
 test.describe('what each person is offered', () => {
   test('without the rights, there is no Administration group at all', async ({ page }) => {
     await withoutPermissions(page, ['ACCESS_POLICY_MANAGE', 'VEHICLE_READ', 'CREDIT_LIMIT_REQUEST', 'CREDIT_LIMIT_APPROVE',
-      'NUMBER_SERIES_MANAGE']);
+      'NUMBER_SERIES_MANAGE', 'SETTINGS_READ', 'SETTINGS_MANAGE']);
     await signIn(page);
     await expect(page.getByTestId('sidebar')).toBeVisible();
     await expect(page.getByTestId('nav-partners')).toBeVisible();
