@@ -105,7 +105,9 @@
       Approved when the difference is within the greater of a percentage and
       an absolute floor; disputed otherwise. An underclaim beyond tolerance is
       disputed too -- it means the two sides' understanding of the rate has
-      diverged, and next month it points the other way.
+      diverged, and next month it points the other way. Both are the settings
+      `finance.match.tolerancePercent` and `finance.match.toleranceAbsolute`,
+      resolved for the bill's unit and vendor.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -292,7 +294,8 @@
     description: |
       Refused once the card has been superseded: adding a band to a closed
       version would change what already-priced movements cost without touching
-      a single bill.
+      a single bill. Held to the card's organisational unit as publishing it
+      is: 403 outside the caller's subtree.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -315,7 +318,9 @@
     description: |
       A stored figure rather than a price feed. An external dependency on the
       pricing path means invoices that cannot be raised because somebody
-      else's service is down.
+      else's service is down. The index is the tenant's, so the write is held
+      to the root of the organisation: 403 for a caller confined to a unit
+      beneath it.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:

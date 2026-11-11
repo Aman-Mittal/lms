@@ -25,17 +25,20 @@ import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settings-
 import { EntityPicker } from './entity-picker';
 
 const SCOPE_LABEL: Record<string, string> = {
-  ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VEHICLE: 'Vehicle',
+  ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
+  VEHICLE: 'Vehicle',
 };
-const PICKER: Record<string, PickKind> = { ORG_UNIT: 'org-unit', CUSTOMER: 'customer', VEHICLE: 'vehicle' };
+const PICKER: Record<string, PickKind> = {
+  ORG_UNIT: 'org-unit', CUSTOMER: 'customer', VENDOR: 'vendor', VEHICLE: 'vehicle',
+};
 
 /**
  * Administration > Profile settings: the company's setting profiles, one per
- * scope (the organisation, a unit, a customer, a vehicle), their values with
- * an input for each setting's type, the history of each, and what is in force
- * for a context and where it comes from. A dated setting changes only by a
- * new version from today or later; versions already in force are shown, not
- * edited.
+ * scope (the organisation, a unit, a customer, a vendor, a vehicle), their
+ * values with an input for each setting's type, the history of each, and what
+ * is in force for a context and where it comes from. A dated setting changes
+ * only by a new version from today or later; versions already in force are
+ * shown, not edited.
  */
 @Component({
   selector: 'app-profile-settings',
@@ -43,7 +46,7 @@ const PICKER: Record<string, PickKind> = { ORG_UNIT: 'org-unit', CUSTOMER: 'cust
   template: `
     <h1>Profile settings</h1>
     <p class="muted">The most specific profile that sets a value wins: organisation, then unit (deeper first),
-      then vehicle or customer. A person's own preferences sit on top of those, under My profile.</p>
+      then vehicle, customer or vendor. A person's own preferences sit on top of those, under My profile.</p>
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 
     <label>
@@ -85,7 +88,7 @@ const PICKER: Record<string, PickKind> = { ORG_UNIT: 'org-unit', CUSTOMER: 'cust
     }
 
     @if (picked(); as p) {
-      <section class="panel" data-testid="profile-panel">
+      <section class="panel in-flow" data-testid="profile-panel">
         <header><h2>{{ p.name }}</h2><span class="muted">{{ scopeLabel(p.scopeType) }} {{ p.scopeLabel }}</span></header>
         <form (ngSubmit)="saveProfile()" data-testid="profile-values">
           <table>
@@ -167,6 +170,8 @@ const PICKER: Record<string, PickKind> = { ORG_UNIT: 'org-unit', CUSTOMER: 'cust
                          [(value)]="ctxCustomer" />
       <app-entity-picker [kind]="'vehicle'" ariaLabel="Context vehicle" testId="ctx-vehicle" placeholder="Vehicle"
                          [(value)]="ctxVehicle" />
+      <app-entity-picker [kind]="'vendor'" ariaLabel="Context vendor" testId="ctx-vendor" placeholder="Vendor"
+                         [(value)]="ctxVendor" />
       <input type="date" name="asOf" aria-label="As of" data-testid="ctx-as-of" [(ngModel)]="ctxAsOf" />
       <button type="submit" data-testid="show-effective">Show</button>
     </form>
@@ -208,6 +213,7 @@ export class ProfileSettingsPage implements OnInit {
   ctxUnit = '';
   ctxCustomer = '';
   ctxVehicle = '';
+  ctxVendor = '';
   ctxAsOf = '';
 
   get manage(): boolean {
@@ -338,7 +344,8 @@ export class ProfileSettingsPage implements OnInit {
     this.error.set('');
     try {
       this.effective.set(await this.gateway.effectiveSettings({
-        orgUnitId: this.ctxUnit, customerId: this.ctxCustomer, vehicleId: this.ctxVehicle, asOf: this.ctxAsOf,
+        orgUnitId: this.ctxUnit, customerId: this.ctxCustomer, vehicleId: this.ctxVehicle, vendorId: this.ctxVendor,
+        asOf: this.ctxAsOf,
       }));
     } catch (e) {
       this.error.set((e as Error).message);

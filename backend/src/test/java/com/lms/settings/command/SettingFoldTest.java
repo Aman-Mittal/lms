@@ -81,6 +81,25 @@ class SettingFoldTest {
     }
 
     @Test
+    @DisplayName("a vendor's value beats the units' and the organisation's, and lies just above a customer's")
+    void vendorScope() {
+        SettingDefinition procurement = SettingDefinition.of(SettingKey.integer("test.vendor"), "Vendor",
+                "Kept per vendor").defaultValue(0).alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR).build();
+        UUID vendor = UUID.fromString("00000000-0000-0000-0000-00000000000f");
+        Candidate org = value(ORG, ScopeType.ORG_DEFAULT, 0, "test.vendor", 10);
+        Candidate branch = value(BRANCH, ScopeType.ORG_UNIT, 17, "test.vendor", 30);
+        Candidate forVendor = value(vendor, ScopeType.VENDOR, 0, "test.vendor", 60);
+
+        Resolved<Object> r = SettingFold.fold(List.of(procurement), Map.of("test.vendor", 0),
+                List.of(forVendor, branch, org)).get("test.vendor");
+        assertThat(r.value()).isEqualTo(60);
+        assertThat(r.source().scopeType()).isEqualTo(ScopeType.VENDOR);
+        assertThat(ScopeType.VENDOR.precedence()).isGreaterThan(ScopeType.CUSTOMER.precedence())
+                .isLessThan(ScopeType.USER.precedence());
+        assertThat(ScopeType.VENDOR.needsScopeId()).isTrue();
+    }
+
+    @Test
     @DisplayName("each key is resolved on its own: a key a profile does not set falls through to the next one out")
     void perKey() {
         SettingDefinition other = SettingDefinition.of(SettingKey.integer("test.other"), "Other", "Another key")

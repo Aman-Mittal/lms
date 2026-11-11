@@ -24,18 +24,21 @@ import { useSession } from '../session';
 import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settingsForm';
 
 const SCOPE_LABEL: Record<string, string> = {
-  ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VEHICLE: 'Vehicle',
+  ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
+  VEHICLE: 'Vehicle',
 };
-const PICKER: Record<string, PickKind> = { ORG_UNIT: 'org-unit', CUSTOMER: 'customer', VEHICLE: 'vehicle' };
+const PICKER: Record<string, PickKind> = {
+  ORG_UNIT: 'org-unit', CUSTOMER: 'customer', VENDOR: 'vendor', VEHICLE: 'vehicle',
+};
 const label = (s: string) => SCOPE_LABEL[s] ?? s;
 
 /**
  * Administration > Profile settings: the company's setting profiles, one per
- * scope (the organisation, a unit, a customer, a vehicle), their values with
- * an input for each setting's type, the history of each, and what is in force
- * for a context and where it comes from. A dated setting changes only by a
- * new version from today or later; versions already in force are shown, not
- * edited.
+ * scope (the organisation, a unit, a customer, a vendor, a vehicle), their
+ * values with an input for each setting's type, the history of each, and what
+ * is in force for a context and where it comes from. A dated setting changes
+ * only by a new version from today or later; versions already in force are
+ * shown, not edited.
  */
 export function ProfileSettings() {
   const { gateway, can } = useSession();
@@ -53,7 +56,7 @@ export function ProfileSettings() {
   const [newScope, setNewScope] = useState<SettingScope>('ORG_DEFAULT');
   const [newScopeId, setNewScopeId] = useState('');
   const [newName, setNewName] = useState('');
-  const [ctx, setCtx] = useState({ orgUnitId: '', customerId: '', vehicleId: '', asOf: '' });
+  const [ctx, setCtx] = useState({ orgUnitId: '', customerId: '', vehicleId: '', vendorId: '', asOf: '' });
 
   const allowed = picked ? definitions.filter((d) => d.scopes.includes(picked.scopeType)) : [];
   const dated = allowed.some((d) => d.effectiveDated);
@@ -151,7 +154,7 @@ export function ProfileSettings() {
     <>
       <h1>Profile settings</h1>
       <p className="muted">The most specific profile that sets a value wins: organisation, then unit (deeper first),
-        then vehicle or customer. A person's own preferences sit on top of those, under My profile.</p>
+        then vehicle, customer or vendor. A person's own preferences sit on top of those, under My profile.</p>
       {error && <p className="error" role="alert">{error}</p>}
 
       <label>
@@ -197,7 +200,7 @@ export function ProfileSettings() {
       )}
 
       {picked && (
-        <section className="panel" data-testid="profile-panel">
+        <section className="panel in-flow" data-testid="profile-panel">
           <header><h2>{picked.name}</h2><span className="muted">{label(picked.scopeType)} {picked.scopeLabel}</span></header>
           <form onSubmit={saveProfile} data-testid="profile-values">
             <table>
@@ -290,6 +293,8 @@ export function ProfileSettings() {
           value={ctx.customerId} onChange={(v) => setCtx((c) => ({ ...c, customerId: v }))} />
         <EntityPicker kind="vehicle" ariaLabel="Context vehicle" testId="ctx-vehicle" placeholder="Vehicle"
           value={ctx.vehicleId} onChange={(v) => setCtx((c) => ({ ...c, vehicleId: v }))} />
+        <EntityPicker kind="vendor" ariaLabel="Context vendor" testId="ctx-vendor" placeholder="Vendor"
+          value={ctx.vendorId} onChange={(v) => setCtx((c) => ({ ...c, vendorId: v }))} />
         <input type="date" aria-label="As of" data-testid="ctx-as-of" value={ctx.asOf}
           onChange={(e) => setCtx((c) => ({ ...c, asOf: e.target.value }))} />
         <button type="submit" data-testid="show-effective">Show</button>
