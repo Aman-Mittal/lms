@@ -74,18 +74,24 @@ public class DetectorSettingsService {
                 minutes(resolved.get(DetectorSettingDefinitions.TEMPERATURE_EXCURSION)), customised);
     }
 
-    /** The ETA slip the detector applies. */
+    /** The ETA slip the detector applies to a trip. */
     @Transactional(readOnly = true)
-    public Duration etaSlip() {
-        return settings.effective(DetectorSettingDefinitions.ETA_SLIP, SettingContext.tenant());
+    public Duration etaSlipFor(UUID tripId) {
+        return settings.effective(DetectorSettingDefinitions.ETA_SLIP, contextOf(tripId));
     }
 
-    /** The temperature excursion the detector applies to a trip: its vehicle's, when one is set. */
+    /** The temperature excursion the detector applies to a trip. */
     @Transactional(readOnly = true)
     public Duration temperatureExcursionFor(UUID tripId) {
-        UUID vehicleId = trips.find(tripId).map(TripLookupPort.TripSnapshot::vehicleId).orElse(null);
-        return settings.effective(DetectorSettingDefinitions.TEMPERATURE_EXCURSION,
-                SettingContext.tenant().withVehicle(vehicleId));
+        return settings.effective(DetectorSettingDefinitions.TEMPERATURE_EXCURSION, contextOf(tripId));
+    }
+
+    /** The trip's unit, vehicle and only customer; the tenant's alone for a trip not found. */
+    private SettingContext contextOf(UUID tripId) {
+        return trips.scopeOf(tripId)
+                .map(scope -> SettingContext.ofOrgUnit(scope.orgUnitId()).withVehicle(scope.vehicleId())
+                        .withCustomer(scope.soleCustomerId()))
+                .orElse(SettingContext.tenant());
     }
 
     @Transactional(readOnly = true)

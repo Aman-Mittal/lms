@@ -52,9 +52,9 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Applicable means: the platform profiles of the context's jurisdiction
  * (global, its country, its state); the tenant's organisation default; every
  * organisational unit at or above the context's unit (the unit's path starts
- * with theirs); and the customer, vehicle and user profiles the context
- * names. The statement costs the same however many profiles apply -- one read
- * per resolution, whatever the number of keys. The tenant's
+ * with theirs); and the customer, vendor, vehicle and user profiles the
+ * context names. The statement costs the same however many profiles apply --
+ * one read per resolution, whatever the number of keys. The tenant's
  * {@code settings.timeZone} is read in the same statement, to know which day
  * "today" is when the context names none.
  *
@@ -138,6 +138,7 @@ public class EffectiveSettingsQuery {
                                               u.path))
                                       OR (p.scope_type = 'CUSTOMER' AND p.scope_id = CAST(:customerId AS uuid))
                                       OR (p.scope_type = 'VEHICLE' AND p.scope_id = CAST(:vehicleId AS uuid))
+                                      OR (p.scope_type = 'VENDOR' AND p.scope_id = CAST(:vendorId AS uuid))
                                       OR (p.scope_type = 'USER' AND p.scope_id = CAST(:userId AS uuid))))
                                 OR (p.tenant_id IS NULL AND p.scope_type = 'PLATFORM'
                                     AND (p.country IS NULL
@@ -150,6 +151,7 @@ public class EffectiveSettingsQuery {
                 .param("unitId", context.orgUnitId())
                 .param("customerId", context.customerId())
                 .param("vehicleId", context.vehicleId())
+                .param("vendorId", context.vendorId())
                 .param("userId", context.userId())
                 .param("country", context.country())
                 .param("state", context.state())

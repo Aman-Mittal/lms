@@ -184,7 +184,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
 | `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
-| `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
+| `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
 | `approvals` | One approvals module for every flow: requests with a frozen payload, a policy per subject type (copied onto each request), decisions applied in-process by the owning module's handler, the inbox, expiry. Depends on `identity::access` only. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
@@ -303,13 +303,38 @@ record of its own. A module that owns a setting declares it, nowhere else:
   joins the caller's transaction (ADR 0006) and checks no permission.
   `setOrgDefaults(...)` writes the organisation default for a module that
   keeps its own endpoint (`/orders/close-settings`, `/exceptions/detector-settings`).
+- a value that used to be a deployment property keeps the property as its
+  system default (`@Value` into the contributor), so a tenant that sets
+  nothing sees no change. Resolve for the record in hand, never for the
+  tenant alone when the record names a unit, vehicle, customer or vendor.
+  A trip's context is `execution::api`'s `TripLookupPort.scopeOf` (its unit,
+  vehicle and the customers aboard); a threshold is read for the only
+  customer aboard, the dispatch checklist for every one of them. Read once per
+  record per request, not once per row of a batch (telematics resolves once
+  per trip per ingested batch).
+
+Registered so far: `order.close.*` (unit, customer);
+`controltower.detector.etaSlipTolerance` and `.temperatureExcursionTolerance`
+(unit, vehicle, customer); `telematics.stoppage.threshold`,
+`telematics.routeDeviation.corridorMetres` (unit, vehicle, customer) and
+`telematics.stoppage.radiusMetres` (unit, vehicle);
+`execution.dispatch.requiredDocuments` (COMPLIANCE, dated, a JSON object of
+known document types), `execution.dispatch.weightTolerancePct` and
+`execution.tracking.autoDeparture` / `.autoArrival` / `.autoCompleteOnExit`
+(unit, vehicle, customer); `finance.match.tolerancePercent` and
+`.toleranceAbsolute` (unit, vendor); and the calendar, UI and notification
+preferences.
 
 The fold is fixed. Per profile, of a key's versions the latest one effective
 on the context's `asOf` (default: today in the tenant's `settings.timeZone`)
 applies; an undated value applies since always. Across profiles the most
 specific one the key allows wins:
 PLATFORM (global < country < state) < ORG_DEFAULT < ORG_UNIT (deeper wins) <
-VEHICLE < CUSTOMER < USER. With none, the system default answers. Every
+VEHICLE < CUSTOMER < VENDOR < USER. With none, the system default answers.
+VENDOR (V54) names a business partner of type VENDOR, as CUSTOMER names one of
+type CUSTOMER; it sits next to CUSTOMER because no key a customer's context
+reads is one a vendor's does (a freight bill names a vendor, a trip a
+customer), so their relative order decides nothing. Every
 resolution is one statement however many profiles apply (`SettingsApiTest`
 counts it with `pg_stat_statements`). A stored value the definition now
 refuses is skipped, never applied.
@@ -718,9 +743,10 @@ includes production, after the image has been built and pushed.
   terminal and vehicle, routing-guide terminals, trip, allocation, exception,
   consolidation and ASN references, rate-card vendor and terminals, LTL zone
   terminals, client portal users, exception assignees and a user's partner
-  attribute. **No test**: warehouse bin and SKU ids and milk-run, rail and
-  itinerary ids, which are looked up through repositories or ports under RLS but
-  not proved. **Not checked at all**: `orgUnitId` on `POST /tariffs`.
+  attribute, and the organisational unit of a rate card (`orgUnitId` on
+  `POST /tariffs`, refused by `PolicyDecisionPoint.permitsIn`). **No test**:
+  warehouse bin and SKU ids and milk-run, rail and itinerary ids, which are
+  looked up through repositories or ports under RLS but not proved.
 
 **Deferred by design**
 
@@ -735,8 +761,9 @@ Within the control tower (§3.8), tickets are raised automatically from route
 deviation and stoppage (telematics), missed connections (multimodal), skipped
 and late milk-run stops, receipt variances and pick shortfalls (warehouse).
 The stoppage detector is ping-driven: a trip in transit that reports no
-movement (within `lms.telematics.stoppage-radius-m`, default 100) for
-`lms.telematics.stoppage-threshold-minutes` (default 45) outside every
+movement (within `telematics.stoppage.radiusMetres`, default
+`lms.telematics.stoppage-radius-m`, 100) for `telematics.stoppage.threshold`
+(default `lms.telematics.stoppage-threshold-minutes`, 45) outside every
 terminal geofence raises one EXTENDED_STOPPAGE ticket, and a device that stops
 reporting altogether is therefore not caught. The ETA and temperature detectors
 (V35) run off `TripEtaProjected` (one per trip per ingested batch) and
@@ -744,8 +771,8 @@ reporting altogether is therefore not caught. The ETA and temperature detectors
 a `trip_watch` row, which the desk sets through
 `PUT /api/v1/exceptions/trip-watches/{tripId}` (committed arrival, temperature
 band). Tolerances are settings (`controltower.detector.etaSlipTolerance`,
-`controltower.detector.temperatureExcursionTolerance`, the second also per
-vehicle), defaulting to `lms.controltower.eta-slip-minutes` (60) and
+`controltower.detector.temperatureExcursionTolerance`, both also per unit,
+vehicle and customer, resolved for the trip), defaulting to `lms.controltower.eta-slip-minutes` (60) and
 `lms.controltower.temperature-excursion-minutes` (15); V52 copied the old
 `detector_setting` rows into organisation-default profiles and nothing reads
 that table any more. One unclosed ticket per

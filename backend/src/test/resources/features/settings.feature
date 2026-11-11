@@ -69,5 +69,5 @@ Feature: A customer's own settings win over the tenant's
     Then a second settings profile for customer "CUST" is refused with "setting-profile-scope-taken"
     And setting "order.close.tolerancePercent" to "101" for customer "CUST" is refused with "setting-invalid-value"
     And setting "order.close.tolerence" to "1" for customer "CUST" is refused with "setting-unknown"
-    And setting "controltower.detector.etaSlipTolerance" to "PT2H" for customer "CUST" is refused with "setting-scope-not-allowed"
+    And setting "telematics.stoppage.radiusMetres" to "50" for customer "CUST" is refused with "setting-scope-not-allowed"
     And the close tolerance in force for customer "CUST" is 2 percent from its CUSTOMER profile

@@ -83,6 +83,7 @@ public class PingIngestService implements PingIngestPort {
     private final GeofenceEventRepository geofenceEvents;
     private final RouteDeviationService deviations;
     private final StoppageService stoppages;
+    private final TrackingThresholds thresholds;
     private final TerminalGeofencePort terminals;
     private final FleetCapacityPort fleet;
     private final TripTrackingPort tripTracking;
@@ -92,6 +93,7 @@ public class PingIngestService implements PingIngestPort {
     public PingIngestService(PingWriter pings, GeofencePresenceStore presence,
                              GeofenceEventRepository geofenceEvents,
                              RouteDeviationService deviations, StoppageService stoppages,
+                             TrackingThresholds thresholds,
                              TerminalGeofencePort terminals, FleetCapacityPort fleet,
                              TripTrackingPort tripTracking,
                              ApplicationEventPublisher events,
@@ -102,6 +104,7 @@ public class PingIngestService implements PingIngestPort {
         this.geofenceEvents = geofenceEvents;
         this.deviations = deviations;
         this.stoppages = stoppages;
+        this.thresholds = thresholds;
         this.terminals = terminals;
         this.fleet = fleet;
         this.tripTracking = tripTracking;
@@ -151,6 +154,9 @@ public class PingIngestService implements PingIngestPort {
         // The latest accepted fix of each trip in the batch, for the ETA
         // projection. Batches are sorted by device time, so the last put wins.
         Map<UUID, TripFix> latestPerTrip = new LinkedHashMap<>();
+        // The detector thresholds of each trip in the batch, read once per trip:
+        // a flush of 500 fixes is one settings read, not 500.
+        Map<UUID, TrackingThresholds.Thresholds> limits = new HashMap<>();
 
         for (PingReport report : ordered) {
             UUID vehicleId = report.vehicleId();
@@ -196,7 +202,8 @@ public class PingIngestService implements PingIngestPort {
             lastAt.put(vehicleId, report.recordedAt());
 
             trip.ifPresent(active -> {
-                evaluate(tenantId, active, ping);
+                evaluate(tenantId, active, ping, limits.computeIfAbsent(active.tripId(),
+                        id -> thresholds.forTrip(id, active.vehicleId())));
                 reportTemperature(tenantId, active, ping);
                 latestPerTrip.put(active.tripId(), new TripFix(active, ping));
             });
@@ -222,7 +229,8 @@ public class PingIngestService implements PingIngestPort {
      * terminal it is inside -- almost always zero or one -- which turns
      * "did it just enter" into a comparison instead of a query per point.
      */
-    private void evaluate(UUID tenantId, TripTrackingPort.ActiveTrip trip, GpsPing ping) {
+    private void evaluate(UUID tenantId, TripTrackingPort.ActiveTrip trip, GpsPing ping,
+                          TrackingThresholds.Thresholds limits) {
         LatLon point = ping.point();
 
         Set<UUID> inside = new LinkedHashSet<>();
@@ -248,13 +256,13 @@ public class PingIngestService implements PingIngestPort {
             }
         }
 
-        deviations.evaluate(tenantId, trip, ping)
+        deviations.evaluate(tenantId, trip, ping, limits.corridorMetres())
                 .ifPresent(deviation -> events.publishEvent(new RouteDeviationDetected(
                         tenantId, trip.tripId(), trip.tripNo(), deviation.distanceM(),
                         deviation.corridorM(), ping.lat(), ping.lon(),
                         ping.recordedAt(), Instant.now())));
 
-        evaluateStoppage(tenantId, trip, ping, inside, wasInside);
+        evaluateStoppage(tenantId, trip, ping, inside, wasInside, limits);
     }
 
     /**
@@ -267,7 +275,8 @@ public class PingIngestService implements PingIngestPort {
      * that cleared the origin, so that exit counts as being in transit.
      */
     private void evaluateStoppage(UUID tenantId, TripTrackingPort.ActiveTrip trip, GpsPing ping,
-                                  Set<UUID> inside, Set<UUID> wasInside) {
+                                  Set<UUID> inside, Set<UUID> wasInside,
+                                  TrackingThresholds.Thresholds limits) {
         if (!inside.isEmpty()) {
             stoppages.forget(tenantId, trip.tripId());
             return;
@@ -278,7 +287,7 @@ public class PingIngestService implements PingIngestPort {
                 && !("DISPATCHED".equals(trip.status()) && clearedOrigin)) {
             return;
         }
-        stoppages.observe(tenantId, trip.tripId(), ping)
+        stoppages.observe(tenantId, trip.tripId(), ping, limits.radiusMetres(), limits.stoppage())
                 .ifPresent(stop -> events.publishEvent(new StoppageDetected(
                         tenantId, trip.tripId(), trip.tripNo(), stop.since(),
                         stop.stoppedMinutes(), stop.thresholdMinutes(), ping.lat(), ping.lon(),

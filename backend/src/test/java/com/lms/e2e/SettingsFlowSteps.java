@@ -20,6 +20,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,7 +35,9 @@ import com.lms.client.model.HistoryEntry;
 import com.lms.client.model.Me;
 import com.lms.client.model.MyPreferences;
 import com.lms.client.model.RegisterPartnerRequest;
+import com.lms.client.model.RegisterPointRadiusTerminalRequest;
 import com.lms.client.model.SettingScopeType;
+import com.lms.client.model.SettingVersionRequest;
 import com.lms.client.model.UpdateMyPreferencesRequest;
 import feign.FeignException;
 import io.cucumber.java.After;
@@ -62,6 +67,7 @@ public class SettingsFlowSteps {
     private MyPreferences saved;
     private UUID customer;
     private UUID profileId;
+    private UUID checklistCustomer;
 
     @After("@settings-e2e")
     public void putBack() {
@@ -143,11 +149,42 @@ public class SettingsFlowSteps {
 
     @Then("the close tolerance in force for that customer is {int} percent, from its own profile")
     public void inForce(int percent) {
-        EffectiveSetting tolerance = entry(api().getEffectiveSettings(world.orgUnitId(), customer, null, null, null, null).getItems(),
+        EffectiveSetting tolerance = entry(api().getEffectiveSettings(world.orgUnitId(), customer, null, null, null, null, null).getItems(),
                 TOLERANCE);
         assertThat(((Number) tolerance.getValue()).intValue()).isEqualTo(percent);
         assertThat(tolerance.getSource().getProfileId()).isEqualTo(profileId);
         assertThat(tolerance.getSource().getScopeType()).isEqualTo(SettingScopeType.CUSTOMER);
+    }
+
+    @When("the administrator gives a new customer a dispatch checklist that also requires a packing list")
+    public void checklist() {
+        checklistCustomer = world.partner("SETDSP", RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER);
+        api().createSettingProfile(new CreateSettingProfileRequest().scopeType(SettingScopeType.CUSTOMER)
+                .scopeId(checklistCustomer).name("Checklist " + world.salt)
+                .versions(List.of(new SettingVersionRequest().key("execution.dispatch.requiredDocuments")
+                        .effectiveFrom(LocalDate.now(ZoneOffset.UTC))
+                        .value(Map.of("CONSIGNMENT_NOTE", true, "EWAY_BILL", true, "PACKING_LIST", true)))),
+                null);
+    }
+
+    @Then("a trip for that customer carrying only a consignment note and an e-way bill is refused, naming the packing list and the customer's profile")
+    public void dispatchRefused() {
+        UUID consignee = world.partner("SETCNS", RegisterPartnerRequest.PartnerTypeEnum.CONSIGNEE);
+        UUID origin = world.terminal(RegisterPointRadiusTerminalRequest.CategoryEnum.CUSTOMER_SITE, "SET-ORG",
+                66.10, 72.90);
+        UUID destination = world.terminal(RegisterPointRadiusTerminalRequest.CategoryEnum.CUSTOMER_SITE,
+                "SET-DST", 66.30, 73.10);
+        UUID trip = world.assignedTrip("SET", checklistCustomer, consignee, origin, destination,
+                world.activeVendor("SETV"), world.lorry("SET", 20000), world.driver("SET"), 5000);
+
+        assertThatThrownBy(() -> world.dispatch(trip, origin, 5000, OffsetDateTime.now(ZoneOffset.UTC)))
+                .isInstanceOfSatisfying(FeignException.class, e -> {
+                    assertThat(e.status()).isEqualTo(409);
+                    assertThat(e.contentUTF8()).contains("\"dispatch-blocked\"")
+                            .contains("no packing list attached (required by customer profile")
+                            .contains("Checklist " + world.salt)
+                            .doesNotContain("no eway bill attached");
+                });
     }
 
     @Then("the profile's history records who created it and with what")

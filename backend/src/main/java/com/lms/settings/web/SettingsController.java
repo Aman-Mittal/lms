@@ -111,11 +111,12 @@ public class SettingsController {
     public EffectiveView effective(@RequestParam(required = false) UUID orgUnitId,
                                    @RequestParam(required = false) UUID customerId,
                                    @RequestParam(required = false) UUID vehicleId,
+                                   @RequestParam(required = false) UUID vendorId,
                                    @RequestParam(required = false) LocalDate asOf,
                                    @RequestParam(required = false) String country,
                                    @RequestParam(required = false) String state) {
         SettingContext context = SettingContext.ofOrgUnit(orgUnitId).withCustomer(customerId)
-                .withVehicle(vehicleId).asOf(asOf).inJurisdiction(blankToNull(country), blankToNull(state));
+                .withVehicle(vehicleId).withVendor(vendorId).asOf(asOf).inJurisdiction(blankToNull(country), blankToNull(state));
         return new EffectiveView(entries(registry.all(), context));
     }
 

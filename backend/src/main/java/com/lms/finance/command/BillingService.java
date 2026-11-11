@@ -35,6 +35,9 @@ import com.lms.finance.events.FreightBillRaised;
 import com.lms.identity.access.AccessSubject;
 import com.lms.multimodal.events.RailLegCompleted;
 import com.lms.planning.api.LoadLifecyclePort;
+import com.lms.settings.api.EffectiveSettings;
+import com.lms.settings.api.SettingContext;
+import com.lms.settings.api.Settings;
 import com.lms.shared.audit.AuditTrail;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
@@ -42,7 +45,6 @@ import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -70,24 +72,22 @@ public class BillingService {
 
     /**
      * How far a vendor's invoice may differ from the computed cost before it is
-     * disputed, as a percentage and as an absolute floor.
+     * disputed, as a percentage and as an absolute floor: settings of the
+     * bill's unit and vendor ({@link FinanceSettingDefinitions}).
      *
      * <p>Both, because either alone misbehaves. A percentage on its own
      * disputes a two-rupee rounding difference on a small bill; an absolute on
      * its own waves through a five-figure gap on a large one. The allowance is
      * the greater of the two.
      */
-    private final BigDecimal tolerancePct;
-    private final BigDecimal toleranceAbsolute;
+    private final Settings settings;
 
     public BillingService(FreightBillRepository bills, FreightBillLineRepository lines,
                           TariffRepository tariffs, TariffSlabRepository slabs,
                           FuelSurchargeIndexRepository fuelIndex, LoadLifecyclePort loads,
                           RatingEngine rating, AuditTrail audit,
                           ApplicationEventPublisher events, SettlementHolds holds,
-                          @Value("${lms.finance.match-tolerance-pct:2}") BigDecimal tolerancePct,
-                          @Value("${lms.finance.match-tolerance-absolute:100}")
-                          BigDecimal toleranceAbsolute) {
+                          Settings settings) {
         this.bills = bills;
         this.lines = lines;
         this.tariffs = tariffs;
@@ -98,8 +98,7 @@ public class BillingService {
         this.audit = audit;
         this.events = events;
         this.holds = holds;
-        this.tolerancePct = tolerancePct;
-        this.toleranceAbsolute = toleranceAbsolute;
+        this.settings = settings;
     }
 
     /**
@@ -358,8 +357,12 @@ public class BillingService {
     public FreightBill.BillStatus matchVendorClaim(UUID billId, BigDecimal claimedAmount) {
         FreightBill bill = require(billId);
         refuseWhileHeld(bill);
-        FreightBill matched = bills.save(
-                bill.matchAgainst(claimedAmount, tolerancePct, toleranceAbsolute, Instant.now()));
+        EffectiveSettings tolerance = settings.resolveAll(List.of(FinanceSettingDefinitions.MATCH_TOLERANCE_PERCENT,
+                        FinanceSettingDefinitions.MATCH_TOLERANCE_ABSOLUTE),
+                SettingContext.ofOrgUnit(bill.orgUnitId()).withVendor(bill.vendorPartnerId()));
+        FreightBill matched = bills.save(bill.matchAgainst(claimedAmount,
+                tolerance.get(FinanceSettingDefinitions.MATCH_TOLERANCE_PERCENT),
+                tolerance.get(FinanceSettingDefinitions.MATCH_TOLERANCE_ABSOLUTE), Instant.now()));
 
         audit.recordAtomically(matched.status() == FreightBill.BillStatus.APPROVED_FOR_PAYMENT
                         ? "INVOICE_APPROVED" : "INVOICE_DISPUTED",

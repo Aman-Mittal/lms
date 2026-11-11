@@ -177,6 +177,32 @@ Feature: A movement becomes money
     Then bill "FB-T1" is "DISPUTED"
     And bill "FB-T1" records a variance of 1000
 
+  Scenario: A vendor's own wider tolerance approves a claim the tenant's would dispute
+    # Five per cent over: beyond the platform's two, inside this vendor's six.
+    Given vendor "VENDOR-1" has a profile setting "finance.match.tolerancePercent" to "6"
+    And a trip "T1" carrying 5000 kg for "VENDOR-1"
+    And trip "T1" is run, dispatched 2 days ago after 30 minutes at the origin
+    And trip "T1" is completed
+    When "VENDOR-1" invoices 21000 against "FB-T1"
+    Then bill "FB-T1" is "APPROVED_FOR_PAYMENT"
+
+  Scenario: Another vendor's tolerance does not reach this vendor's bill
+    Given a carrier "VENDOR-2"
+    And vendor "VENDOR-2" has a profile setting "finance.match.tolerancePercent" to "6"
+    And a trip "T1" carrying 5000 kg for "VENDOR-1"
+    And trip "T1" is run, dispatched 2 days ago after 30 minutes at the origin
+    And trip "T1" is completed
+    When "VENDOR-1" invoices 21000 against "FB-T1"
+    Then bill "FB-T1" is "DISPUTED"
+
+  Scenario: A unit's own floor waves through a gap the platform's would not
+    Given org unit "/acme/" has a profile setting "finance.match.toleranceAbsolute" to "1500"
+    And a trip "T1" carrying 5000 kg for "VENDOR-1"
+    And trip "T1" is run, dispatched 2 days ago after 30 minutes at the origin
+    And trip "T1" is completed
+    When "VENDOR-1" invoices 21000 against "FB-T1"
+    Then bill "FB-T1" is "APPROVED_FOR_PAYMENT"
+
   Scenario: An invoice for too little is disputed just as one for too much is
     # Not free money. It means the vendor's understanding of the rate and ours
     # have diverged, and next month the divergence points the other way.

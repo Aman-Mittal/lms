@@ -177,6 +177,26 @@ Feature: A permission says what kind of thing; a policy says how far
     When a bin is laid out in warehouse "WH-SOUTH"
     Then the access policy refuses it
 
+  Scenario: A rate card is maintained only within the caller's subtree, as it is published
+    # A band reprices the card's lane, so it is held to the card's own unit;
+    # the fuel index reprices every lane, so it is held to the whole tenant.
+    Given tenant "acme" has an organisational unit "/acme/north/" named "North" of type "REGION"
+    And tenant "acme" has an organisational unit "/acme/south/" named "South" of type "REGION"
+    And a rate card "SOUTH-1" is published under "/acme/south/"
+    And a rate card "NORTH-1" is published under "/acme/north/"
+    And the tenant scope is "acme" at "/acme/north/"
+    When a weight band is added to rate card "SOUTH-1"
+    Then the access policy refuses it
+    When a weight band is added to rate card "NORTH-1"
+    Then the access policy allows it
+    When this month's fuel surcharge is recorded
+    Then the access policy refuses it
+    Given the tenant scope is "acme" at "/acme/"
+    When a weight band is added to rate card "SOUTH-1"
+    Then the access policy allows it
+    When this month's fuel surcharge is recorded
+    Then the access policy allows it
+
   Scenario: Head office files records anywhere beneath it
     Given tenant "acme" has an organisational unit "/acme/south/" named "South" of type "REGION"
     And a warehouse "WH-SOUTH" under "/acme/south/"

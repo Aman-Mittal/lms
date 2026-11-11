@@ -31,8 +31,12 @@
  * noticing. The vision document's 20,000 points per second is a production
  * figure; this deployment is one 0.1-CPU instance and sustains far less. That
  * ceiling is stated in DOCS/MVP.md rather than implied away.
+ *
+ * <p>The stoppage and corridor thresholds are settings read through
+ * {@code settings::api}, resolved once per trip per batch for the trip's unit,
+ * vehicle and customer ({@code execution::api}'s trip scope).
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Telematics",
-        allowedDependencies = {"masterdata::api", "execution::api"})
+        allowedDependencies = {"masterdata::api", "execution::api", "settings::api"})
 package com.lms.telematics;

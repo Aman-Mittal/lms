@@ -1534,7 +1534,7 @@ export interface MeView {
 }
 
 /** The scopes an administrator keeps profiles for; PLATFORM is the operator's, USER a person's own. */
-export const SETTING_SCOPES = ['ORG_DEFAULT', 'ORG_UNIT', 'CUSTOMER', 'VEHICLE'] as const;
+export const SETTING_SCOPES = ['ORG_DEFAULT', 'ORG_UNIT', 'CUSTOMER', 'VENDOR', 'VEHICLE'] as const;
 export type SettingScope = (typeof SETTING_SCOPES)[number] | 'PLATFORM' | 'USER';
 
 /** A setting's value as the API holds it: text, number, true/false, or a small object. */
@@ -1621,6 +1621,7 @@ export interface SettingContextDraft {
   orgUnitId: string;
   customerId: string;
   vehicleId: string;
+  vendorId: string;
   asOf: string;
 }
 

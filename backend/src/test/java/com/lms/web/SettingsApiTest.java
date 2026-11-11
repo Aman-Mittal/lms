@@ -253,7 +253,7 @@ class SettingsApiTest {
         assertThat(kit.parse(unknown).get("errors").has("order.close.toleranse")).isTrue();
 
         assertThat(kit.post(acme, PROFILES, """
-                {"scopeType":"CUSTOMER","scopeId":"%s","name":"C","values":{"controltower.detector.etaSlipTolerance":"PT2H"}}
+                {"scopeType":"CUSTOMER","scopeId":"%s","name":"C","values":{"telematics.stoppage.radiusMetres":50}}
                 """.formatted(customer), MANAGE).code()).isEqualTo("setting-scope-not-allowed");
         Outcome invalid = kit.post(acme, PROFILES, """
                 {"scopeType":"CUSTOMER","scopeId":"%s","name":"C","values":{"%s":101,"order.close.autoFulfil":"yes"}}
@@ -338,7 +338,7 @@ class SettingsApiTest {
         assertSource(effective(acme, "orgUnitId=" + northBranch), TOLERANCE, "2", "ORG_UNIT", region);
 
         // Through the generated client too: the contract carries the provenance.
-        List<EffectiveSetting> items = settings(acme, READ).getEffectiveSettings(null, customer, null, null, null, null).getItems();
+        List<EffectiveSetting> items = settings(acme, READ).getEffectiveSettings(null, customer, null, null, null, null, null).getItems();
         EffectiveSetting viaClient = items.stream().filter(i -> i.getKey().equals(TOLERANCE)).findFirst()
                 .orElseThrow();
         assertThat(viaClient.getSource().getProfileId()).isEqualTo(forCustomer);
@@ -615,6 +615,36 @@ class SettingsApiTest {
                         """).query(Long.class).single();
     }
 
+    @Test
+    @DisplayName("a vendor's profile names a VENDOR partner, applies to that vendor's bills only, and holds only vendor keys")
+    void vendorScope() {
+        String match = "finance.match.tolerancePercent";
+        UUID vendor = partner(acme, "VEN", BusinessPartner.PartnerType.VENDOR);
+
+        assertThat(kit.post(acme, PROFILES, "{\"scopeType\":\"VENDOR\",\"scopeId\":\"%s\",\"name\":\"V\"}"
+                .formatted(customer), MANAGE).status()).as("a customer is not a vendor").isEqualTo(404);
+        assertThat(kit.post(acme, PROFILES, "{\"scopeType\":\"CUSTOMER\",\"scopeId\":\"%s\",\"name\":\"C\"}"
+                .formatted(vendor), MANAGE).status()).as("nor a vendor a customer").isEqualTo(404);
+        assertThat(kit.post(acme, PROFILES, """
+                {"scopeType":"VENDOR","scopeId":"%s","name":"V","values":{"%s":2}}
+                """.formatted(vendor, TOLERANCE), MANAGE).code()).isEqualTo("setting-scope-not-allowed");
+
+        UUID orgDefault = createOrgDefault(acme, "{\"%s\":3}".formatted(match));
+        UUID forVendor = profile(acme, "VENDOR", vendor, "Vendor terms", "{\"%s\":6}".formatted(match));
+
+        assertSource(effective(acme, "vendorId=" + vendor), match, "6", "VENDOR", forVendor);
+        assertSource(effective(acme, "orgUnitId=" + north + "&vendorId=" + vendor), match, "6", "VENDOR", forVendor);
+        assertSource(effective(acme, "customerId=" + customer), match, "3", "ORG_DEFAULT", orgDefault);
+        assertThat(entry(effective(acme, "vendorId=" + vendor), TOLERANCE).get("source").get("kind").asString())
+                .as("a key not kept per vendor ignores the vendor").isEqualTo("SYSTEM_DEFAULT");
+        JsonNode read = kit.parse(kit.get(acme, PROFILES + "/" + forVendor, READ));
+        assertThat(read.get("scopeType").asString()).isEqualTo("VENDOR");
+        assertThat(read.get("scopeLabel").asString()).contains("VEN");
+        assertThat(settings(acme, READ).getEffectiveSettings(null, null, null, vendor, null, null, null).getItems()
+                .stream().filter(i -> i.getKey().equals(match)).findFirst().orElseThrow()
+                .getSource().getScopeType()).isEqualTo(SettingScopeType.VENDOR);
+    }
+
     private void assertSource(JsonNode effective, String key, String value, String scopeType, UUID profileId) {
         JsonNode e = entry(effective, key);
         assertThat(e.get("value").decimalValue()).isEqualByComparingTo(value);
@@ -687,8 +717,12 @@ class SettingsApiTest {
     }
 
     private UUID customer(Tenant tenant, String code) {
+        return partner(tenant, code, BusinessPartner.PartnerType.CUSTOMER);
+    }
+
+    private UUID partner(Tenant tenant, String code, BusinessPartner.PartnerType type) {
         return asSetup(tenant, () -> fleet.registerPartner(tenant.orgUnitId(), code, code,
-                BusinessPartner.PartnerType.CUSTOMER, "TAX-" + code + "-" + tenant.tenantId().toString().substring(0, 8)));
+                type, "TAX-" + code + "-" + tenant.tenantId().toString().substring(0, 8)));
     }
 
     private <T> T asSetup(Tenant tenant, Supplier<T> action) {

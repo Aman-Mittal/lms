@@ -31,7 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>A foreign key is checked as the table owner and the scope id is
  * polymorphic anyway, so neither the database nor the insert proves that a
- * customer or vehicle named in a request is the caller's tenant's. Reading
+ * customer, vendor or vehicle named in a request is the caller's tenant's. Reading
  * the row under the caller's scope does: another tenant's row reads as absent,
  * and the answer is the same 404 as for an id that never existed. Table names
  * come from this class, never from the request.
@@ -99,6 +99,7 @@ public class ScopeReferences {
         String sql = switch (scopeType) {
             case ORG_UNIT -> "SELECT 1 FROM org_unit WHERE id = :id";
             case CUSTOMER -> "SELECT 1 FROM business_partner WHERE id = :id AND partner_type = 'CUSTOMER'";
+            case VENDOR -> "SELECT 1 FROM business_partner WHERE id = :id AND partner_type = 'VENDOR'";
             case VEHICLE -> "SELECT 1 FROM vehicle WHERE id = :id";
             case PLATFORM, ORG_DEFAULT, USER -> null;
         };
@@ -115,6 +116,7 @@ public class ScopeReferences {
         return switch (scopeType) {
             case ORG_UNIT -> "Organisational unit";
             case CUSTOMER -> "Customer";
+            case VENDOR -> "Vendor";
             case VEHICLE -> "Vehicle";
             default -> scopeType.name();
         };

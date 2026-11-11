@@ -27,7 +27,6 @@ import com.lms.shared.geo.GeoUtils;
 import com.lms.shared.geo.LatLon;
 import com.lms.telematics.command.domain.GpsPing;
 import com.lms.telematics.command.domain.RouteDeviation;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -51,34 +50,30 @@ public class RouteDeviationService {
     private final RouteDeviationRepository deviations;
     private final TerminalGeofencePort terminals;
 
-    /**
-     * How far off the direct line a vehicle may be before it counts as strayed.
-     *
-     * <p>Twenty-five kilometres by default. That sounds enormous, and it is,
-     * because the reference line is a great circle rather than a road. It is
-     * configurable per deployment precisely because the right value depends on
-     * terrain the platform cannot see.
-     */
-    private final BigDecimal corridorMetres;
-
     public RouteDeviationService(RouteDeviationRepository deviations,
-                                 TerminalGeofencePort terminals,
-                                 @Value("${lms.telematics.route-corridor-m:25000}")
-                                 BigDecimal corridorMetres) {
+                                 TerminalGeofencePort terminals) {
         this.deviations = deviations;
         this.terminals = terminals;
-        this.corridorMetres = corridorMetres;
     }
 
     /**
      * Judges one point against the trip's corridor.
      *
+     * @param corridorMetres how far off the direct line the vehicle may be
+     *                       before it counts as strayed: the trip's setting
+     *                       ({@code telematics.routeDeviation.corridorMetres}),
+     *                       twenty-five kilometres by default. That sounds
+     *                       enormous, and it is, because the reference line is
+     *                       a great circle rather than a road; it is a setting
+     *                       of the unit, vehicle and customer precisely because
+     *                       the right value depends on terrain the platform
+     *                       cannot see.
      * @return the deviation, only when this point <em>opens</em> a new
      *         excursion. An empty result means either that the vehicle is on
      *         route or that it was already known to be off it.
      */
     public Optional<RouteDeviation> evaluate(UUID tenantId, TripTrackingPort.ActiveTrip trip,
-                                             GpsPing ping) {
+                                             GpsPing ping, BigDecimal corridorMetres) {
         if (trip.destinationTerminalId() == null) {
             return Optional.empty();
         }

@@ -91,6 +91,12 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<UUID> customersAboard(UUID loadId) {
+        return links.customersOnLoad(TenantContext.requireTenantId(), loadId);
+    }
+
+    @Override
     @Transactional
     public void recordAwarded(UUID loadId, UUID vendorPartnerId) {
         LoadUnit before = require(loadId);

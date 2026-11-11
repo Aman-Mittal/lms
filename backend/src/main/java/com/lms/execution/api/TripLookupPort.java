@@ -15,6 +15,7 @@
  */
 package com.lms.execution.api;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,6 +31,35 @@ import java.util.UUID;
 public interface TripLookupPort {
 
     Optional<TripSnapshot> find(UUID tripId);
+
+    /**
+     * What a setting kept per unit, vehicle or customer is resolved for when
+     * it concerns this trip: the trip's own unit, its vehicle, and the
+     * customers whose freight is aboard. Empty when there is no such trip.
+     */
+    Optional<TripScope> scopeOf(UUID tripId);
+
+    /**
+     * @param orgUnitId   the unit the trip was raised under
+     * @param vehicleId   null until a vehicle is nominated
+     * @param customerIds the ordering customers of the freight aboard, each
+     *                    once; empty when nothing aboard came from an order
+     */
+    record TripScope(UUID tripId, UUID orgUnitId, UUID vehicleId, List<UUID> customerIds) {
+
+        public TripScope {
+            customerIds = customerIds == null ? List.of() : List.copyOf(customerIds);
+        }
+
+        /**
+         * The customer a per-customer threshold is read for: the only one
+         * aboard, or null for a load carrying several customers' freight,
+         * which is then judged by its unit's and vehicle's values.
+         */
+        public UUID soleCustomerId() {
+            return customerIds.size() == 1 ? customerIds.get(0) : null;
+        }
+    }
 
     /**
      * @param vehicleId             null until a vehicle is nominated, which is a

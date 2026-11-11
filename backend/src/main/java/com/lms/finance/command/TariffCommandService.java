@@ -124,9 +124,12 @@ public class TariffCommandService {
      * and adding a band to it would change what those movements cost without
      * touching a single bill -- the reprice would be invisible until somebody
      * recomputed a figure and got a different answer.
+     *
+     * <p>Held to the card's own unit, as publishing it was: a branch that may
+     * not publish a card for another branch may not reprice one either.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('TARIFF_MANAGE')")
+    @PreAuthorize("hasAuthority('TARIFF_MANAGE') and @abac.permits('TARIFF_MANAGE', 'TARIFF', #tariffId)")
     public UUID addSlab(UUID tariffId, BigDecimal minWeightKg, BigDecimal maxWeightKg,
                         TariffSlab.RateBasis rateBasis, BigDecimal rateAmount) {
         UUID tenantId = TenantContext.requireTenantId();
@@ -165,9 +168,13 @@ public class TariffCommandService {
      * surcharge <em>amount</em> it was priced with, so a later correction
      * changes what the next trip costs and nothing that has already been
      * billed.
+     *
+     * <p>The index is the tenant's, applied to every lane, so it is held to
+     * the root of the organisation: a caller confined to one branch may not
+     * change what every branch's trips cost.
      */
     @Transactional
-    @PreAuthorize("hasAuthority('TARIFF_MANAGE')")
+    @PreAuthorize("hasAuthority('TARIFF_MANAGE') and @abac.permitsIn('TARIFF_MANAGE', @tariffScope.rootUnit())")
     public UUID recordFuelSurcharge(LocalDate anyDayInMonth, BigDecimal surchargePct) {
         UUID tenantId = TenantContext.requireTenantId();
         LocalDate month = anyDayInMonth.withDayOfMonth(1);

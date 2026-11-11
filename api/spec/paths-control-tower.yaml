@@ -90,8 +90,8 @@
     description: |
       Requires `EXCEPTION_READ`. Platform defaults until the tenant sets its own. The organisation
       default of the settings `controltower.detector.etaSlipTolerance` and
-      `controltower.detector.temperatureExcursionTolerance`, in whole minutes; a vehicle's profile
-      overrides the temperature tolerance for its trips.
+      `controltower.detector.temperatureExcursionTolerance`, in whole minutes; a unit's, vehicle's
+      or customer's profile overrides either for its trips.
     responses:
       "200":
         description: The tolerances in force.

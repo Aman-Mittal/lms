@@ -67,6 +67,8 @@ public class SettingProfileQueryService {
                                                FROM org_unit u WHERE u.id = p.scope_id)
                        WHEN 'CUSTOMER' THEN (SELECT b.code || ' ' || b.legal_name
                                                FROM business_partner b WHERE b.id = p.scope_id)
+                       WHEN 'VENDOR' THEN (SELECT b.code || ' ' || b.legal_name
+                                             FROM business_partner b WHERE b.id = p.scope_id)
                        WHEN 'VEHICLE' THEN (SELECT x.registration_no FROM vehicle x WHERE x.id = p.scope_id)
                    END AS scope_label,
                    (SELECT jsonb_agg(jsonb_build_object('key', v.setting_key, 'effectiveFrom', v.effective_from,

@@ -21,13 +21,15 @@ package com.lms.settings.api;
  * <p>The fold is fixed: a profile of a later type beats one of an earlier
  * type, and among organisational units the deeper unit wins. A key lists the
  * scope types it may be set at, so the relative order of two types no key
- * allows together (a vehicle and a customer) never decides anything. The
+ * allows together (a vehicle and a customer, a customer and a vendor) never
+ * decides anything. The
  * families in use are:
  * <ul>
  *   <li>platform: PLATFORM, beneath every family, for a key the platform
  *       operator maintains for all tenants (by jurisdiction: global &lt;
  *       country &lt; state)</li>
  *   <li>commercial: ORG_DEFAULT &lt; ORG_UNIT &lt; CUSTOMER</li>
+ *   <li>procurement: ORG_DEFAULT &lt; ORG_UNIT &lt; VENDOR</li>
  *   <li>fleet: ORG_DEFAULT &lt; ORG_UNIT &lt; VEHICLE</li>
  *   <li>personal: ORG_DEFAULT &lt; ORG_UNIT &lt; USER</li>
  * </ul>
@@ -48,6 +50,12 @@ public enum ScopeType {
     VEHICLE,
     /** One customer partner. */
     CUSTOMER,
+    /**
+     * One vendor partner: a carrier or other supplier the tenant pays. Placed
+     * next to CUSTOMER and above it, though no key a customer's context reads
+     * is one a vendor's does: a freight bill names a vendor and no customer.
+     */
+    VENDOR,
     /** One user's own preferences, set only by that user. */
     USER;
 
