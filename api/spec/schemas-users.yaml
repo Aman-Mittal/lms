@@ -26,3 +26,26 @@ User:
     orgUnitId: { type: string, format: uuid }
     orgName: { type: string }
     lastLoginAt: { type: string, format: date-time }
+
+Me:
+  type: object
+  description: The signed-in caller.
+  properties:
+    userId: { type: string, format: uuid }
+    email: { type: string }
+    fullName: { type: string }
+    tenantId: { type: string, format: uuid }
+    tenantCode: { type: string }
+    tenantName: { type: string }
+    orgUnitId: { type: string, format: uuid }
+    orgPath: { type: string }
+    orgUnitName: { type: string }
+    roles:
+      type: array
+      items: { type: string }
+      description: The codes of the roles the user holds.
+    permissions:
+      type: array
+      items: { type: string }
+      description: What this session's token allows.
+  required: [tenantId, roles, permissions]

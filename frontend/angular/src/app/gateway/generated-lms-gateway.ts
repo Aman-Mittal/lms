@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { displayPreferences, formatDay, formatInstant } from '../display';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
@@ -63,6 +64,15 @@ import {
   WebhookChanges, WebhookDeliveryPage, WebhookDraft, WebhookSecret, WebhookView,
   OrderDesk, OrderHeaderDraft, OrderLineDraft, OrderRaiseDraft,
   HistoryEntryRow, HistoryPage,
+} from './lms-gateway';
+// Profile and settings
+import {
+  EffectiveSetting, HistoryEntry as SettingHistoryEntry, SettingDefinition, SettingProfile, SettingScopeType,
+  SettingSource, SettingsService,
+} from '../api';
+import type {
+  EffectiveSettingView, MeView, MyPreferencesView, SettingChange, SettingContextDraft, SettingDefinitionView,
+  SettingHistoryRow, SettingProfileDraft, SettingProfileView, SettingScope, SettingValue,
 } from './lms-gateway';
 // Warehouse operations
 import { WarehouseService } from '../api';
@@ -263,8 +273,8 @@ function text(v: unknown): string {
     return '';
   }
   if (v instanceof Date) {
-    const iso = v.toISOString();
-    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 16).replace('T', ' ');
+    // The person's date format and time zone (display.ts); a calendar day is never shifted.
+    return v.toISOString().endsWith('T00:00:00.000Z') ? formatDay(v) : formatInstant(v);
   }
   return String(v);
 }
@@ -504,6 +514,83 @@ function particularsRequest(p: ConsignmentParticularsDraft) {
 }
 
 /** The adapter: the only file in the Angular app (besides app config) that knows the generated client. */
+
+// Profile and settings
+
+const SCOPE_WORDS: Record<string, string> = {
+  PLATFORM: 'Platform', ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer',
+  VEHICLE: 'Vehicle', USER: 'You',
+};
+
+/** Where a value came from, in words. */
+function sourceText(src: SettingSource): string {
+  if (src.kind === 'SYSTEM_DEFAULT') {
+    return 'System default';
+  }
+  const scope = SCOPE_WORDS[String(src.scopeType)] ?? String(src.scopeType);
+  const from = src.effectiveFrom ? ` (from ${String(src.effectiveFrom).slice(0, 10)})` : '';
+  return `${scope}: ${text(src.profileName)}${from}`;
+}
+
+function effectiveOf(e: EffectiveSetting): EffectiveSettingView {
+  return {
+    key: text(e.key), type: text(e.type), category: text(e.category), label: text(e.label),
+    value: (e.value ?? null) as SettingValue | null, source: sourceText(e.source),
+    sourceScope: e.source.kind === 'SYSTEM_DEFAULT' ? '' : text(e.source.scopeType),
+    effectiveFrom: e.source.effectiveFrom ? String(e.source.effectiveFrom).slice(0, 10) : '',
+  };
+}
+
+function definitionViewOf(d: SettingDefinition): SettingDefinitionView {
+  return {
+    key: d.key, type: text(d.type), category: text(d.category), label: d.label, description: d.description,
+    defaultValue: (d.defaultValue ?? null) as SettingValue | null, scopes: (d.scopes ?? []).map(String),
+    allowedValues: d.allowedValues ?? [], min: d.min ?? null, max: d.max ?? null,
+    userPreference: d.userPreference, effectiveDated: d.effectiveDated, tenantOverridable: d.tenantOverridable,
+  };
+}
+
+function profileViewOf(p: SettingProfile): SettingProfileView {
+  return {
+    id: text(p.id), scopeType: text(p.scopeType), scopeId: text(p.scopeId), scopeLabel: text(p.scopeLabel),
+    name: text(p.name), version: text(p.version), values: (p.values ?? {}) as Record<string, SettingValue>,
+    versions: (p.versions ?? []).map((v) => ({
+      key: text(v.key), effectiveFrom: v.effectiveFrom ? String(v.effectiveFrom).slice(0, 10) : '',
+      value: (v.value ?? null) as SettingValue | null, status: text(v.status),
+    })),
+    updatedAt: instant(p.updatedAt),
+  };
+}
+
+function shown(v: unknown): string {
+  return v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+
+/** One row per setting version a history entry changed. */
+function settingHistoryRows(e: SettingHistoryEntry): SettingHistoryRow[] {
+  const before = (e.before ?? {}) as Record<string, unknown>;
+  const after = (e.after ?? {}) as Record<string, unknown>;
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => k !== 'scopeType').sort();
+  return keys.map((k) => ({
+    id: `${text(e.id)}:${k}`, action: text(e.action), actor: actorOf(e), occurredAt: instant(e.occurredAt),
+    setting: k, before: shown(before[k]), after: shown(after[k]),
+  }));
+}
+
+/** Undated changes go in `values`, dated ones in `versions`. */
+function changesRequest(changes: SettingChange[]) {
+  const values: Record<string, unknown> = {};
+  const versions: Array<{ key: string; effectiveFrom: string; value: unknown }> = [];
+  for (const c of changes) {
+    if (c.effectiveFrom) {
+      versions.push({ key: c.key, effectiveFrom: c.effectiveFrom, value: c.value });
+    } else {
+      values[c.key] = c.value;
+    }
+  }
+  return { values, versions };
+}
+
 @Injectable()
 export class GeneratedLmsGateway extends LmsGateway {
   private readonly auth = inject(AuthenticationService);
@@ -532,32 +619,32 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly clientBilling = inject(ClientBillingService);
 
   private readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
-    partners: () => this.call(this.partners.listPartners({ limit: 50 }), (s) => s.items.map((p) => ({
+    partners: () => this.call(this.partners.listPartners({ limit: displayPreferences().pageSize }), (s) => s.items.map((p) => ({
       id: text(p.id), code: text(p.code), legalName: text(p.legalName),
       partnerType: text(p.partnerType), status: text(p.status) }))),
-    vehicles: () => this.call(this.vehicles.listVehicles({ limit: 50 }), (s) => s.items.map((v) => ({
+    vehicles: () => this.call(this.vehicles.listVehicles({ limit: displayPreferences().pageSize }), (s) => s.items.map((v) => ({
       id: text(v.id), registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType),
       status: text(v.status), payloadCapacityKg: text(v.payloadCapacityKg) }))),
-    drivers: () => this.call(this.drivers.listDrivers({ limit: 50 }), (s) => s.items.map((d) => ({
+    drivers: () => this.call(this.drivers.listDrivers({ limit: displayPreferences().pageSize }), (s) => s.items.map((d) => ({
       id: text(d.id), fullName: text(d.fullName), licenceNo: text(d.licenceNo),
       licenceExpiresOn: text(d.licenceExpiresOn), status: text(d.status) }))),
-    terminals: () => this.call(this.terminals.listTerminals({ limit: 50 }), (s) => s.items.map((t) => ({
+    terminals: () => this.call(this.terminals.listTerminals({ limit: displayPreferences().pageSize }), (s) => s.items.map((t) => ({
       id: text(t.id), code: text(t.code), name: text(t.name),
       functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount) }))),
-    orders: () => this.call(this.orders.listOrders({ limit: 50 }), (s) => s.items.map((o) => ({
+    orders: () => this.call(this.orders.listOrders({ limit: displayPreferences().pageSize }), (s) => s.items.map((o) => ({
       id: text(o.id), orderNo: text(o.orderNo), status: text(o.status),
       customerName: text(o.customerName), originTerminalCode: text(o.originTerminalCode) }))),
-    loads: () => this.call(this.loads.listLoads({ limit: 50 }), (s) => s.items.map((l) => ({
+    loads: () => this.call(this.loads.listLoads({ limit: displayPreferences().pageSize }), (s) => s.items.map((l) => ({
       id: text(l.id), loadNo: text(l.loadNo), status: text(l.status),
       vehicleRegistrationNo: text(l.vehicleRegistrationNo),
       weightUtilisationPct: text(l.weightUtilisationPct) }))),
-    trips: () => this.call(this.trips.listTrips({ limit: 50 }), (s) => s.items.map((t) => ({
+    trips: () => this.call(this.trips.listTrips({ limit: displayPreferences().pageSize }), (s) => s.items.map((t) => ({
       id: text(t.id), tripNo: text(t.tripNo), status: text(t.status), vendorName: text(t.vendorName),
       driverName: text(t.driverName) }))),
-    'freight-bills': () => this.call(this.freightBills.listFreightBills({ limit: 50 }), (s) => s.items.map((b) => ({
+    'freight-bills': () => this.call(this.freightBills.listFreightBills({ limit: displayPreferences().pageSize }), (s) => s.items.map((b) => ({
       id: text(b.id), billNo: text(b.billNo), status: text(b.status), vendorName: text(b.vendorName),
       claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount) }))),
-    exceptions: () => this.call(this.controlTower.listExceptions({ limit: 50 }), (s) => s.items.map((e) => ({
+    exceptions: () => this.call(this.controlTower.listExceptions({ limit: displayPreferences().pageSize }), (s) => s.items.map((e) => ({
       id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
       category: text(e.category), description: text(e.description) }))),
     claims: () => this.claims(),
@@ -1671,6 +1758,78 @@ export class GeneratedLmsGateway extends LmsGateway {
     }));
   }
 
+  // Profile and settings
+  private readonly settingsApi = inject(SettingsService);
+
+  me(): Promise<MeView> {
+    return this.call(this.users.getMe(), (m) => ({
+      userId: text(m.userId), email: text(m.email), fullName: text(m.fullName), tenantCode: text(m.tenantCode),
+      tenantName: text(m.tenantName), orgUnitName: text(m.orgUnitName), orgPath: text(m.orgPath),
+      roles: m.roles ?? [], permissions: m.permissions ?? [],
+    }));
+  }
+
+  settingDefinitions(): Promise<SettingDefinitionView[]> {
+    return this.call(this.settingsApi.listSettingDefinitions(), (s) => s.items.map(definitionViewOf));
+  }
+
+  myPreferences(): Promise<MyPreferencesView> {
+    return this.call(this.settingsApi.getMyPreferences(), (m) => ({
+      version: text(m.version), values: (m.values ?? {}) as Record<string, SettingValue>,
+      effective: m.effective.map(effectiveOf),
+    }));
+  }
+
+  saveMyPreferences(version: string, values: Record<string, SettingValue | null>): Promise<MyPreferencesView> {
+    return this.call(this.settingsApi.updateMyPreferences({
+      ifMatch: `"${version}"`, updateMyPreferencesRequest: { values },
+    }), (m) => ({
+      version: text(m.version), values: (m.values ?? {}) as Record<string, SettingValue>,
+      effective: m.effective.map(effectiveOf),
+    }));
+  }
+
+  settingProfiles(scope?: SettingScope): Promise<SettingProfileView[]> {
+    return this.call(this.settingsApi.listSettingProfiles({
+      scopeType: scope as unknown as SettingScopeType | undefined, limit: 200,
+    }), (s) => s.items.map(profileViewOf));
+  }
+
+  settingProfile(id: string): Promise<SettingProfileView> {
+    return this.call(this.settingsApi.getSettingProfile({ id }), profileViewOf);
+  }
+
+  createSettingProfile(draft: SettingProfileDraft): Promise<string> {
+    return this.call(this.settingsApi.createSettingProfile({
+      createSettingProfileRequest: {
+        scopeType: draft.scopeType as unknown as SettingScopeType, scopeId: draft.scopeId || undefined,
+        name: draft.name.trim() || undefined,
+      },
+    }), (r) => text(r.id));
+  }
+
+  updateSettingProfile(id: string, version: string, changes: SettingChange[]): Promise<SettingProfileView> {
+    return this.call(this.settingsApi.updateSettingProfile({
+      id, ifMatch: `"${version}"`, updateSettingProfileRequest: changesRequest(changes),
+    }), profileViewOf);
+  }
+
+  deleteSettingProfile(id: string, version: string): Promise<void> {
+    return this.call(this.settingsApi.deleteSettingProfile({ id, ifMatch: `"${version}"` }), () => undefined);
+  }
+
+  effectiveSettings(context: SettingContextDraft): Promise<EffectiveSettingView[]> {
+    return this.call(this.settingsApi.getEffectiveSettings({
+      orgUnitId: context.orgUnitId || undefined, customerId: context.customerId || undefined,
+      vehicleId: context.vehicleId || undefined, asOf: context.asOf || undefined,
+    }), (s) => s.items.map(effectiveOf));
+  }
+
+  settingProfileHistory(id: string): Promise<SettingHistoryRow[]> {
+    return this.call(this.settingsApi.getSettingProfileHistory({ id, limit: 100 }),
+      (s) => s.items.flatMap(settingHistoryRows));
+  }
+
   private async call<T, R>(request: Observable<T>, map: (value: T) => R): Promise<R> {
     try {
       return map(await firstValueFrom(request));
@@ -1752,6 +1911,9 @@ export class GeneratedLmsGateway extends LmsGateway {
       case 'routing-guide':
         return this.call(this.sourcing.listRoutingGuides({ q: search, cursor: at, limit }),
           (s) => page(s.items, s.nextCursor, (g) => ({ id: text(g.id), label: guideLabel(g) })));
+      case 'org-unit':
+        return this.call(this.settingsApi.listSettingOrgUnits({ q: search, cursor: at, limit }),
+          (s) => page(s.items, s.nextCursor, (u) => ({ id: text(u.id), label: `${text(u.name)} · ${text(u.path)}` })));
     }
   }
 

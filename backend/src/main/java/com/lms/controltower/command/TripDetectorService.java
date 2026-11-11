@@ -76,7 +76,7 @@ public class TripDetectorService {
             return Optional.empty();
         }
         Instant committed = watch.get().committedArrivalAt();
-        Duration tolerance = Duration.ofMinutes(settings.effective().etaSlipMinutes());
+        Duration tolerance = settings.etaSlip();
         Duration slip = Duration.between(committed, projectedArrivalAt);
         if (slip.compareTo(tolerance) <= 0) {
             return Optional.empty();
@@ -121,7 +121,7 @@ public class TripDetectorService {
         Instant outSince = watch.tempOutSince() == null ? recordedAt : watch.tempOutSince();
         watches.save(watch.observed(recordedAt, outSince));
 
-        Duration limit = Duration.ofMinutes(settings.effective().temperatureExcursionMinutes());
+        Duration limit = settings.temperatureExcursionFor(tripId);
         Duration outFor = Duration.between(outSince, recordedAt);
         if (outFor.compareTo(limit) < 0) {
             return Optional.empty();

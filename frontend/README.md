@@ -138,6 +138,26 @@ backend that accepts plain http to a private address, so start it with
 `LMS_WEBHOOKS_ALLOW_HTTP=true LMS_WEBHOOKS_ALLOW_PRIVATE_TARGETS=true` when
 running them locally; production keeps both off.
 
+## Profile and settings
+
+**My profile** (top bar, every signed-in person) shows who the platform says
+you are (`GET /api/v1/me`) and edits your own preferences
+(`/api/v1/settings/me`): theme, date format, time zone, rows per page, landing
+page, and which events you want in the console or by e-mail (recorded only;
+nothing sends them yet). `display.ts` applies the display ones: the theme on
+`<html data-theme>`, the date format and time zone in the gateway's one
+formatter, the page size of the record listings and the screen opened after
+sign-in. The defaults are what the consoles did before, so a person who sets
+nothing sees no change.
+
+**Administration > Profile settings** (`SETTINGS_READ`; editing needs
+`SETTINGS_MANAGE`) lists the company's setting profiles by scope, adds one for
+the organisation, a unit, a customer or a vehicle with the usual pickers,
+edits values with an input per setting type (a dated setting takes the day
+its new version starts), shows each profile's versions and history, and
+resolves what is in force for a unit, customer, vehicle and day, naming the
+profile each value came from.
+
 ## Browser end-to-end tests
 
 `e2e/` runs one set of specs against each console in Chromium, against a real

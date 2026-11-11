@@ -87,7 +87,11 @@
     tags: [Control tower]
     operationId: getDetectorSettings
     summary: The tolerances of the ETA and temperature detectors
-    description: Requires `EXCEPTION_READ`. Platform defaults until the tenant sets its own.
+    description: |
+      Requires `EXCEPTION_READ`. Platform defaults until the tenant sets its own. The organisation
+      default of the settings `controltower.detector.etaSlipTolerance` and
+      `controltower.detector.temperatureExcursionTolerance`, in whole minutes; a vehicle's profile
+      overrides the temperature tolerance for its trips.
     responses:
       "200":
         description: The tolerances in force.
@@ -100,7 +104,7 @@
     tags: [Control tower]
     operationId: setDetectorSettings
     summary: Set the tenant's detector tolerances
-    description: Requires `EXCEPTION_MANAGE`. Applies to readings from now on.
+    description: Requires `EXCEPTION_MANAGE`. Applies to readings from now on. Writes the organisation default profile, whose history records the change.
     requestBody:
       required: true
       content:

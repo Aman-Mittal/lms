@@ -13,19 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.controltower.command;
+package com.lms.settings.command.domain;
 
-import java.util.Optional;
+import java.time.LocalDate;
 import java.util.UUID;
 
-import com.lms.controltower.command.domain.DetectorSetting;
-import org.springframework.data.jdbc.repository.query.Query;
-import org.springframework.data.repository.CrudRepository;
-import org.springframework.data.repository.query.Param;
+import com.lms.shared.config.Json;
+import org.springframework.data.relational.core.mapping.Table;
 
-public interface DetectorSettingRepository extends CrudRepository<DetectorSetting, UUID> {
-
-    /** Served by the unique index {@code detector_setting_tenant_idx}. */
-    @Query("SELECT * FROM detector_setting WHERE tenant_id = :tenantId")
-    Optional<DetectorSetting> findByTenant(@Param("tenantId") UUID tenantId);
+/**
+ * One version of a key's value in a profile, as JSON.
+ *
+ * @param tenantId      null on a platform profile
+ * @param effectiveFrom the first day it applies; null for an undated value,
+ *                      which applies since always
+ */
+@Table("setting_value")
+public record SettingValue(UUID tenantId, String settingKey, LocalDate effectiveFrom, Json value) {
 }

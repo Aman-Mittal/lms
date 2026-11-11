@@ -88,4 +88,50 @@ public class UserQueryService {
                 .query(String.class)
                 .list();
     }
+
+    /**
+     * The caller as their profile page shows them. Read under the caller's
+     * scope: their tenant, and their unit by the path the token carries.
+     *
+     * @param email       the token's, used when the user has no row (a service token)
+     * @param fullName    the token's, likewise
+     * @param permissions the token's, always
+     */
+    public MeView me(UUID userId, String email, String fullName, List<String> permissions) {
+        UUID tenantId = TenantContext.requireTenantId();
+        String orgPath = TenantContext.requireOrgPath();
+        record Head(String tenantCode, String tenantName, UUID orgUnitId, String orgUnitName) {
+        }
+        Head head = jdbc.sql("""
+                        SELECT t.code AS tenant_code, t.name AS tenant_name,
+                               o.id AS org_unit_id, o.name AS org_unit_name
+                          FROM tenant t
+                          LEFT JOIN org_unit o ON o.tenant_id = t.id AND o.path = :orgPath
+                         WHERE t.id = :tenantId
+                        """)
+                .param("tenantId", tenantId)
+                .param("orgPath", orgPath)
+                .query((rs, row) -> new Head(rs.getString("tenant_code"), rs.getString("tenant_name"),
+                        rs.getObject("org_unit_id", UUID.class), rs.getString("org_unit_name")))
+                .optional()
+                .orElse(new Head(null, null, null, null));
+        Optional<UserView> user = userId == null ? Optional.empty() : findById(userId);
+        List<String> roles = userId == null ? List.of() : jdbc.sql("""
+                        SELECT r.code
+                          FROM user_role ur
+                          JOIN role r ON r.id = ur.role_id
+                         WHERE ur.tenant_id = :tenantId AND ur.user_id = :userId
+                         ORDER BY r.code
+                        """)
+                .param("tenantId", tenantId)
+                .param("userId", userId)
+                .query(String.class)
+                .list();
+        return new MeView(userId, user.map(UserView::email).orElse(email),
+                user.map(UserView::fullName).orElse(fullName), tenantId, head.tenantCode(),
+                head.tenantName(), user.map(UserView::orgUnitId).orElse(head.orgUnitId()),
+                user.map(UserView::orgPath).orElse(orgPath),
+                user.map(UserView::orgName).orElse(head.orgUnitName()), roles,
+                permissions.stream().sorted().toList());
+    }
 }

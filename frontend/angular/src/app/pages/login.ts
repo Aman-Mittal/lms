@@ -20,6 +20,7 @@ import { Router } from '@angular/router';
 import { LmsGateway } from '../gateway/lms-gateway';
 import { DEMO_TENANT } from '../config';
 import { Session } from '../session';
+import { applyDisplay, landingRoute, resetDisplay } from '../display';
 
 @Component({
   selector: 'app-login',
@@ -55,7 +56,13 @@ export class LoginPage {
     try {
       this.session.start(await this.gateway.signIn(
         { tenantCode: this.tenantCode, email: this.email, password: this.password }));
-      await this.router.navigateByUrl('/');
+      // Preferences come next: a failure here must not keep a person out.
+      try {
+        applyDisplay((await this.gateway.myPreferences()).effective);
+      } catch {
+        resetDisplay();
+      }
+      await this.router.navigateByUrl(landingRoute());
     } catch (e) {
       this.error.set((e as Error).message);
       this.busy.set(false);

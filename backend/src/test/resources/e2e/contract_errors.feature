@@ -92,6 +92,7 @@ Feature: Every refusal is a problem document a client can branch on
       | getUser                | /api/v1/users/{id}                      |
       | getAccessPolicy        | /api/v1/access-policies/{id}            |
       | getNumberSeries        | /api/v1/number-series/{id}              |
+      | getSettingProfile      | /api/v1/settings/profiles/{id}          |
       | getClientInvoice       | /api/v1/client-billing/invoices/{id}    |
       | getClientCreditNote    | /api/v1/client-billing/credit-notes/{id}|
       | getAsn                 | /api/v1/asns/{id}                       |

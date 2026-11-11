@@ -988,6 +988,27 @@ export abstract class LmsGateway {
   /** The numbers given back to a series, newest first. */
   abstract numberReleases(id: string): Promise<Row[]>;
   abstract verifyNumber(documentType: NumberedDocumentType, number: string): Promise<NumberVerdict>;
+  // Profile and settings
+  /** Who the signed-in caller is. */
+  abstract me(): Promise<MeView>;
+  /** Every registered setting, in key order. */
+  abstract settingDefinitions(): Promise<SettingDefinitionView[]>;
+  /** The caller's own preferences and those in force for them. */
+  abstract myPreferences(): Promise<MyPreferencesView>;
+  /** Saves the caller's preferences at the version last read; a null value clears one. */
+  abstract saveMyPreferences(version: string, values: Record<string, SettingValue | null>): Promise<MyPreferencesView>;
+  /** The tenant's profiles, only one scope's when one is given. Needs SETTINGS_READ. */
+  abstract settingProfiles(scope?: SettingScope): Promise<SettingProfileView[]>;
+  abstract settingProfile(id: string): Promise<SettingProfileView>;
+  /** Resolves to the new profile's id. Needs SETTINGS_MANAGE. */
+  abstract createSettingProfile(draft: SettingProfileDraft): Promise<string>;
+  /** Applies changes at the version last read; resolves to the profile as saved. */
+  abstract updateSettingProfile(id: string, version: string, changes: SettingChange[]): Promise<SettingProfileView>;
+  abstract deleteSettingProfile(id: string, version: string): Promise<void>;
+  /** Every setting's value in force for a context, with where it came from. */
+  abstract effectiveSettings(context: SettingContextDraft): Promise<EffectiveSettingView[]>;
+  /** What changed on a profile, newest first, one row per changed version. */
+  abstract settingProfileHistory(id: string): Promise<SettingHistoryRow[]>;
 }
 
 // Warehouse operations
@@ -1289,7 +1310,7 @@ export interface RailTariffDraft {
 export type PickKind =
   | 'partner' | 'customer' | 'vendor' | 'terminal' | 'warehouse' | 'vehicle' | 'driver' | 'sku' | 'bin'
   | 'order' | 'load' | 'trip' | 'ticket' | 'allocation' | 'bill' | 'consignment' | 'unassigned'
-  | 'routing-guide';
+  | 'routing-guide' | 'org-unit';
 
 export interface PickQuery {
   kind: PickKind;
@@ -1445,4 +1466,122 @@ export interface NumberVerdict {
   counter: string;
   /** ISSUED, RELEASED or NOT_ISSUED. */
   status: string;
+}
+
+// ---------------------------------------------------------------- profile and settings
+
+/** Who the signed-in caller is, for their profile page. */
+export interface MeView {
+  userId: string;
+  email: string;
+  fullName: string;
+  tenantCode: string;
+  tenantName: string;
+  orgUnitName: string;
+  orgPath: string;
+  roles: string[];
+  permissions: string[];
+}
+
+/** The scopes an administrator keeps profiles for; PLATFORM is the operator's, USER a person's own. */
+export const SETTING_SCOPES = ['ORG_DEFAULT', 'ORG_UNIT', 'CUSTOMER', 'VEHICLE'] as const;
+export type SettingScope = (typeof SETTING_SCOPES)[number] | 'PLATFORM' | 'USER';
+
+/** A setting's value as the API holds it: text, number, true/false, or a small object. */
+export type SettingValue = string | number | boolean | Record<string, unknown>;
+
+/** One registered setting, with what a value must satisfy. */
+export interface SettingDefinitionView {
+  key: string;
+  /** BOOLEAN, INTEGER, DECIMAL, STRING, ENUM, DURATION or JSON. */
+  type: string;
+  category: string;
+  label: string;
+  description: string;
+  defaultValue: SettingValue | null;
+  scopes: string[];
+  allowedValues: string[];
+  min: number | null;
+  max: number | null;
+  userPreference: boolean;
+  effectiveDated: boolean;
+  tenantOverridable: boolean;
+}
+
+/** A setting's value in force for a context, and where it came from in words. */
+export interface EffectiveSettingView {
+  key: string;
+  type: string;
+  category: string;
+  label: string;
+  value: SettingValue | null;
+  /** `System default`, or the scope and profile name that supplied it. */
+  source: string;
+  /** The scope type that supplied it; empty for the system default. */
+  sourceScope: string;
+  /** The first day of the version in force; empty for an undated one. */
+  effectiveFrom: string;
+}
+
+/** The caller's own preferences: what they set, and what is in force for them. */
+export interface MyPreferencesView {
+  version: string;
+  values: Record<string, SettingValue>;
+  effective: EffectiveSettingView[];
+}
+
+/** One version of one key in a profile. */
+export interface SettingVersionView {
+  key: string;
+  effectiveFrom: string;
+  value: SettingValue | null;
+  /** IN_FORCE, SUPERSEDED or SCHEDULED; only a scheduled version may change. */
+  status: string;
+}
+
+export interface SettingProfileView {
+  id: string;
+  scopeType: string;
+  scopeId: string;
+  scopeLabel: string;
+  name: string;
+  version: string;
+  /** Key to the value in effect today, from this profile alone. */
+  values: Record<string, SettingValue>;
+  versions: SettingVersionView[];
+  updatedAt: string;
+}
+
+export interface SettingProfileDraft {
+  scopeType: SettingScope;
+  /** The unit, customer or vehicle; empty for the organisation default. */
+  scopeId: string;
+  name: string;
+}
+
+/** A change to a profile: `effectiveFrom` empty for an undated value; a null value removes it. */
+export interface SettingChange {
+  key: string;
+  effectiveFrom: string;
+  value: SettingValue | null;
+}
+
+/** What to resolve effective settings for; every field optional (empty). */
+export interface SettingContextDraft {
+  orgUnitId: string;
+  customerId: string;
+  vehicleId: string;
+  asOf: string;
+}
+
+/** One version that changed on a profile: before and after, empty when absent. */
+export interface SettingHistoryRow {
+  id: string;
+  action: string;
+  actor: string;
+  occurredAt: string;
+  /** `key` or `key@date`; `name` for a rename. */
+  setting: string;
+  before: string;
+  after: string;
 }

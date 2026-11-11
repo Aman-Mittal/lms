@@ -15,45 +15,43 @@
  */
 package com.lms.controltower.command;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
-import com.lms.controltower.command.domain.DetectorSetting;
-import com.lms.shared.audit.TransitionAudit;
-import com.lms.shared.config.Json;
+import com.lms.execution.api.TripLookupPort;
+import com.lms.settings.api.EffectiveSettings;
+import com.lms.settings.api.SettingContext;
+import com.lms.settings.api.SettingKey;
 import com.lms.shared.error.BusinessRuleViolationException;
-import com.lms.shared.tenant.TenantContext;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The tolerances the ETA and temperature detectors apply, per tenant.
+ * The tolerances the ETA and temperature detectors apply, read and written
+ * through the settings module ({@link DetectorSettingDefinitions}). A tenant
+ * that has set none gets the property defaults; nothing has to be seeded.
  *
- * <p>The existing exception model has no rules to hang a threshold on -- its
- * only tolerances are platform-wide properties -- so a tenant's own values are
- * one row, and a tenant that has set none gets the property defaults. Nothing
- * has to be seeded.
+ * <p>{@code /exceptions/detector-settings} reads and writes the organisation
+ * default in whole minutes, as it did when the tolerances were one row per
+ * tenant.
  */
 @Service
 public class DetectorSettingsService {
 
     private static final int MAX_MINUTES = 10080;
+    private static final List<SettingKey<?>> KEYS =
+            List.of(DetectorSettingDefinitions.ETA_SLIP, DetectorSettingDefinitions.TEMPERATURE_EXCURSION);
 
-    private final DetectorSettingRepository settings;
-    private final TransitionAudit audit;
-    private final int defaultEtaSlipMinutes;
-    private final int defaultTemperatureMinutes;
+    private final com.lms.settings.api.Settings settings;
+    private final TripLookupPort trips;
 
-    public DetectorSettingsService(DetectorSettingRepository settings, TransitionAudit audit,
-                                   @Value("${lms.controltower.eta-slip-minutes:60}")
-                                   int defaultEtaSlipMinutes,
-                                   @Value("${lms.controltower.temperature-excursion-minutes:15}")
-                                   int defaultTemperatureMinutes) {
+    public DetectorSettingsService(com.lms.settings.api.Settings settings, TripLookupPort trips) {
         this.settings = settings;
-        this.audit = audit;
-        this.defaultEtaSlipMinutes = defaultEtaSlipMinutes;
-        this.defaultTemperatureMinutes = defaultTemperatureMinutes;
+        this.trips = trips;
     }
 
     /**
@@ -66,13 +64,28 @@ public class DetectorSettingsService {
                            boolean customised) {
     }
 
-    /** What the detectors apply. Unguarded: the platform is the caller. */
+    /** The organisation default. Unguarded: the platform is the caller. */
     @Transactional(readOnly = true)
     public Settings effective() {
-        return settings.findByTenant(TenantContext.requireTenantId())
-                .map(s -> new Settings(s.etaSlipMinutes(), s.temperatureExcursionMinutes(), true))
-                .orElseGet(() -> new Settings(defaultEtaSlipMinutes, defaultTemperatureMinutes,
-                        false));
+        EffectiveSettings resolved = settings.resolveAll(KEYS, SettingContext.tenant());
+        boolean customised = !resolved.resolved(DetectorSettingDefinitions.ETA_SLIP).source().isSystemDefault()
+                || !resolved.resolved(DetectorSettingDefinitions.TEMPERATURE_EXCURSION).source().isSystemDefault();
+        return new Settings(minutes(resolved.get(DetectorSettingDefinitions.ETA_SLIP)),
+                minutes(resolved.get(DetectorSettingDefinitions.TEMPERATURE_EXCURSION)), customised);
+    }
+
+    /** The ETA slip the detector applies. */
+    @Transactional(readOnly = true)
+    public Duration etaSlip() {
+        return settings.effective(DetectorSettingDefinitions.ETA_SLIP, SettingContext.tenant());
+    }
+
+    /** The temperature excursion the detector applies to a trip: its vehicle's, when one is set. */
+    @Transactional(readOnly = true)
+    public Duration temperatureExcursionFor(UUID tripId) {
+        UUID vehicleId = trips.find(tripId).map(TripLookupPort.TripSnapshot::vehicleId).orElse(null);
+        return settings.effective(DetectorSettingDefinitions.TEMPERATURE_EXCURSION,
+                SettingContext.tenant().withVehicle(vehicleId));
     }
 
     @Transactional(readOnly = true)
@@ -89,20 +102,14 @@ public class DetectorSettingsService {
             throw new BusinessRuleViolationException("detector-threshold-invalid",
                     "A threshold is between 1 minute and " + MAX_MINUTES + " (one week)");
         }
-        UUID tenantId = TenantContext.requireTenantId();
-        Settings before = effective();
-        DetectorSetting saved = settings.save(settings.findByTenant(tenantId)
-                .map(existing -> existing.with(etaSlipMinutes, temperatureExcursionMinutes))
-                .orElseGet(() -> DetectorSetting.of(tenantId, etaSlipMinutes,
-                        temperatureExcursionMinutes)));
-
-        audit.record("DETECTOR_SETTINGS_SET", "DETECTOR_SETTING", saved.id(),
-                Json.object("etaSlipMinutes", String.valueOf(before.etaSlipMinutes()),
-                        "temperatureExcursionMinutes",
-                        String.valueOf(before.temperatureExcursionMinutes())),
-                Json.object("etaSlipMinutes", String.valueOf(etaSlipMinutes),
-                        "temperatureExcursionMinutes",
-                        String.valueOf(temperatureExcursionMinutes)));
+        Map<SettingKey<?>, Object> values = new HashMap<>();
+        values.put(DetectorSettingDefinitions.ETA_SLIP, Duration.ofMinutes(etaSlipMinutes));
+        values.put(DetectorSettingDefinitions.TEMPERATURE_EXCURSION, Duration.ofMinutes(temperatureExcursionMinutes));
+        settings.setOrgDefaults(values);
         return new Settings(etaSlipMinutes, temperatureExcursionMinutes, true);
+    }
+
+    private static int minutes(Duration duration) {
+        return (int) duration.toMinutes();
     }
 }

@@ -15,6 +15,23 @@
 # A fragment of the API contract, spliced into api/openapi.yaml by the
 # build -- see that file. $refs are relative to the assembled document.
 
+/api/v1/me:
+  get:
+    tags: [Users]
+    operationId: getMe
+    summary: Who the caller is
+    description: |
+      Any signed-in caller, about themself only: identity, tenant, unit and
+      roles as recorded, and the permissions this session's token carries.
+      Their preferences are `/api/v1/settings/me`.
+    responses:
+      "200":
+        description: The caller.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Me" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+
 /api/v1/users:
   get:
     tags: [Users]
