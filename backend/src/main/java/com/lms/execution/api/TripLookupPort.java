@@ -44,8 +44,10 @@ public interface TripLookupPort {
      * @param vehicleId   null until a vehicle is nominated
      * @param customerIds the ordering customers of the freight aboard, each
      *                    once; empty when nothing aboard came from an order
+     * @param freightMode the load's freight mode by name; null when the trip
+     *                    has no load
      */
-    record TripScope(UUID tripId, UUID orgUnitId, UUID vehicleId, List<UUID> customerIds) {
+    record TripScope(UUID tripId, UUID orgUnitId, UUID vehicleId, List<UUID> customerIds, String freightMode) {
 
         public TripScope {
             customerIds = customerIds == null ? List.of() : List.copyOf(customerIds);

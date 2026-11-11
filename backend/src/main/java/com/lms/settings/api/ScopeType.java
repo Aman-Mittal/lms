@@ -33,6 +33,9 @@ package com.lms.settings.api;
  *   <li>fleet: ORG_DEFAULT &lt; ORG_UNIT &lt; VEHICLE</li>
  *   <li>personal: ORG_DEFAULT &lt; ORG_UNIT &lt; USER</li>
  * </ul>
+ * COMBINATION sits above VEHICLE, CUSTOMER and VENDOR and below USER: a
+ * profile for several of those at once (and an org unit's subtree, and a
+ * freight mode) is more specific than a profile for any one of them.
  */
 public enum ScopeType {
 
@@ -56,6 +59,13 @@ public enum ScopeType {
      * is one a vendor's does: a freight bill names a vendor and no customer.
      */
     VENDOR,
+    /**
+     * Several conditions at once (an org unit's subtree, a customer, a vendor,
+     * a vehicle, a freight mode; at least two), applying when every one holds.
+     * A tenant keeps many; among those that match, more conditions win, then
+     * the deeper org unit, then the higher priority.
+     */
+    COMBINATION,
     /** One user's own preferences, set only by that user. */
     USER;
 
@@ -64,7 +74,8 @@ public enum ScopeType {
         return ordinal();
     }
 
+    /** Whether a new profile of this type names its scope's record; a combination names its conditions instead. */
     public boolean needsScopeId() {
-        return this != ORG_DEFAULT && this != PLATFORM;
+        return this != ORG_DEFAULT && this != PLATFORM && this != COMBINATION;
     }
 }

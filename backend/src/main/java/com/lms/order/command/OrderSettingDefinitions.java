@@ -44,7 +44,7 @@ public class OrderSettingDefinitions implements SettingContributor {
                                         + " undelivered when the platform closes the order by itself."
                                         + " Never applied to a close asked for by hand.")
                         .defaultValue(BigDecimal.ZERO).range(0, 100).scale(2)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER).build(),
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER, ScopeType.COMBINATION).build(),
                 SettingDefinition.of(AUTO_FULFIL, "Fulfil on delivery",
                                 "Whether delivering an order's last consignment fulfils it; off leaves"
                                         + " delivered orders for a person to close.")

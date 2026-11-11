@@ -26,9 +26,13 @@ import com.lms.settings.api.ScopeType;
 /**
  * A profile as a screen shows it.
  *
- * @param scopeLabel what the scope is called: the unit's name and path, the
- *                   customer's code and name, the vehicle's registration;
- *                   null for the organisation default and a user
+ * @param scopeLabel what the scope is called: the unit's level, name and
+ *                   path ("Branch: Delhi (/acme/north/delhi/)"), the
+ *                   customer's code and name, the vehicle's registration, a
+ *                   combination's conditions; null for the organisation
+ *                   default and a user
+ * @param conditions a combination's conditions and priority; null for any
+ *                   other scope type
  * @param country    a platform profile's jurisdiction; null for every country
  * @param state      a platform profile's state within {@code country}
  * @param values     key to the value in effect today, from this profile alone
@@ -45,6 +49,7 @@ public record SettingProfileView(
         String name,
         Map<String, Object> values,
         List<VersionView> versions,
+        ConditionsView conditions,
         long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -59,5 +64,10 @@ public record SettingProfileView(
      *                      to come, and the only kind that may still change)
      */
     public record VersionView(String key, LocalDate effectiveFrom, Object value, String status) {
+    }
+
+    /** What a combination applies to; a null id or mode leaves that dimension open. */
+    public record ConditionsView(UUID orgUnitId, UUID customerId, UUID vendorId, UUID vehicleId,
+                                 String freightMode, int priority) {
     }
 }

@@ -61,12 +61,12 @@ public class FinanceSettingDefinitions implements SettingContributor {
                                 "How far a vendor's claim may differ from the computed cost, as a"
                                         + " percentage of it, and still be approved for payment.")
                         .defaultValue(defaultPercent).range(0, 100).scale(2)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR).build(),
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR, ScopeType.COMBINATION).build(),
                 SettingDefinition.of(MATCH_TOLERANCE_ABSOLUTE, "Invoice match tolerance (amount)",
                                 "The smallest difference, in the bill's currency, that is always"
                                         + " tolerated; the allowance is the greater of this and the"
                                         + " percentage.")
                         .defaultValue(defaultAbsolute).range(0, 100_000_000).scale(2)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR).build());
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR, ScopeType.COMBINATION).build());
     }
 }

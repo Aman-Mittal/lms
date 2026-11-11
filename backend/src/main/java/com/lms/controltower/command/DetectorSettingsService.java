@@ -90,7 +90,7 @@ public class DetectorSettingsService {
     private SettingContext contextOf(UUID tripId) {
         return trips.scopeOf(tripId)
                 .map(scope -> SettingContext.ofOrgUnit(scope.orgUnitId()).withVehicle(scope.vehicleId())
-                        .withCustomer(scope.soleCustomerId()))
+                        .withCustomer(scope.soleCustomerId()).withFreightMode(scope.freightMode()))
                 .orElse(SettingContext.tenant());
     }
 

@@ -88,7 +88,7 @@ public class SettingsSteps {
                 SettingContext.tenant().withCustomer(customer)).source().profileId());
         Object parsed = value.matches("-?[0-9.]+") ? new BigDecimal(value) : value;
         long version = profileQueries.find(profile).orElseThrow().version();
-        assertThatThrownBy(() -> profiles.update(profile, version, null,
+        assertThatThrownBy(() -> profiles.update(profile, version, null, null,
                 List.of(new SettingRegistry.Requested(key, null, parsed))))
                 .isInstanceOfSatisfying(BusinessRuleViolationException.class,
                         e -> assertThat(e.code()).isEqualTo(refusal));
