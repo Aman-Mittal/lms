@@ -1313,6 +1313,49 @@ class QueryPlanTest {
                 """, "order_close_setting");
     }
 
+    @Test
+    @DisplayName("resolving a context's settings and listing profiles are index-served")
+    void settingProfiles() {
+        String resolve = """
+                SELECT p.id, p.scope_type, p.scope_id, p.name, v.setting_key,
+                       v.value::text AS value, coalesce(length(u.path), 0) AS depth
+                  FROM setting_profile p
+                  JOIN setting_value v ON v.tenant_id = p.tenant_id AND v.profile_id = p.id
+                  LEFT JOIN org_unit u ON p.scope_type = 'ORG_UNIT' AND u.id = p.scope_id
+                 WHERE p.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND v.setting_key = ANY (string_to_array('order.close.tolerancePercent,ui.theme', ','))
+                   AND (p.scope_type = 'ORG_DEFAULT'
+                        OR (p.scope_type = 'ORG_UNIT' AND starts_with(
+                                coalesce(CAST(NULL AS text),
+                                         (SELECT t.path FROM org_unit t
+                                           WHERE t.id = '00000000-0000-0000-0000-000000000002')),
+                                u.path))
+                        OR (p.scope_type = 'CUSTOMER' AND p.scope_id = '00000000-0000-0000-0000-000000000003')
+                        OR (p.scope_type = 'VEHICLE' AND p.scope_id = CAST(NULL AS uuid))
+                        OR (p.scope_type = 'USER' AND p.scope_id = CAST(NULL AS uuid)))
+                """;
+        assertIndexed(resolve, "setting_profile");
+        assertIndexed(resolve, "setting_value");
+        assertIndexed(resolve, "org_unit");
+        assertIndexed("""
+                SELECT p.id FROM setting_profile p
+                 WHERE p.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND p.scope_type <> 'USER'
+                   AND (p.scope_type, p.created_at, p.id) > ('ORG_DEFAULT', now(),
+                        '00000000-0000-0000-0000-000000000004'::uuid)
+                 ORDER BY p.scope_type, p.created_at, p.id
+                 LIMIT 51
+                """, "setting_profile");
+        assertIndexed("""
+                SELECT id, name, path, unit_type FROM org_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND path LIKE '/acme/' || '%'
+                   AND path > '/acme/a/'
+                 ORDER BY path
+                 LIMIT 51
+                """, "org_unit");
+    }
+
     private void assertIndexed(String sql, String table) {
         // Disabling seqscan is a probe, not a recommendation: on an empty table
         // the planner would otherwise always choose one, and the question here
