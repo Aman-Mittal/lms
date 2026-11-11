@@ -187,3 +187,14 @@ always answered by the test.
 Specs that need a consignment build one through the API (`newConsignment`), and
 the partners they create are coded to sort last so they never push another
 spec's partner off the first page of a list.
+
+## Approvals
+
+**Operations > Approvals** (permission `APPROVAL_READ`) is the one inbox for
+every request waiting for a person to agree: an order's cancellation (when the
+tenant switches approval on) and a proof of delivery's reversal. It opens on
+what the caller can decide now; open a request to see what approving will do,
+the policy it is decided under and its trail, then approve, reject with a
+reason, or, as its requester, cancel it. The order desk's **Cancel order**
+says "awaiting approval" when a request was raised instead, and the delivery
+desk offers **Reverse proof** (permission `POD_REVERSE`) on a confirmed proof.

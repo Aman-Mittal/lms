@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.lms.approvals.events.ApprovalDecided;
+import com.lms.approvals.events.ApprovalRequested;
 import com.lms.delivery.events.ClaimRaised;
 import com.lms.delivery.events.ClaimStatusChanged;
 import com.lms.delivery.events.DeliveryProofRecorded;
@@ -216,6 +218,22 @@ public class WebhookEventListener {
                             "trigger", e.trigger(), "deliveredAt", e.deliveredAt())));
         }
         recordAll(e.tenantId(), WebhookEventType.CONSIGNMENT_DELIVERED, events);
+    }
+
+    /** Keyed on the request: it is raised once. */
+    @TransactionalEventListener
+    public void on(ApprovalRequested e) {
+        record(e.tenantId(), WebhookEventType.APPROVAL_REQUESTED, e.requestId().toString(), e.occurredAt(),
+                fields("approvalId", e.requestId(), "subjectType", e.subjectType(), "subjectId", e.subjectId(),
+                        "action", e.action(), "summary", e.summary(), "dueAt", e.dueAt()));
+    }
+
+    /** Keyed on the request: it closes once. The reason is free text and is not sent. */
+    @TransactionalEventListener
+    public void on(ApprovalDecided e) {
+        record(e.tenantId(), WebhookEventType.APPROVAL_DECIDED, e.requestId().toString(), e.occurredAt(),
+                fields("approvalId", e.requestId(), "subjectType", e.subjectType(), "subjectId", e.subjectId(),
+                        "action", e.action(), "status", e.status()));
     }
 
     private void record(UUID tenantId, WebhookEventType type, String key, Instant occurredAt,

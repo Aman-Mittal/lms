@@ -195,6 +195,68 @@ public class SettlementHolds {
     }
 
     /**
+     * A reversed proof puts back the hold it lifted.
+     *
+     * <p>Every completed trip that carried the consignment and now lacks a
+     * clean proof is held again: a hold the proof released by itself is
+     * reopened, and one that was never placed (the proof came before the
+     * completion) is placed now. A hold a person released by hand stays
+     * released -- that person accepted the trip on other evidence. Under the
+     * same per-trip lock as every other decision about the hold, and safe to
+     * repeat: a hold already open is left as it is.
+     *
+     * @return the trips held by this call
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public List<UUID> reholdWhereReversed(UUID consignmentId, Instant at) {
+        UUID tenantId = TenantContext.requireTenantId();
+        List<UUID> completed = jdbc.sql("""
+                        SELECT DISTINCT t.id
+                          FROM trip t
+                          JOIN load_consignment lc ON lc.load_id = t.load_id
+                         WHERE t.tenant_id = :tenantId AND lc.consignment_id = :consignmentId
+                           AND t.status = 'COMPLETED'
+                         ORDER BY t.id
+                        """)
+                .param("tenantId", tenantId)
+                .param("consignmentId", consignmentId)
+                .query(UUID.class)
+                .list();
+        List<UUID> held = new java.util.ArrayList<>();
+        for (UUID tripId : completed) {
+            lockTrip(tripId);
+            if (awaitingProofNow(tripId) || !lacksCleanProof(tripId)) {
+                continue;
+            }
+            int reopened = jdbc.sql("""
+                            UPDATE settlement_hold
+                               SET released_at = NULL
+                             WHERE tenant_id = :tenantId AND exception_id = :holdId
+                               AND released_at IS NOT NULL AND released_by IS NULL AND release_note IS NULL
+                            """)
+                    .param("tenantId", tenantId)
+                    .param("holdId", proofHoldId(tripId))
+                    .update();
+            int placed = reopened > 0 ? 0 : jdbc.sql("""
+                            INSERT INTO settlement_hold (tenant_id, exception_id, trip_id, ticket_no,
+                                                         placed_at, reason)
+                            VALUES (:tenantId, :holdId, :tripId, :ticketNo, :placedAt, 'PROOF_OF_DELIVERY')
+                            ON CONFLICT (tenant_id, exception_id) DO NOTHING
+                            """)
+                    .param("tenantId", tenantId)
+                    .param("holdId", proofHoldId(tripId))
+                    .param("tripId", tripId)
+                    .param("ticketNo", PROOF_HOLD_TICKET)
+                    .param("placedAt", at.atOffset(ZoneOffset.UTC))
+                    .update();
+            if (reopened + placed > 0) {
+                held.add(tripId);
+            }
+        }
+        return held;
+    }
+
+    /**
      * Serialises every decision about one trip's proof hold until the
      * transaction ends. Package-private so a test can stand in for a
      * completion that is still deciding.
