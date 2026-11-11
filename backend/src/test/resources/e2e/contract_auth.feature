@@ -52,6 +52,9 @@ Feature: Anyone without a valid credential is turned away, whatever they ask for
       | Client billing | GET /api/v1/client-billing/margins?period=2026-01-01     |
       | Control tower  | GET /api/v1/exceptions                                   |
       | Number series  | GET /api/v1/number-series                                |
+      | Settings       | GET /api/v1/settings/profiles                            |
+      | Settings       | GET /api/v1/settings/me                                  |
+      | Users          | GET /api/v1/me                                           |
 
   Scenario Outline: <credential> is refused on <operation>
     When the contract caller presents "<credential>" to "<operation>"

@@ -76,6 +76,8 @@ export const routes: Routes = [
       { path: 'admin/access-policies', loadComponent: adminDesk, data: { section: 'policies' } },
       { path: 'admin/compliance', loadComponent: adminDesk, data: { section: 'compliance' } },
       { path: 'admin/credit-limits', loadComponent: () => import('./pages/credit').then((m) => m.CreditLimitsPage) },
+      { path: 'admin/settings', loadComponent: () => import('./pages/profile-settings').then((m) => m.ProfileSettingsPage) },
+      { path: 'me', loadComponent: () => import('./pages/my-profile').then((m) => m.MyProfilePage) },
       { path: 'admin/number-series', loadComponent: () => import('./pages/number-series').then((m) => m.NumberSeriesPage) },
       // Control tower
       { path: 'exception-desk', loadComponent: () => import('./pages/exception-desk').then((m) => m.ExceptionDeskPage) },

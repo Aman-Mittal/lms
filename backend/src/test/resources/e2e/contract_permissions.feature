@@ -43,6 +43,9 @@ Feature: A caller may do exactly what their permissions allow
       | Multimodal      | GET    | /api/v1/itineraries                           | none          |
       | Number series   | GET    | /api/v1/number-series                         | none          |
       | Number series   | GET    | /api/v1/number-series/{id}                    | none          |
+      | Settings        | GET    | /api/v1/settings/profiles                     | none          |
+      | Settings        | GET    | /api/v1/settings/profiles/{id}                | none          |
+      | Settings        | GET    | /api/v1/settings/effective                    | none          |
       | Orders          | POST   | /api/v1/orders                                | an order      |
       | Partners        | GET    | /api/v1/partners                              | none          |
       | Partners        | GET    | /api/v1/partners/{id}                         | none          |

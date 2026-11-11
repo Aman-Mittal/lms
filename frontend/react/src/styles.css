@@ -73,3 +73,18 @@ form.inline input, form.inline select { width:auto; margin:0; }
 .picker-options button { display:block; width:100%; text-align:left; padding:.35rem .6rem; border:0; border-radius:0; background:none; color:var(--ink); font:inherit; cursor:pointer; }
 .picker-options button:hover, .picker-options button[aria-selected="true"] { background:var(--accent-soft); }
 .picker-options button.more { color:var(--accent); }
+
+/* Theme: data-theme on <html>, set from the person's preference (display.ts). Light is the default above. */
+:root[data-theme=dark] {
+  --ink:#e6ebf2; --muted:#9aa6b8; --line:#2b3546; --accent:#6d9bff; --accent-soft:#1d2a44;
+  --bg:#0f1520; --card:#161e2b; --err:#ff8a80; --ok:#5fd39a; --side:#0a0f17; --field:#0f1622; --head:#1b2433;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme=system] {
+    --ink:#e6ebf2; --muted:#9aa6b8; --line:#2b3546; --accent:#6d9bff; --accent-soft:#1d2a44;
+    --bg:#0f1520; --card:#161e2b; --err:#ff8a80; --ok:#5fd39a; --side:#0a0f17; --field:#0f1622; --head:#1b2433;
+  }
+}
+input, select, textarea { background:var(--field, #fff); color:var(--ink); }
+th { background:var(--head, #f0f3f9); }
+.topbar a { color:var(--accent); text-decoration:none; }
