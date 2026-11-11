@@ -1221,6 +1221,57 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the approvals inbox by status is a keyset page on its index")
+    void approvalInboxByStatus() {
+        String sql = """
+                SELECT * FROM approval_request r
+                 WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND r.status = 'REQUESTED'
+                   AND (r.requested_at, r.id) < ('2026-11-10T00:00:00Z', '00000000-0000-0000-0000-000000000009')
+                 ORDER BY r.requested_at DESC, r.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "approval_request");
+        assertNoSort(sql);
+    }
+
+    @Test
+    @DisplayName("the approvals inbox unfiltered, by requester and by subject are keyset pages on their indexes")
+    void approvalInboxShapes() {
+        for (String filter : List.of("",
+                " AND r.requested_by = '00000000-0000-0000-0000-000000000002'",
+                " AND r.subject_type = 'ORDER_CANCELLATION' AND r.subject_id = '00000000-0000-0000-0000-000000000003'")) {
+            String sql = "SELECT * FROM approval_request r WHERE r.tenant_id = '00000000-0000-0000-0000-000000000001'"
+                    + filter + " ORDER BY r.requested_at DESC, r.id DESC LIMIT 51";
+            assertIndexed(sql, "approval_request");
+            assertNoSort(sql);
+        }
+    }
+
+    @Test
+    @DisplayName("an open request for a subject, and the expiry sweep's lapsed requests, are index-served")
+    void approvalLookups() {
+        assertIndexed("""
+                SELECT * FROM approval_request
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND subject_type = 'ORDER_CANCELLATION'
+                   AND subject_id = '00000000-0000-0000-0000-000000000003' AND action = 'CANCEL'
+                   AND status = 'REQUESTED'
+                """, "approval_request");
+        assertIndexed("""
+                SELECT id FROM approval_request
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND status = 'REQUESTED'
+                   AND due_at IS NOT NULL AND due_at <= '2026-11-10T00:00:00Z'
+                 ORDER BY due_at LIMIT 200
+                """, "approval_request");
+        assertIndexed("""
+                SELECT * FROM approval_decision
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND request_id = '00000000-0000-0000-0000-000000000004'
+                 ORDER BY decided_at, id
+                """, "approval_decision");
+    }
+
+    @Test
     @DisplayName("a customer's open orders, for its credit exposure, are index-served")
     void openOrdersOfACustomer() {
         // Asked on every validation, amendment and line add of a customer with
