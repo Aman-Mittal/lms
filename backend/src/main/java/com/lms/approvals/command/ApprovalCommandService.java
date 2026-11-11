@@ -39,6 +39,7 @@ import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.settings.api.SettingContext;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -94,19 +95,20 @@ public class ApprovalCommandService implements ApprovalRequests {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
-    public boolean isRequired(String subjectType) {
-        return policies.resolve(subjectType).required();
+    public boolean isRequired(String subjectType, SettingContext context) {
+        return policies.resolve(subjectType, context).required();
     }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public ApprovalTicket request(ApprovalSubject subject, String action, Map<String, ?> payload, String summary) {
+    public ApprovalTicket request(ApprovalSubject subject, SettingContext context, String action,
+                                  Map<String, ?> payload, String summary) {
         UUID tenantId = TenantContext.requireTenantId();
         if (requests.findOpen(tenantId, subject.type(), subject.id(), action).isPresent()) {
             throw new BusinessRuleViolationException("approval-already-open",
                     "An approval request for this is already open; decide or cancel it first");
         }
-        ApprovalPolicy policy = policies.resolve(subject.type());
+        ApprovalPolicy policy = policies.resolve(subject.type(), context);
         UUID requester = actorId();
         ApprovalRequest saved = requests.save(ApprovalRequest.raise(tenantId, subject.orgUnitId(), subject.type(),
                 subject.id(), action, snapshots.payload(payload), summary, requester, policy,

@@ -115,7 +115,8 @@ class ApprovalApiTest {
 
     @BeforeEach
     void defaultPolicies() {
-        jdbc.sql("DELETE FROM approval_policy_override WHERE tenant_id = :t").param("t", a.tenantId()).update();
+        jdbc.sql("DELETE FROM setting_value WHERE tenant_id = :t AND setting_key LIKE 'approvals.policy.%'")
+                .param("t", a.tenantId()).update();
     }
 
     // ------------------------------------------------------------- helpers
