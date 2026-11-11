@@ -28,6 +28,8 @@ import java.util.UUID;
  * @param orgPath   the unit's materialised path, when that is what the caller
  *                  holds (an access token carries it); used when
  *                  {@code orgUnitId} is null
+ * @param vendorId  the vendor partner, for a key kept per vendor (a freight
+ *                  bill's match tolerance, say)
  * @param asOf      the day to judge by: of each profile's dated versions of a
  *                  key, the latest effective on or before it applies; null
  *                  for today, in the tenant's {@code settings.timeZone}
@@ -37,10 +39,10 @@ import java.util.UUID;
  *                  the country's values only
  */
 public record SettingContext(UUID orgUnitId, String orgPath, UUID customerId, UUID vehicleId,
-                             UUID userId, LocalDate asOf, String country, String state) {
+                             UUID userId, LocalDate asOf, String country, String state, UUID vendorId) {
 
     private static final SettingContext TENANT =
-            new SettingContext(null, null, null, null, null, null, null, null);
+            new SettingContext(null, null, null, null, null, null, null, null, null);
 
     /** The organisation default alone. */
     public static SettingContext tenant() {
@@ -48,32 +50,36 @@ public record SettingContext(UUID orgUnitId, String orgPath, UUID customerId, UU
     }
 
     public static SettingContext ofOrgUnit(UUID orgUnitId) {
-        return new SettingContext(orgUnitId, null, null, null, null, null, null, null);
+        return new SettingContext(orgUnitId, null, null, null, null, null, null, null, null);
     }
 
     /** As the rule stood on {@code day}: a document judged by the rule in force on its own date. */
     public SettingContext asOf(LocalDate day) {
-        return new SettingContext(orgUnitId, orgPath, customerId, vehicleId, userId, day, country, state);
+        return new SettingContext(orgUnitId, orgPath, customerId, vehicleId, userId, day, country, state, vendorId);
     }
 
     public SettingContext inJurisdiction(String countryCode, String stateCode) {
         return new SettingContext(orgUnitId, orgPath, customerId, vehicleId, userId, asOf, countryCode,
-                stateCode);
+                stateCode, vendorId);
     }
 
     public SettingContext withOrgPath(String path) {
-        return new SettingContext(orgUnitId, path, customerId, vehicleId, userId, asOf, country, state);
+        return new SettingContext(orgUnitId, path, customerId, vehicleId, userId, asOf, country, state, vendorId);
     }
 
     public SettingContext withCustomer(UUID customer) {
-        return new SettingContext(orgUnitId, orgPath, customer, vehicleId, userId, asOf, country, state);
+        return new SettingContext(orgUnitId, orgPath, customer, vehicleId, userId, asOf, country, state, vendorId);
     }
 
     public SettingContext withVehicle(UUID vehicle) {
-        return new SettingContext(orgUnitId, orgPath, customerId, vehicle, userId, asOf, country, state);
+        return new SettingContext(orgUnitId, orgPath, customerId, vehicle, userId, asOf, country, state, vendorId);
+    }
+
+    public SettingContext withVendor(UUID vendor) {
+        return new SettingContext(orgUnitId, orgPath, customerId, vehicleId, userId, asOf, country, state, vendor);
     }
 
     public SettingContext withUser(UUID user) {
-        return new SettingContext(orgUnitId, orgPath, customerId, vehicleId, user, asOf, country, state);
+        return new SettingContext(orgUnitId, orgPath, customerId, vehicleId, user, asOf, country, state, vendorId);
     }
 }

@@ -24,7 +24,6 @@ import java.util.UUID;
 import com.lms.shared.geo.LatLon;
 import com.lms.telematics.command.domain.GpsPing;
 import com.lms.telematics.command.domain.StoppageWatch;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,16 +39,9 @@ import org.springframework.stereotype.Service;
 public class StoppageService {
 
     private final StoppageWatchRepository watches;
-    private final double radiusMetres;
-    private final Duration threshold;
 
-    public StoppageService(StoppageWatchRepository watches,
-                           @Value("${lms.telematics.stoppage-radius-m:100}") double radiusMetres,
-                           @Value("${lms.telematics.stoppage-threshold-minutes:45}")
-                           long thresholdMinutes) {
+    public StoppageService(StoppageWatchRepository watches) {
         this.watches = watches;
-        this.radiusMetres = radiusMetres;
-        this.threshold = Duration.ofMinutes(thresholdMinutes);
     }
 
     /** A stoppage worth reporting. */
@@ -59,9 +51,13 @@ public class StoppageService {
     /**
      * Judges one fix of a trip in transit that is outside every terminal.
      *
+     * @param radiusMetres how far the vehicle may drift and still be stopped
+     * @param threshold    how long a stop may last before it is reported;
+     *                     both the trip's settings
      * @return the stoppage, only on the fix that crosses the threshold
      */
-    public Optional<Stoppage> observe(UUID tenantId, UUID tripId, GpsPing ping) {
+    public Optional<Stoppage> observe(UUID tenantId, UUID tripId, GpsPing ping, double radiusMetres,
+                                      Duration threshold) {
         Optional<StoppageWatch> existing = watches.findByTrip(tenantId, tripId);
         if (existing.isEmpty()) {
             watches.save(begin(tenantId, tripId, ping));

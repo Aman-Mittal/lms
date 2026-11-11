@@ -28,8 +28,12 @@
  * the second is the reason the port exists at all: a rule that blocks a
  * dispatch cannot be eventually consistent, because by the time the answer
  * arrives the lorry has gone.
+ *
+ * <p>Reads its dispatch checklist and tracking switches through
+ * {@code settings::api}, resolved for the trip's unit, vehicle and customers.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Trip Execution",
-        allowedDependencies = {"planning::api", "masterdata::api", "identity::access"})
+        allowedDependencies = {"planning::api", "masterdata::api", "identity::access",
+                "settings::api"})
 package com.lms.execution;

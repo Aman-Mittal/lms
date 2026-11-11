@@ -34,3 +34,7 @@ Feature: A person sees who they are and keeps their own preferences, over the wi
     When the administrator gives a new customer its own close tolerance of 3 percent
     Then the close tolerance in force for that customer is 3 percent, from its own profile
     And the profile's history records who created it and with what
+
+  Scenario: A customer's own dispatch checklist refuses a trip over the wire, naming what is missing and why
+    When the administrator gives a new customer a dispatch checklist that also requires a packing list
+    Then a trip for that customer carrying only a consignment note and an e-way bill is refused, naming the packing list and the customer's profile

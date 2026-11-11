@@ -29,10 +29,12 @@ import org.springframework.stereotype.Component;
  * The tolerances of the ETA and temperature detectors. Their system defaults
  * are the deployment's properties, as before profiles existed.
  *
- * <p>The ETA slip is the tenant's alone: nothing on a projected arrival names
- * a unit or a customer to resolve for. The temperature excursion may also be
- * set per vehicle, since how long cargo may sit out of band is a property of
- * the body it travels in; the detector resolves it for the trip's vehicle.
+ * <p>Both may also be set for an organisational unit, a vehicle and a
+ * customer, and the detectors resolve them for the trip's unit and vehicle and
+ * the customer of its freight (the only one aboard; a load carrying several
+ * customers' freight is judged without one). How late is too late is the
+ * customer's promise; how long cargo may sit out of band is as much the body
+ * it travels in as the goods.
  */
 @Component
 public class DetectorSettingDefinitions implements SettingContributor {
@@ -61,11 +63,11 @@ public class DetectorSettingDefinitions implements SettingContributor {
                                 "How much later than committed a projected arrival may be before the"
                                         + " control tower raises an ETA delay.")
                         .defaultValue(Duration.ofMinutes(defaultEtaSlipMinutes)).between(SHORTEST, LONGEST)
-                        .build(),
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER).build(),
                 SettingDefinition.of(TEMPERATURE_EXCURSION, "Temperature excursion tolerance",
                                 "How long a watched trip's cargo may stay outside its band before the"
                                         + " control tower raises a temperature excursion.")
                         .defaultValue(Duration.ofMinutes(defaultTemperatureMinutes)).between(SHORTEST, LONGEST)
-                        .alsoAt(ScopeType.VEHICLE).build());
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER).build());
     }
 }

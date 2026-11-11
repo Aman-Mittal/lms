@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.execution.api.TripLookupPort;
+import com.lms.planning.api.LoadLifecyclePort;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,9 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class TripLookupAdapter implements TripLookupPort {
 
     private final TripRepository trips;
+    private final LoadLifecyclePort loads;
 
-    public TripLookupAdapter(TripRepository trips) {
+    public TripLookupAdapter(TripRepository trips, LoadLifecyclePort loads) {
         this.trips = trips;
+        this.loads = loads;
     }
 
     @Override
@@ -39,5 +42,12 @@ public class TripLookupAdapter implements TripLookupPort {
                 .map(trip -> new TripSnapshot(trip.id(), trip.tripNo(), trip.status().name(),
                         trip.vehicleId(), trip.vendorPartnerId(), trip.loadId(),
                         trip.originTerminalId(), trip.destinationTerminalId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<TripScope> scopeOf(UUID tripId) {
+        return trips.findById(tripId).map(trip -> new TripScope(trip.id(), trip.orgUnitId(),
+                trip.vehicleId(), loads.customersAboard(trip.loadId())));
     }
 }

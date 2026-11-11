@@ -39,6 +39,9 @@
  * vendor-portal user's reads to that vendor's own bills. Identity decides;
  * finance only states the facts about its own records.
  *
+ * <p>Reads the invoice match tolerance through {@code settings::api}, for the
+ * bill's unit and vendor.
+ *
  * <p>Listens to {@code planning::events} for part-load dockets (issue #18).
  * LTL rating lives here rather than in a module of its own because it is
  * rating: zone-to-zone cards are versioned and immutable exactly as tariffs
@@ -78,5 +81,5 @@
         displayName = "Rating & Settlement",
         allowedDependencies = {"planning::api", "planning::events", "execution::events",
                 "controltower::events", "identity::access", "milkrun::events",
-                "multimodal::events", "masterdata::api", "delivery::events"})
+                "multimodal::events", "masterdata::api", "delivery::events", "settings::api"})
 package com.lms.finance;

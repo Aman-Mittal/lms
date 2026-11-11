@@ -35,6 +35,12 @@ import org.springframework.transaction.annotation.Transactional;
  * leaving the origin means the lorry is moving, entering the destination means
  * it has arrived, and every other crossing -- a toll plaza, a fuel stop, a hub
  * it passes through -- is recorded and changes nothing.
+ *
+ * <p>Each rule is a setting of the trip's unit, vehicle or customer
+ * ({@link ExecutionSettingDefinitions}): departure and arrival happen by
+ * themselves unless switched off, and leaving the destination after arriving
+ * completes the trip only where switched on. Switched off, the crossing is
+ * still recorded by telematics and a person moves the trip.
  */
 @Service
 public class TripTrackingAdapter implements TripTrackingPort {
@@ -42,9 +48,13 @@ public class TripTrackingAdapter implements TripTrackingPort {
     private static final Logger log = LoggerFactory.getLogger(TripTrackingAdapter.class);
 
     private final TripRepository trips;
+    private final TripSettings settings;
+    private final TripCompletion completion;
 
-    public TripTrackingAdapter(TripRepository trips) {
+    public TripTrackingAdapter(TripRepository trips, TripSettings settings, TripCompletion completion) {
         this.trips = trips;
+        this.settings = settings;
+        this.completion = completion;
     }
 
     @Override
@@ -73,6 +83,9 @@ public class TripTrackingAdapter implements TripTrackingPort {
                     trip.tripNo(), trip.status());
             return;
         }
+        if (!settings.tracking(ExecutionSettingDefinitions.AUTO_ARRIVAL, trip)) {
+            return;
+        }
         trips.save(trip.arrive(at));
     }
 
@@ -81,11 +94,21 @@ public class TripTrackingAdapter implements TripTrackingPort {
     public void observeGeofenceExit(UUID tripId, UUID terminalId, Instant at) {
         Trip trip = require(tripId);
 
+        if (terminalId.equals(trip.destinationTerminalId()) && trip.status() == Trip.TripStatus.AT_DESTINATION) {
+            // Unloaded and gone: complete, where the trip's settings say so.
+            if (settings.tracking(ExecutionSettingDefinitions.AUTO_COMPLETION, trip)) {
+                completion.complete(trip, at);
+            }
+            return;
+        }
         if (!terminalId.equals(trip.originTerminalId())) {
             return;
         }
         if (trip.status() != Trip.TripStatus.DISPATCHED) {
             log.debug("Ignoring origin exit for trip {} in status {}", trip.tripNo(), trip.status());
+            return;
+        }
+        if (!settings.tracking(ExecutionSettingDefinitions.AUTO_DEPARTURE, trip)) {
             return;
         }
         // The gate-out was recorded by a human at dispatch; this is the lorry

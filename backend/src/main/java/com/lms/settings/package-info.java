@@ -26,11 +26,12 @@
  * refused when written, so nothing is stored that nothing reads.
  *
  * <p>A profile holds values for one scope: the organisation default, an
- * organisational unit, a customer, a vehicle, or one user's own preferences.
+ * organisational unit, a customer, a vendor, a vehicle, or one user's own
+ * preferences.
  * The effective value of a key for a context is folded from the profiles that
  * apply to it, least specific first: organisation default, then organisational
  * units from the root down (a deeper unit beats a shallower one), then vehicle,
- * customer and user. The most specific profile that sets the key wins; with
+ * customer, vendor and user. The most specific profile that sets the key wins; with
  * none, the system default answers. Every resolution reads all applicable
  * profiles in one statement.
  *
