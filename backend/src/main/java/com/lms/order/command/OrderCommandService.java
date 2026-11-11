@@ -409,7 +409,7 @@ public class OrderCommandService {
     }
 
     private static String abbreviate(String text) {
-        return text.length() <= 200 ? text : text.substring(0, 199) + "…";
+        return text.length() <= 200 ? text : text.substring(0, 199) + "\\u2026";
     }
 
     // ---------------------------------------------------------------- editing
