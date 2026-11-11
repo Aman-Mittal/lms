@@ -523,7 +523,7 @@ function particularsRequest(p: ConsignmentParticularsDraft) {
 
 const SCOPE_WORDS: Record<string, string> = {
   PLATFORM: 'Platform', ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer',
-  VEHICLE: 'Vehicle', USER: 'You',
+  VENDOR: 'Vendor', VEHICLE: 'Vehicle', USER: 'You',
 };
 
 /** Where a value came from, in words. */
@@ -1892,7 +1892,8 @@ export class GeneratedLmsGateway extends LmsGateway {
   effectiveSettings(context: SettingContextDraft): Promise<EffectiveSettingView[]> {
     return this.call(this.settingsApi.getEffectiveSettings({
       orgUnitId: context.orgUnitId || undefined, customerId: context.customerId || undefined,
-      vehicleId: context.vehicleId || undefined, asOf: context.asOf || undefined,
+      vehicleId: context.vehicleId || undefined, vendorId: context.vendorId || undefined,
+      asOf: context.asOf || undefined,
     }), (s) => s.items.map(effectiveOf));
   }
 
