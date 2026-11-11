@@ -50,6 +50,8 @@ form.inline input, form.inline select { width:auto; margin:0; }
 .panel h2 { margin:0; }
 .panel dl { margin:1rem 0 0; } .panel dl div { display:flex; justify-content:space-between; gap:1rem; padding:.3rem 0; border-bottom:1px solid var(--line); }
 .panel dt { color:var(--muted); } .panel dd { margin:0; text-align:right; }
+/* A panel longer than the screen (a profile with many settings) scrolls with the page: kept sticky, it would cover what follows it. */
+.panel.in-flow { position:static; }
 
 @media (max-width: 860px) {
   .app { flex-direction:column; }

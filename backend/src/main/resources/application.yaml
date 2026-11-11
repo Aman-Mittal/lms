@@ -189,14 +189,19 @@ lms:
     max-plausible-speed-kmh: ${PING_MAX_SPEED_KMH:160}
     route-deviation-threshold-metres: ${ROUTE_DEVIATION_METRES:2000}
     # Stoppage detector: a trip in transit that stays within this radius of one
-    # spot, outside every terminal, for this long raises a ticket.
+    # spot, outside every terminal, for this long raises a ticket. System
+    # defaults of the settings telematics.stoppage.radiusMetres and
+    # telematics.stoppage.threshold (as lms.telematics.route-corridor-m,
+    # 25000 m when unset, is of telematics.routeDeviation.corridorMetres); a
+    # unit's, vehicle's or customer's profile overrides them.
     stoppage-radius-m: ${STOPPAGE_RADIUS_M:100}
     stoppage-threshold-minutes: ${STOPPAGE_THRESHOLD_MINUTES:45}
   execution:
     # How far a weighed payload may differ from the planned weight before
     # dispatch is refused. Not zero: weighbridges have a tolerance, pallets
     # absorb moisture, and a gate that refuses every load half a percent off
-    # its manifest is a gate somebody switches off.
+    # its manifest is a gate somebody switches off. System default of the
+    # setting execution.dispatch.weightTolerancePct.
     weight-tolerance-pct: ${WEIGHT_TOLERANCE_PCT:5}
   multimodal:
     connection-sweep:
@@ -208,7 +213,9 @@ lms:
     # A vendor invoice is approved for payment when it differs from the
     # computed cost by no more than the greater of these two. Both are needed:
     # the percentage alone disputes a rounding difference on a small bill, the
-    # absolute alone waves through a five-figure gap on a large one.
+    # absolute alone waves through a five-figure gap on a large one. System
+    # defaults of finance.match.tolerancePercent and .toleranceAbsolute, which
+    # a unit's or vendor's profile overrides.
     match-tolerance-pct: ${INVOICE_TOLERANCE_PCT:2}
     match-tolerance-absolute: ${INVOICE_TOLERANCE_ABS:100}
   dr:

@@ -18,12 +18,13 @@
 
 SettingScopeType:
   type: string
-  enum: [PLATFORM, ORG_DEFAULT, ORG_UNIT, VEHICLE, CUSTOMER, USER]
+  enum: [PLATFORM, ORG_DEFAULT, ORG_UNIT, VEHICLE, CUSTOMER, VENDOR, USER]
   description: |
     Where a profile applies, in ascending precedence. PLATFORM profiles belong
     to no tenant: the platform operator's values for every tenant, globally or
-    per jurisdiction. ORG_DEFAULT has no scope id; USER profiles are a
-    person's own preferences.
+    per jurisdiction. ORG_DEFAULT has no scope id; CUSTOMER and VENDOR name a
+    business partner of that type; USER profiles are a person's own
+    preferences.
 
 SettingCategory:
   type: string
@@ -144,7 +145,7 @@ SettingProfile:
     scopeId: { type: string, format: uuid }
     scopeLabel:
       type: string
-      description: The unit's name and path, the customer's code and name, the vehicle's registration.
+      description: The unit's name and path, the customer's or vendor's code and name, the vehicle's registration.
     country:
       type: string
       description: A platform profile's country (ISO 3166-1 alpha-2); absent for every country.
@@ -216,7 +217,7 @@ CreateSettingProfileRequest:
     scopeId:
       type: string
       format: uuid
-      description: The unit, customer or vehicle; omitted for ORG_DEFAULT and PLATFORM.
+      description: The unit, customer, vendor or vehicle; omitted for ORG_DEFAULT and PLATFORM.
     country:
       type: string
       maxLength: 2

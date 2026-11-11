@@ -63,7 +63,7 @@ public class TripDetectorService {
     /**
      * Judges a projected arrival against the committed one.
      *
-     * <p>A slip is strictly more than the tenant's tolerance beyond the
+     * <p>A slip is strictly more than the trip's tolerance beyond the
      * commitment. An arrival projected earlier, or only a little later, is not
      * one, and a projection that recovers does not close a ticket: a person
      * does that.
@@ -76,7 +76,7 @@ public class TripDetectorService {
             return Optional.empty();
         }
         Instant committed = watch.get().committedArrivalAt();
-        Duration tolerance = settings.etaSlip();
+        Duration tolerance = settings.etaSlipFor(tripId);
         Duration slip = Duration.between(committed, projectedArrivalAt);
         if (slip.compareTo(tolerance) <= 0) {
             return Optional.empty();

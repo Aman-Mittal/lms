@@ -40,14 +40,18 @@ async function clearMyPreferences(request: APIRequestContext, session: Session):
   expect(cleared.ok(), `clear preferences: ${cleared.status()}`).toBeTruthy();
 }
 
-async function newCustomer(request: APIRequestContext, session: Session, code: string): Promise<string> {
+async function newPartner(request: APIRequestContext, session: Session, code: string,
+  partnerType: 'CUSTOMER' | 'VENDOR'): Promise<string> {
   const created = await request.post(`${API}/api/v1/partners`, {
     headers: { Authorization: `Bearer ${session.token}` },
-    data: { orgUnitId: session.orgUnitId, code, legalName: `${code} Pvt Ltd`, partnerType: 'CUSTOMER', taxId: `TAX-${code}` },
+    data: { orgUnitId: session.orgUnitId, code, legalName: `${code} Pvt Ltd`, partnerType, taxId: `TAX-${code}` },
   });
-  expect(created.ok(), `customer: ${created.status()}`).toBeTruthy();
+  expect(created.ok(), `${partnerType.toLowerCase()}: ${created.status()}`).toBeTruthy();
   return (await created.json()).id as string;
 }
+
+const newCustomer = (request: APIRequestContext, session: Session, code: string) =>
+  newPartner(request, session, code, 'CUSTOMER');
 
 test.describe('profile and settings', () => {
   test.beforeEach(async ({ request }) => clearMyPreferences(request, await apiSession(request)));
@@ -120,6 +124,41 @@ test.describe('profile and settings', () => {
       await expect(page.getByTestId('profile-panel')).toHaveCount(0);
       await context.getByTestId('show-effective').click();
       await expect(page.getByTestId(`effective-${TOLERANCE}`)).not.toContainText(`Terms ${code}`);
+    });
+
+  test('a vendor profile holds the vendor keys only, and its match tolerance is in force for that vendor',
+    async ({ page, request }, info) => {
+      const MATCH = 'finance.match.tolerancePercent';
+      const session = await apiSession(request);
+      const code = `ZZ-PV-${tag(info).toUpperCase()}`;
+      const vendor = await newPartner(request, session, code, 'VENDOR');
+
+      await signIn(page);
+      await openScreen(page, 'nav-admin-settings', 'Profile settings');
+      const add = page.getByTestId('add-profile');
+      await add.getByTestId('new-scope').selectOption('VENDOR');
+      await add.getByTestId('new-scope-id').fill(vendor);
+      await add.getByTestId('new-name').fill(`Vendor ${code}`);
+      await add.getByTestId('create-profile').click();
+
+      const panel = page.getByTestId('profile-panel');
+      await expect(panel.getByRole('heading', { name: `Vendor ${code}` })).toBeVisible();
+      // Definitions-driven: the keys kept per vendor, and nothing else.
+      await expect(panel.getByTestId('value-finance.match.toleranceAbsolute')).toBeVisible();
+      await expect(panel.getByTestId(`value-${TOLERANCE}`)).toHaveCount(0);
+      await panel.getByTestId(`value-${MATCH}`).fill('6');
+      await panel.getByTestId('save-profile').click();
+      await expect(panel.getByTestId('profile-saved')).toHaveText('Saved.');
+
+      const context = page.getByTestId('effective-form');
+      await context.getByTestId('ctx-vendor').fill(vendor);
+      await context.getByTestId('show-effective').click();
+      const row = page.getByTestId(`effective-${MATCH}`);
+      await expect(row).toContainText('6');
+      await expect(row).toContainText(`Vendor: Vendor ${code}`);
+
+      await panel.getByTestId('delete-profile').click();
+      await expect(page.getByTestId('profile-panel')).toHaveCount(0);
     });
 
   test('a person without the settings rights keeps My profile but not Profile settings', async ({ page }) => {
