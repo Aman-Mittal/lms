@@ -166,7 +166,7 @@ Each bounded context is a top-level package under `com.lms`:
 
 ```
 identity  masterdata  order  planning  sourcing  execution  telematics  finance
-controltower  milkrun  multimodal  warehouse  clientbilling  shared
+controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 ```
 
 | Module | Role |
@@ -185,6 +185,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  shared
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
 | `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
 | `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
+| `approvals` | One approvals module for every flow: requests with a frozen payload, a policy per subject type (copied onto each request), decisions applied in-process by the owning module's handler, the inbox, expiry. Depends on `identity::access` only. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
 - A context **must not** call another context's classes directly. Cross-context
@@ -249,6 +250,22 @@ Rules that make the split worth having:
   `order::api` also defines `OrderAmendmentGuard` (planning implements it: refuse
   while a live consignment exists), which is what lets a validated order be
   amended only before freight is cut from it.
+- **Anything that needs a person to agree first goes through `approvals`.**
+  Never build a second maker-checker. To add a flow: a constant in
+  `approvals.api.ApprovalSubjectTypes`, its code default in
+  `approvals.command.ApprovalPolicyDefaults` (the one registry), and an
+  `ApprovalOutcomeHandler` bean in the owning module (which declares
+  `approvals::api`). The flow asks `ApprovalRequests.isRequired(type)` and, when
+  true, `request(subject, action, payload, summary)` in its own transaction and
+  answers 202 with the ticket; it never reads a policy value or a setting of
+  its own -- `ApprovalPolicyResolver` is the only source, so profile settings
+  can back it later without touching flows. The handler's `onApproved` runs in
+  the deciding transaction: re-validate current state and throw the owning
+  module's `BusinessRuleViolationException` when the action no longer makes
+  sense (the request then stays open), and apply through an unguarded
+  `MANDATORY`-propagation path -- the decider's right was the policy's
+  permission, not the owning module's command permission. The application
+  refuses to start if a type has no handler or a handler no default policy.
 - **Order edits carry `If-Match`.** `GET /orders/{id}` returns the version as its
   `ETag`; the edit endpoints (`PUT /orders/{id}`, `PUT /orders/{id}/lines`,
   `DELETE /orders/{id}/lines/{lineId}`, `POST /orders/{id}/amend`) require it in

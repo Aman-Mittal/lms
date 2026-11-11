@@ -459,6 +459,49 @@ request after a quiet spell pays the start-up cost above.
   it on the order desk and a credit screen, with the override offered on a
   refusal.
 
+**Approvals (V53)** — `approvals`, one module for every flow that needs a person to agree first
+- A flow asks `approvals::api` (`ApprovalRequests.isRequired`) whether its
+  tenant's policy wants an approval; if so it raises a request instead of
+  acting -- subject type, subject id, action, a frozen payload and a one-line
+  summary -- and answers **202** with it. One open request per subject and
+  action (`approval-already-open`).
+- `POST /api/v1/approvals/{id}/approve | reject | cancel` (each with
+  `If-Match` from `GET /api/v1/approvals/{id}`). Approving the last step calls
+  the owning module's `ApprovalOutcomeHandler` **in the deciding transaction**
+  (ADR 0006), which re-validates and applies the action; if the subject no
+  longer allows it the decision fails with that module's own 409 and the
+  request **stays open**. The requester cannot decide their own request
+  (`approval-self-decision`) unless the policy allows it; a rejection needs a
+  reason; only the requester cancels. Every step is in `approval_decision`
+  (the trail) and in the audit log; `APPROVAL_REQUESTED` and
+  `APPROVAL_DECIDED` are webhook types.
+- Policy per subject type: whether approval is required, one permission per
+  approval step (N distinct approvers, in order or any order), self-approval,
+  due duration and expiry outcome (EXPIRE or AUTO_APPROVE). Code defaults in
+  `ApprovalPolicyDefaults`; read only through `ApprovalPolicyResolver`, which
+  today overlays the tenant's row in `approval_policy_override`
+  (`PUT /api/v1/approvals/policies/{type}`, `APPROVAL_POLICY_MANAGE`) and is the
+  seam profile settings will plug into. The policy in force is **copied onto
+  each request**, so a later change never alters an open one.
+- Expiry: `ApprovalExpirySweep`, in-process, per tenant through `TenantSweep`,
+  every minute and shortly after start; idempotent.
+- Inbox: `GET /api/v1/approvals` (`APPROVAL_READ`), keyset-paged newest first,
+  by status, subject type and id, and scope `MINE_TO_DECIDE` /
+  `REQUESTED_BY_ME`. Both consoles have an **Approvals** page.
+- Flows wired: **order cancellation** (FR-ORD-006; off by default, decided by
+  `ORDER_APPROVE`; approval cancels through the one cancellation path) and
+  **proof-of-delivery reversal** (`POST /deliveries/{id}/proof/reversal`,
+  `POD_REVERSE`; mandatory, decided by `POD_REVERSAL_APPROVE`). A reversal is
+  refused (`pod-already-billed`) once the carrier's bill for a trip that carried
+  the consignment is approved for payment or the client's transport charge for
+  it is invoiced, both when asked and when approved. Approved, the proof reads
+  REVERSED, the consignment goes back to IN_TRANSIT (OUT_FOR_DELIVERY for a
+  docket) unless a completed trip delivered it, and a completed trip's proof
+  hold is put back. The order's coverage is not rewound.
+- Not wired yet (the same seam): contract verification, order change
+  approvals (FR-ORD-005/027), cost and charge approval, terminal creation,
+  seals, vendor advances.
+
 **Geospatial (vision §3.2.3, §3.7.2)** — `com.lms.shared.geo`, no PostGIS
 - Ray-casting point-in-polygon, haversine distance and bearing, polygon overlap
   (crossing *and* containment), point-to-polyline distance for route deviation,
