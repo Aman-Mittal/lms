@@ -695,11 +695,54 @@ export function dayOfMonth(monthsAgo: number, day: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Sets some fields of one approval policy on the demo tenant; the caller puts it back afterwards. */
+export async function setApprovalPolicy(
+  request: APIRequestContext, session: Session, type: string, data: object,
+): Promise<void> {
+  const response = await request.put(`${API}/api/v1/approvals/policies/${type}`, {
+    headers: { Authorization: `Bearer ${session.token}` }, data,
+  });
+  expect(response.ok(), `set policy ${type}: ${response.status()} ${await response.text()}`).toBeTruthy();
+}
+
+/** Puts one approval policy back to the code default. */
+export async function resetApprovalPolicy(
+  request: APIRequestContext, session: Session, type: string,
+): Promise<void> {
+  await request.delete(`${API}/api/v1/approvals/policies/${type}`, {
+    headers: { Authorization: `Bearer ${session.token}` },
+  });
+}
+
 /**
- * A fresh 3PL client: a customer holding a contract in force since 90 days ago, untaxed
- * so the sums stay readable -- handling 25 a pallet in and 30 out, transport 5 a kilo.
+ * Drafts a client contract through the API and puts it in force: asks for verification and, the demo
+ * tenant having one administrator, lets the maker approve it. Every call lets the maker decide first,
+ * so a spec that reset the policy cannot strand the next one.
  */
-export async function newBillingClient(
+export async function publishContract(
+  request: APIRequestContext, session: Session, body: object,
+): Promise<string> {
+  await setApprovalPolicy(request, session, 'CONTRACT_ACTIVATION', { allowSelfApproval: true });
+  const auth = { Authorization: `Bearer ${session.token}` };
+  const made = await post(request, session, '/api/v1/client-billing/contracts', body);
+  const id = made.id as string;
+  const read = await request.get(`${API}/api/v1/client-billing/contracts/${id}`, { headers: auth });
+  const asked = await request.post(`${API}/api/v1/client-billing/contracts/${id}/verification-requests`, {
+    headers: { ...auth, 'If-Match': read.headers()['etag'] },
+  });
+  expect(asked.ok(), `verification: ${asked.status()} ${await asked.text()}`).toBeTruthy();
+  if (asked.status() === 202) {
+    const ticket = await asked.json();
+    const approved = await request.post(`${API}/api/v1/approvals/${ticket.id}/approve`, {
+      headers: { ...auth, 'If-Match': `"${ticket.version}"` }, data: {},
+    });
+    expect(approved.ok(), `approve: ${approved.status()} ${await approved.text()}`).toBeTruthy();
+  }
+  return id;
+}
+
+/** A customer with no contract yet: nothing can be billed to it until one is in force. */
+export async function newBillingPartner(
   request: APIRequestContext, session: Session,
 ): Promise<{ id: string; code: string }> {
   const code = `ZZ-E2E-3PL-${uuid()}`;
@@ -707,13 +750,24 @@ export async function newBillingClient(
     orgUnitId: session.orgUnitId, code, legalName: 'E2E 3PL client', partnerType: 'CUSTOMER',
     taxId: `TAX-${uuid()}`,
   });
+  return { id: client.id as string, code };
+}
+
+/**
+ * A fresh 3PL client: a customer holding a contract in force since 90 days ago, untaxed
+ * so the sums stay readable -- handling 25 a pallet in and 30 out, transport 5 a kilo.
+ */
+export async function newBillingClient(
+  request: APIRequestContext, session: Session,
+): Promise<{ id: string; code: string }> {
+  const client = await newBillingPartner(request, session);
   const started = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10);
-  await post(request, session, '/api/v1/client-billing/contracts', {
+  await publishContract(request, session, {
     orgUnitId: session.orgUnitId, code: `E2E-3PL-${uuid()}`, clientPartnerId: client.id, currency: 'INR',
     effectiveFrom: started, transportRatePerKg: 5, transportMinimumCharge: 0, storageRatePerPalletDay: 0,
     handlingInRatePerPallet: 25, handlingOutRatePerPallet: 30, transportTaxRatePct: 0, warehouseTaxRatePct: 0,
   });
-  return { id: client.id as string, code };
+  return client;
 }
 
 /** Records pallets handled in for the client on the 10th of last month, a month that can be billed. */

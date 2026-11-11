@@ -59,6 +59,21 @@ public class ClientDirectory {
     }
 
     /**
+     * Whether the partner is a customer that may be dealt with: not suspended
+     * or blacklisted. A customer still being onboarded may be.
+     */
+    public boolean isTradingCustomer(UUID partnerId) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM business_partner
+                         WHERE id = :id AND partner_type = 'CUSTOMER'
+                           AND status NOT IN ('SUSPENDED', 'BLACKLISTED')
+                        """)
+                .param("id", partnerId)
+                .query(Long.class)
+                .single() > 0;
+    }
+
+    /**
      * Each customer's chargeable weight on a load, through the consignments
      * aboard and the orders they were generated from.
      *

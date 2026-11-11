@@ -271,7 +271,8 @@ request after a quiet spell pays the start-up cost above.
   tenant's record is a 404 `not-found`). The order desk in both consoles shows it
   on a History tab.
 - Document number series (V49, `NUMBER_SERIES_MANAGE`): a tenant numbers a
-  document type (ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE)
+  document type (ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE,
+  CONTRACT)
   from a series that is tenant-wide or scoped to one organisational unit's
   subtree; the active series on the deepest unit covering the document wins.
   A number is `prefix [sep year-code] sep counter`, the counter zero-padded and
@@ -557,7 +558,32 @@ request after a quiet spell pays the start-up cost above.
   REVERSED, the consignment goes back to IN_TRANSIT (OUT_FOR_DELIVERY for a
   docket) unless a completed trip delivered it, and a completed trip's proof
   hold is put back. The order's coverage is not rewound.
-- Not wired yet (the same seam): contract verification, order change
+- **Client contract lifecycle** (V57, issue #216): a contract version starts as a
+  DRAFT (`POST /client-billing/contracts`; the code may be left out when the
+  tenant has a CONTRACT number series), edited with `PUT` and deleted with
+  `DELETE` under `If-Match` while it is a draft, and frozen from then on. A
+  completeness checklist (`GET .../checklist`; setting
+  `clientbilling.contract.requiredChecklist`, COMPLIANCE and dated: customer
+  trading, effective dates sane, a transport price, valid tax rates, an org unit)
+  gates `POST .../verification-requests`, which refuses with 409
+  `contract-checklist-incomplete` and every failing rule in `errors`. The request
+  is the `CONTRACT_ACTIVATION` approval (decided by `CLIENT_CONTRACT_APPROVE`,
+  self-approval refused by default): approving puts the version in force by the
+  old publish semantics (the incumbent is closed the day before) after checking
+  everything again; rejecting returns it to DRAFT with the reason. An optional
+  `validTill` ends a version; EXPIRED is derived on every read, never stored, and
+  nothing is priced after it. `CONTRACT_EXTENSION` (`POST .../extensions`) moves
+  `validTill` later, the one change a version in force accepts (the database
+  allows it only inside a transaction that says so, to a later date), and
+  `CONTRACT_CHARGE_ADD` (`POST .../charge-additions`) publishes a successor with
+  the added value-added charge from a day that has not passed, so no raised bill
+  is repriced. Every transition is audited with before, after and reason
+  (`CLIENT_CONTRACT_DRAFTED`, `_DRAFT_REVISED`, `_DRAFT_DELETED`,
+  `_VERIFICATION_REQUESTED`, `_ACTIVATED`, `_VERIFICATION_REJECTED`, `_EXTENDED`,
+  `_CHARGE_ADDED`, ...). The in-process `ClientContractService.publishContract`
+  still puts a version in force at once, for imports and tests; it has no HTTP
+  route. Both consoles' client desk has a contract lifecycle panel.
+- Not wired yet (the same seam): order change
   approvals (FR-ORD-005/027), cost and charge approval, terminal creation,
   seals, vendor advances.
 
