@@ -183,8 +183,12 @@
   get:
     tags: [Approvals]
     operationId: listApprovalPolicies
-    summary: The approval policy in force for each subject type
-    description: Requires `APPROVAL_READ`. The code default, with the tenant's own values over it.
+    summary: The organisation-wide approval policy in force for each subject type
+    description: |
+      Requires `APPROVAL_READ`. The code default with the organisation default
+      profile's `approvals.policy.*` settings over it. A unit's, customer's or
+      combination's profile (set through the settings API) is not shown here: it
+      applies to the subjects it matches.
     responses:
       "200":
         description: One policy per subject type.
@@ -206,10 +210,12 @@
   put:
     tags: [Approvals]
     operationId: setApprovalPolicy
-    summary: Set the tenant's own values for a subject type's policy
+    summary: Set the organisation default of a subject type's policy
     description: |
-      Requires `APPROVAL_POLICY_MANAGE`. Replaces whatever the tenant had
-      set; an omitted field keeps the code default. Applies to requests raised
+      Requires `APPROVAL_POLICY_MANAGE`. Writes the `approvals.policy.*` setting
+      of the organisation default profile, replacing what it had; an omitted
+      field is the code default's. Profiles of a unit, customer or combination
+      are managed through the settings API. Applies to requests raised
       afterwards -- an open request keeps the policy copied onto it. Refused
       with 409: `approval-mandatory` to switch off a mandatory flow (a proof's
       reversal), `approval-steps-invalid` for a step that names no permission,
@@ -236,8 +242,12 @@
   delete:
     tags: [Approvals]
     operationId: resetApprovalPolicy
-    summary: Go back to the code default for a subject type
-    description: Requires `APPROVAL_POLICY_MANAGE`. Audited as `APPROVAL_POLICY_RESET`.
+    summary: Clear the organisation default of a subject type's policy
+    description: |
+      Requires `APPROVAL_POLICY_MANAGE`. Removes the `approvals.policy.*` setting
+      from the organisation default profile, so the code default applies again
+      (profiles of a unit, customer or combination are untouched). Audited as
+      `APPROVAL_POLICY_RESET`.
     responses:
       "200":
         description: The policy now in force.

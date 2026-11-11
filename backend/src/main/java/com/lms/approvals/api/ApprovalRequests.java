@@ -18,6 +18,8 @@ package com.lms.approvals.api;
 import java.util.Map;
 import java.util.UUID;
 
+import com.lms.settings.api.SettingContext;
+
 /**
  * Raising an approval request, from the module that owns its subject.
  *
@@ -27,11 +29,24 @@ import java.util.UUID;
  */
 public interface ApprovalRequests {
 
-    /** Whether the tenant's policy for this subject type asks for approval. */
-    boolean isRequired(String subjectType);
+    /**
+     * Whether the policy for this subject type, resolved for the subject's
+     * context (its unit, customer and freight mode, where the flow knows
+     * them), asks for approval.
+     */
+    boolean isRequired(String subjectType, SettingContext context);
 
     /**
-     * Raises a request, recording the policy now in force on it.
+     * Whether the organisation-wide policy asks for approval. A flow that
+     * knows its subject's context passes it with the overload above, so a
+     * unit's or customer's profile applies.
+     */
+    default boolean isRequired(String subjectType) {
+        return isRequired(subjectType, SettingContext.tenant());
+    }
+
+    /**
+     * Raises a request, recording the policy now in force for {@code context} on it.
      *
      * @param payload what approving will do, frozen; handed back to the
      *                handler unchanged. Values are written as JSON strings,
@@ -41,7 +56,18 @@ public interface ApprovalRequests {
      *         {@code approval-already-open} when the subject already has an
      *         open request for this action
      */
-    ApprovalTicket request(ApprovalSubject subject, String action, Map<String, ?> payload, String summary);
+    ApprovalTicket request(ApprovalSubject subject, SettingContext context, String action,
+                           Map<String, ?> payload, String summary);
+
+    /**
+     * As above under the organisation-wide policy. Pass the same context here
+     * as to {@link #isRequired(String, SettingContext)} so the request is raised
+     * under the policy that said it was needed.
+     */
+    default ApprovalTicket request(ApprovalSubject subject, String action, Map<String, ?> payload,
+                                   String summary) {
+        return request(subject, SettingContext.tenant(), action, payload, summary);
+    }
 
     /** The open request for a subject and action, if there is one. */
     java.util.Optional<ApprovalTicket> openRequest(String subjectType, UUID subjectId, String action);
