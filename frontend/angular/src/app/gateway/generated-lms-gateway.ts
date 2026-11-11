@@ -71,13 +71,16 @@ import {
 } from './lms-gateway';
 // Profile and settings
 import {
-  EffectiveSetting, HistoryEntry as SettingHistoryEntry, SettingDefinition, SettingProfile, SettingScopeType,
+  EffectiveSetting, FreightMode as ApiFreightMode, HistoryEntry as SettingHistoryEntry, OrgUnit, OrgUnitType,
+  OrganisationUnitsService, SettingCombinationConditions, SettingDefinition, SettingProfile, SettingScopeType,
   SettingSource, SettingsService,
 } from '../api';
 import type {
-  EffectiveSettingView, MeView, MyPreferencesView, SettingChange, SettingContextDraft, SettingDefinitionView,
-  SettingHistoryRow, SettingProfileDraft, SettingProfileView, SettingScope, SettingValue,
+  EffectiveSettingView, MeView, MyPreferencesView, OrgUnitDraft, OrgUnitEdit, OrgUnitView, SettingChange,
+  SettingConditions, SettingContextDraft, SettingDefinitionView, SettingHistoryRow, SettingProfileDraft,
+  SettingProfileView, SettingScope, SettingValue,
 } from './lms-gateway';
+import { ORG_UNIT_WORDS } from './lms-gateway';
 // Warehouse operations
 import { WarehouseService } from '../api';
 import type {
@@ -526,14 +529,37 @@ const SCOPE_WORDS: Record<string, string> = {
   VENDOR: 'Vendor', VEHICLE: 'Vehicle', USER: 'You',
 };
 
-/** Where a value came from, in words. */
+/** Where a value came from, in words: the API's label (a unit with its level, a combination's conditions). */
 function sourceText(src: SettingSource): string {
   if (src.kind === 'SYSTEM_DEFAULT') {
     return 'System default';
   }
   const scope = SCOPE_WORDS[String(src.scopeType)] ?? String(src.scopeType);
   const from = src.effectiveFrom ? ` (from ${String(src.effectiveFrom).slice(0, 10)})` : '';
-  return `${scope}: ${text(src.profileName)}${from}`;
+  return `${src.label || `${scope}: ${text(src.profileName)}`}${from}`;
+}
+
+function conditionsOf(c: SettingCombinationConditions | undefined): SettingConditions | null {
+  return c ? {
+    orgUnitId: text(c.orgUnitId), customerId: text(c.customerId), vendorId: text(c.vendorId),
+    vehicleId: text(c.vehicleId), freightMode: text(c.freightMode), priority: c.priority ?? 0,
+  } : null;
+}
+
+function conditionsRequest(c: SettingConditions): SettingCombinationConditions {
+  return {
+    orgUnitId: c.orgUnitId || undefined, customerId: c.customerId || undefined, vendorId: c.vendorId || undefined,
+    vehicleId: c.vehicleId || undefined, freightMode: (c.freightMode || undefined) as ApiFreightMode | undefined,
+    priority: c.priority,
+  };
+}
+
+function orgUnitViewOf(u: OrgUnit): OrgUnitView {
+  return {
+    id: text(u.id), parentId: text(u.parentId), slug: text(u.slug), path: text(u.path), name: text(u.name),
+    unitType: text(u.unitType), level: u.level, countryCode: text(u.countryCode), stateCode: text(u.stateCode),
+    effectiveCountry: text(u.effectiveCountry), effectiveState: text(u.effectiveState), version: text(u.version),
+  };
 }
 
 function effectiveOf(e: EffectiveSetting): EffectiveSettingView {
@@ -562,6 +588,7 @@ function profileViewOf(p: SettingProfile): SettingProfileView {
       key: text(v.key), effectiveFrom: v.effectiveFrom ? String(v.effectiveFrom).slice(0, 10) : '',
       value: (v.value ?? null) as SettingValue | null, status: text(v.status),
     })),
+    conditions: conditionsOf(p.conditions),
     updatedAt: instant(p.updatedAt),
   };
 }
@@ -1875,8 +1902,45 @@ export class GeneratedLmsGateway extends LmsGateway {
       createSettingProfileRequest: {
         scopeType: draft.scopeType as unknown as SettingScopeType, scopeId: draft.scopeId || undefined,
         name: draft.name.trim() || undefined,
+        conditions: draft.conditions ? conditionsRequest(draft.conditions) : undefined,
       },
     }), (r) => text(r.id));
+  }
+
+  updateSettingConditions(id: string, version: string, conditions: SettingConditions): Promise<SettingProfileView> {
+    return this.call(this.settingsApi.updateSettingProfile({
+      id, ifMatch: `"${version}"`, updateSettingProfileRequest: { conditions: conditionsRequest(conditions) },
+    }), profileViewOf);
+  }
+
+  // Organisation units
+  private readonly orgUnitsApi = inject(OrganisationUnitsService);
+
+  orgUnits(): Promise<OrgUnitView[]> {
+    return this.call(this.orgUnitsApi.listOrgUnits({ limit: 200 }), (s) => s.items.map(orgUnitViewOf));
+  }
+
+  orgUnit(id: string): Promise<OrgUnitView> {
+    return this.call(this.orgUnitsApi.getOrgUnit({ id }), orgUnitViewOf);
+  }
+
+  createOrgUnit(draft: OrgUnitDraft): Promise<string> {
+    return this.call(this.orgUnitsApi.createOrgUnit({
+      createOrgUnitRequest: {
+        parentId: draft.parentId, slug: draft.slug.trim(), name: draft.name.trim(),
+        unitType: draft.unitType as unknown as OrgUnitType, countryCode: draft.countryCode.trim() || undefined,
+        stateCode: draft.stateCode.trim() || undefined,
+      },
+    }), (r) => text(r.id));
+  }
+
+  updateOrgUnit(id: string, version: string, edit: OrgUnitEdit): Promise<OrgUnitView> {
+    return this.call(this.orgUnitsApi.updateOrgUnit({
+      id, ifMatch: `"${version}"`, updateOrgUnitRequest: {
+        name: edit.name.trim(), unitType: edit.unitType as unknown as OrgUnitType,
+        countryCode: edit.countryCode.trim() || undefined, stateCode: edit.stateCode.trim() || undefined,
+      },
+    }), orgUnitViewOf);
   }
 
   updateSettingProfile(id: string, version: string, changes: SettingChange[]): Promise<SettingProfileView> {
@@ -1893,7 +1957,7 @@ export class GeneratedLmsGateway extends LmsGateway {
     return this.call(this.settingsApi.getEffectiveSettings({
       orgUnitId: context.orgUnitId || undefined, customerId: context.customerId || undefined,
       vehicleId: context.vehicleId || undefined, vendorId: context.vendorId || undefined,
-      asOf: context.asOf || undefined,
+      asOf: context.asOf || undefined, freightMode: (context.freightMode || undefined) as ApiFreightMode | undefined,
     }), (s) => s.items.map(effectiveOf));
   }
 
@@ -1985,7 +2049,9 @@ export class GeneratedLmsGateway extends LmsGateway {
           (s) => page(s.items, s.nextCursor, (g) => ({ id: text(g.id), label: guideLabel(g) })));
       case 'org-unit':
         return this.call(this.settingsApi.listSettingOrgUnits({ q: search, cursor: at, limit }),
-          (s) => page(s.items, s.nextCursor, (u) => ({ id: text(u.id), label: `${text(u.name)} · ${text(u.path)}` })));
+          (s) => page(s.items, s.nextCursor, (u) => ({
+            id: text(u.id), label: `${ORG_UNIT_WORDS[text(u.unitType)] ?? text(u.unitType)}: ${text(u.name)} · ${text(u.path)}`,
+          })));
     }
   }
 
