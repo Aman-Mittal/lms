@@ -1383,6 +1383,7 @@ class QueryPlanTest {
                                 u.path))
                         OR (p.scope_type = 'CUSTOMER' AND p.scope_id = '00000000-0000-0000-0000-000000000003')
                         OR (p.scope_type = 'VEHICLE' AND p.scope_id = CAST(NULL AS uuid))
+                        OR (p.scope_type = 'VENDOR' AND p.scope_id = '00000000-0000-0000-0000-000000000005')
                         OR (p.scope_type = 'USER' AND p.scope_id = CAST(NULL AS uuid)))
                 """;
         assertIndexed(resolve, "setting_profile");
@@ -1404,6 +1405,34 @@ class QueryPlanTest {
                    AND path > '/acme/a/'
                  ORDER BY path
                  LIMIT 51
+                """, "org_unit");
+    }
+
+    @Test
+    @DisplayName("the customers aboard a load, read for its trip's settings, are index-served")
+    void customersAboardALoad() {
+        String sql = """
+                SELECT DISTINCT o.customer_partner_id
+                  FROM load_consignment lc
+                  JOIN consignment c ON c.id = lc.consignment_id
+                  JOIN sales_order o ON o.id = c.order_id
+                 WHERE lc.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND lc.load_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY o.customer_partner_id
+                """;
+        assertIndexed(sql, "load_consignment");
+        assertIndexed(sql, "consignment");
+        assertIndexed(sql, "sales_order");
+    }
+
+    @Test
+    @DisplayName("a tenant's root unit, which a tenant-wide rate write is held to, is index-served")
+    void tenantRootUnit() {
+        assertIndexed("""
+                SELECT id FROM org_unit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND parent_id IS NULL
+                 ORDER BY path
+                 LIMIT 1
                 """, "org_unit");
     }
 
