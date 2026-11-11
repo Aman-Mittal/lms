@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { displayPreferences, formatDay, formatInstant } from '../display';
 import {
   AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi, DriversApi,
   EventDeadLetterApi, LTLRatingApi, OrdersApi,
@@ -27,6 +28,15 @@ import {
   type ParkedEvent, type ParkedEventStatus, type PublishLtlRateCardRequestRateBasisEnum,
   type WebhookDelivery, type WebhookEventType as ApiWebhookEventType, type WebhookSubscription,
 } from '../api';
+// Profile and settings
+import {
+  SettingsApi, type EffectiveSetting, type SettingDefinition, type SettingProfile, type SettingScopeType,
+  type SettingSource,
+} from '../api';
+import type {
+  EffectiveSettingView, MeView, MyPreferencesView, SettingChange, SettingContextDraft, SettingDefinitionView,
+  SettingHistoryRow, SettingProfileDraft, SettingProfileView, SettingScope, SettingValue,
+} from './lmsGateway';
 import { API_URL } from '../config';
 import { DemoDataApi } from '../api';
 import type { GoodsCondition as ApiGoodsCondition } from '../api';
@@ -220,8 +230,8 @@ function text(v: unknown): string {
     return '';
   }
   if (v instanceof Date) {
-    const iso = v.toISOString();
-    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 16).replace('T', ' ');
+    // The person's date format and time zone (display.ts); a calendar day is never shifted.
+    return v.toISOString().endsWith('T00:00:00.000Z') ? formatDay(v) : formatInstant(v);
   }
   return String(v);
 }
@@ -510,32 +520,32 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       resolutionNote: text(c.resolutionNote) }));
 
   const listers: Record<ResourceKey, () => Promise<Row[]>> = {
-    partners: async () => (await partners.listPartners({ limit: 50 })).items.map((p) => ({
+    partners: async () => (await partners.listPartners({ limit: displayPreferences().pageSize })).items.map((p) => ({
       id: text(p.id), code: text(p.code), legalName: text(p.legalName),
       partnerType: text(p.partnerType), status: text(p.status) })),
-    vehicles: async () => (await vehicles.listVehicles({ limit: 50 })).items.map((v) => ({
+    vehicles: async () => (await vehicles.listVehicles({ limit: displayPreferences().pageSize })).items.map((v) => ({
       id: text(v.id), registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType),
       status: text(v.status), payloadCapacityKg: text(v.payloadCapacityKg) })),
-    drivers: async () => (await drivers.listDrivers({ limit: 50 })).items.map((d) => ({
+    drivers: async () => (await drivers.listDrivers({ limit: displayPreferences().pageSize })).items.map((d) => ({
       id: text(d.id), fullName: text(d.fullName), licenceNo: text(d.licenceNo),
       licenceExpiresOn: text(d.licenceExpiresOn), status: text(d.status) })),
-    terminals: async () => (await terminals.listTerminals({ limit: 50 })).items.map((t) => ({
+    terminals: async () => (await terminals.listTerminals({ limit: displayPreferences().pageSize })).items.map((t) => ({
       id: text(t.id), code: text(t.code), name: text(t.name),
       functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount) })),
-    orders: async () => (await orders.listOrders({ limit: 50 })).items.map((o) => ({
+    orders: async () => (await orders.listOrders({ limit: displayPreferences().pageSize })).items.map((o) => ({
       id: text(o.id), orderNo: text(o.orderNo), status: text(o.status),
       customerName: text(o.customerName), originTerminalCode: text(o.originTerminalCode) })),
-    loads: async () => (await loads.listLoads({ limit: 50 })).items.map((l) => ({
+    loads: async () => (await loads.listLoads({ limit: displayPreferences().pageSize })).items.map((l) => ({
       id: text(l.id), loadNo: text(l.loadNo), status: text(l.status),
       vehicleRegistrationNo: text(l.vehicleRegistrationNo),
       weightUtilisationPct: text(l.weightUtilisationPct) })),
-    trips: async () => (await trips.listTrips({ limit: 50 })).items.map((t) => ({
+    trips: async () => (await trips.listTrips({ limit: displayPreferences().pageSize })).items.map((t) => ({
       id: text(t.id), tripNo: text(t.tripNo), status: text(t.status), vendorName: text(t.vendorName),
       driverName: text(t.driverName) })),
-    'freight-bills': async () => (await freightBills.listFreightBills({ limit: 50 })).items.map((b) => ({
+    'freight-bills': async () => (await freightBills.listFreightBills({ limit: displayPreferences().pageSize })).items.map((b) => ({
       id: text(b.id), billNo: text(b.billNo), status: text(b.status), vendorName: text(b.vendorName),
       claimedAmount: text(b.claimedAmount), varianceAmount: text(b.varianceAmount) })),
-    exceptions: async () => (await controlTower.listExceptions({ limit: 50 })).items.map((e) => ({
+    exceptions: async () => (await controlTower.listExceptions({ limit: displayPreferences().pageSize })).items.map((e) => ({
       id: text(e.id), ticketNo: text(e.ticketNo), severity: text(e.severity), status: text(e.status),
       category: text(e.category), description: text(e.description) })),
     claims: () => listClaims(),
@@ -1212,10 +1222,11 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...creditVerbs(config),
     // Number series
     ...numberingVerbs(config),
+    ...settingsVerbs(config),
     // Pickers
     ...pickerVerbs({
       partners, terminals, vehicles, drivers, warehouse: new WarehouseApi(config), orders, loads, trips,
-      controlTower, sourcing, freightBills,
+      controlTower, sourcing, freightBills, settings: new SettingsApi(config),
     }),
 
     // Commercial
@@ -1858,11 +1869,12 @@ function railRateCardRow(r: RailRateCard): Row {
 interface PickerApis {
   partners: PartnersApi; terminals: TerminalsApi; vehicles: VehiclesApi; drivers: DriversApi;
   warehouse: WarehouseApi; orders: OrdersApi; loads: PlanningApi; trips: TripsApi;
-  controlTower: ControlTowerApi; sourcing: SourcingApi; freightBills: SettlementApi;
+  controlTower: ControlTowerApi; sourcing: SourcingApi; freightBills: SettlementApi; settings: SettingsApi;
 }
 
 function pickerVerbs({
   partners, terminals, vehicles, drivers, warehouse, orders, loads, trips, controlTower, sourcing, freightBills,
+  settings,
 }: PickerApis): Pick<LmsGateway, 'pick'> {
   const page = <T>(items: T[], nextCursor: string | null | undefined, label: (item: T) => Choice): PickPage =>
     ({ items: items.map(label), nextCursor: nextCursor ?? null });
@@ -1949,6 +1961,10 @@ function pickerVerbs({
           case 'routing-guide': {
             const s = await sourcing.listRoutingGuides({ q: search, cursor: at, limit: PICK_LIMIT });
             return page(s.items, s.nextCursor, (g) => ({ id: text(g.id), label: guideLabel(g) }));
+          }
+          case 'org-unit': {
+            const s = await settings.listSettingOrgUnits({ q: search, cursor: at, limit: PICK_LIMIT });
+            return page(s.items, s.nextCursor, (u) => ({ id: text(u.id), label: `${text(u.name)} · ${text(u.path)}` }));
           }
         }
       }),
@@ -2109,5 +2125,144 @@ function numberingVerbs(config: Configuration): NumberingVerbs {
           counter: text(v.counter), status: text(v.status),
         };
       }),
+  };
+}
+
+// Profile and settings
+
+type SettingsVerbs = Pick<LmsGateway, 'me' | 'settingDefinitions' | 'myPreferences' | 'saveMyPreferences'
+  | 'settingProfiles' | 'settingProfile' | 'createSettingProfile' | 'updateSettingProfile' | 'deleteSettingProfile'
+  | 'effectiveSettings' | 'settingProfileHistory'>;
+
+const SCOPE_WORDS: Record<string, string> = {
+  PLATFORM: 'Platform', ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer',
+  VEHICLE: 'Vehicle', USER: 'You',
+};
+
+/** A `date` field as the generated client gives it (a Date at midnight UTC), as `YYYY-MM-DD`. */
+function isoDay(v: Date | string | null | undefined): string {
+  if (!v) {
+    return '';
+  }
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+}
+
+/** Where a value came from, in words. */
+function sourceText(src: SettingSource): string {
+  if (src.kind === 'SYSTEM_DEFAULT') {
+    return 'System default';
+  }
+  const scope = SCOPE_WORDS[String(src.scopeType)] ?? String(src.scopeType);
+  const from = src.effectiveFrom ? ` (from ${isoDay(src.effectiveFrom)})` : '';
+  return `${scope}: ${text(src.profileName)}${from}`;
+}
+
+function effectiveOf(e: EffectiveSetting): EffectiveSettingView {
+  return {
+    key: text(e.key), type: text(e.type), category: text(e.category), label: text(e.label),
+    value: (e.value ?? null) as SettingValue | null, source: sourceText(e.source),
+    sourceScope: e.source.kind === 'SYSTEM_DEFAULT' ? '' : text(e.source.scopeType),
+    effectiveFrom: isoDay(e.source.effectiveFrom),
+  };
+}
+
+function definitionViewOf(d: SettingDefinition): SettingDefinitionView {
+  return {
+    key: d.key, type: text(d.type), category: text(d.category), label: d.label, description: d.description,
+    defaultValue: (d.defaultValue ?? null) as SettingValue | null, scopes: (d.scopes ?? []).map(String),
+    allowedValues: d.allowedValues ?? [], min: d.min ?? null, max: d.max ?? null,
+    userPreference: d.userPreference, effectiveDated: d.effectiveDated, tenantOverridable: d.tenantOverridable,
+  };
+}
+
+function profileViewOf(p: SettingProfile): SettingProfileView {
+  return {
+    id: text(p.id), scopeType: text(p.scopeType), scopeId: text(p.scopeId), scopeLabel: text(p.scopeLabel),
+    name: text(p.name), version: text(p.version), values: (p.values ?? {}) as Record<string, SettingValue>,
+    versions: (p.versions ?? []).map((v) => ({
+      key: text(v.key), effectiveFrom: isoDay(v.effectiveFrom), value: (v.value ?? null) as SettingValue | null,
+      status: text(v.status),
+    })),
+    updatedAt: text(p.updatedAt),
+  };
+}
+
+function shown(v: unknown): string {
+  return v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
+
+/** One row per setting version a history entry changed. */
+function settingHistoryRows(e: HistoryEntry): SettingHistoryRow[] {
+  const before = (e.before ?? {}) as Record<string, unknown>;
+  const after = (e.after ?? {}) as Record<string, unknown>;
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => k !== 'scopeType').sort();
+  return keys.map((k) => ({
+    id: `${text(e.id)}:${k}`, action: text(e.action), actor: actorOf(e), occurredAt: text(e.occurredAt),
+    setting: k, before: shown(before[k]), after: shown(after[k]),
+  }));
+}
+
+/** Undated changes go in `values`, dated ones in `versions`. */
+function changesRequest(changes: SettingChange[]) {
+  const values: Record<string, unknown> = {};
+  const versions: Array<{ key: string; effectiveFrom: Date; value: unknown }> = [];
+  for (const c of changes) {
+    if (c.effectiveFrom) {
+      versions.push({ key: c.key, effectiveFrom: new Date(`${c.effectiveFrom}T00:00:00Z`), value: c.value });
+    } else {
+      values[c.key] = c.value;
+    }
+  }
+  return { values, versions };
+}
+
+/** Who the caller is, their preferences, and the tenant's setting profiles. */
+function settingsVerbs(config: Configuration): SettingsVerbs {
+  const settings = new SettingsApi(config);
+  const users = new UsersApi(config);
+  const mine = (m: { version: number; values: object; effective: EffectiveSetting[] }): MyPreferencesView => ({
+    version: text(m.version), values: m.values as Record<string, SettingValue>, effective: m.effective.map(effectiveOf),
+  });
+  return {
+    me: () => guard(async () => {
+      const m = await users.getMe();
+      return {
+        userId: text(m.userId), email: text(m.email), fullName: text(m.fullName), tenantCode: text(m.tenantCode),
+        tenantName: text(m.tenantName), orgUnitName: text(m.orgUnitName), orgPath: text(m.orgPath),
+        roles: m.roles ?? [], permissions: m.permissions ?? [],
+      } satisfies MeView;
+    }),
+    settingDefinitions: () => guard(async () => (await settings.listSettingDefinitions()).items.map(definitionViewOf)),
+    myPreferences: () => guard(async () => mine(await settings.getMyPreferences())),
+    saveMyPreferences: (version: string, values: Record<string, SettingValue | null>) =>
+      guard(async () => mine(await settings.updateMyPreferences({
+        ifMatch: `"${version}"`, updateMyPreferencesRequest: { values },
+      }))),
+    settingProfiles: (scope?: SettingScope) =>
+      guard(async () => (await settings.listSettingProfiles({
+        scopeType: scope as unknown as SettingScopeType | undefined, limit: 200,
+      })).items.map(profileViewOf)),
+    settingProfile: (id: string) => guard(async () => profileViewOf(await settings.getSettingProfile({ id }))),
+    createSettingProfile: (draft: SettingProfileDraft) =>
+      guard(async () => text((await settings.createSettingProfile({
+        createSettingProfileRequest: {
+          scopeType: draft.scopeType as unknown as SettingScopeType, scopeId: draft.scopeId || undefined,
+          name: draft.name.trim() || undefined,
+        },
+      })).id)),
+    updateSettingProfile: (id: string, version: string, changes: SettingChange[]) =>
+      guard(async () => profileViewOf(await settings.updateSettingProfile({
+        id, ifMatch: `"${version}"`, updateSettingProfileRequest: changesRequest(changes),
+      }))),
+    deleteSettingProfile: (id: string, version: string) =>
+      guard(async () => { await settings.deleteSettingProfile({ id, ifMatch: `"${version}"` }); }),
+    effectiveSettings: (context: SettingContextDraft) =>
+      guard(async () => (await settings.getEffectiveSettings({
+        orgUnitId: context.orgUnitId || undefined, customerId: context.customerId || undefined,
+        vehicleId: context.vehicleId || undefined,
+        asOf: context.asOf ? new Date(`${context.asOf}T00:00:00Z`) : undefined,
+      })).items.map(effectiveOf)),
+    settingProfileHistory: (id: string) =>
+      guard(async () => (await settings.getSettingProfileHistory({ id, limit: 100 })).items.flatMap(settingHistoryRows)),
   };
 }
