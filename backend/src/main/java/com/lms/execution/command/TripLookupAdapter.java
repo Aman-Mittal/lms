@@ -48,6 +48,6 @@ public class TripLookupAdapter implements TripLookupPort {
     @Transactional(readOnly = true)
     public Optional<TripScope> scopeOf(UUID tripId) {
         return trips.findById(tripId).map(trip -> new TripScope(trip.id(), trip.orgUnitId(),
-                trip.vehicleId(), loads.customersAboard(trip.loadId())));
+                trip.vehicleId(), loads.customersAboard(trip.loadId()), loads.freightModeOf(trip.loadId())));
     }
 }

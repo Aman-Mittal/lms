@@ -17,16 +17,46 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { EntityPicker } from '../EntityPicker';
 import {
-  SETTING_SCOPES, type EffectiveSettingView, type PickKind, type SettingChange, type SettingDefinitionView,
-  type SettingHistoryRow, type SettingProfileView, type SettingScope,
+  FREIGHT_MODES, SETTING_SCOPES, type EffectiveSettingView, type PickKind, type SettingChange,
+  type SettingConditions, type SettingDefinitionView, type SettingHistoryRow, type SettingProfileView,
+  type SettingScope,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settingsForm';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
-  VEHICLE: 'Vehicle',
+  VEHICLE: 'Vehicle', COMBINATION: 'Combination',
 };
+const NO_CONDITIONS: SettingConditions =
+  { orgUnitId: '', customerId: '', vendorId: '', vehicleId: '', freightMode: '', priority: 0 };
+
+/** A combination's conditions: a picker per dimension, a freight mode and a priority. */
+function ConditionFields({ value, onChange, prefix, disabled }: {
+  value: SettingConditions; onChange: (c: SettingConditions) => void; prefix: string; disabled?: boolean;
+}) {
+  const set = (field: keyof SettingConditions) => (v: string) => onChange({ ...value, [field]: v });
+  return (
+    <>
+      <EntityPicker kind="org-unit" ariaLabel={`${prefix} unit`} testId={`${prefix}-unit`} placeholder="Unit"
+        value={value.orgUnitId} onChange={set('orgUnitId')} />
+      <EntityPicker kind="customer" ariaLabel={`${prefix} customer`} testId={`${prefix}-customer`}
+        placeholder="Customer" value={value.customerId} onChange={set('customerId')} />
+      <EntityPicker kind="vendor" ariaLabel={`${prefix} vendor`} testId={`${prefix}-vendor`} placeholder="Vendor"
+        value={value.vendorId} onChange={set('vendorId')} />
+      <EntityPicker kind="vehicle" ariaLabel={`${prefix} vehicle`} testId={`${prefix}-vehicle`} placeholder="Vehicle"
+        value={value.vehicleId} onChange={set('vehicleId')} />
+      <select aria-label={`${prefix} freight mode`} data-testid={`${prefix}-mode`} value={value.freightMode}
+        disabled={disabled} onChange={(e) => set('freightMode')(e.target.value)}>
+        <option value="">Any mode</option>
+        {FREIGHT_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <input type="number" aria-label={`${prefix} priority`} data-testid={`${prefix}-priority`}
+        value={value.priority} disabled={disabled}
+        onChange={(e) => onChange({ ...value, priority: Number(e.target.value) || 0 })} />
+    </>
+  );
+}
 const PICKER: Record<string, PickKind> = {
   ORG_UNIT: 'org-unit', CUSTOMER: 'customer', VENDOR: 'vendor', VEHICLE: 'vehicle',
 };
@@ -34,7 +64,8 @@ const label = (s: string) => SCOPE_LABEL[s] ?? s;
 
 /**
  * Administration > Profile settings: the company's setting profiles, one per
- * scope (the organisation, a unit, a customer, a vendor, a vehicle), their
+ * scope (the organisation, a unit, a customer, a vendor, a vehicle) and any
+ * number of combinations (a unit's subtree and a customer, say), their
  * values with an input for each setting's type, the history of each, and what
  * is in force for a context and where it comes from. A dated setting changes
  * only by a new version from today or later; versions already in force are
@@ -56,7 +87,11 @@ export function ProfileSettings() {
   const [newScope, setNewScope] = useState<SettingScope>('ORG_DEFAULT');
   const [newScopeId, setNewScopeId] = useState('');
   const [newName, setNewName] = useState('');
-  const [ctx, setCtx] = useState({ orgUnitId: '', customerId: '', vehicleId: '', vendorId: '', asOf: '' });
+  const [newCond, setNewCond] = useState<SettingConditions>(NO_CONDITIONS);
+  const [editCond, setEditCond] = useState<SettingConditions>(NO_CONDITIONS);
+  const [ctx, setCtx] = useState({
+    orgUnitId: '', customerId: '', vehicleId: '', vendorId: '', asOf: '', freightMode: '',
+  });
 
   const allowed = picked ? definitions.filter((d) => d.scopes.includes(picked.scopeType)) : [];
   const dated = allowed.some((d) => d.effectiveDated);
@@ -76,6 +111,7 @@ export function ProfileSettings() {
 
   function show(p: SettingProfileView) {
     setPicked(p);
+    setEditCond(p.conditions ?? NO_CONDITIONS);
     const keys = definitions.filter((d) => d.scopes.includes(p.scopeType)).map((d) => d.key);
     setTyped(Object.fromEntries(keys.map((k) => [k, toInput(p.values[k])])));
     setFrom(Object.fromEntries(keys.map((k) => [k, todayIso()])));
@@ -107,11 +143,14 @@ export function ProfileSettings() {
   function create(event: FormEvent) {
     event.preventDefault();
     void guarded(async () => {
+      const combination = newScope === 'COMBINATION';
       const id = await gateway.createSettingProfile({
-        scopeType: newScope, scopeId: newScope === 'ORG_DEFAULT' ? '' : newScopeId, name: newName,
+        scopeType: newScope, scopeId: newScope === 'ORG_DEFAULT' || combination ? '' : newScopeId, name: newName,
+        conditions: combination ? newCond : undefined,
       });
       setNewName('');
       setNewScopeId('');
+      setNewCond(NO_CONDITIONS);
       await reload();
       show(await gateway.settingProfile(id));
       setHistory(await gateway.settingProfileHistory(id));
@@ -137,6 +176,19 @@ export function ProfileSettings() {
     });
   }
 
+  function saveConditions(event: FormEvent) {
+    event.preventDefault();
+    if (!picked) {
+      return;
+    }
+    void guarded(async () => {
+      show(await gateway.updateSettingConditions(picked.id, picked.version, editCond));
+      setHistory(await gateway.settingProfileHistory(picked.id));
+      setNotice('Saved.');
+      await reload();
+    });
+  }
+
   const clear = (key: string) => picked && guarded(() => apply(picked, [{ key, effectiveFrom: '', value: null }]));
 
   const remove = () => picked && guarded(async () => {
@@ -153,8 +205,9 @@ export function ProfileSettings() {
   return (
     <>
       <h1>Profile settings</h1>
-      <p className="muted">The most specific profile that sets a value wins: organisation, then unit (deeper first),
-        then vehicle, customer or vendor. A person's own preferences sit on top of those, under My profile.</p>
+      <p className="muted">The most specific profile that sets a value wins: organisation, then unit (country, zone,
+        branch: deeper first), then vehicle, customer or vendor, then a combination of those (more conditions first,
+        then the deeper unit, then the higher priority). A person's own preferences sit on top, under My profile.</p>
       {error && <p className="error" role="alert">{error}</p>}
 
       <label>
@@ -188,7 +241,8 @@ export function ProfileSettings() {
               onChange={(e) => setNewScope(e.target.value as SettingScope)}>
               {SETTING_SCOPES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
             </select>
-            {newScope !== 'ORG_DEFAULT' && (
+            {newScope === 'COMBINATION' && <ConditionFields value={newCond} onChange={setNewCond} prefix="cond" />}
+            {newScope !== 'ORG_DEFAULT' && newScope !== 'COMBINATION' && (
               <EntityPicker key={newScope} kind={PICKER[newScope]} ariaLabel="Profile scope" testId="new-scope-id"
                 placeholder="Which one" value={newScopeId} onChange={setNewScopeId} />
             )}
@@ -202,6 +256,13 @@ export function ProfileSettings() {
       {picked && (
         <section className="panel in-flow" data-testid="profile-panel">
           <header><h2>{picked.name}</h2><span className="muted">{label(picked.scopeType)} {picked.scopeLabel}</span></header>
+          {picked.scopeType === 'COMBINATION' && (
+            <form className="inline" onSubmit={saveConditions} data-testid="profile-conditions">
+              <ConditionFields key={picked.id} value={editCond} onChange={setEditCond} prefix="edit-cond"
+                disabled={!manage} />
+              {manage && <button type="submit" data-testid="save-conditions">Save conditions</button>}
+            </form>
+          )}
           <form onSubmit={saveProfile} data-testid="profile-values">
             <table>
               <thead><tr><th>Setting</th><th>Value</th>{dated && <th>From</th>}<th /></tr></thead>
@@ -295,6 +356,11 @@ export function ProfileSettings() {
           value={ctx.vehicleId} onChange={(v) => setCtx((c) => ({ ...c, vehicleId: v }))} />
         <EntityPicker kind="vendor" ariaLabel="Context vendor" testId="ctx-vendor" placeholder="Vendor"
           value={ctx.vendorId} onChange={(v) => setCtx((c) => ({ ...c, vendorId: v }))} />
+        <select aria-label="Freight mode" data-testid="ctx-freight-mode" value={ctx.freightMode}
+          onChange={(e) => setCtx((c) => ({ ...c, freightMode: e.target.value }))}>
+          <option value="">Any mode</option>
+          {FREIGHT_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
         <input type="date" aria-label="As of" data-testid="ctx-as-of" value={ctx.asOf}
           onChange={(e) => setCtx((c) => ({ ...c, asOf: e.target.value }))} />
         <button type="submit" data-testid="show-effective">Show</button>

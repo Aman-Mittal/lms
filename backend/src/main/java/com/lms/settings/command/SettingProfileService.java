@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -26,8 +27,10 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import com.lms.settings.api.ScopeType;
+import com.lms.settings.api.SettingContext;
 import com.lms.settings.command.domain.SettingProfile;
 import com.lms.settings.command.domain.SettingValue;
 import com.lms.shared.audit.TransitionAudit;
@@ -80,6 +83,7 @@ public class SettingProfileService {
     private static final Pattern STATE = Pattern.compile("^[A-Z0-9]{1,3}$");
 
     private final SettingProfileRepository profiles;
+    private final CombinationRules combinations;
     private final SettingRegistry registry;
     private final ScopeReferences scopes;
     private final SettingCalendar calendar;
@@ -87,10 +91,11 @@ public class SettingProfileService {
     private final JdbcClient jdbc;
     private final JsonMapper json;
 
-    public SettingProfileService(SettingProfileRepository profiles, SettingRegistry registry,
-                                 ScopeReferences scopes, SettingCalendar calendar, TransitionAudit audit,
-                                 JdbcClient jdbc, JsonMapper json) {
+    public SettingProfileService(SettingProfileRepository profiles, CombinationRules combinations,
+                                 SettingRegistry registry, ScopeReferences scopes, SettingCalendar calendar,
+                                 TransitionAudit audit, JdbcClient jdbc, JsonMapper json) {
         this.profiles = profiles;
+        this.combinations = combinations;
         this.registry = registry;
         this.scopes = scopes;
         this.calendar = calendar;
@@ -99,8 +104,28 @@ public class SettingProfileService {
         this.json = json;
     }
 
-    /** Where a new profile applies. {@code country} and {@code state} are for PLATFORM only. */
-    public record Scope(ScopeType type, UUID id, String country, String state) {
+    /**
+     * Where a new profile applies. {@code country} and {@code state} are for
+     * PLATFORM only, {@code conditions} for COMBINATION only.
+     */
+    public record Scope(ScopeType type, UUID id, String country, String state, Conditions conditions) {
+
+        public Scope(ScopeType type, UUID id, String country, String state) {
+            this(type, id, country, state, null);
+        }
+    }
+
+    /**
+     * A combination profile's conditions: each a value it names, or null
+     * when it leaves that dimension open; two at least.
+     *
+     * @param freightMode one of {@link com.lms.settings.api.SettingContext#FREIGHT_MODES}
+     * @param priority    the last tie-breaker among matching combinations,
+     *                    {@value SettingCombination#MIN_PRIORITY} to
+     *                    {@value SettingCombination#MAX_PRIORITY}, higher wins
+     */
+    public record Conditions(UUID orgUnitId, UUID customerId, UUID vendorId, UUID vehicleId, String freightMode,
+                             int priority) {
     }
 
     /**
@@ -111,9 +136,26 @@ public class SettingProfileService {
      */
     @Transactional
     @PreAuthorize("hasAuthority(@settingScopes.authorityFor(#scope.type()))"
-            + " and @abac.permitsIn('SETTINGS_MANAGE', @settingScopes.unitOf(#scope.type(), #scope.id()))")
+            + " and @abac.permitsIn('SETTINGS_MANAGE', @settingScopes.unitOfScope(#scope))")
     public UUID create(Scope scope, String name, List<SettingRegistry.Requested> requested) {
         ScopeType type = scope.type();
+        if (type == ScopeType.COMBINATION) {
+            if (scope.id() != null || scope.country() != null || scope.state() != null) {
+                throw new BusinessRuleViolationException("setting-scope-invalid",
+                        "A combination profile names its conditions, not a scope id or a jurisdiction");
+            }
+            SettingCombination combination = combination(scope.conditions());
+            String clean = name(name, null);
+            SettingProfile fresh = SettingProfile.combination(TenantContext.requireTenantId(), clean,
+                    combination.orgUnitId(), combination.customerId(), combination.vendorId(),
+                    combination.vehicleId(), combination.freightMode(), combination.priority());
+            List<SettingRegistry.Change> changes = registry.validate(type, requested);
+            return apply(fresh, clean, changes, true, combination, null).id();
+        }
+        if (scope.conditions() != null) {
+            throw new BusinessRuleViolationException("setting-scope-invalid",
+                    "Only a combination profile has conditions");
+        }
         if (type == ScopeType.USER) {
             throw new BusinessRuleViolationException("setting-scope-invalid",
                     "Personal preferences are set by their owner, through /api/v1/settings/me");
@@ -143,23 +185,43 @@ public class SettingProfileService {
             fresh = SettingProfile.of(tenantId, type, scope.id(), clean);
         }
         List<SettingRegistry.Change> changes = registry.validate(type, requested);
-        return apply(fresh, clean, changes, true).id();
+        return apply(fresh, clean, changes, true, null, null).id();
     }
 
     /**
-     * Renames the profile (when {@code name} is given) and sets or, for a null
-     * value, removes each version requested; versions not mentioned are kept.
+     * Renames the profile (when {@code name} is given), replaces a
+     * combination's conditions (when {@code conditions} are given) and sets
+     * or, for a null value, removes each version requested; versions not
+     * mentioned are kept.
      *
      * @return the profile's new version, its next ETag
+     * @throws BusinessRuleViolationException {@code setting-combination-ambiguous}
+     *         when a combination would tie with another that sets one of its keys
      */
     @Transactional
     @PreAuthorize("hasAuthority(@settingScopes.authorityForProfile(#id))"
-            + " and @abac.permitsIn('SETTINGS_MANAGE', @settingScopes.unitOfProfile(#id))")
-    public long update(UUID id, long expectedVersion, String name, List<SettingRegistry.Requested> requested) {
+            + " and @abac.permitsIn('SETTINGS_MANAGE', @settingScopes.unitOfProfile(#id))"
+            + " and @abac.permitsIn('SETTINGS_MANAGE', @settingScopes.unitOfConditions(#conditions))")
+    public long update(UUID id, long expectedVersion, String name, Conditions conditions,
+                       List<SettingRegistry.Requested> requested) {
         SettingProfile profile = administered(id, expectedVersion);
         List<SettingRegistry.Change> changes = registry.validate(profile.scopeType(), requested);
         String clean = name == null ? profile.name() : name(name, null);
-        return apply(profile.atVersion(expectedVersion), clean, changes, false).version();
+        if (profile.scopeType() != ScopeType.COMBINATION) {
+            if (conditions != null) {
+                throw new BusinessRuleViolationException("setting-scope-invalid",
+                        "Only a combination profile has conditions");
+            }
+            return apply(profile.atVersion(expectedVersion), clean, changes, false, null, null).version();
+        }
+        JsonNode conditionsBefore = conditionsNode(profile);
+        SettingCombination combination = combination(conditions != null ? conditions
+                : new Conditions(profile.matchOrgUnitId(), profile.matchCustomerId(), profile.matchVendorId(),
+                        profile.matchVehicleId(), profile.matchFreightMode(), profile.priority()));
+        SettingProfile target = profile.atVersion(expectedVersion).withConditions(combination.orgUnitId(),
+                combination.customerId(), combination.vendorId(), combination.vehicleId(),
+                combination.freightMode(), combination.priority());
+        return apply(target, clean, changes, false, combination, conditionsBefore).version();
     }
 
     /**
@@ -223,7 +285,7 @@ public class SettingProfileService {
         }
         SettingProfile profile = mine.map(p -> p.atVersion(expectedVersion))
                 .orElseGet(() -> SettingProfile.of(tenantId, ScopeType.USER, userId, PERSONAL_NAME));
-        return apply(profile, profile.name(), changes, mine.isEmpty()).version();
+        return apply(profile, profile.name(), changes, mine.isEmpty(), null, null).version();
     }
 
     /** The port's write: organisation default values, created on first use, no version asked. */
@@ -235,7 +297,7 @@ public class SettingProfileService {
                 .flatMap(profiles::findById);
         SettingProfile profile = existing.orElseGet(
                 () -> SettingProfile.of(tenantId, ScopeType.ORG_DEFAULT, null, ORG_DEFAULT_NAME));
-        apply(profile, profile.name(), changes, existing.isEmpty());
+        apply(profile, profile.name(), changes, existing.isEmpty(), null, null);
     }
 
     /** A profile the administrative calls may touch: it exists, is not a user's, and is at the version given. */
@@ -250,8 +312,13 @@ public class SettingProfileService {
         return profile;
     }
 
+    /**
+     * @param combination      a COMBINATION profile's conditions as they will be; null otherwise
+     * @param conditionsBefore a COMBINATION profile's conditions as they were, for the history
+     */
     private SettingProfile apply(SettingProfile profile, String name,
-                                 List<SettingRegistry.Change> changes, boolean creating) {
+                                 List<SettingRegistry.Change> changes, boolean creating,
+                                 SettingCombination combination, JsonNode conditionsBefore) {
         LocalDate today = today(profile);
         Map<String, SettingValue> current = new TreeMap<>();
         profile.values().forEach(v -> current.put(label(v.settingKey(), v.effectiveFrom()), v));
@@ -301,8 +368,21 @@ public class SettingProfileService {
             before.put("name", json.getNodeFactory().stringNode(profile.name()));
             after.put("name", json.getNodeFactory().stringNode(name));
         }
+        if (combination != null) {
+            JsonNode conditionsAfter = conditionsNode(profile);
+            if (creating || !conditionsAfter.equals(conditionsBefore)) {
+                if (!creating) {
+                    before.put("conditions", conditionsBefore);
+                }
+                after.put("conditions", conditionsAfter);
+            }
+        }
         if (!creating && after.isEmpty()) {
             return profile;
+        }
+        if (combination != null) {
+            combinations.refuseAmbiguous(profile.id(), combination,
+                    next.values().stream().map(SettingValue::settingKey).collect(Collectors.toCollection(TreeSet::new)));
         }
         if (profile.scopeType() == ScopeType.PLATFORM) {
             platformWrite();
@@ -330,6 +410,61 @@ public class SettingProfileService {
      */
     private void platformWrite() {
         jdbc.sql("SELECT set_config('app.platform_write', 'on', true)").query(String.class).single();
+    }
+
+    /**
+     * The conditions, checked: two dimensions at least, a known freight mode,
+     * a priority in bounds, and every id one of the tenant's (404 otherwise,
+     * as for a scope's record).
+     */
+    private SettingCombination combination(Conditions conditions) {
+        if (conditions == null) {
+            throw new BusinessRuleViolationException("setting-combination-invalid",
+                    "A combination profile needs its conditions: two or more of org unit, customer, vendor,"
+                            + " vehicle and freight mode");
+        }
+        String mode = conditions.freightMode() == null || conditions.freightMode().isBlank() ? null
+                : conditions.freightMode().strip().toUpperCase(Locale.ROOT);
+        if (mode != null && !SettingContext.FREIGHT_MODES.contains(mode)) {
+            throw new BusinessRuleViolationException("setting-combination-invalid",
+                    "A freight mode is one of " + SettingContext.FREIGHT_MODES);
+        }
+        if (conditions.priority() < SettingCombination.MIN_PRIORITY
+                || conditions.priority() > SettingCombination.MAX_PRIORITY) {
+            throw new BusinessRuleViolationException("setting-combination-invalid",
+                    "A combination's priority is " + SettingCombination.MIN_PRIORITY + " to "
+                            + SettingCombination.MAX_PRIORITY);
+        }
+        SettingCombination draft = new SettingCombination(conditions.orgUnitId(), null, conditions.customerId(),
+                conditions.vendorId(), conditions.vehicleId(), mode, conditions.priority());
+        if (draft.dimensions() < SettingCombination.MIN_DIMENSIONS) {
+            throw new BusinessRuleViolationException("setting-combination-invalid",
+                    "A combination names at least two of org unit, customer, vendor, vehicle and freight mode;"
+                            + " for one, use that scope's own profile");
+        }
+        String path = draft.orgUnitId() == null ? null : scopes.requireUnitPath(draft.orgUnitId());
+        if (draft.customerId() != null) {
+            scopes.requireExists(ScopeType.CUSTOMER, draft.customerId());
+        }
+        if (draft.vendorId() != null) {
+            scopes.requireExists(ScopeType.VENDOR, draft.vendorId());
+        }
+        if (draft.vehicleId() != null) {
+            scopes.requireExists(ScopeType.VEHICLE, draft.vehicleId());
+        }
+        return new SettingCombination(draft.orgUnitId(), path, draft.customerId(), draft.vendorId(),
+                draft.vehicleId(), mode, draft.priority());
+    }
+
+    private JsonNode conditionsNode(SettingProfile p) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("orgUnitId", p.matchOrgUnitId() == null ? null : p.matchOrgUnitId().toString());
+        out.put("customerId", p.matchCustomerId() == null ? null : p.matchCustomerId().toString());
+        out.put("vendorId", p.matchVendorId() == null ? null : p.matchVendorId().toString());
+        out.put("vehicleId", p.matchVehicleId() == null ? null : p.matchVehicleId().toString());
+        out.put("freightMode", p.matchFreightMode());
+        out.put("priority", p.priority());
+        return json.valueToTree(out);
     }
 
     private static void checkJurisdiction(Scope scope) {
