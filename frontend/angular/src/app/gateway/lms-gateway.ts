@@ -1668,6 +1668,10 @@ export interface NumberVerdict {
 /** Who the signed-in caller is, for their profile page. */
 export interface MeView {
   userId: string;
+  /** With the user, names the browser cache's database (DOCS/adr/0007). */
+  tenantId: string;
+  /** Changes when this caller's rights change; the browser cache is wiped when it does. */
+  cacheEpoch: string;
   email: string;
   fullName: string;
   tenantCode: string;
