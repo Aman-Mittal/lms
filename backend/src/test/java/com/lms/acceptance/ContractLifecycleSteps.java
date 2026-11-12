@@ -130,6 +130,12 @@ public class ContractLifecycleSteps {
         assertThat(((BusinessRuleViolationException) failure).errors()).containsKey(rule);
     }
 
+    @Then("contract {string} still stands {word}")
+    public void stillStands(String code, String status) {
+        // After a refusal: the status is unchanged, whatever the step before it threw.
+        assertThat(row(code, "status")).isEqualTo(status);
+    }
+
     @Then("contract {string} stands {word}")
     public void stands(String code, String status) {
         assertThat(failure).as("no step should have failed").isNull();

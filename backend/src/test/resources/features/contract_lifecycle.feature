@@ -47,7 +47,7 @@ Feature: A client contract is drafted, checked and verified by somebody else bef
     When "Maya" asks for contract "L-2" to be verified
     Then the contract step is refused with "contract-checklist-incomplete"
     And the refusal names rule "TRANSPORT_RATE"
-    And contract "L-2" stands DRAFT
+    And contract "L-2" still stands DRAFT
 
   Scenario: A rejection returns the draft with the reason
     Given "Maya" drafts contract "L-3" for "CLIENT-A" starting 10 days ago with a transport rate of 5
