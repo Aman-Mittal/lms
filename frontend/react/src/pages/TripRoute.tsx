@@ -21,6 +21,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
+import { TripMoney } from './TripMoney';
 
 /** A trip's track so far and where it is now. */
 export function TripRoute() {
@@ -147,6 +148,7 @@ export function TripRoute() {
           )}
         </section>
       )}
+      {route.data && tripId && <TripMoney tripId={tripId} />}
     </>
   );
 }

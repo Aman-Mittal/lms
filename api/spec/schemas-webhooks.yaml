@@ -22,7 +22,8 @@ WebhookEventType:
          CONSIGNMENTS_GENERATED, CONSIGNMENT_SPLIT, TRIP_DISPATCHED, TRIP_COMPLETED, TRIP_CANCELLED,
          DELIVERY_PROOF_RECORDED, CLAIM_RAISED, CLAIM_STATUS_CHANGED, CONSIGNMENT_IN_TRANSIT,
          CONSIGNMENT_DELIVERED, CONSIGNMENT_CANCELLED, APPROVAL_REQUESTED, APPROVAL_DECIDED,
-         GATE_ENTRY_RECORDED, GATE_EXIT_RECORDED, TRIP_STOP_ARRIVED, TRIP_STOP_DEPARTED, PING]
+         GATE_ENTRY_RECORDED, GATE_EXIT_RECORDED, TRIP_STOP_ARRIVED, TRIP_STOP_DEPARTED,
+         MANUAL_CHARGE_APPROVED, VENDOR_INVOICE_CAPTURED, VENDOR_PAYMENT_RECORDED, VENDOR_ADVANCE_PAID, PING]
 
 WebhookSubscriptionRequest:
   type: object
@@ -157,6 +158,14 @@ WebhookEnvelope:
       outOfOrder, source (MANUAL, GEOFENCE or TRIP)
     - `TRIP_STOP_DEPARTED`: tripId, tripNo, stopId, seq, kind, terminalId, arrivedAt, departedAt,
       completed (true for the trip's last stop), source
+    - `MANUAL_CHARGE_APPROVED`: chargeId, chargeNo, direction (RECEIVABLE or PAYABLE), chargeCode, subjectType,
+      subjectId, tripId, customerPartnerId, vendorPartnerId, amount, currency, clientChargeId, freightBillId --
+      when a manual charge is in force, at once or once approved
+    - `VENDOR_INVOICE_CAPTURED`: invoiceId, invoiceNo, vendorPartnerId, vendorInvoiceNo, invoiceDate, dueDate,
+      amount, taxAmount, totalAmount, advancesDeducted, currency, billCount
+    - `VENDOR_PAYMENT_RECORDED`: paymentId, invoiceId, invoiceNo, vendorPartnerId, amount, paidOn, mode, reference,
+      outstanding, invoiceStatus, currency
+    - `VENDOR_ADVANCE_PAID`: advanceId, advanceNo, tripId, vendorPartnerId, mode, amount, currency, reference, paidOn
     - `PING`: subscriptionId, message
 
     Ids and times are strings (UUIDs and ISO-8601 instants); amounts and weights are numbers.

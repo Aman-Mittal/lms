@@ -110,6 +110,12 @@ tags:
     description: Road-rail-road itineraries and rail terminal events (vision document 3.4).
   - name: Settlement
     description: Freight bills, tolerance matching and rate cards.
+  - name: Charges
+    description: The catalogue of charges a tenant raises by hand and the manual charges raised from it against a trip, consignment or order, approved above a threshold.
+  - name: Vendor payables
+    description: Vendor invoices captured against approved freight bills, the payments made against them, what is overdue and the balance settlement of a bill.
+  - name: Vendor advances
+    description: Advances to a vendor against a trip -- requested, approved, paid and deducted at settlement.
   - name: Client billing
     description: Third-party logistics -- client contracts, client-scoped charges, monthly client invoices and the margin per client.
   - name: Credit

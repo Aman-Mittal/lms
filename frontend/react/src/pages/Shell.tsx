@@ -77,6 +77,12 @@ export function Shell() {
               {group === 'Finance' && (can('INVOICE_READ') || can('TARIFF_MANAGE')) && (
                 <NavLink to="/ltl" data-testid="nav-ltl">LTL rating</NavLink>
               )}
+              {group === 'Finance' && can('MANUAL_CHARGE_RECORD') && (
+                <NavLink to="/manual-charges" data-testid="nav-manual-charges">Manual charges</NavLink>
+              )}
+              {group === 'Finance' && can('PAYABLES_MANAGE') && (
+                <NavLink to="/payables" data-testid="nav-payables">Vendor payables</NavLink>
+              )}
               {group === 'Finance' && can('CLIENT_BILLING_READ') && (
                 <NavLink to="/client-billing" data-testid="nav-client-billing">Client billing</NavLink>
               )}
@@ -117,7 +123,8 @@ export function Shell() {
           {/* Administration */}
           {(can('ACCESS_POLICY_MANAGE') || can('VEHICLE_READ') || can('CREDIT_LIMIT_REQUEST')
             || can('CREDIT_LIMIT_APPROVE') || can('NUMBER_SERIES_MANAGE')
-            || can('SETTINGS_READ') || can('SETTINGS_MANAGE') || can('ORG_UNIT_MANAGE')) && (
+            || can('SETTINGS_READ') || can('SETTINGS_MANAGE') || can('ORG_UNIT_MANAGE')
+            || can('CHARGE_CATALOGUE_MANAGE')) && (
             <div className="group" data-testid="nav-admin">
               <h6>Administration</h6>
               {can('ACCESS_POLICY_MANAGE') && (
@@ -132,6 +139,9 @@ export function Shell() {
               )}
               {can('NUMBER_SERIES_MANAGE') && (
                 <NavLink to="/admin/number-series" data-testid="nav-admin-number-series">Number series</NavLink>
+              )}
+              {can('CHARGE_CATALOGUE_MANAGE') && (
+                <NavLink to="/charge-catalogue" data-testid="nav-charge-catalogue">Charge catalogue</NavLink>
               )}
               {can('ORG_UNIT_MANAGE') && (
                 <NavLink to="/admin/org-units" data-testid="nav-admin-org-units">Organisation units</NavLink>
