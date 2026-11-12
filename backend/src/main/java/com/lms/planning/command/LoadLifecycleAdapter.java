@@ -92,6 +92,20 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
 
     @Override
     @Transactional(readOnly = true)
+    public List<UUID> dropTerminalsOf(UUID loadId) {
+        UUID tenantId = TenantContext.requireTenantId();
+        return loads.findById(loadId).map(load -> {
+            boolean lineHaul = load.freightMode() == FreightMode.LTL && !load.isDelivery();
+            Function<Consignment, UUID> stop = lineHaul
+                    ? Consignment::destinationHubTerminalId
+                    : Consignment::destinationTerminalId;
+            return consignments.findOnLoad(tenantId, loadId).stream().map(stop)
+                    .filter(java.util.Objects::nonNull).distinct().toList();
+        }).orElse(List.of());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UUID> customersAboard(UUID loadId) {
         return links.customersOnLoad(TenantContext.requireTenantId(), loadId);
     }

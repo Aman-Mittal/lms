@@ -316,7 +316,7 @@ Feature: Getting the lorry out of the yard, and only when it should be
     And trip "TRIP-A1" is moving
     And trip "TRIP-A1" arrives at 14:00
     When trip "TRIP-A1" is completed at 15:00
-    Then the audit trail for trip "TRIP-A1" lists "TRIP_RAISED, TRIP_ASSIGNED, TRIP_GATE_IN, TRIP_WEIGHED, TRIP_WEIGHED, TRIP_LOADED, TRIP_DOCUMENT_ATTACHED, TRIP_DOCUMENT_ATTACHED, TRIP_DISPATCHED, TRIP_IN_TRANSIT, TRIP_ARRIVED, TRIP_COMPLETED"
+    Then the audit trail for trip "TRIP-A1" lists "TRIP_RAISED, TRIP_ASSIGNED, TRIP_STOP_ARRIVED, TRIP_GATE_IN, TRIP_WEIGHED, TRIP_WEIGHED, TRIP_LOADED, TRIP_DOCUMENT_ATTACHED, TRIP_DOCUMENT_ATTACHED, TRIP_STOP_DEPARTED, TRIP_DISPATCHED, TRIP_IN_TRANSIT, TRIP_STOP_ARRIVED, TRIP_ARRIVED, TRIP_STOP_COMPLETED, TRIP_COMPLETED"
     And the "TRIP_DISPATCHED" audit entry for trip "TRIP-A1" mentions "LOADED"
 
   Scenario: A refused dispatch leaves no dispatch entry
@@ -335,4 +335,3 @@ Feature: Getting the lorry out of the yard, and only when it should be
     When terminal "ORIGIN" is deleted
     Then deleting the terminal is refused with "terminal-in-use" mentioning "trips"
     And terminal "ORIGIN" still exists
-
