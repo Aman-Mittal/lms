@@ -548,6 +548,29 @@ open a `REQUIRES_NEW` transaction in a request path, and do not bring Spring's
 own listener factory back. `EventPublicationPoolApiTest` guards the rule against
 a pool of 5.
 
+### Client-side cache
+
+The consoles keep reference geometry, track points and map tiles in the
+browser (DOCS/adr/0007, issue #221). The rules:
+
+- **Display only.** A cached value may be drawn; it may never decide anything.
+  State changes, money, permissions, geofence crossings and trip events are read
+  from the server, and the version a write sends in `If-Match` is read fresh.
+- **Never cache** a token, a credential or a response to a write. The tile
+  service worker handles tile-shaped image GETs only, without an `Authorization`
+  header; keep it that way.
+- The database is named per tenant and user, and is wiped on sign-out, on a
+  tenant or user change and when `GET /me`'s `cacheEpoch` changes. A new way to
+  end a session ends it through `Session.end()` so the wipe happens.
+- `ui.clientCache` off means nothing is opened or stored and every read goes to
+  the network. A new cached read goes through the cache module's `get`/`put`
+  with a TTL and a version, and works with it disabled.
+- A read the maps revalidate returns an `ETag` and answers `If-None-Match` with
+  304 (`ConditionalGet`); the track read takes `afterSeq`. Do not change a
+  cached read's shape without a new cache key.
+- Work over rows the browser already holds (counts, simplification) goes to a
+  Web Worker rather than a new server aggregate endpoint.
+
 ### There is no PostGIS
 
 PostGIS is GPLv2 and would compromise the Apache-2.0 distribution (see
