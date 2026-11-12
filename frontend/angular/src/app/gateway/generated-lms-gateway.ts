@@ -2096,7 +2096,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   myPreferences(): Promise<MyPreferencesView> {
     return this.call(this.settingsApi.getMyPreferences(), (m) => ({
       version: text(m.version), values: (m.values ?? {}) as Record<string, SettingValue>,
-      effective: m.effective.map(effectiveOf),
+      effective: m.effective.map(effectiveOf), policy: (m.policy ?? []).map(effectiveOf),
     }));
   }
 
@@ -2105,7 +2105,7 @@ export class GeneratedLmsGateway extends LmsGateway {
       ifMatch: `"${version}"`, updateMyPreferencesRequest: { values },
     }), (m) => ({
       version: text(m.version), values: (m.values ?? {}) as Record<string, SettingValue>,
-      effective: m.effective.map(effectiveOf),
+      effective: m.effective.map(effectiveOf), policy: (m.policy ?? []).map(effectiveOf),
     }));
   }
 
