@@ -24,6 +24,10 @@ import java.util.UUID;
  * <p>A replacement, not a patch: every field is stated, so a null pickup means
  * "no requested pickup" and not "leave it alone". The order number, unit, source
  * and freight mode are not here because they never change.
+ *
+ * <p>{@code contractLaneId} is the lane the person chose, null to have the
+ * contract's lane found when the order is validated; {@code loadType} the load
+ * or vehicle type, null for none.
  */
 public record OrderHeaderChange(
         UUID customerPartnerId,
@@ -31,5 +35,15 @@ public record OrderHeaderChange(
         Instant requestedPickupAt,
         Instant requestedDeliveryAt,
         UUID originHubTerminalId,
-        UUID destinationHubTerminalId) {
+        UUID destinationHubTerminalId,
+        UUID contractLaneId,
+        String loadType) {
+
+    /** A header that names no lane and no load type. */
+    public OrderHeaderChange(UUID customerPartnerId, UUID originTerminalId, Instant requestedPickupAt,
+                             Instant requestedDeliveryAt, UUID originHubTerminalId,
+                             UUID destinationHubTerminalId) {
+        this(customerPartnerId, originTerminalId, requestedPickupAt, requestedDeliveryAt, originHubTerminalId,
+                destinationHubTerminalId, null, null);
+    }
 }

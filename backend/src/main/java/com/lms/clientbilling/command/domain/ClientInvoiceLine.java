@@ -54,7 +54,8 @@ public record ClientInvoiceLine(
                                        UUID chargeId, UUID contractId, ChargePricing.Priced priced,
                                        ClientCharge charge, BigDecimal taxRate) {
         return new ClientInvoiceLine(id, tenantId, invoiceId, lineNo, chargeId, contractId,
-                charge.serviceType(), priced.narrative(), charge.quantity(), priced.unit(),
+                charge.serviceType(), priced.narrative(),
+                priced.quantity() != null ? priced.quantity() : charge.quantity(), priced.unit(),
                 priced.rate(), priced.amount(), taxRate, Tax.on(priced.amount(), taxRate), null,
                 Instant.now());
     }

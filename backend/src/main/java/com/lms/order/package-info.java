@@ -35,6 +35,14 @@
  * <p>{@code approvals::api} is asked whether cancelling an order needs an
  * approval under the tenant's policy, and raises the request when it does;
  * {@code OrderCancellationApproval} applies an approved one.
+ *
+ * <p>An order names the client contract version in force on its date and the
+ * lane it travels on, through {@code OrderContractPort} in this module's
+ * {@code api}, which client billing implements (so order never depends on it):
+ * an order outside the contract's lanes, with a load type or a consignee it
+ * does not allow, is refused by name unless the contract allows direct orders.
+ * Its promised transit days are the lane's, else the distance between its
+ * origin and destinations over the {@code order.transit.kmPerDay} setting.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Order Management",
