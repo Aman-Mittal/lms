@@ -818,10 +818,38 @@ class QueryPlanTest {
                 SELECT * FROM client_contract
                  WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
                    AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'ACTIVE'
                    AND effective_from <= DATE '2026-01-15'
                    AND (effective_to IS NULL OR effective_to >= DATE '2026-01-15')
+                   AND (valid_till IS NULL OR valid_till >= DATE '2026-01-15')
                  ORDER BY effective_from DESC
                  LIMIT 1
+                """, "client_contract");
+    }
+
+    @Test
+    @DisplayName("the contract lifecycle's reads are index-served: one version, the version in force, a client's versions")
+    void clientContractLifecycleReads() {
+        // GET /contracts/{id}, the checklist's and the activation's lookup of the open version, and
+        // the per-client listing (newest first) that the consoles and the portal read.
+        assertIndexed("""
+                SELECT * FROM client_contract
+                 WHERE id = '00000000-0000-0000-0000-000000000003'
+                """, "client_contract");
+        assertIndexed("""
+                SELECT * FROM client_contract
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND effective_to IS NULL
+                   AND status = 'ACTIVE'
+                """, "client_contract");
+        assertIndexed("""
+                SELECT * FROM client_contract
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND client_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND status = 'ACTIVE'
+                 ORDER BY effective_from DESC, created_at DESC
+                 LIMIT 200
                 """, "client_contract");
     }
 
