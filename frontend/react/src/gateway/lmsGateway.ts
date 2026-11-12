@@ -576,6 +576,7 @@ export const WEBHOOK_EVENT_TYPES = [
   'DELIVERY_PROOF_RECORDED', 'CLAIM_RAISED', 'CLAIM_STATUS_CHANGED',
   'CONSIGNMENT_IN_TRANSIT', 'CONSIGNMENT_DELIVERED', 'CONSIGNMENT_CANCELLED',
   'APPROVAL_REQUESTED', 'APPROVAL_DECIDED',
+  'GATE_ENTRY_RECORDED', 'GATE_EXIT_RECORDED', 'TRIP_STOP_ARRIVED', 'TRIP_STOP_DEPARTED',
 ] as const;
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
@@ -697,7 +698,6 @@ export interface OrderLineView extends OrderLineDraft {
 
 /** How a person may close an order or a line; AUTO is the platform's own. */
 export type CloseKindChoice = 'NORMAL' | 'SHORT' | 'FORCE';
-
 /** An order as the desk shows it, with the version every edit must send back. */
 export interface OrderDesk {
   order: Row;
@@ -839,6 +839,26 @@ export interface LmsGateway {
   networkMap(): Promise<Mapped>;
   /** A trip's track and last position. Rejects with a 404 problem for a trip that does not exist. */
   tripRoute(tripId: string): Promise<TripRoute>;
+  // Yard gate
+  /** Vehicles inside now, oldest first. Needs GATE_REGISTER or GATE_PASS_MANAGE. */
+  openGateVisits(): Promise<GateVisitView[]>;
+  /** One page of the register, newest entry first. */
+  gateVisits(filter: GateRegisterFilter, cursor?: string): Promise<GateVisitPage>;
+  /** Records an arrival; resolves to the visit's id. A refusal carries its problem `code`. Needs GATE_REGISTER. */
+  recordGateEntry(draft: GateEntryDraft): Promise<string>;
+  recordGateExit(visitId: string, draft: GateExitDraft): Promise<void>;
+  gatePasses(filter: GatePassFilter, cursor?: string): Promise<GatePassPage>;
+  /** Resolves to the new pass's id. Needs GATE_PASS_MANAGE. */
+  issueGatePass(draft: GatePassDraft): Promise<string>;
+  /** Reads the pass for its version, then cancels it with that as `If-Match`. */
+  cancelGatePass(id: string, reason: string): Promise<void>;
+  checkGatePass(query: GatePassQuery): Promise<GatePassVerdict>;
+  // Trip stops
+  tripStops(tripId: string): Promise<TripStopView[]>;
+  /** The three below need TRIP_EXECUTE. */
+  arriveAtStop(tripId: string, stopId: string): Promise<void>;
+  departFromStop(tripId: string, stopId: string): Promise<void>;
+  skipStop(tripId: string, stopId: string, reason: string): Promise<void>;
   itineraries(): Promise<Row[]>;
   /** The itinerary, its legs in order, and the legs drawn between their terminals. */
   itinerary(id: string): Promise<MappedDetail>;
@@ -1408,6 +1428,138 @@ export interface AllocationDetail {
 export interface FreightBillDetail {
   bill: Row;
   lines: Row[];
+}
+
+// ---------------------------------------------------------------- yard gate and trip stops
+
+export const GATE_PURPOSES = ['TRIP', 'VISITOR', 'MAINTENANCE', 'RETURN', 'OTHER'] as const;
+export type GatePurpose = (typeof GATE_PURPOSES)[number];
+
+/** One vehicle's stay at a site, as the gate desk shows it. */
+export interface GateVisitView {
+  id: string;
+  terminalCode: string;
+  registrationNo: string;
+  driverName: string;
+  purpose: string;
+  tripNo: string;
+  gatePassNo: string;
+  status: string;
+  enteredAt: string;
+  exitedAt: string;
+  /** Time inside, such as `2 h 5 min`; so far for an open visit. */
+  dwell: string;
+  entrySeals: string;
+  exitSeals: string;
+  weightRef: string;
+  remarks: string;
+}
+
+export interface GateVisitPage {
+  items: GateVisitView[];
+  /** Pass back for the next page; null on the last. */
+  nextCursor: string | null;
+}
+
+export interface GateRegisterFilter {
+  /** OPEN or CLOSED; blank for both. */
+  status: string;
+  /** Matches the registration number. */
+  q: string;
+}
+
+/** A vehicle arriving: a registered one by id, or a visitor's by the registration typed. */
+export interface GateEntryDraft {
+  terminalId: string;
+  vehicleId: string;
+  registrationNo: string;
+  driverId: string;
+  driverName: string;
+  purpose: GatePurpose;
+  tripId: string;
+  gatePassNo: string;
+  sealNos: string[];
+  weightRef: string;
+  remarks: string;
+}
+
+export interface GateExitDraft {
+  sealNos: string[];
+  weightRef: string;
+  remarks: string;
+}
+
+export interface GatePassView {
+  id: string;
+  passNo: string;
+  terminalCode: string;
+  registrationNo: string;
+  tripNo: string;
+  purpose: string;
+  validFrom: string;
+  validUntil: string;
+  status: string;
+  /** An ISSUED pass whose window has closed. */
+  expired: boolean;
+  cancelReason: string;
+}
+
+export interface GatePassPage {
+  items: GatePassView[];
+  nextCursor: string | null;
+}
+
+export interface GatePassFilter {
+  /** ISSUED, USED or CANCELLED; blank for all. */
+  status: string;
+  q: string;
+}
+
+/** A pass to issue; the window is as a `datetime-local` input holds it, in the browser's time zone. */
+export interface GatePassDraft {
+  terminalId: string;
+  vehicleId: string;
+  registrationNo: string;
+  tripId: string;
+  purpose: GatePurpose;
+  validFrom: string;
+  validUntil: string;
+  /** Used only where no series numbers passes for the unit. */
+  passNo: string;
+}
+
+export interface GatePassQuery {
+  terminalId: string;
+  vehicleId: string;
+  registrationNo: string;
+  tripId: string;
+  passNo: string;
+}
+
+export interface GatePassVerdict {
+  admits: boolean;
+  passRequired: boolean;
+  passNo: string;
+  /** The refusal's problem code when the pass does not admit. */
+  code: string;
+  message: string;
+}
+
+/** One stop of a trip's plan. */
+export interface TripStopView {
+  id: string;
+  seq: number;
+  kind: string;
+  terminalCode: string;
+  terminalName: string;
+  plannedArrivalAt: string;
+  status: string;
+  arrivedAt: string;
+  departedAt: string;
+  skipReason: string;
+  outOfOrder: boolean;
+  /** Minutes past the planned arrival; 0 when on time or unplanned. */
+  lateMinutes: number;
 }
 
 // Control tower
