@@ -17,6 +17,7 @@ package com.lms.planning.command;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.lms.planning.command.domain.LoadUnit;
@@ -337,6 +338,34 @@ public class PlanningLinks {
                 .param("consignmentId", consignmentId)
                 .query(Boolean.class)
                 .single());
+    }
+
+    /**
+     * Per customer aboard, the contract family its orders were raised under,
+     * for the customers whose orders aboard all name the same one; a customer
+     * with an order under no contract, or under two, is absent.
+     */
+    public Map<UUID, UUID> contractFamiliesOnLoad(UUID tenantId, UUID loadId) {
+        Map<UUID, UUID> families = new java.util.LinkedHashMap<>();
+        jdbc.sql("""
+                        SELECT o.customer_partner_id AS customer, min(o.contract_family_id::text)::uuid AS family
+                          FROM load_consignment lc
+                          JOIN consignment c ON c.id = lc.consignment_id
+                          JOIN sales_order o ON o.id = c.order_id
+                         WHERE lc.tenant_id = :tenantId
+                           AND lc.load_id = :loadId
+                         GROUP BY o.customer_partner_id
+                        HAVING count(*) = count(o.contract_family_id)
+                           AND count(DISTINCT o.contract_family_id) = 1
+                        """)
+                .param("tenantId", tenantId)
+                .param("loadId", loadId)
+                .query((rs, row) -> {
+                    families.put(rs.getObject("customer", UUID.class), rs.getObject("family", UUID.class));
+                    return null;
+                })
+                .list();
+        return families;
     }
 
     /** The ordering customers of the consignments on a load, each once, by id. */

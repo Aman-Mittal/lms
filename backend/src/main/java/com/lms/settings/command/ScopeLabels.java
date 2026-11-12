@@ -95,6 +95,7 @@ public final class ScopeLabels {
             case VEHICLE -> "Vehicle: " + profileName;
             case CUSTOMER -> "Customer: " + profileName;
             case VENDOR -> "Vendor: " + profileName;
+            case CONTRACT -> "Contract: " + profileName;
             case COMBINATION -> combined == null || combined.isEmpty() ? "Combination: " + profileName : combined;
             case USER -> "You";
         };
