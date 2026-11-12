@@ -2533,8 +2533,10 @@ function settingsVerbs(config: Configuration): SettingsVerbs {
   const settings = new SettingsApi(config);
   const units = new OrganisationUnitsApi(config);
   const users = new UsersApi(config);
-  const mine = (m: { version: number; values: object; effective: EffectiveSetting[] }): MyPreferencesView => ({
+  const mine = (m: { version: number; values: object; effective: EffectiveSetting[]; policy?: EffectiveSetting[] }):
+    MyPreferencesView => ({
     version: text(m.version), values: m.values as Record<string, SettingValue>, effective: m.effective.map(effectiveOf),
+    policy: (m.policy ?? []).map(effectiveOf),
   });
   return {
     me: () => guard(async () => {
