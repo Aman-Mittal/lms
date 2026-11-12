@@ -44,7 +44,7 @@ import com.lms.client.model.ClientStatementEntry;
 import com.lms.client.model.ClientStorage;
 import com.lms.client.model.ClientStorageComputationRequest;
 import com.lms.client.model.CreateSkuRequest;
-import com.lms.client.model.PublishClientContractRequest;
+import com.lms.client.model.ClientContractDraftRequest;
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.RegisterPointRadiusTerminalRequest;
 import com.lms.client.model.ServiceUsageRequest;
@@ -116,14 +116,14 @@ public class MoneyDeskSteps {
     public void client(String name, int storage, int in, int out, int label, int taxPct) {
         UUID id = world.partner("MC-" + name, RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER);
         clients.put(name, id);
-        contracts.put(name, billing().publishClientContract(contract(id, name + "-1", storage, in,
-                out, label, taxPct, LocalDate.now(ZoneOffset.UTC).minusDays(120)), null).getId());
+        contracts.put(name, world.publishContract(contract(id, name + "-1", storage, in,
+                out, label, taxPct, LocalDate.now(ZoneOffset.UTC).minusDays(120))));
     }
 
-    private PublishClientContractRequest contract(UUID clientId, String tag, int storage, int in,
+    private ClientContractDraftRequest contract(UUID clientId, String tag, int storage, int in,
                                                   int out, int label, int taxPct,
                                                   LocalDate from) {
-        return new PublishClientContractRequest()
+        return new ClientContractDraftRequest()
                 .orgUnitId(world.orgUnitId())
                 .code(world.code("MCC-" + tag))
                 .clientPartnerId(clientId)
@@ -284,9 +284,9 @@ public class MoneyDeskSteps {
 
     @When("the billing desk publishes a successor contract for client {string} from {int} days ago charging {int} per pallet-day")
     public void successor(String name, int daysAgo, int storage) {
-        contracts.put(name + "-2", billing().publishClientContract(contract(client(name),
+        contracts.put(name + "-2", world.publishContract(contract(client(name),
                 name + "-2", storage, 25, 30, 2, 18,
-                LocalDate.now(ZoneOffset.UTC).minusDays(daysAgo)), null).getId());
+                LocalDate.now(ZoneOffset.UTC).minusDays(daysAgo))));
     }
 
     @Then("the billing desk lists client {string}'s two contracts newest first, the earlier closed the day before the successor starts")

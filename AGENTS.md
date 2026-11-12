@@ -183,7 +183,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 | `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
-| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
+| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates; a version is a draft, then verified through approvals, with an optional end date, an approved extension and approved charge additions), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
 | `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, combination, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
 | `approvals` | One approvals module for every flow: requests with a frozen payload, a policy per subject type (copied onto each request), decisions applied in-process by the owning module's handler, the inbox, expiry. Depends on `identity::access` only. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
@@ -327,6 +327,8 @@ record of its own. A module that owns a setting declares it, nowhere else:
   settings) and `SettingCombinationTest` holds the two equal.
 
 Registered so far: `order.close.*` (unit, customer);
+`clientbilling.contract.requiredChecklist` (COMPLIANCE, dated, a JSON object of the
+contract completeness rules: unit, customer);
 `controltower.detector.etaSlipTolerance` and `.temperatureExcursionTolerance`
 (unit, vehicle, customer); `telematics.stoppage.threshold`,
 `telematics.routeDeviation.corridorMetres` (unit, vehicle, customer) and
