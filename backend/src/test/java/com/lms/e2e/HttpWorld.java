@@ -132,7 +132,8 @@ final class HttpWorld {
      */
     UUID publishContract(ClientContractDraftRequest request) {
         api(ApprovalsApi.class).setApprovalPolicy("CONTRACT_ACTIVATION",
-                new ApprovalPolicyRequest().required(false), null);
+                new ApprovalPolicyRequest().required(false)
+                        .decidePermissions(java.util.List.of("CLIENT_CONTRACT_APPROVE")), null);
         ClientBillingApi billing = api(ClientBillingApi.class);
         UUID id = billing.createClientContractDraft(request, null).getId();
         billing.requestClientContractVerification("\"" + billing.getClientContract(id).getVersion() + "\"", id, null);

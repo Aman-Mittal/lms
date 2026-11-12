@@ -167,7 +167,8 @@ class CreditApiTest {
         // 5 per chargeable kg, no minimum, no tax: an order of 100 kg is worth 500.
         // The tenant asks for no verification here: these scenarios are about credit.
         api(ApprovalsApi.class, maker, List.of("APPROVAL_POLICY_MANAGE")).setApprovalPolicy("CONTRACT_ACTIVATION",
-                new ApprovalPolicyRequest().required(false), null);
+                new ApprovalPolicyRequest().required(false)
+                        .decidePermissions(java.util.List.of("CLIENT_CONTRACT_APPROVE")), null);
         ClientBillingApi billing = api(ClientBillingApi.class, maker, DESK);
         UUID contract = billing.createClientContractDraft(
                 new ClientContractDraftRequest().orgUnitId(orgUnitId).code("C-" + salt)
