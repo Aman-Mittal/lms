@@ -148,7 +148,7 @@ export function ManualCharges() {
           </thead>
           <tbody>
             {rows.map((m) => (
-              <tr key={m.id} data-testid="mc-row">
+              <tr key={m.id} data-testid="mc-row" data-id={m.id}>
                 <td>{m.chargeNo}</td><td>{m.chargeCode}</td><td>{`${m.subjectType} ${m.subjectRef}`}</td>
                 <td data-testid="mc-direction-cell">{m.direction}</td>
                 <td data-testid="mc-amount">{money(m.amount)}</td>

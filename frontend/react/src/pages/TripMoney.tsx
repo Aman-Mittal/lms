@@ -100,7 +100,7 @@ export function TripMoney({ tripId }: { tripId: string }) {
               <thead><tr><th>No.</th><th>Mode</th><th>Amount</th><th>Status</th><th>Reference</th><th /></tr></thead>
               <tbody>
                 {advances.map((a) => (
-                  <tr key={a.id} data-testid="adv-row">
+                  <tr key={a.id} data-testid="adv-row" data-id={a.id}>
                     <td>{a.advanceNo}</td><td>{a.mode}</td><td data-testid="adv-amount-cell">{money(a.amount)}</td>
                     <td><span className="badge" data-testid="adv-status">{a.status}</span></td>
                     <td>{a.paidReference}</td>

@@ -141,7 +141,8 @@ export function VendorPayables() {
                   <div><dt>Advances deducted</dt><dd>{money(i.advancesDeducted)}</dd></div>
                   <div><dt>Net payable</dt><dd>{money(i.netPayable)}</dd></div>
                   <div><dt>Paid</dt><dd>{money(i.paidAmount)}</dd></div>
-                  <div><dt>Outstanding</dt><dd>{money(i.outstanding)}</dd></div>
+                  <div><dt>Outstanding</dt><dd data-testid="detail-outstanding">{money(i.outstanding)}</dd></div>
+                  <div><dt>Status</dt><dd data-testid="detail-status">{i.status}</dd></div>
                 </dl>
                 <h3>Bills covered</h3>
                 <ul>{coveredBills.map((b) => (

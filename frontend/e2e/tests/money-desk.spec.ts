@@ -166,7 +166,8 @@ test.describe('vendor payables', () => {
       const row = page.getByTestId('inv-row').filter({ hasText: vendorNo });
       await expect(row).toHaveCount(1);
       await expect(row.getByTestId('inv-status')).toHaveText('OPEN');
-      await expect(row.getByTestId('inv-outstanding')).toHaveText('20000');
+      // One console shows two decimals, the other the plain amount.
+      await expect(row.getByTestId('inv-outstanding')).toHaveText(/^20000(\.00)?$/);
     });
 
     await test.step('a part payment leaves the rest outstanding', async () => {
@@ -176,7 +177,7 @@ test.describe('vendor payables', () => {
       await detail.getByTestId('pay-reference').fill(`PAY-${salt}-1`);
       await detail.getByTestId('pay-submit').click();
       await expect(detail.getByTestId('detail-status')).toHaveText('PARTIALLY_PAID');
-      await expect(detail.getByTestId('detail-outstanding')).toHaveText('15000');
+      await expect(detail.getByTestId('detail-outstanding')).toHaveText(/^15000(\.00)?$/);
     });
 
     await test.step('the payment is listed', async () => {
