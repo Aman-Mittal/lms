@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.client.api.ClientBillingApi;
+import com.lms.client.model.ClientContractDraftRequest;
 import com.lms.client.model.ClientContractServiceRate;
 import com.lms.client.model.ClientCreditNote;
 import com.lms.client.model.ClientCreditNoteLineRequest;
@@ -32,7 +33,7 @@ import com.lms.client.model.ClientPaymentRequest;
 import com.lms.client.model.ClientBillingRunRequest;
 import com.lms.client.model.ClientServiceType;
 import com.lms.client.model.ClientStatementEntry;
-import com.lms.client.model.PublishClientContractRequest;
+
 import com.lms.client.model.RegisterPartnerRequest;
 import com.lms.client.model.ServiceUsageRequest;
 import feign.FeignException;
@@ -75,7 +76,7 @@ public class ClientBillingFlowSteps {
     @Given("a client holds a contract charging {int} per pallet-day of storage, {int} per pallet in, {int} per pallet out and {int} per label, with {int} percent tax on warehousing")
     public void contract(int storage, int in, int out, int label, int taxPct) {
         client = world.partner("CLIENT", RegisterPartnerRequest.PartnerTypeEnum.CUSTOMER);
-        world.api(ClientBillingApi.class).publishClientContract(new PublishClientContractRequest()
+        world.publishContract(new ClientContractDraftRequest()
                 .orgUnitId(world.orgUnitId())
                 .code(world.code("CC"))
                 .clientPartnerId(client)
@@ -88,7 +89,7 @@ public class ClientBillingFlowSteps {
                 .transportTaxRatePct(BigDecimal.ZERO)
                 .warehouseTaxRatePct(BigDecimal.valueOf(taxPct))
                 .valueAddedServices(List.of(new ClientContractServiceRate()
-                        .serviceCode("LABEL").unit("UNIT").rate(BigDecimal.valueOf(label)))), null);
+                        .serviceCode("LABEL").unit("UNIT").rate(BigDecimal.valueOf(label)))));
     }
 
     @When("the warehouse reports {int} pallets in, {int} pallet-days stored, {int} pallets out and {int} labels for last month")

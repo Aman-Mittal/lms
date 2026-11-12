@@ -16,29 +16,20 @@
 
 import { Routes } from '@angular/router';
 import { signedInOnly } from './auth';
-import { AllocationRules } from './pages/allocation-rules';
 import { LoginPage } from './pages/login';
 import { Shell } from './pages/shell';
 import { Track } from './pages/track';
-import { TrackingLinks } from './pages/tracking-links';
-import { ClaimsPage } from './pages/claims';
 import { Dashboard } from './pages/dashboard';
 import { ConsignmentDesk } from './pages/consignment-desk';
 import { DeliveryDesk } from './pages/delivery-desk';
-import { DemoSettings } from './pages/demo-settings';
 import { ListPage } from './pages/list';
-import { LoadBuilding } from './pages/load-building';
 import { OrderDeskPage } from './pages/order-desk';
-import { ClientBilling } from './pages/client-billing';
-import { LtlRating } from './pages/ltl-rating';
-import { ParkedEvents } from './pages/parked-events';
-import { Approvals } from './pages/approvals';
-import { FieldsSettings } from './pages/fields-settings';
-import { Webhooks } from './pages/webhooks';
 
 // Administration
 const adminDesk = () => import('./pages/admin-desk').then((m) => m.AdminDesk);
 
+// Desks most sessions do not open load on first visit, keeping the initial
+// bundle under its budget; the daily desks (orders, consignments, delivery) stay eager.
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
   // Public: a customer follows a link with no account, so no sign-in is asked for.
@@ -49,17 +40,17 @@ export const routes: Routes = [
     canActivate: [signedInOnly],
     children: [
       { path: '', pathMatch: 'full', component: Dashboard },
-      { path: 'settings/custom-fields', component: FieldsSettings },
-      { path: 'settings/demo', component: DemoSettings },
-      { path: 'settings/webhooks', component: Webhooks },
-      { path: 'claims', component: ClaimsPage },
+      { path: 'settings/custom-fields', loadComponent: () => import('./pages/fields-settings').then((m) => m.FieldsSettings) },
+      { path: 'settings/demo', loadComponent: () => import('./pages/demo-settings').then((m) => m.DemoSettings) },
+      { path: 'settings/webhooks', loadComponent: () => import('./pages/webhooks').then((m) => m.Webhooks) },
+      { path: 'claims', loadComponent: () => import('./pages/claims').then((m) => m.ClaimsPage) },
       { path: 'delivery', component: DeliveryDesk },
       { path: 'consignments', component: ConsignmentDesk },
-      { path: 'tracking', component: TrackingLinks },
-      { path: 'allocation-rules', component: AllocationRules },
-      { path: 'load-building', component: LoadBuilding },
+      { path: 'tracking', loadComponent: () => import('./pages/tracking-links').then((m) => m.TrackingLinks) },
+      { path: 'allocation-rules', loadComponent: () => import('./pages/allocation-rules').then((m) => m.AllocationRules) },
+      { path: 'load-building', loadComponent: () => import('./pages/load-building').then((m) => m.LoadBuilding) },
       { path: 'order-desk', component: OrderDeskPage },
-      { path: 'client-billing', component: ClientBilling },
+      { path: 'client-billing', loadComponent: () => import('./pages/client-billing').then((m) => m.ClientBilling) },
       // Commercial: loaded on first visit, like the other desks.
       { path: 'commercial', loadComponent: () => import('./pages/commercial').then((m) => m.Commercial) },
       // The map screens load on first visit: Leaflet is the console's largest
@@ -68,9 +59,9 @@ export const routes: Routes = [
       { path: 'trip-route', loadComponent: () => import('./pages/trip-route').then((m) => m.TripRoute) },
       { path: 'itineraries', loadComponent: () => import('./pages/itineraries').then((m) => m.Itineraries) },
       { path: 'milk-runs', loadComponent: () => import('./pages/milk-runs').then((m) => m.MilkRuns) },
-      { path: 'ltl', component: LtlRating },
-      { path: 'parked-events', component: ParkedEvents },
-      { path: 'approvals', component: Approvals },
+      { path: 'ltl', loadComponent: () => import('./pages/ltl-rating').then((m) => m.LtlRating) },
+      { path: 'parked-events', loadComponent: () => import('./pages/parked-events').then((m) => m.ParkedEvents) },
+      { path: 'approvals', loadComponent: () => import('./pages/approvals').then((m) => m.Approvals) },
       // Warehouse operations
       { path: 'warehouse', loadComponent: () => import('./pages/warehouse-desk').then((m) => m.WarehouseDesk) },
       // Administration: loaded on first visit, like the maps; few sessions open it.

@@ -121,6 +121,12 @@ public class ClientChargeService {
                             + "the same pallets twice");
         }
 
+        if (occurredOn != null && !coveredUntilAtLeast(clientPartnerId, occurredOn)) {
+            throw new BusinessRuleViolationException("client-contract-expired",
+                    "Every contract of client " + clientPartnerId + " ended before " + occurredOn
+                            + ", so there is nothing to charge this usage under");
+        }
+
         LocalDate period = periods.openPeriodFor(tenantId, clientPartnerId, occurredOn);
         String unit = serviceType.unit() == null ? "UNIT" : serviceType.unit();
         return charges.save(ClientCharge.capture(UUID.randomUUID(), tenantId, clientPartnerId,
@@ -299,6 +305,19 @@ public class ClientChargeService {
                     "Partner " + clientPartnerId + " holds no client contract, so there is "
                             + "nothing to charge it under");
         }
+    }
+
+    /** Whether an active contract of the client has no end date, or ends on or after {@code day}. */
+    private boolean coveredUntilAtLeast(UUID clientPartnerId, LocalDate day) {
+        return Boolean.TRUE.equals(jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM client_contract
+                                        WHERE client_partner_id = :client AND status = 'ACTIVE'
+                                          AND (valid_till IS NULL OR valid_till >= :day))
+                        """)
+                .param("client", clientPartnerId)
+                .param("day", day)
+                .query(Boolean.class)
+                .single());
     }
 
     private boolean storageFromLedger(UUID clientPartnerId, LocalDate day) {

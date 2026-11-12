@@ -25,10 +25,13 @@ import java.util.function.Supplier;
 
 import com.lms.acceptance.TestFixtures;
 import com.lms.client.ApiClient;
+import com.lms.client.api.ApprovalsApi;
 import com.lms.client.api.ClientBillingApi;
+import com.lms.client.model.ApprovalPolicyRequest;
 import com.lms.client.model.ClientBillingRunRequest;
 import com.lms.client.model.ClientChargeSlice;
 import com.lms.client.model.ClientContract;
+import com.lms.client.model.ClientContractDraftRequest;
 import com.lms.client.model.ClientContractServiceRate;
 import com.lms.client.model.ClientCreditNote;
 import com.lms.client.model.ClientCreditNoteLineRequest;
@@ -42,7 +45,6 @@ import com.lms.client.model.ClientStatementEntry;
 import com.lms.client.model.ClientStatementSlice;
 import com.lms.client.model.ClientStorage;
 import com.lms.client.model.ClientStorageComputationRequest;
-import com.lms.client.model.PublishClientContractRequest;
 import com.lms.client.model.ServiceUsageRequest;
 import com.lms.identity.access.SubjectAttributes;
 import com.lms.identity.command.domain.AppUser;
@@ -154,6 +156,7 @@ class ClientBillingApiTest {
                 "Client A", BusinessPartner.PartnerType.CUSTOMER, "TAX-A-" + salt));
         clientB = asSetup(tenantId, () -> fleet.registerPartner(orgUnitId, "CLB-" + salt,
                 "Client B", BusinessPartner.PartnerType.CUSTOMER, "TAX-B-" + salt));
+        withoutContractVerification();
     }
 
     @AfterEach
@@ -298,15 +301,15 @@ class ClientBillingApiTest {
         assertStatus(() -> api.recordClientServiceUsage(clientA, usage(
                 ClientServiceType.TRANSPORT, null, "100", 3, "x-2"), null), 409);
         // A backdated successor would put two contracts in force on one day.
-        assertStatus(() -> api.publishClientContract(contractRequest(clientA, "A-OLD",
-                LAST_MONTH.minusMonths(6)), null), 409);
+        assertStatus(() -> publish(api, contractRequest(clientA, "A-OLD",
+                LAST_MONTH.minusMonths(6))), 409);
         // A missing source key fails validation before reaching the domain.
         assertStatus(() -> api.recordClientServiceUsage(clientA, new ServiceUsageRequest()
                 .serviceType(ClientServiceType.STORAGE).quantity(BigDecimal.ONE)
                 .occurredOn(LAST_MONTH), null), 400);
         // A user without the contract permission cannot publish one.
         ClientBillingApi readOnly = client(desk, List.of("CLIENT_BILLING_READ"));
-        assertStatus(() -> readOnly.publishClientContract(
+        assertStatus(() -> readOnly.createClientContractDraft(
                 contractRequest(clientB, "B", LAST_MONTH.minusMonths(1)), null), 403);
     }
 
@@ -314,8 +317,8 @@ class ClientBillingApiTest {
     @DisplayName("tax on the invoice, a credit note against it, and the statement that shows both")
     void taxCreditNotesAndStatementOverHttp() {
         ClientBillingApi api = client(desk, DESK);
-        api.publishClientContract(contractRequest(clientA, "A-TAXED", LAST_MONTH.minusMonths(2))
-                .warehouseTaxRatePct(new BigDecimal("18")), null);
+        publish(api, contractRequest(clientA, "A-TAXED", LAST_MONTH.minusMonths(2))
+                .warehouseTaxRatePct(new BigDecimal("18")));
         record(api, clientA, ClientServiceType.HANDLING_IN, null, "40", 2, "grn-1");
         record(api, clientA, ClientServiceType.STORAGE, null, "300", 5, "snap-1");
         UUID invoiceId = api.runClientBilling(clientA,
@@ -401,8 +404,8 @@ class ClientBillingApiTest {
     @DisplayName("storage computed from the warehouse ledger is charged once and shown day by day")
     void ledgerStorageOverHttp() {
         ClientBillingApi api = client(desk, DESK);
-        api.publishClientContract(contractRequest(clientA, "A-LEDGER", LAST_MONTH.minusMonths(2))
-                .storageUnitsPerPallet(10), null);
+        publish(api, contractRequest(clientA, "A-LEDGER", LAST_MONTH.minusMonths(2))
+                .storageUnitsPerPallet(10));
 
         UUID tenantId = desk.tenantId();
         UUID warehouseId = asSetup(tenantId, () -> terminals.register(
@@ -477,13 +480,29 @@ class ClientBillingApiTest {
     // --------------------------------------------------------------- helpers
 
     private void publishContract(ClientBillingApi api, UUID client, String prefix) {
-        api.publishClientContract(contractRequest(client, prefix + "-CONTRACT",
-                LAST_MONTH.minusMonths(2)), null);
+        publish(api, contractRequest(client, prefix + "-CONTRACT", LAST_MONTH.minusMonths(2)));
     }
 
-    private PublishClientContractRequest contractRequest(UUID client, String code,
+    /** Drafts a contract and puts it into force (the tenant asks for no verification here). */
+    private UUID publish(ClientBillingApi api, ClientContractDraftRequest request) {
+        UUID id = api.createClientContractDraft(request, null).getId();
+        api.requestClientContractVerification("\"" + api.getClientContract(id).getVersion() + "\"", id, null);
+        return id;
+    }
+
+    /** These scenarios are about billing, not about verifying contracts: the tenant asks for none. */
+    private void withoutContractVerification() {
+        ApiClient apiClient = new ApiClient().setBasePath("http://localhost:" + port);
+        String token = tokens.issueAccessToken(desk, orgPath, List.of("APPROVAL_POLICY_MANAGE")).value();
+        apiClient.getFeignBuilder().requestInterceptor(template -> template.header("Authorization", "Bearer " + token));
+        apiClient.buildClient(ApprovalsApi.class).setApprovalPolicy("CONTRACT_ACTIVATION",
+                new ApprovalPolicyRequest().required(false)
+                        .decidePermissions(java.util.List.of("CLIENT_CONTRACT_APPROVE")), null);
+    }
+
+    private ClientContractDraftRequest contractRequest(UUID client, String code,
                                                          LocalDate from) {
-        return new PublishClientContractRequest()
+        return new ClientContractDraftRequest()
                 .orgUnitId(orgUnitId)
                 .code(code)
                 .clientPartnerId(client)

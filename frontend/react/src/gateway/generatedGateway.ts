@@ -57,6 +57,7 @@ import {
   type ClientStatementEntry,
 } from '../api';
 import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lmsGateway';
+import type { ContractChargeDraft, ContractChecklistRow, ContractDetail, ContractDraft } from './lmsGateway';
 // Commercial
 import {
   type AddSlabRequestRateBasisEnum, type Allocation as CommercialAllocation, type DefineGuideRequestStrategyEnum,
@@ -189,7 +190,47 @@ function contractRow(c: ClientContract): Row {
     handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
     storageRatePerPalletDay: text(c.storageRatePerPalletDay),
     billing: c.billOnDispatch ? 'On dispatch' : 'On proof of delivery',
+    status: text(c.status), state: text(c.state), validTill: text(c.validTill), version: text(c.version),
   };
+}
+
+/** One contract version in full, for the lifecycle panel. */
+function contractDetailOf(c: ClientContract): ContractDetail {
+  return {
+    id: text(c.id), code: text(c.code), clientPartnerId: text(c.clientPartnerId), orgUnitId: text(c.orgUnitId),
+    status: text(c.status), state: text(c.state), effectiveFrom: text(c.effectiveFrom),
+    effectiveTo: text(c.effectiveTo), validTill: text(c.validTill), rejectionReason: text(c.rejectionReason),
+    version: text(c.version), currency: text(c.currency), transportRatePerKg: text(c.transportRatePerKg),
+    transportMinimumCharge: text(c.transportMinimumCharge), storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+    handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
+    transportTaxRatePct: text(c.transportTaxRatePct), warehouseTaxRatePct: text(c.warehouseTaxRatePct),
+    storageUnitsPerPallet: c.storageUnitsPerPallet ?? 1, billOnDispatch: !!c.billOnDispatch,
+    services: (c.valueAddedServices ?? []).map((v) => ({ serviceCode: text(v.serviceCode), unit: text(v.unit), rate: text(v.rate) })),
+  };
+}
+
+/** The terms of a contract draft as the request carries them: a blank is sent as absent. */
+function contractTerms(draft: ContractDraft) {
+  return {
+    code: blankAsAbsent(draft.code), effectiveFrom: day(draft.effectiveFrom),
+    validTill: draft.validTill ? day(draft.validTill) : undefined,
+    transportRatePerKg: commercialNumber(draft.transportRatePerKg),
+    transportMinimumCharge: commercialNumber(draft.transportMinimumCharge),
+    storageRatePerPalletDay: commercialNumber(draft.storageRatePerPalletDay),
+    handlingInRatePerPallet: commercialNumber(draft.handlingInRatePerPallet),
+    handlingOutRatePerPallet: commercialNumber(draft.handlingOutRatePerPallet),
+  };
+}
+
+/** 202 with the approval request, or 204 when the action was done at once. */
+async function pendingOf(
+  raw: { raw: Response; value(): Promise<{ id: string; status: string }> },
+): Promise<ApprovalPending | null> {
+  if (raw.raw.status !== 202) {
+    return null;
+  }
+  const t = await raw.value();
+  return { id: text(t.id), status: text(t.status) };
 }
 
 /** A charge as the billing desk lists it; `invoiced` and `late` read Yes or nothing. */
@@ -1218,6 +1259,49 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       })).items.map((p) => ({ id: text(p.id), label: `${text(p.code)} · ${text(p.legalName)}` }))),
     clientContracts: (clientId: string) =>
       guard(async () => (await clientBilling.listClientContracts({ clientId })).map(contractRow)),
+    contractDetail: (contractId: string): Promise<ContractDetail> =>
+      guard(async () => contractDetailOf(await clientBilling.getClientContract({ id: contractId }))),
+    createContractDraft: (orgUnitId: string, clientId: string, draft: ContractDraft): Promise<string> =>
+      guard(async () => text((await clientBilling.createClientContractDraft({
+        clientContractDraftRequest: { orgUnitId, clientPartnerId: clientId, ...contractTerms(draft) },
+      })).id)),
+    reviseContractDraft: (current: ContractDetail, draft: ContractDraft): Promise<void> =>
+      guard(async () => {
+        await clientBilling.reviseClientContractDraft({
+          id: current.id, ifMatch: current.version,
+          reviseClientContractRequest: {
+            orgUnitId: current.orgUnitId, currency: current.currency, ...contractTerms(draft),
+            transportTaxRatePct: Number(current.transportTaxRatePct || 0),
+            warehouseTaxRatePct: Number(current.warehouseTaxRatePct || 0),
+            storageUnitsPerPallet: current.storageUnitsPerPallet, billOnDispatch: current.billOnDispatch,
+            valueAddedServices: current.services.map((v) => ({ serviceCode: v.serviceCode, unit: v.unit, rate: Number(v.rate) })),
+          },
+        });
+      }),
+    deleteContractDraft: (contractId: string, version: string): Promise<void> =>
+      guard(async () => {
+        await clientBilling.deleteClientContractDraft({ id: contractId, ifMatch: version });
+      }),
+    contractChecklist: (contractId: string): Promise<ContractChecklistRow[]> =>
+      guard(async () => (await clientBilling.getClientContractChecklist({ id: contractId })).map((i) => ({
+        code: text(i.code), required: !!i.required, passed: !!i.passed, message: text(i.message),
+      }))),
+    requestContractVerification: (contractId: string, version: string): Promise<ApprovalPending | null> =>
+      guard(async () => pendingOf(await clientBilling.requestClientContractVerificationRaw({
+        id: contractId, ifMatch: version,
+      }))),
+    requestContractExtension: (contractId: string, validTill: string, reason: string): Promise<ApprovalPending | null> =>
+      guard(async () => pendingOf(await clientBilling.requestClientContractExtensionRaw({
+        id: contractId, clientContractExtensionRequest: { validTill: day(validTill), reason },
+      }))),
+    requestContractChargeAddition: (contractId: string, draft: ContractChargeDraft): Promise<ApprovalPending | null> =>
+      guard(async () => pendingOf(await clientBilling.requestClientContractChargeAdditionRaw({
+        id: contractId,
+        clientContractChargeAdditionRequest: {
+          serviceCode: draft.serviceCode.trim(), unit: draft.unit.trim(), rate: Number(draft.rate),
+          effectiveFrom: day(draft.effectiveFrom), reason: draft.reason,
+        },
+      }))),
     clientCharges: (clientId: string, period: string) =>
       guard(async () => (await clientBilling.listClientCharges({ clientId, period: day(period), limit: 200 }))
         .items.map(chargeRow)),

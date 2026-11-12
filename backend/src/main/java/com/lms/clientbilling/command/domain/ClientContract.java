@@ -30,8 +30,11 @@ import org.springframework.data.relational.core.mapping.Table;
  *
  * <p>Versioned for the same reason a carrier rate card is: an invoice disputed
  * in March must be argued from the contract that applied in January. A
- * published version is never edited -- the database refuses it -- and is
- * corrected by publishing a successor, which closes it the day before.
+ * version that is in force is never edited -- the database refuses it -- and is
+ * corrected by publishing a successor, which closes it the day before. Before
+ * that it is a draft its maker may edit or delete, then frozen while it waits
+ * for verification; the only change an active version accepts is an approved
+ * extension of its end date.
  */
 @Table("client_contract")
 public record ClientContract(
@@ -65,7 +68,30 @@ public record ClientContract(
          * default) once each of its consignments on the trip has a confirmed
          * proof of delivery; true as soon as the trip is dispatched.
          */
-        boolean billOnDispatch) {
+        boolean billOnDispatch,
+        /** Where it is in its life; see {@link Status}. */
+        Status status,
+        /**
+         * The last day the contract applies, or null for no end date. Moved
+         * later only by an approved extension. Not the same as
+         * {@link #effectiveTo}, which a successor sets.
+         */
+        LocalDate validTill,
+        /** Why verification was last refused, while the contract is back in DRAFT. */
+        String rejectionReason) {
+
+    /**
+     * Where a version is in its life. {@code EXPIRED} is not stored: it is
+     * {@link #stateOn} for an active version past its end date.
+     */
+    public enum Status {
+        /** Being written: editable, deletable, applies to nothing. */
+        DRAFT,
+        /** Asked to be verified: frozen until somebody decides. */
+        PENDING_VERIFICATION,
+        /** Verified: immutable, and in force from its start date. */
+        ACTIVE
+    }
 
     /**
      * The rates a contract is published with.
@@ -97,17 +123,37 @@ public record ClientContract(
                 rates, false);
     }
 
-    /** As the other {@code publish}, saying whether transport is billed on dispatch. */
+    /**
+     * As the other {@code publish}, saying whether transport is billed on dispatch.
+     * The version is ACTIVE at once: the in-process path of tests and imports; over
+     * HTTP a contract is drafted and verified.
+     */
     public static ClientContract publish(UUID id, UUID tenantId, UUID orgUnitId, String code,
                                          UUID clientPartnerId, String currency,
                                          LocalDate effectiveFrom, Rates rates,
                                          boolean billOnDispatch) {
+        return build(id, tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom, null, rates,
+                billOnDispatch, Status.ACTIVE);
+    }
+
+    /** A new version, still being written. {@code validTill} may be null. */
+    public static ClientContract draft(UUID id, UUID tenantId, UUID orgUnitId, String code,
+                                       UUID clientPartnerId, String currency, LocalDate effectiveFrom,
+                                       LocalDate validTill, Rates rates, boolean billOnDispatch) {
+        return build(id, tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom, validTill, rates,
+                billOnDispatch, Status.DRAFT);
+    }
+
+    private static ClientContract build(UUID id, UUID tenantId, UUID orgUnitId, String code,
+                                        UUID clientPartnerId, String currency, LocalDate effectiveFrom,
+                                        LocalDate validTill, Rates rates, boolean billOnDispatch, Status status) {
         if (code == null || code.isBlank()) {
             throw new IllegalArgumentException("A client contract needs a name somebody can refer to");
         }
         if (effectiveFrom == null) {
             throw new IllegalArgumentException("A client contract must say when it starts applying");
         }
+        requireValidity(effectiveFrom, validTill);
         return new ClientContract(id, tenantId, orgUnitId, code, clientPartnerId,
                 currency == null || currency.isBlank() ? "INR" : currency,
                 effectiveFrom, null,
@@ -119,13 +165,133 @@ public record ClientContract(
                 percentage(rates.transportTaxRatePct(), "transport tax rate"),
                 percentage(rates.warehouseTaxRatePct(), "warehouse tax rate"),
                 unitsPerPallet(rates.storageUnitsPerPallet()),
-                null, Instant.now(), billOnDispatch);
+                null, Instant.now(), billOnDispatch, status, validTill, null);
     }
 
-    /** Whether this version was in force on the given day, both bounds inclusive. */
+    /** The end date may not come before the start date. */
+    public static void requireValidity(LocalDate effectiveFrom, LocalDate validTill) {
+        if (validTill != null && effectiveFrom != null && validTill.isBefore(effectiveFrom)) {
+            throw new BusinessRuleViolationException("client-contract-validity-invalid",
+                    "A contract starting on " + effectiveFrom + " cannot end on " + validTill);
+        }
+    }
+
+    /**
+     * Whether this version was in force on the given day, both bounds inclusive:
+     * verified, started, not closed by a successor and not past its end date.
+     */
     public boolean coversOn(LocalDate day) {
-        return !day.isBefore(effectiveFrom)
-                && (effectiveTo == null || !day.isAfter(effectiveTo));
+        return status == Status.ACTIVE
+                && !day.isBefore(effectiveFrom)
+                && (effectiveTo == null || !day.isAfter(effectiveTo))
+                && (validTill == null || !day.isAfter(validTill));
+    }
+
+    /**
+     * The state to show on {@code today}: the stored status, or {@code EXPIRED}
+     * for a version in force whose end date has passed. Derived on every
+     * read, so there is no job to run and nothing to go stale.
+     */
+    public String stateOn(LocalDate today) {
+        return status == Status.ACTIVE && validTill != null && validTill.isBefore(today)
+                ? "EXPIRED" : status.name();
+    }
+
+    /** Replaces the content of a draft; refused once it has been submitted. */
+    public ClientContract revised(UUID newOrgUnitId, String newCode, String newCurrency,
+                                  LocalDate newEffectiveFrom, LocalDate newValidTill, Rates rates,
+                                  boolean newBillOnDispatch) {
+        requireDraft();
+        ClientContract fresh = build(id, tenantId, newOrgUnitId, newCode, clientPartnerId, newCurrency,
+                newEffectiveFrom, newValidTill, rates, newBillOnDispatch, Status.DRAFT);
+        return new ClientContract(id, tenantId, fresh.orgUnitId, fresh.code, clientPartnerId, fresh.currency,
+                fresh.effectiveFrom, null, fresh.transportRatePerKg, fresh.transportMinimumCharge,
+                fresh.storageRatePerPalletDay, fresh.handlingInRatePerPallet, fresh.handlingOutRatePerPallet,
+                fresh.transportTaxRatePct, fresh.warehouseTaxRatePct, fresh.storageUnitsPerPallet, version,
+                createdAt, fresh.billOnDispatch, Status.DRAFT, fresh.validTill, rejectionReason);
+    }
+
+    /** The draft the caller says it read at {@code expectedVersion}. */
+    public ClientContract expecting(Long expectedVersion) {
+        return copy(status, effectiveTo, validTill, rejectionReason, expectedVersion);
+    }
+
+    /** DRAFT to PENDING_VERIFICATION, clearing the last refusal. */
+    public ClientContract submitted() {
+        requireDraft();
+        return copy(Status.PENDING_VERIFICATION, effectiveTo, validTill, null, version);
+    }
+
+    /** PENDING_VERIFICATION to ACTIVE; a draft may also be activated directly when no verification is asked. */
+    public ClientContract activated() {
+        if (status == Status.ACTIVE) {
+            throw new BusinessRuleViolationException("client-contract-not-pending",
+                    "Client contract " + code + " is already in force");
+        }
+        return copy(Status.ACTIVE, null, validTill, null, version);
+    }
+
+    /** Verification came to nothing: back to DRAFT, with the reason. */
+    public ClientContract returnedToDraft(String reason) {
+        if (status != Status.PENDING_VERIFICATION) {
+            throw new BusinessRuleViolationException("client-contract-not-pending",
+                    "Client contract " + code + " is " + status + ", not awaiting verification");
+        }
+        return copy(Status.DRAFT, effectiveTo, validTill, reason, version);
+    }
+
+    /** Draft only: the one state in which content may change or the row be deleted. */
+    public void requireDraft() {
+        if (status != Status.DRAFT) {
+            throw new BusinessRuleViolationException("client-contract-not-draft",
+                    "Client contract " + code + " is " + status + " and can no longer be edited");
+        }
+    }
+
+    /**
+     * Whether this version may have its end date moved to {@code newValidTill}:
+     * in force, with an end date to move (an open-ended contract has nothing to
+     * extend), not already closed by a successor, and moved later.
+     */
+    public void requireExtendableTo(LocalDate newValidTill) {
+        if (status != Status.ACTIVE) {
+            throw new BusinessRuleViolationException("client-contract-not-active",
+                    "Client contract " + code + " is " + status + "; only a contract in force is extended");
+        }
+        if (validTill == null) {
+            throw new BusinessRuleViolationException("client-contract-no-end-date",
+                    "Client contract " + code + " has no end date to extend");
+        }
+        if (effectiveTo != null) {
+            throw new BusinessRuleViolationException("client-contract-already-closed",
+                    "Client contract " + code + " was closed on " + effectiveTo
+                            + " by its successor; extend the successor");
+        }
+        if (newValidTill == null || !newValidTill.isAfter(validTill)) {
+            throw new BusinessRuleViolationException("client-contract-extension-not-later",
+                    "Client contract " + code + " ends on " + validTill + "; an extension must end later");
+        }
+    }
+
+    private ClientContract copy(Status newStatus, LocalDate newEffectiveTo, LocalDate newValidTill,
+                                String newRejection, Long newVersion) {
+        return new ClientContract(id, tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom,
+                newEffectiveTo, transportRatePerKg, transportMinimumCharge, storageRatePerPalletDay,
+                handlingInRatePerPallet, handlingOutRatePerPallet, transportTaxRatePct, warehouseTaxRatePct,
+                storageUnitsPerPallet, newVersion, createdAt, billOnDispatch, newStatus, newValidTill,
+                newRejection);
+    }
+
+    /**
+     * A successor version of this one, in force at once, starting on {@code from}
+     * with the same terms: the carrier of an added charge, whose rate is
+     * written beside it.
+     */
+    public ClientContract successor(UUID newId, LocalDate from) {
+        return new ClientContract(newId, tenantId, orgUnitId, code, clientPartnerId, currency, from, null,
+                transportRatePerKg, transportMinimumCharge, storageRatePerPalletDay, handlingInRatePerPallet,
+                handlingOutRatePerPallet, transportTaxRatePct, warehouseTaxRatePct, storageUnitsPerPallet, null,
+                Instant.now(), billOnDispatch, Status.ACTIVE, validTill, null);
     }
 
     /**
@@ -167,11 +333,7 @@ public record ClientContract(
                     "Client contract " + code + " has been in force since " + effectiveFrom
                             + "; a successor cannot start on " + lastDay.plusDays(1));
         }
-        return new ClientContract(id, tenantId, orgUnitId, code, clientPartnerId, currency,
-                effectiveFrom, lastDay, transportRatePerKg, transportMinimumCharge,
-                storageRatePerPalletDay, handlingInRatePerPallet, handlingOutRatePerPallet,
-                transportTaxRatePct, warehouseTaxRatePct, storageUnitsPerPallet, version,
-                createdAt, billOnDispatch);
+        return copy(status, lastDay, validTill, rejectionReason, version);
     }
 
     private static BigDecimal percentage(BigDecimal value, String what) {

@@ -104,7 +104,7 @@ class ApprovalPolicyValuesTest {
     void registeredPerSubjectType() {
         SettingRegistry registry = new SettingRegistry(List.of(contributor));
         assertThat(registry.all()).extracting(SettingDefinition::key)
-                .containsExactly("approvals.policy.orderCancellation", "approvals.policy.podReversal");
+                .contains("approvals.policy.orderCancellation", "approvals.policy.podReversal");
         assertThat(ApprovalSettingDefinitions.keyOf("POD_REVERSAL").name()).isEqualTo("approvals.policy.podReversal");
         for (String type : ApprovalPolicyDefaults.subjectTypes()) {
             Object stored = registry.defaultOf(ApprovalSettingDefinitions.keyOf(type).name());

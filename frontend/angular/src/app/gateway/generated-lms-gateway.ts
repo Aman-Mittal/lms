@@ -30,6 +30,7 @@ import {
   ClientBillingService, ClientCharge, ClientContract, ClientInvoice, ClientInvoiceLine, ClientStatementEntry,
 } from '../api';
 import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lms-gateway';
+import type { ContractChargeDraft, ContractChecklistRow, ContractDetail, ContractDraft } from './lms-gateway';
 // Commercial
 import {
   AddSlabRequestRateBasisEnum, Allocation as CommercialAllocation, DefineGuideRequestStrategyEnum,
@@ -228,6 +229,18 @@ function consignmentRow(c: Consignment): Row {
   };
 }
 
+/** The terms of a contract draft as the request carries them: a blank is sent as absent. */
+function contractTerms(draft: ContractDraft) {
+  return {
+    code: blankAsAbsent(draft.code), effectiveFrom: draft.effectiveFrom, validTill: draft.validTill || undefined,
+    transportRatePerKg: commercialNumber(draft.transportRatePerKg),
+    transportMinimumCharge: commercialNumber(draft.transportMinimumCharge),
+    storageRatePerPalletDay: commercialNumber(draft.storageRatePerPalletDay),
+    handlingInRatePerPallet: commercialNumber(draft.handlingInRatePerPallet),
+    handlingOutRatePerPallet: commercialNumber(draft.handlingOutRatePerPallet),
+  };
+}
+
 /** A client contract version as the billing desk lists it. */
 function contractRow(c: ClientContract): Row {
   return {
@@ -236,6 +249,22 @@ function contractRow(c: ClientContract): Row {
     handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
     storageRatePerPalletDay: text(c.storageRatePerPalletDay),
     billing: c.billOnDispatch ? 'On dispatch' : 'On proof of delivery',
+    status: text(c.status), state: text(c.state), validTill: text(c.validTill), version: text(c.version),
+  };
+}
+
+/** One contract version in full, for the lifecycle panel. */
+function contractDetailOf(c: ClientContract): ContractDetail {
+  return {
+    id: text(c.id), code: text(c.code), clientPartnerId: text(c.clientPartnerId), orgUnitId: text(c.orgUnitId),
+    status: text(c.status), state: text(c.state), effectiveFrom: text(c.effectiveFrom),
+    effectiveTo: text(c.effectiveTo), validTill: text(c.validTill), rejectionReason: text(c.rejectionReason),
+    version: text(c.version), currency: text(c.currency), transportRatePerKg: text(c.transportRatePerKg),
+    transportMinimumCharge: text(c.transportMinimumCharge), storageRatePerPalletDay: text(c.storageRatePerPalletDay),
+    handlingInRatePerPallet: text(c.handlingInRatePerPallet), handlingOutRatePerPallet: text(c.handlingOutRatePerPallet),
+    transportTaxRatePct: text(c.transportTaxRatePct), warehouseTaxRatePct: text(c.warehouseTaxRatePct),
+    storageUnitsPerPallet: c.storageUnitsPerPallet ?? 1, billOnDispatch: !!c.billOnDispatch,
+    services: (c.valueAddedServices ?? []).map((v) => ({ serviceCode: text(v.serviceCode), unit: text(v.unit), rate: text(v.rate) })),
   };
 }
 
@@ -1347,6 +1376,60 @@ export class GeneratedLmsGateway extends LmsGateway {
 
   clientContracts(clientId: string): Promise<Row[]> {
     return this.call(this.clientBilling.listClientContracts({ clientId }), (rows) => rows.map(contractRow));
+  }
+
+  contractDetail(contractId: string): Promise<ContractDetail> {
+    return this.call(this.clientBilling.getClientContract({ id: contractId }), contractDetailOf);
+  }
+
+  createContractDraft(orgUnitId: string, clientId: string, draft: ContractDraft): Promise<string> {
+    return this.call(this.clientBilling.createClientContractDraft({
+      clientContractDraftRequest: { orgUnitId, clientPartnerId: clientId, ...contractTerms(draft) },
+    }), (r) => text(r.id));
+  }
+
+  reviseContractDraft(current: ContractDetail, draft: ContractDraft): Promise<void> {
+    return this.call(this.clientBilling.reviseClientContractDraft({
+      id: current.id, ifMatch: current.version,
+      reviseClientContractRequest: {
+        orgUnitId: current.orgUnitId, currency: current.currency, ...contractTerms(draft),
+        transportTaxRatePct: Number(current.transportTaxRatePct || 0),
+        warehouseTaxRatePct: Number(current.warehouseTaxRatePct || 0),
+        storageUnitsPerPallet: current.storageUnitsPerPallet, billOnDispatch: current.billOnDispatch,
+        valueAddedServices: current.services.map((v) => ({ serviceCode: v.serviceCode, unit: v.unit, rate: Number(v.rate) })),
+      },
+    }), () => undefined);
+  }
+
+  deleteContractDraft(contractId: string, version: string): Promise<void> {
+    return this.call(this.clientBilling.deleteClientContractDraft({ id: contractId, ifMatch: version }), () => undefined);
+  }
+
+  contractChecklist(contractId: string): Promise<ContractChecklistRow[]> {
+    return this.call(this.clientBilling.getClientContractChecklist({ id: contractId }), (items) => items.map((i) => ({
+      code: text(i.code), required: !!i.required, passed: !!i.passed, message: text(i.message),
+    })));
+  }
+
+  requestContractVerification(contractId: string, version: string): Promise<ApprovalPending | null> {
+    return this.call(this.clientBilling.requestClientContractVerification({ id: contractId, ifMatch: version }),
+      (t) => (t ? { id: text(t.id), status: text(t.status) } : null));
+  }
+
+  requestContractExtension(contractId: string, validTill: string, reason: string): Promise<ApprovalPending | null> {
+    return this.call(this.clientBilling.requestClientContractExtension({
+      id: contractId, clientContractExtensionRequest: { validTill, reason },
+    }), (t) => (t ? { id: text(t.id), status: text(t.status) } : null));
+  }
+
+  requestContractChargeAddition(contractId: string, draft: ContractChargeDraft): Promise<ApprovalPending | null> {
+    return this.call(this.clientBilling.requestClientContractChargeAddition({
+      id: contractId,
+      clientContractChargeAdditionRequest: {
+        serviceCode: draft.serviceCode.trim(), unit: draft.unit.trim(), rate: Number(draft.rate),
+        effectiveFrom: draft.effectiveFrom, reason: draft.reason,
+      },
+    }), (t) => (t ? { id: text(t.id), status: text(t.status) } : null));
   }
 
   clientCharges(clientId: string, period: string): Promise<Row[]> {
