@@ -18,23 +18,251 @@
 /api/v1/client-billing/contracts:
   post:
     tags: [Client billing]
-    operationId: publishClientContract
-    summary: Publish a client contract version
+    operationId: createClientContractDraft
+    summary: Start a draft client contract version
     description: |
-      Requires `CLIENT_CONTRACT_MANAGE`. POST only: a contract is a version,
-      and correcting one means publishing a successor. The database refuses
-      an edit by trigger.
+      Requires `CLIENT_CONTRACT_MANAGE`. A contract version starts as a
+      DRAFT: it applies to nothing, and its maker may edit it (`PUT`) and
+      delete it until verification is asked for. It goes into force only
+      through `POST /contracts/{id}/verification-requests`. `code` may be
+      left out when the tenant has a CONTRACT number series, which then
+      numbers it; otherwise it is required. An end date (`validTill`)
+      before `effectiveFrom` is refused with 409
+      `client-contract-validity-invalid`. Audited `CLIENT_CONTRACT_DRAFTED`.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
       required: true
       content:
         application/json:
-          schema: { $ref: "#/components/schemas/PublishClientContractRequest" }
+          schema: { $ref: "#/components/schemas/ClientContractDraftRequest" }
     responses:
       "201": { $ref: "#/components/responses/Created" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/contracts/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the contract version.
+  get:
+    tags: [Client billing]
+    operationId: getClientContract
+    summary: One contract version
+    description: |
+      Requires `CLIENT_BILLING_READ`. A portal user sees only a version of
+      their own client's that is in force or was. The `ETag` is the version
+      to send in `If-Match`.
+    responses:
+      "200":
+        description: The version. Its `ETag` is the version to send in `If-Match`.
+        headers:
+          ETag:
+            schema: { type: string }
+            description: The contract's version, quoted.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientContract" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Client billing]
+    operationId: reviseClientContractDraft
+    summary: Replace a draft's content
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. Replaces the draft's terms and
+      value-added services whole; the client does not change. Refused with
+      409 `client-contract-not-draft` once verification has been asked for,
+      and with `concurrent-modification` for a stale `If-Match`. Audited
+      `CLIENT_CONTRACT_DRAFT_REVISED` with before and after.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReviseClientContractRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  delete:
+    tags: [Client billing]
+    operationId: deleteClientContractDraft
+    summary: Delete a draft
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. Only a draft is deleted; any other
+      version is refused with 409 `client-contract-not-draft`. A number issued
+      by a series is given back. Audited `CLIENT_CONTRACT_DRAFT_DELETED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/contracts/{id}/checklist:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the contract version.
+  get:
+    tags: [Client billing]
+    operationId: getClientContractChecklist
+    summary: The completeness checklist for a contract
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. Every rule (CUSTOMER_TRADING,
+      EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT), whether the tenant
+      requires it (setting `clientbilling.contract.requiredChecklist`) and
+      whether the contract passes it now.
+    responses:
+      "200":
+        description: The rules.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ClientContractChecklistItem" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/client-billing/contracts/{id}/verification-requests:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the contract version.
+  post:
+    tags: [Client billing]
+    operationId: requestClientContractVerification
+    summary: Ask for a draft to be verified
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. Refused with 409
+      `contract-checklist-incomplete` while any required checklist rule fails;
+      `errors` names every failing rule by code. Otherwise the draft becomes
+      PENDING_VERIFICATION (frozen) and the answer is 202 with the approval
+      request (`CONTRACT_ACTIVATION`, decided by a holder of
+      `CLIENT_CONTRACT_APPROVE` other than the requester by default). Approving
+      puts the contract into force, closing the version it succeeds the day
+      before, checking everything again at that moment; rejecting it returns
+      the contract to DRAFT carrying the reason. When the tenant's policy asks
+      for no approval the contract goes into force at once and the answer is
+      204. Audited `CLIENT_CONTRACT_VERIFICATION_REQUESTED`,
+      `CLIENT_CONTRACT_ACTIVATED`, `CLIENT_CONTRACT_VERIFICATION_REJECTED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "202":
+        description: Approval is required; the request raised.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalTicket" }
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/contracts/{id}/extensions:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the contract version.
+  post:
+    tags: [Client billing]
+    operationId: requestClientContractExtension
+    summary: Ask to move a contract's end date later
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. The one change a version in force
+      accepts. The contract must be in force and have an end date, not be
+      closed by a successor, and the new date must be later
+      (`client-contract-not-active`, `client-contract-no-end-date`,
+      `client-contract-already-closed`, `client-contract-extension-not-later`).
+      Answers 202 with the approval request (`CONTRACT_EXTENSION`), or 204 when
+      the tenant's policy asks for none and the date has moved. Audited
+      `CLIENT_CONTRACT_EXTENSION_REQUESTED` and `CLIENT_CONTRACT_EXTENDED`
+      with the dates before and after and the reason.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientContractExtensionRequest" }
+    responses:
+      "202":
+        description: Approval is required; the request raised.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalTicket" }
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/client-billing/contracts/{id}/charge-additions:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the contract version.
+  post:
+    tags: [Client billing]
+    operationId: requestClientContractChargeAddition
+    summary: Ask to add a value-added charge from a date
+    description: |
+      Requires `CLIENT_CONTRACT_MANAGE`. The contract must be the version in
+      force; the day must be after it began and not yet past, and the service
+      not already priced. Answers 202 with the approval request
+      (`CONTRACT_CHARGE_ADD`; a second open request for the contract is 409
+      `approval-already-open`), or 204 when the tenant's policy asks for none.
+      Approving publishes a successor version carrying everything this one
+      carries plus the charge from that day, and closes this one the day
+      before: nothing raised before is repriced. Audited
+      `CLIENT_CONTRACT_CHARGE_ADD_REQUESTED` and `CLIENT_CONTRACT_CHARGE_ADDED`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ClientContractChargeAdditionRequest" }
+    responses:
+      "202":
+        description: Approval is required; the request raised.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalTicket" }
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 
@@ -49,7 +277,10 @@
     tags: [Client billing]
     operationId: listClientContracts
     summary: A client's contract versions, newest first
-    description: Requires `CLIENT_BILLING_READ`. A portal user may read only their own client's.
+    description: |
+      Requires `CLIENT_BILLING_READ`. A portal user may read only their own
+      client's, and only versions that are in force or were: drafts and
+      requests awaiting verification are the 3PL's own paperwork.
     responses:
       "200":
         description: The versions.

@@ -72,22 +72,44 @@ public class ClientBillingQueryService {
     /** A client's contract versions, newest first. A client has a handful. */
     public List<ClientContractView> contractsOf(UUID clientPartnerId) {
         access.requireAccessTo(clientPartnerId);
+        // A client's own user sees what is in force or was; the drafts and the
+        // requests awaiting verification are the 3PL's internal paperwork.
+        return contractViews("WHERE client_partner_id = :clientPartnerId"
+                        + (access.boundClient().isPresent() ? " AND status = 'ACTIVE'" : ""),
+                "ORDER BY effective_from DESC, created_at DESC", Slice.MAX_LIMIT,
+                Map.of("clientPartnerId", clientPartnerId));
+    }
 
-        List<ContractRow> rows = jdbc.sql("""
-                        SELECT id, code, client_partner_id, currency, effective_from, effective_to,
-                               transport_rate_per_kg, transport_minimum_charge,
-                               storage_rate_per_pallet_day, handling_in_rate_per_pallet,
-                               handling_out_rate_per_pallet, transport_tax_rate_pct,
-                               warehouse_tax_rate_pct, storage_units_per_pallet, bill_on_dispatch
-                          FROM client_contract
-                         WHERE client_partner_id = :clientPartnerId
-                         ORDER BY effective_from DESC
-                         LIMIT :limit
-                        """)
-                .param("clientPartnerId", clientPartnerId)
-                .param("limit", Slice.MAX_LIMIT)
-                .query(ContractRow.class)
-                .list();
+    /**
+     * One contract version, wherever its client; empty when there is none --
+     * or when it is another client's or an unverified one to a client's own user,
+     * who is told no more than for an identifier that does not exist.
+     */
+    public Optional<ClientContractView> findContract(UUID id) {
+        return contractViews("WHERE id = :id"
+                        + (access.boundClient().isPresent()
+                        ? " AND status = 'ACTIVE' AND client_partner_id = CAST(:bound AS uuid)" : ""),
+                "", 1, access.boundClient().isPresent()
+                        ? Map.of("id", id, "bound", access.boundClient().get()) : Map.of("id", id))
+                .stream().findFirst();
+    }
+
+    private List<ClientContractView> contractViews(String where, String order, int limit,
+                                                   Map<String, Object> params) {
+        var statement = jdbc.sql("""
+                SELECT id, org_unit_id, code, client_partner_id, currency, effective_from, effective_to,
+                       valid_till, status, rejection_reason, version,
+                       transport_rate_per_kg, transport_minimum_charge,
+                       storage_rate_per_pallet_day, handling_in_rate_per_pallet,
+                       handling_out_rate_per_pallet, transport_tax_rate_pct,
+                       warehouse_tax_rate_pct, storage_units_per_pallet, bill_on_dispatch
+                  FROM client_contract
+                """ + where + " " + order + " LIMIT :limit")
+                .param("limit", limit);
+        for (Map.Entry<String, Object> param : params.entrySet()) {
+            statement = statement.param(param.getKey(), param.getValue());
+        }
+        List<ContractRow> rows = statement.query(ContractRow.class).list();
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -106,8 +128,11 @@ public class ClientBillingQueryService {
                         r -> new ClientContractView.ServiceRate(r.serviceCode(), r.unit(),
                                 r.rate()), Collectors.toList())));
 
-        return rows.stream().map(r -> new ClientContractView(r.id(), r.code(),
-                r.clientPartnerId(), r.currency(), r.effectiveFrom(), r.effectiveTo(),
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        return rows.stream().map(r -> new ClientContractView(r.id(), r.orgUnitId(), r.code(),
+                r.clientPartnerId(), r.currency(), r.effectiveFrom(), r.effectiveTo(), r.validTill(),
+                r.status(), "ACTIVE".equals(r.status()) && r.validTill() != null && r.validTill().isBefore(today)
+                ? "EXPIRED" : r.status(), r.rejectionReason(), r.version() == null ? 0 : r.version(),
                 r.transportRatePerKg(), r.transportMinimumCharge(), r.storageRatePerPalletDay(),
                 r.handlingInRatePerPallet(), r.handlingOutRatePerPallet(),
                 r.transportTaxRatePct(), r.warehouseTaxRatePct(), r.storageUnitsPerPallet(),
@@ -474,8 +499,9 @@ public class ClientBillingQueryService {
         }
     }
 
-    record ContractRow(UUID id, String code, UUID clientPartnerId, String currency,
-                       LocalDate effectiveFrom, LocalDate effectiveTo,
+    record ContractRow(UUID id, UUID orgUnitId, String code, UUID clientPartnerId, String currency,
+                       LocalDate effectiveFrom, LocalDate effectiveTo, LocalDate validTill, String status,
+                       String rejectionReason, Long version,
                        BigDecimal transportRatePerKg, BigDecimal transportMinimumCharge,
                        BigDecimal storageRatePerPalletDay, BigDecimal handlingInRatePerPallet,
                        BigDecimal handlingOutRatePerPallet, BigDecimal transportTaxRatePct,

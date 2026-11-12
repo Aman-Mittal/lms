@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 import com.lms.acceptance.SpineFixtures;
 import com.lms.acceptance.TestFixtures;
 import com.lms.client.ApiClient;
+import com.lms.client.api.ApprovalsApi;
 import com.lms.client.api.ClientBillingApi;
 import com.lms.client.api.CreditApi;
 import com.lms.client.api.OrdersApi;
@@ -36,11 +37,12 @@ import com.lms.client.model.AmendOrderRequest;
 import com.lms.client.model.ClientBillingRunRequest;
 import com.lms.client.model.ClientServiceType;
 import com.lms.client.model.CreditLimitChange;
+import com.lms.client.model.ApprovalPolicyRequest;
+import com.lms.client.model.ClientContractDraftRequest;
 import com.lms.client.model.CreditLimitChangeRequest;
 import com.lms.client.model.CreditLimitDecisionRequest;
 import com.lms.client.model.CreditOverrideRequest;
 import com.lms.client.model.CreditPosition;
-import com.lms.client.model.PublishClientContractRequest;
 import com.lms.client.model.RaiseOrderRequest;
 import com.lms.client.model.ServiceUsageRequest;
 import com.lms.clientbilling.command.ClientChargeService;
@@ -163,14 +165,20 @@ class CreditApiTest {
             return null;
         });
         // 5 per chargeable kg, no minimum, no tax: an order of 100 kg is worth 500.
-        api(ClientBillingApi.class, maker, DESK).publishClientContract(
-                new PublishClientContractRequest().orgUnitId(orgUnitId).code("C-" + salt)
+        // The tenant asks for no verification here: these scenarios are about credit.
+        api(ApprovalsApi.class, maker, List.of("APPROVAL_POLICY_MANAGE")).setApprovalPolicy("CONTRACT_ACTIVATION",
+                new ApprovalPolicyRequest().required(false), null);
+        ClientBillingApi billing = api(ClientBillingApi.class, maker, DESK);
+        UUID contract = billing.createClientContractDraft(
+                new ClientContractDraftRequest().orgUnitId(orgUnitId).code("C-" + salt)
                         .clientPartnerId(customer).effectiveFrom(lastMonth.minusMonths(2))
                         .transportRatePerKg(new BigDecimal("5.00"))
                         .transportMinimumCharge(BigDecimal.ZERO)
                         .storageRatePerPalletDay(new BigDecimal("12"))
                         .handlingInRatePerPallet(new BigDecimal("25"))
-                        .handlingOutRatePerPallet(new BigDecimal("30")), null);
+                        .handlingOutRatePerPallet(new BigDecimal("30")), null).getId();
+        billing.requestClientContractVerification("\"" + billing.getClientContract(contract).getVersion() + "\"",
+                contract, null);
     }
 
     @AfterEach
