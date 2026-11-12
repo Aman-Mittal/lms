@@ -83,5 +83,5 @@
         displayName = "3PL Client Billing",
         allowedDependencies = {"execution::events", "identity::access", "warehouse::api",
                 "warehouse::events", "masterdata::api", "settings::api", "approvals::api",
-                "identity::numbering", "order::api"})
+                "identity::numbering", "order::api", "finance::api"})
 package com.lms.clientbilling;

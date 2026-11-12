@@ -47,6 +47,11 @@ import com.lms.approvals.api.ApprovalSubjectTypes;
  *       off. One holder of {@code CLIENT_CONTRACT_APPROVE}, not the requester,
  *       within 14 days, after which the request expires and the contract stays
  *       as it is (a draft goes back to DRAFT).
+ *   <li>{@code MANUAL_CHARGE} and {@code VENDOR_ADVANCE}: required, though a tenant may
+ *       switch them off. One holder of {@code MANUAL_CHARGE_APPROVE} or
+ *       {@code ADVANCE_APPROVE}, not the requester, within 72 hours, after which the
+ *       request expires and the charge or advance is closed. A manual charge asks
+ *       only when its amount is above {@code finance.manualCharge.approvalThreshold}.
  * </ul>
  */
 public final class ApprovalPolicyDefaults {
@@ -66,6 +71,12 @@ public final class ApprovalPolicyDefaults {
             add(new ApprovalPolicy(type, true, false, List.of("CLIENT_CONTRACT_APPROVE"), true, false, TWO_WEEKS,
                     Expiry.EXPIRE));
         }
+        // Asked only for a charge above finance.manualCharge.approvalThreshold, so
+        // the policy itself is on: a tenant may still switch it off.
+        add(new ApprovalPolicy(ApprovalSubjectTypes.MANUAL_CHARGE, true, false, List.of("MANUAL_CHARGE_APPROVE"), true,
+                false, THREE_DAYS, Expiry.EXPIRE));
+        add(new ApprovalPolicy(ApprovalSubjectTypes.VENDOR_ADVANCE, true, false, List.of("ADVANCE_APPROVE"), true,
+                false, THREE_DAYS, Expiry.EXPIRE));
     }
 
     private ApprovalPolicyDefaults() {

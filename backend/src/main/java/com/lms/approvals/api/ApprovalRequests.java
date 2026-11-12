@@ -69,6 +69,16 @@ public interface ApprovalRequests {
         return request(subject, SettingContext.tenant(), action, payload, summary);
     }
 
+    /**
+     * Withdraws the open request for a subject and action on its owner's
+     * behalf, because the owner itself is cancelling what it asked about. The
+     * request closes CANCELLED with the reason; the owner's own handler is not
+     * called (it is the one calling). Joins the caller's transaction.
+     *
+     * @return whether an open request was withdrawn
+     */
+    boolean withdraw(String subjectType, UUID subjectId, String action, String reason);
+
     /** The open request for a subject and action, if there is one. */
     java.util.Optional<ApprovalTicket> openRequest(String subjectType, UUID subjectId, String action);
 }

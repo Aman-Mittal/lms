@@ -57,6 +57,9 @@ export const routes: Routes = [
       // dependency and most sessions never open a map.
       { path: 'map', loadComponent: () => import('./pages/network-map').then((m) => m.NetworkMap) },
       { path: 'trip-route', loadComponent: () => import('./pages/trip-route').then((m) => m.TripRoute) },
+      { path: 'charge-catalogue', loadComponent: () => import('./pages/charge-catalogue').then((m) => m.ChargeCatalogue) },
+      { path: 'manual-charges', loadComponent: () => import('./pages/manual-charges').then((m) => m.ManualCharges) },
+      { path: 'payables', loadComponent: () => import('./pages/payables').then((m) => m.Payables) },
       { path: 'gate', loadComponent: () => import('./pages/gate-desk').then((m) => m.GateDesk) },
       { path: 'itineraries', loadComponent: () => import('./pages/itineraries').then((m) => m.Itineraries) },
       { path: 'milk-runs', loadComponent: () => import('./pages/milk-runs').then((m) => m.MilkRuns) },
