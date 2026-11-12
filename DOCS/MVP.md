@@ -180,6 +180,24 @@ request after a quiet spell pays the start-up cost above.
   actions, a yard dashboard, unloading start/end, undo of a gate-in, MIS export,
   a console for replacing the stops plan or importing corridors.
 
+- **Charges, vendor payables and advances (issue #225, V60).** A per-tenant charge
+  catalogue (`/api/v1/charge-catalogue`, basis FLAT, PER_KG, PER_HOUR, PER_DAY or
+  PER_UNIT, direction receivable, payable or both, `If-Match` edits), manual charges
+  against a trip, consignment or order (`/api/v1/manual-charges`) approved through the
+  approvals module above `finance.manualCharge.approvalThreshold` (receivables become
+  client charges on the customer's next invoice, payables lines of the trip's open
+  bill or of the vendor's next one; an approved bill is never re-priced; cancel only
+  before billing), vendor invoices captured against approved freight bills and matched
+  with the freight-bill tolerance (`/api/v1/vendor-invoices`, due by
+  `finance.payables.paymentTermsDays`, part payments with a balance, an overdue list), vendor advances
+  against a trip capped by `finance.advance.maxPercentOfFreight`, approved, paid and
+  deducted at settlement (`/api/v1/vendor-advances`,
+  `GET /api/v1/freight-bills/{id}/settlement`), four webhook events and, in both
+  consoles, a Charge catalogue (Administration), Manual charges and Vendor payables
+  desks and a money section on the trip view. Not built: TDS, vendor debit and credit
+  notes, payment requests and bank files, a fuel-card provider, editing a manual
+  charge, org-unit ABAC on these rights.
+
 **Rating and settlement (vision §3.9)**
 - Rate cards are **versions**, not rows to edit. A trip is priced against the
   card in force on the day it was *dispatched*, and the card used is recorded on
