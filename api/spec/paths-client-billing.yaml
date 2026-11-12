@@ -28,7 +28,10 @@
       left out when the tenant has a CONTRACT number series, which then
       numbers it; otherwise it is required. An end date (`validTill`)
       before `effectiveFrom` is refused with 409
-      `client-contract-validity-invalid`. Audited `CLIENT_CONTRACT_DRAFTED`.
+      `client-contract-validity-invalid`. Lanes, `directOrdersAllowed` and
+      `allowedLoadTypes` are part of the version (see the schema); lane codes
+      repeated within it are 409 `client-contract-lane-duplicated`. Audited
+      `CLIENT_CONTRACT_DRAFTED`.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
@@ -128,7 +131,7 @@
     summary: The completeness checklist for a contract
     description: |
       Requires `CLIENT_CONTRACT_MANAGE`. Every rule (CUSTOMER_TRADING,
-      EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT), whether the tenant
+      EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT, LANES), whether the tenant
       requires it (setting `clientbilling.contract.requiredChecklist`) and
       whether the contract passes it now.
     responses:
@@ -293,6 +296,38 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
 
+/api/v1/client-billing/clients/{clientId}/contract-lanes:
+  parameters:
+    - name: clientId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The client's business partner identifier.
+  get:
+    tags: [Client billing]
+    operationId: listClientContractLanes
+    summary: The lanes of the client's contract in force on a day
+    description: |
+      Requires `CLIENT_BILLING_READ`, `ORDER_CREATE` or `ORDER_UPDATE`: the
+      order desk picks a lane from these. Empty when the client has no contract
+      in force on the day, or the version has no lanes.
+    parameters:
+      - name: onDate
+        in: query
+        required: false
+        schema: { type: string, format: date }
+        description: The day to judge by; today when omitted.
+    responses:
+      "200":
+        description: The lanes, by code.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/ClientContractLane" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
 /api/v1/client-billing/clients/{clientId}/portal-users:
   parameters:
     - name: clientId
