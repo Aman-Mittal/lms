@@ -109,6 +109,33 @@ features are listed as text, with their kind and coordinates on `data-`
 attributes, for screen readers and for the browser tests, which answer tile
 requests themselves and never call the tile servers.
 
+## Client-side cache
+
+Both consoles keep what the maps need in the browser so the 0.1-CPU backend is
+asked for less (DOCS/adr/0007). Each has a small `client-cache` module over the
+native IndexedDB API (no library): a database per tenant and user, entries with
+a TTL and a version, `get`/`put`, a wipe on sign-out, and a wipe when `GET /me`
+returns a different `cacheEpoch`. It is bound at sign-in and does nothing when
+the `ui.clientCache` setting is off.
+
+- **Geometry.** Terminals (network map, itineraries, milk runs) are kept and
+  revalidated with `If-None-Match`: 5 minutes with no request, then a `304`.
+- **Tracks.** Trip route keeps the points and asks `track?afterSeq=` for the
+  rest; a track over 1500 points is simplified (Douglas-Peucker) in a Web Worker
+  before it is drawn. The exception desk's severity and status counts are also
+  worked out in that worker, from the tickets already listed.
+- **Tiles.** `tile-sw.js` is a service worker, registered in production builds
+  only and scoped to the console's path. It caches tile images in the Cache API
+  (cache first, 7 days, 600 tiles, least recently used out first) and ignores
+  everything else, so it never holds an API response.
+
+Angular keeps the workers as `src/app/workers/*.worker.ts` (built by
+`webWorkerTsConfig`); React imports them with `new URL(..., import.meta.url)`.
+`tile-sw.js` is copied as is: from `src/` in Angular, from `public/` in React.
+The browser tests block service workers, because Playwright cannot route what a
+worker fetches. There is no unit-test runner in either console; the cache is
+covered by `client-cache.spec.ts`.
+
 ## LTL rating and parked events
 
 **Finance > LTL rating** lists the receivable each part-load docket earned

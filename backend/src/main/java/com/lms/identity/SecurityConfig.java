@@ -168,7 +168,7 @@ public class SecurityConfig {
         // If-Match carries the version an edit was read at, and Idempotency-Key
         // makes a retried write safe; a browser sends neither unless allowed.
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Correlation-Id",
-                "If-Match", "Idempotency-Key"));
+                "If-Match", "If-None-Match", "Idempotency-Key"));
         config.setExposedHeaders(List.of("X-Correlation-Id", "ETag"));
         // False. Tokens travel in the Authorization header, not in a cookie,
         // so nothing here needs credentialed requests -- and allowing them
