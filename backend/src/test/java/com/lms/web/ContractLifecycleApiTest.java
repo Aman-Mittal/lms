@@ -220,10 +220,13 @@ class ContractLifecycleApiTest {
 
         List<ClientContractChecklistItem> items = desk.getClientContractChecklist(id);
         assertThat(items).extracting(i -> i.getCode().getValue())
-                .containsExactly("CUSTOMER_TRADING", "EFFECTIVE_DATES", "TRANSPORT_RATE", "TAX_RATES", "ORG_UNIT");
-        assertThat(items).filteredOn(i -> !i.getPassed()).extracting(i -> i.getCode().getValue())
+                .containsExactly("CUSTOMER_TRADING", "EFFECTIVE_DATES", "TRANSPORT_RATE", "TAX_RATES", "ORG_UNIT",
+                        "LANES");
+        assertThat(items).filteredOn(i -> !i.getPassed() && i.getRequired()).extracting(i -> i.getCode().getValue())
                 .containsExactly("EFFECTIVE_DATES", "TRANSPORT_RATE");
-        assertThat(items).allMatch(ClientContractChecklistItem::getRequired);
+        // Lanes are an opt-in rule: listed, failing here, and not required by default.
+        assertThat(items).filteredOn(i -> !i.getRequired()).extracting(i -> i.getCode().getValue())
+                .containsExactly("LANES");
 
         FeignException refused = catchFeign(() -> desk.requestClientContractVerification(
                 etag(desk.getClientContract(id)), id, null));
@@ -235,7 +238,8 @@ class ContractLifecycleApiTest {
         // Corrected, it passes and is submitted.
         desk.reviseClientContractDraft(etag(desk.getClientContract(id)), id,
                 revise("CL-1", TODAY.minusDays(20)).transportRatePerKg(new BigDecimal("4")), null);
-        assertThat(desk.getClientContractChecklist(id)).allMatch(ClientContractChecklistItem::getPassed);
+        assertThat(desk.getClientContractChecklist(id)).filteredOn(ClientContractChecklistItem::getRequired)
+                .allMatch(ClientContractChecklistItem::getPassed);
         assertThat(desk.requestClientContractVerification(etag(desk.getClientContract(id)), id, null)).isNotNull();
     }
 

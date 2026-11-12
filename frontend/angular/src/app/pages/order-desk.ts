@@ -17,8 +17,8 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  ApiProblem, CloseKindChoice, HistoryEntryRow, LmsGateway, MATERIAL_CLASSES, OrderDesk, OrderHeaderDraft, OrderLineDraft,
-  OrderLineView, OrderRaiseDraft,
+  ApiProblem, CloseKindChoice, ContractLaneChoice, HistoryEntryRow, LmsGateway, MATERIAL_CLASSES, OrderDesk,
+  OrderHeaderDraft, OrderLineDraft, OrderLineView, OrderRaiseDraft,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
@@ -59,12 +59,18 @@ const CLOSABLE = ['VALIDATED', ...PLANNED];
 
 const BLANK_RAISE: OrderRaiseDraft = {
   orderNo: '', customerPartnerId: '', originTerminalId: '', requestedPickupAt: '', requestedDeliveryAt: '',
+  contractLaneId: '', loadType: '',
 };
 
 const BLANK_HEADER: OrderHeaderDraft = {
   customerPartnerId: '', originTerminalId: '', requestedPickupAt: '', requestedDeliveryAt: '',
-  originHubTerminalId: '', destinationHubTerminalId: '',
+  originHubTerminalId: '', destinationHubTerminalId: '', contractLaneId: '', loadType: '',
 };
+
+/** The day an order is judged by for its contract: the pickup's day when it reads as one, else today. */
+function contractDay(pickup: string): string | undefined {
+  return /^\d{4}-\d{2}-\d{2}/.test(pickup) ? pickup.slice(0, 10) : undefined;
+}
 
 /** A refusal as the desk shows it: the problem's stable name, then what it says. */
 interface Refusal {
@@ -109,6 +115,17 @@ interface Refusal {
         <input name="raisePickup" placeholder="Pickup (ISO time, optional)" aria-label="New order pickup"
                [value]="raising().requestedPickupAt"
                (input)="setRaise('requestedPickupAt', $any($event.target).value)" />
+        @if (raiseLanes().length > 0) {
+          <select aria-label="New order contract lane" data-testid="raise-lane"
+                  (change)="pickRaiseLane($any($event.target).value)">
+            <option value="" [selected]="!raising().contractLaneId">Contract lane (optional)</option>
+            @for (l of raiseLanes(); track l.id) {
+              <option [value]="l.id" [selected]="l.id === raising().contractLaneId">{{ l.label }}</option>
+            }
+          </select>
+        }
+        <input name="raiseLoadType" placeholder="Load type (optional)" aria-label="New order load type"
+               [value]="raising().loadType" (input)="setRaise('loadType', $any($event.target).value)" />
         <button type="submit">Raise order</button>
         @if (raiseError()) { <span class="error" role="alert"> {{ raiseError() }}</span> }
       </form>
@@ -126,6 +143,11 @@ interface Refusal {
           <div><dt>Lines</dt><dd data-testid="order-line-count">{{ d.order['lineCount'] }}</dd></div>
           <div><dt>Weight kg</dt><dd data-testid="order-weight">{{ d.order['totalDeadWeightKg'] }}</dd></div>
           <div><dt>Pickup</dt><dd>{{ d.order['requestedPickupAt'] || '—' }}</dd></div>
+          <div><dt>Contract</dt><dd data-testid="order-contract">{{ d.order['contractCode'] || '—' }}</dd></div>
+          <div><dt>Lane</dt><dd data-testid="order-lane">{{ d.order['contractLaneCode'] || '—' }}</dd></div>
+          <div><dt>Load type</dt><dd data-testid="order-load-type">{{ d.order['loadType'] || '—' }}</dd></div>
+          <div><dt>Transit days</dt><dd data-testid="order-transit">{{ d.order['transitDays'] || '—' }}</dd></div>
+          <div><dt>Expected delivery</dt><dd data-testid="order-expected">{{ d.order['expectedDeliveryDate'] || '—' }}</dd></div>
           @if (d.order['closeKind']) {
             <div>
               <dt>Closed</dt>
@@ -287,6 +309,16 @@ interface Refusal {
                      (input)="setHeader('requestedPickupAt', $any($event.target).value)" />
               <input aria-label="Delivery" placeholder="Delivery (ISO time)" [value]="header().requestedDeliveryAt"
                      (input)="setHeader('requestedDeliveryAt', $any($event.target).value)" />
+              @if (editLanes().length > 0) {
+                <select aria-label="Contract lane" data-testid="edit-lane" (change)="pickEditLane($any($event.target).value)">
+                  <option value="" [selected]="!header().contractLaneId">Contract lane (the contract finds one)</option>
+                  @for (l of editLanes(); track l.id) {
+                    <option [value]="l.id" [selected]="l.id === header().contractLaneId">{{ l.label }}</option>
+                  }
+                </select>
+              }
+              <input aria-label="Load type" placeholder="Load type" [value]="header().loadType"
+                     (input)="setHeader('loadType', $any($event.target).value)" />
             </div>
             <div class="table-scroll">
               <table data-testid="lines-editor">
@@ -407,6 +439,9 @@ export class OrderDeskPage {
   readonly desk = signal<OrderDesk | null>(null);
   readonly loadError = signal('');
   readonly raising = signal<OrderRaiseDraft>({ ...BLANK_RAISE });
+  /** The lanes of the contract in force for the customer being raised for, and for the order being edited. */
+  readonly raiseLanes = signal<ContractLaneChoice[]>([]);
+  readonly editLanes = signal<ContractLaneChoice[]>([]);
   readonly raiseError = signal('');
   readonly header = signal<OrderHeaderDraft>({ ...BLANK_HEADER });
   readonly lines = signal<OrderLineDraft[]>([]);
@@ -461,6 +496,7 @@ export class OrderDeskPage {
       this.desk.set(desk);
       this.header.set({ ...desk.header });
       this.lines.set(editableLines(desk.lines));
+      this.editLanes.set(await this.lanesFor(desk.header.customerPartnerId, desk.header.requestedPickupAt));
       if (this.tab() === 'history') {
         await this.loadHistory();
       }
@@ -472,6 +508,52 @@ export class OrderDeskPage {
 
   setRaise(field: keyof OrderRaiseDraft, value: string): void {
     this.raising.update((d) => ({ ...d, [field]: value }));
+    if (field === 'customerPartnerId' || field === 'requestedPickupAt') {
+      void this.loadRaiseLanes();
+    }
+  }
+
+  /** The lanes the customer's contract offers on the pickup's day; a lane picked for another customer is dropped. */
+  private async loadRaiseLanes(): Promise<void> {
+    const draft = this.raising();
+    const lanes = await this.lanesFor(draft.customerPartnerId, draft.requestedPickupAt);
+    this.raiseLanes.set(lanes);
+    if (draft.contractLaneId && !lanes.some((l) => l.id === draft.contractLaneId)) {
+      this.raising.update((d) => ({ ...d, contractLaneId: '' }));
+    }
+  }
+
+  /** What a customer's contract in force offers; nothing when there is none or it cannot be read. */
+  private async lanesFor(customerId: string, pickup: string): Promise<ContractLaneChoice[]> {
+    if (!customerId.trim()) {
+      return [];
+    }
+    try {
+      return await this.gateway.contractLanes(customerId.trim(), contractDay(pickup));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Picking a lane fills the origin and the load type from it. */
+  pickRaiseLane(laneId: string): void {
+    const lane = this.raiseLanes().find((l) => l.id === laneId);
+    this.raising.update((d) => ({
+      ...d, contractLaneId: laneId, originTerminalId: lane?.originTerminalId || d.originTerminalId,
+      loadType: lane?.loadType || d.loadType,
+    }));
+  }
+
+  /** Picking a lane fills the origin and load type, and the destination of every line from it. */
+  pickEditLane(laneId: string): void {
+    const lane = this.editLanes().find((l) => l.id === laneId);
+    this.header.update((h) => ({
+      ...h, contractLaneId: laneId, originTerminalId: lane?.originTerminalId || h.originTerminalId,
+      loadType: lane?.loadType || h.loadType,
+    }));
+    if (lane?.destinationTerminalId) {
+      this.lines.update((now) => now.map((l) => ({ ...l, destinationTerminalId: lane.destinationTerminalId })));
+    }
   }
 
   async raise(): Promise<void> {
@@ -483,6 +565,7 @@ export class OrderDeskPage {
     try {
       const id = await this.gateway.raiseOrder(orgUnitId, this.raising());
       this.raising.set({ ...BLANK_RAISE });
+      this.raiseLanes.set([]);
       await this.open(id);
     } catch (e) {
       this.raiseError.set((e as Error).message);
