@@ -71,7 +71,7 @@ export async function approveSubject(
   request: APIRequestContext, session: Session, subjectType: string, subjectId: string,
 ): Promise<void> {
   const listed = await request.get(
-    `${API}/api/v1/approvals?subjectType=${subjectType}&subjectId=${subjectId}&status=OPEN`, { headers: headers(session) });
+    `${API}/api/v1/approvals?subjectType=${subjectType}&subjectId=${subjectId}&status=REQUESTED`, { headers: headers(session) });
   expect(listed.ok(), `list approvals: ${listed.status()} ${await listed.text()}`).toBeTruthy();
   const open = (await listed.json()).items[0] as { id: string; version: number } | undefined;
   expect(open, `an open ${subjectType} approval for ${subjectId}`).toBeTruthy();

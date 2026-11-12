@@ -75,7 +75,8 @@ test.describe('the charge catalogue', () => {
     await expect(page.getByTestId('cc-saved')).toBeVisible();
 
     await page.getByTestId('cc-search').fill(code);
-    await page.getByRole('button', { name: 'Search' }).click();
+    // Enter submits the Angular form; the React list filters as it is typed.
+    await page.getByTestId('cc-search').press('Enter');
     const row = page.getByTestId('cc-row').filter({ hasText: code });
     await expect(row).toHaveCount(1);
     await row.getByTestId('cc-edit').click();
