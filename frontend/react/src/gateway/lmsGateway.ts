@@ -464,6 +464,66 @@ export interface ApprovalPending {
   status: string;
 }
 
+/** One contract version in full, as the lifecycle panel shows, edits and acts on it. */
+export interface ContractDetail {
+  id: string;
+  code: string;
+  clientPartnerId: string;
+  orgUnitId: string;
+  /** Stored: DRAFT, PENDING_VERIFICATION or ACTIVE. */
+  status: string;
+  /** What to show: the status, or EXPIRED for a version in force past its end date. */
+  state: string;
+  effectiveFrom: string;
+  effectiveTo: string;
+  validTill: string;
+  /** Why verification was last refused, while the contract is back in DRAFT. */
+  rejectionReason: string;
+  /** What an edit or a request sends back as `If-Match`. */
+  version: string;
+  currency: string;
+  transportRatePerKg: string;
+  transportMinimumCharge: string;
+  storageRatePerPalletDay: string;
+  handlingInRatePerPallet: string;
+  handlingOutRatePerPallet: string;
+  transportTaxRatePct: string;
+  warehouseTaxRatePct: string;
+  storageUnitsPerPallet: number;
+  billOnDispatch: boolean;
+  services: Array<{ serviceCode: string; unit: string; rate: string }>;
+}
+
+/** The terms a person types for a draft; a blank rate is left to the server's default of none. */
+export interface ContractDraft {
+  /** Left blank, the next number of the tenant's CONTRACT series. */
+  code: string;
+  effectiveFrom: string;
+  validTill: string;
+  transportRatePerKg: string;
+  transportMinimumCharge: string;
+  storageRatePerPalletDay: string;
+  handlingInRatePerPallet: string;
+  handlingOutRatePerPallet: string;
+}
+
+/** One completeness rule, whether the tenant requires it and whether the draft passes it. */
+export interface ContractChecklistRow {
+  code: string;
+  required: boolean;
+  passed: boolean;
+  message: string;
+}
+
+/** A value-added charge to add to a contract in force from a day. */
+export interface ContractChargeDraft {
+  serviceCode: string;
+  unit: string;
+  rate: string;
+  effectiveFrom: string;
+  reason: string;
+}
+
 // ---------------------------------------------------------------- webhooks
 
 /** What a subscription can ask for. `PING` is what a test ping sends and cannot be subscribed to. */
@@ -738,7 +798,6 @@ export interface LmsGateway {
   milkRunRoute(id: string): Promise<MappedDetail>;
   /** The runs generated from a route, newest first. */
   circuitRuns(routeCode: string): Promise<Row[]>;
-
   /** Docket receivables, one page in docket-number order. */
   ltlReceivables(): Promise<Row[]>;
   /** Puts a terminal in an LTL zone, replacing any earlier placement. */
@@ -828,6 +887,25 @@ export interface LmsGateway {
   clientChoices(): Promise<Choice[]>;
   /** Every contract version of the client, newest first. */
   clientContracts(clientId: string): Promise<Row[]>;
+  /** One version of a contract in full; its `version` is what the edits below send back. */
+  contractDetail(contractId: string): Promise<ContractDetail>;
+  /** Starts a draft under the client; resolves to its id. It applies to nothing until verified. */
+  createContractDraft(orgUnitId: string, clientId: string, draft: ContractDraft): Promise<string>;
+  /** Replaces a draft's terms, keeping what the form does not show (services, tax, currency). */
+  reviseContractDraft(current: ContractDetail, draft: ContractDraft): Promise<void>;
+  deleteContractDraft(contractId: string, version: string): Promise<void>;
+  /** Every completeness rule, with whether the draft passes it. */
+  contractChecklist(contractId: string): Promise<ContractChecklistRow[]>;
+  /**
+   * Asks for the draft to be verified: the approval request when one is needed, null when the
+   * tenant asks for none and the contract is now in force. A draft that fails the checklist is an
+   * ApiProblem `contract-checklist-incomplete` whose `errors` name every failing rule.
+   */
+  requestContractVerification(contractId: string, version: string): Promise<ApprovalPending | null>;
+  /** Asks to move a contract's end date later; the approval request, or null once done. */
+  requestContractExtension(contractId: string, validTill: string, reason: string): Promise<ApprovalPending | null>;
+  /** Asks to add a charge from a day, as a successor version; the approval request, or null once done. */
+  requestContractChargeAddition(contractId: string, draft: ContractChargeDraft): Promise<ApprovalPending | null>;
   /** The client's charges in the month holding `period` (a `YYYY-MM-DD` day). */
   clientCharges(clientId: string, period: string): Promise<Row[]>;
   /** Marks a consignment billable to its client without waiting for its proof; audited. */
