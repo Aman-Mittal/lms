@@ -854,6 +854,48 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("contract lanes, their slabs and party lists, and a contract family are index-served")
+    void contractLaneReads() {
+        // The order desk's lanes, the resolver's lanes of the version in force, and the lane lists.
+        assertIndexed("""
+                SELECT * FROM client_contract_lane
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND contract_id IN ('00000000-0000-0000-0000-000000000002')
+                 ORDER BY contract_id, lane_code
+                """, "client_contract_lane");
+        assertIndexed("""
+                SELECT * FROM client_contract_lane_slab
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND lane_id IN ('00000000-0000-0000-0000-000000000003')
+                 ORDER BY lane_id, min_weight_kg
+                """, "client_contract_lane_slab");
+        assertIndexed("""
+                SELECT * FROM client_contract_lane_party
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND lane_id IN ('00000000-0000-0000-0000-000000000003')
+                 ORDER BY lane_id, role, partner_id
+                """, "client_contract_lane_party");
+        // The CONTRACT settings scope names a contract by its family.
+        assertIndexed("""
+                SELECT 1 FROM client_contract
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND coalesce(family_id, id) = '00000000-0000-0000-0000-000000000002'
+                 LIMIT 1
+                """, "client_contract");
+        // Which orders ride a lane, and which a contract version.
+        assertIndexed("""
+                SELECT id FROM sales_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND contract_lane_id = '00000000-0000-0000-0000-000000000003'
+                """, "sales_order");
+        assertIndexed("""
+                SELECT id FROM sales_order
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND contract_id = '00000000-0000-0000-0000-000000000003'
+                """, "sales_order");
+    }
+
+    @Test
     @DisplayName("a client's charges for one billing month are index-served and keyset-seekable")
     void clientChargesForAPeriod() {
         // The billing run's read and the charge listing share
@@ -1414,7 +1456,8 @@ class QueryPlanTest {
                 Map.entry("userId", "NULL"),
                 Map.entry("country", "NULL"),
                 Map.entry("state", "NULL"),
-                Map.entry("freightMode", "'LTL'")));
+                Map.entry("freightMode", "'LTL'"),
+                Map.entry("contractId", "'00000000-0000-0000-0000-000000000006'")));
         assertIndexed(resolve, "setting_profile");
         assertIndexed(resolve, "setting_value");
         assertIndexed(resolve, "org_unit");
