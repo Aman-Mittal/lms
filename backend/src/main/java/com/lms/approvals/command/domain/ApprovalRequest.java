@@ -155,6 +155,13 @@ public record ApprovalRequest(
         return closed(ApprovalStatus.CANCELLED, caller, now.truncatedTo(ChronoUnit.MICROS), note, approvalsGiven);
     }
 
+    /** Closes the open request CANCELLED because its subject was cancelled by its owner, not by the requester. */
+    public ApprovalRequest withdrawn(UUID by, String why, Instant now) {
+        requireOpen();
+        return closed(ApprovalStatus.CANCELLED, by, now.truncatedTo(ChronoUnit.MICROS), optionalText(why),
+                approvalsGiven);
+    }
+
     /** Whether the request is open and past due at {@code now}. */
     public boolean lapsed(Instant now) {
         return status.open() && dueAt != null && !dueAt.isAfter(now);
