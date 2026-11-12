@@ -185,6 +185,7 @@ public class ClientChargeService {
                 : completedAt != null ? completedAt : Instant.now();
         LocalDate occurredOn = movedAt.atZone(ZoneOffset.UTC).toLocalDate();
 
+        Map<UUID, UUID> laneOf = directory.lanesOf(loadId);
         int created = 0;
         for (ClientDirectory.ClientShare share : shares) {
             UUID client = share.clientPartnerId();
@@ -214,7 +215,7 @@ public class ClientChargeService {
             charges.save(ClientCharge.capture(UUID.randomUUID(), tenantId, client,
                     ServiceType.TRANSPORT, null, quantity, ServiceType.TRANSPORT.unit(),
                     occurredOn, periods.openPeriodFor(tenantId, client, occurredOn), key,
-                    tripNo + " / " + share.orderNos(), tripId, costShare));
+                    tripNo + " / " + share.orderNos(), tripId, costShare, laneOf.get(client)));
             created++;
         }
         if (created > 0) {

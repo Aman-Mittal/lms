@@ -183,8 +183,8 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 | `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
-| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates; a version is a draft, then verified through approvals, with an optional end date, an approved extension and approved charge additions), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
-| `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, combination, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
+| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates; a version is a draft, then verified through approvals, with an optional end date, an approved extension and approved charge additions; lanes -- origin and destination as a terminal or an LTL zone, mode, load type, a rate basis with weight slabs, transit days, allowed consignees -- and allowances (direct orders, load types) that an order resolves against), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
+| `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, combination, contract, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
 | `approvals` | One approvals module for every flow: requests with a frozen payload, a policy per subject type (copied onto each request), decisions applied in-process by the owning module's handler, the inbox, expiry. Depends on `identity::access` only. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
@@ -250,6 +250,19 @@ Rules that make the split worth having:
   `order::api` also defines `OrderAmendmentGuard` (planning implements it: refuse
   while a live consignment exists), which is what lets a validated order be
   amended only before freight is cut from it.
+  `order::api` also defines `OrderContractPort` (V58, issue #219; client billing
+  implements it, so `clientbilling` declares `order::api` and `order` never
+  depends on `clientbilling`): at raise, validate, amend and header edit the
+  order asks which contract version is in force on its date (its requested
+  pickup day, else today) and which lane it travels on, and the answer either
+  refuses by name -- `order-outside-contract-lanes`, `order-load-type-not-allowed`,
+  `order-consignee-not-allowed`, each overridden only by a contract that allows
+  direct orders -- or is recorded on the order (`contract_id`, `contract_lane_id`,
+  `contract_family_id`, `transit_days`). With no contract in force the answer is
+  empty and nothing about the order changes. `OrderContractDesk` is the order
+  side; a lane a person chose (`lane_chosen`) is held to when the order
+  is judged again, otherwise the first lane by code that serves every line is
+  found at validation, never before the order has lines.
 - **Anything that needs a person to agree first goes through `approvals`.**
   Never build a second maker-checker. To add a flow: a constant in
   `approvals.api.ApprovalSubjectTypes`, its code default in
@@ -326,7 +339,8 @@ record of its own. A module that owns a setting declares it, nowhere else:
   `order::api` `FreightMode` (settings cannot import it: order depends on
   settings) and `SettingCombinationTest` holds the two equal.
 
-Registered so far: `order.close.*` (unit, customer);
+Registered so far: `order.close.*` (unit, customer, and the tolerance also
+contract); `order.transit.kmPerDay` (unit, customer; default 400);
 `clientbilling.contract.requiredChecklist` (COMPLIANCE, dated, a JSON object of the
 contract completeness rules: unit, customer);
 `controltower.detector.etaSlipTolerance` and `.temperatureExcursionTolerance`
@@ -341,7 +355,8 @@ known document types), `execution.dispatch.weightTolerancePct` and
 preferences; `approvals.policy.orderCancellation` and `.podReversal` (unit,
 customer, combination; a JSON policy, refused for an unknown permission through
 `SettingContributor.refusal`, a write-time check only the owning module can
-make). COMBINATION is opted into (V55) by the tracking thresholds, the
+make). CONTRACT (V58) is opted into by the order close tolerance and the
+dispatch checklist (required documents and weight tolerance) alone. COMBINATION is opted into (V55) by the tracking thresholds, the
 dispatch checklist and weight tolerance, both match tolerances, the order
 close tolerance, both detector tolerances and the approval policies -- not by
 the tracking switches,
@@ -353,11 +368,23 @@ applies; an undated value applies since always. Across profiles the most
 specific one the key allows wins:
 PLATFORM (global < country < state) < ORG_DEFAULT < ORG_UNIT (deeper wins:
 country < zone < branch < hub) < VEHICLE < CUSTOMER < VENDOR < COMBINATION
-(more conditions, then the deeper unit, then the higher priority) < USER.
+(more conditions, then the deeper unit, then the higher priority) < CONTRACT
+< USER.
 With none, the system default answers. Every source carries a `label` in
 words with the unit's level ("Country: India", "Zone: North", "Branch:
 Gurgaon") or a combination's conditions ("Branch Gurgaon + Customer Acme");
 consoles show it as given.
+
+CONTRACT (V58) names a client contract by its **family** id, not a version's:
+every version of one contract (a charge-add successor, a replacement draft with
+the same code for the same client) carries the `family_id` of the first, so a
+profile survives a new version instead of being orphaned by it. `family_id` NULL
+means "its own id" (versions written before V58, which the immutability trigger
+would not let a migration rewrite). The context names it with `withContract`;
+an order records it (`contract_family_id`) and a trip reads it through
+`LoadLifecyclePort.contractFamiliesAboard` for each customer whose orders aboard
+all name one family. It sits after COMBINATION: a client contract is the most
+specific commercial agreement a record can name.
 
 VENDOR (V54) names a business partner of type VENDOR, as CUSTOMER names one of
 type CUSTOMER; it sits next to CUSTOMER because no key a customer's context

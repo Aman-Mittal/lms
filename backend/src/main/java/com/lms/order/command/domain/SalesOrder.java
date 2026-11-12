@@ -67,7 +67,19 @@ public record SalesOrder(
         CloseKind closeKind,
         /** Why, as the person closing it said; null when none was needed. */
         String closeReason,
-        Instant closedAt) {
+        Instant closedAt,
+        /** The client contract version the order was resolved against; null when none was in force. */
+        UUID contractId,
+        /** The lane of that contract the order travels on; null for a direct order or when none applies. */
+        UUID contractLaneId,
+        /** The contract as a person means it, shared by its versions: what a CONTRACT-scoped setting names. */
+        UUID contractFamilyId,
+        /** The load or vehicle type the order is booked for, upper case; null when none is stated. */
+        String loadType,
+        /** Days the movement is promised to take: the lane's, else from distance; null while unknown. */
+        Integer transitDays,
+        /** True when a person named the lane, so it is held to and not replaced when the order is judged again. */
+        boolean laneChosen) {
 
     /** How the demand reached the platform (3.3: manual, bulk upload, or ERP). */
     public enum OrderSource {
@@ -134,6 +146,16 @@ public record SalesOrder(
                                    Instant requestedPickupAt, Instant requestedDeliveryAt,
                                    OrderSource source, FreightMode freightMode,
                                    UUID originHubTerminalId, UUID destinationHubTerminalId) {
+        return raise(id, tenantId, orgUnitId, customerPartnerId, orderNo, originTerminalId, requestedPickupAt,
+                requestedDeliveryAt, source, freightMode, originHubTerminalId, destinationHubTerminalId, null);
+    }
+
+    /** As the other {@code raise}, booked for a load or vehicle type (null when none is stated). */
+    public static SalesOrder raise(UUID id, UUID tenantId, UUID orgUnitId, UUID customerPartnerId,
+                                   String orderNo, UUID originTerminalId,
+                                   Instant requestedPickupAt, Instant requestedDeliveryAt,
+                                   OrderSource source, FreightMode freightMode,
+                                   UUID originHubTerminalId, UUID destinationHubTerminalId, String loadType) {
         if (orderNo == null || orderNo.isBlank()) {
             throw new IllegalArgumentException("Order number is mandatory");
         }
@@ -142,7 +164,8 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo,
                 OrderStatus.DRAFT, originTerminalId, requestedPickupAt, requestedDeliveryAt,
                 source == null ? OrderSource.MANUAL : source, mode,
-                originHubTerminalId, destinationHubTerminalId, null, Instant.now(), Instant.now(), null, null, null);
+                originHubTerminalId, destinationHubTerminalId, null, Instant.now(), Instant.now(), null, null, null,
+                null, null, null, normaliseLoadType(loadType), null, false);
     }
 
     /**
@@ -198,12 +221,51 @@ public record SalesOrder(
                               Instant newPickupAt, Instant newDeliveryAt,
                               UUID newOriginHubTerminalId, UUID newDestinationHubTerminalId,
                               Long expectedVersion) {
+        return revised(newCustomerPartnerId, newOriginTerminalId, newPickupAt, newDeliveryAt,
+                newOriginHubTerminalId, newDestinationHubTerminalId, loadType, expectedVersion);
+    }
+
+    /**
+     * As the other {@code revised}, restating the load type. What the order
+     * resolved against its contract is kept as it was; the service resolves a
+     * changed header afresh ({@link #withContract}) before it saves.
+     */
+    public SalesOrder revised(UUID newCustomerPartnerId, UUID newOriginTerminalId,
+                              Instant newPickupAt, Instant newDeliveryAt,
+                              UUID newOriginHubTerminalId, UUID newDestinationHubTerminalId,
+                              String newLoadType, Long expectedVersion) {
         requireCoherent(orderNo, newCustomerPartnerId, newPickupAt, newDeliveryAt, freightMode,
                 newOriginHubTerminalId, newDestinationHubTerminalId);
         return new SalesOrder(id, tenantId, orgUnitId, newCustomerPartnerId, orderNo, status,
                 newOriginTerminalId, newPickupAt, newDeliveryAt, source, freightMode,
                 newOriginHubTerminalId, newDestinationHubTerminalId,
-                expectedVersion, createdAt, Instant.now(), closeKind, closeReason, closedAt);
+                expectedVersion, createdAt, Instant.now(), closeKind, closeReason, closedAt,
+                contractId, contractLaneId, contractFamilyId, normaliseLoadType(newLoadType), transitDays, laneChosen);
+    }
+
+    /** Upper case and trimmed; blank is none. */
+    public static String normaliseLoadType(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String clean = value.strip().toUpperCase(java.util.Locale.ROOT);
+        if (clean.length() > 60) {
+            throw new IllegalArgumentException("A load type is at most 60 characters");
+        }
+        return clean;
+    }
+
+    /**
+     * The order with what it resolved against its contract recorded: the
+     * version, its family, the lane and the promised days. All null clears it.
+     */
+    public SalesOrder withContract(UUID newContractId, UUID newContractFamilyId, UUID newContractLaneId,
+                                   Integer newTransitDays, boolean newLaneChosen) {
+        return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, status,
+                originTerminalId, requestedPickupAt, requestedDeliveryAt, source, freightMode,
+                originHubTerminalId, destinationHubTerminalId, version, createdAt, Instant.now(),
+                closeKind, closeReason, closedAt, newContractId, newContractLaneId, newContractFamilyId,
+                loadType, newTransitDays, newLaneChosen);
     }
 
     /** The same order, its version replaced by the one the caller says it read. */
@@ -211,7 +273,8 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, status,
                 originTerminalId, requestedPickupAt, requestedDeliveryAt, source, freightMode,
                 originHubTerminalId, destinationHubTerminalId,
-                expectedVersion, createdAt, Instant.now(), closeKind, closeReason, closedAt);
+                expectedVersion, createdAt, Instant.now(), closeKind, closeReason, closedAt,
+                contractId, contractLaneId, contractFamilyId, loadType, transitDays, laneChosen);
     }
 
     /** Whether lines may still be added or amended. */
@@ -236,7 +299,8 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, target,
                 originTerminalId, requestedPickupAt, requestedDeliveryAt, source,
                 freightMode, originHubTerminalId, destinationHubTerminalId,
-                version, createdAt, Instant.now(), closeKind, closeReason, closedAt);
+                version, createdAt, Instant.now(), closeKind, closeReason, closedAt,
+                contractId, contractLaneId, contractFamilyId, loadType, transitDays, laneChosen);
     }
 
     /**
@@ -300,6 +364,7 @@ public record SalesOrder(
         return new SalesOrder(id, tenantId, orgUnitId, customerPartnerId, orderNo, moved.status,
                 originTerminalId, requestedPickupAt, requestedDeliveryAt, source,
                 freightMode, originHubTerminalId, destinationHubTerminalId,
-                version, createdAt, at, kind, reason, at);
+                version, createdAt, at, kind, reason, at,
+                contractId, contractLaneId, contractFamilyId, loadType, transitDays, laneChosen);
     }
 }

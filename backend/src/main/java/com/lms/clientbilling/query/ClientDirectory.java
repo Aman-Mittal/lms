@@ -112,6 +112,34 @@ public class ClientDirectory {
     }
 
     /**
+     * Per client with freight on the load, the contract lane its orders there
+     * were raised on, when every one of its orders aboard names the same lane.
+     * A client with an order on no lane, or on two, is absent and is priced by
+     * the contract's per-kilo rate.
+     */
+    public Map<UUID, UUID> lanesOf(UUID loadId) {
+        Map<UUID, UUID> lanes = new HashMap<>();
+        jdbc.sql("""
+                        SELECT so.customer_partner_id AS client, min(so.contract_lane_id::text)::uuid AS lane
+                          FROM load_consignment lc
+                          JOIN consignment c ON c.id = lc.consignment_id
+                          JOIN sales_order so ON so.id = c.order_id
+                         WHERE lc.load_id = :loadId
+                           AND c.freight_mode <> 'LTL'
+                         GROUP BY so.customer_partner_id
+                        HAVING count(*) = count(so.contract_lane_id)
+                           AND count(DISTINCT so.contract_lane_id) = 1
+                        """)
+                .param("loadId", loadId)
+                .query((rs, row) -> {
+                    lanes.put(rs.getObject("client", UUID.class), rs.getObject("lane", UUID.class));
+                    return null;
+                })
+                .list();
+        return lanes;
+    }
+
+    /**
      * Who owns each of these SKUs; a SKU with no owner, which the tenant holds
      * for itself, is absent from the answer.
      */

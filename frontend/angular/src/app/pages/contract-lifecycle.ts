@@ -17,9 +17,11 @@
 import { Component, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  ApiProblem, ContractChargeDraft, ContractChecklistRow, ContractDetail, ContractDraft, LmsGateway, Row,
+  ApiProblem, ContractChargeDraft, ContractChecklistRow, ContractDetail, ContractDraft, ContractLaneDraft,
+  LANE_RATE_BASES, LmsGateway, Row,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { EntityPicker } from './entity-picker';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -36,6 +38,18 @@ const FIELDS: Array<[keyof ContractDraft, string, string]> = [
   ['handlingInRatePerPallet', 'Handling in / pallet', 'text'],
   ['handlingOutRatePerPallet', 'Handling out / pallet', 'text'],
 ];
+
+function blankLane(): ContractLaneDraft {
+  return {
+    laneCode: '', originTerminalId: '', originZone: '', destinationTerminalId: '', destinationZone: '',
+    freightMode: '', loadType: '', rateBasis: 'PER_KG', rate: '', transitDays: '', slabs: '', consigneeIds: '',
+  };
+}
+
+/** A lane's end for the table: a terminal, or a zone. */
+function end(terminal: string, zone: string): string {
+  return zone ? `zone ${zone}` : terminal;
+}
 
 function blankDraft(): ContractDraft {
   return {
@@ -60,7 +74,7 @@ function draftOf(d: ContractDetail): ContractDraft {
  */
 @Component({
   selector: 'app-contract-lifecycle',
-  imports: [FormsModule],
+  imports: [FormsModule, EntityPicker],
   template: `
     <section data-testid="contract-lifecycle" aria-label="Contract lifecycle">
       <h3>Contract versions</h3>
@@ -113,7 +127,32 @@ function draftOf(d: ContractDetail): ContractDraft {
             <div><dt>Starts</dt><dd>{{ d.effectiveFrom }}</dd></div>
             <div><dt>Ends</dt><dd data-testid="contract-valid-till">{{ d.validTill }}</dd></div>
             <div><dt>Services</dt><dd>@for (s of d.services; track s.serviceCode) { {{ s.serviceCode }} {{ s.rate }}/{{ s.unit }}; }</dd></div>
+            <div><dt>Direct orders</dt><dd data-testid="contract-direct">{{ d.directOrdersAllowed ? 'Allowed' : 'Not allowed' }}</dd></div>
+            <div><dt>Load types</dt><dd data-testid="contract-load-types">{{ d.allowedLoadTypes.length ? d.allowedLoadTypes.join(', ') : 'Any' }}</dd></div>
           </dl>
+          <h4>Lanes</h4>
+          @if (d.lanes.length === 0) { <p class="muted" data-testid="no-lanes">No lanes: orders are priced by the per-kilo rate.</p> }
+          @if (d.lanes.length > 0) {
+            <table data-testid="contract-lanes">
+              <thead><tr><th>Lane</th><th>From</th><th>To</th><th>Mode</th><th>Load</th><th>Basis</th><th>Rate</th><th>Days</th><th>Slabs</th><th></th></tr></thead>
+              <tbody>
+                @for (l of d.lanes; track l.laneCode) {
+                  <tr data-testid="lane-row">
+                    <td data-testid="lane-code">{{ l.laneCode }}</td>
+                    <td>{{ end(l.originTerminalId, l.originZone) }}</td><td>{{ end(l.destinationTerminalId, l.destinationZone) }}</td>
+                    <td>{{ l.freightMode || 'Any' }}</td><td>{{ l.loadType || 'Any' }}</td>
+                    <td>{{ l.rateBasis }}</td><td>{{ l.rate || '—' }}</td><td>{{ l.transitDays || '—' }}</td>
+                    <td>{{ l.slabs || '—' }}</td>
+                    <td>
+                      @if (d.status === 'DRAFT' && session.can('CLIENT_CONTRACT_MANAGE')) {
+                        <button class="link" data-testid="remove-lane" (click)="removeLane(l.laneCode)">Remove</button>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
           @if (d.rejectionReason) {
             <p class="error" data-testid="contract-rejection">Verification refused: {{ d.rejectionReason }}</p>
           }
@@ -126,6 +165,53 @@ function draftOf(d: ContractDetail): ContractDraft {
                 </li>
               }
             </ul>
+            <form class="inline" (ngSubmit)="saveAllowances()" data-testid="edit-allowances">
+              <label>Direct orders allowed
+                <input type="checkbox" name="direct" data-testid="allow-direct" [checked]="direct()"
+                       (change)="direct.set($any($event.target).checked)" />
+              </label>
+              <input name="loadTypes" aria-label="Allowed load types" placeholder="Allowed load types (comma separated)"
+                     data-testid="allowed-load-types" [value]="loadTypes()" (input)="loadTypes.set($any($event.target).value)" />
+              <button type="submit" data-testid="save-allowances">Save allowances</button>
+            </form>
+            <form class="inline" (ngSubmit)="addLane()" data-testid="add-lane">
+              <input name="laneCode" aria-label="Lane code" placeholder="Lane code" data-testid="lane-form-code"
+                     [value]="lane().laneCode" (input)="setLane('laneCode', $any($event.target).value)" required />
+              <app-entity-picker [kind]="'terminal'" ariaLabel="Lane origin terminal id" placeholder="Origin terminal"
+                                 testId="lane-form-origin" [value]="lane().originTerminalId"
+                                 (valueChange)="setLane('originTerminalId', $event)" />
+              <input name="originZone" aria-label="Lane origin zone" placeholder="or origin zone" data-testid="lane-form-origin-zone"
+                     [value]="lane().originZone" (input)="setLane('originZone', $any($event.target).value)" />
+              <app-entity-picker [kind]="'terminal'" ariaLabel="Lane destination terminal id" placeholder="Destination terminal"
+                                 testId="lane-form-destination" [value]="lane().destinationTerminalId"
+                                 (valueChange)="setLane('destinationTerminalId', $event)" />
+              <input name="destinationZone" aria-label="Lane destination zone" placeholder="or destination zone"
+                     data-testid="lane-form-destination-zone" [value]="lane().destinationZone"
+                     (input)="setLane('destinationZone', $any($event.target).value)" />
+              <select name="freightMode" aria-label="Lane freight mode" data-testid="lane-form-mode"
+                      (change)="setLane('freightMode', $any($event.target).value)">
+                <option value="" [selected]="!lane().freightMode">Any mode</option>
+                <option value="FTL" [selected]="lane().freightMode === 'FTL'">FTL</option>
+                <option value="LTL" [selected]="lane().freightMode === 'LTL'">LTL</option>
+              </select>
+              <input name="laneLoadType" aria-label="Lane load type" placeholder="Load type (any)" data-testid="lane-form-load-type"
+                     [value]="lane().loadType" (input)="setLane('loadType', $any($event.target).value)" />
+              <select name="rateBasis" aria-label="Lane rate basis" data-testid="lane-form-basis"
+                      (change)="setLane('rateBasis', $any($event.target).value)">
+                @for (b of rateBases; track b) { <option [value]="b" [selected]="lane().rateBasis === b">{{ b }}</option> }
+              </select>
+              <input name="laneRate" aria-label="Lane rate" placeholder="Rate" inputmode="decimal" data-testid="lane-form-rate"
+                     [value]="lane().rate" (input)="setLane('rate', $any($event.target).value)" />
+              <input name="laneDays" aria-label="Lane transit days" placeholder="Transit days" inputmode="numeric"
+                     data-testid="lane-form-days" [value]="lane().transitDays"
+                     (input)="setLane('transitDays', $any($event.target).value)" />
+              <input name="laneSlabs" aria-label="Lane slabs" placeholder="Slabs: 0-1000:PER_KG:12; 1000-:PER_TONNE:9000"
+                     data-testid="lane-form-slabs" [value]="lane().slabs" (input)="setLane('slabs', $any($event.target).value)" />
+              <input name="laneConsignees" aria-label="Lane consignee ids" placeholder="Consignee ids (comma separated)"
+                     data-testid="lane-form-consignees" [value]="lane().consigneeIds"
+                     (input)="setLane('consigneeIds', $any($event.target).value)" />
+              <button type="submit" data-testid="add-lane-button">Add lane</button>
+            </form>
             <form class="inline" (ngSubmit)="save()" data-testid="edit-contract">
               @for (f of fields; track f[0]) {
                 <label>{{ f[1] }}
@@ -186,6 +272,11 @@ export class ContractLifecycle {
   readonly changed = output<void>();
 
   readonly fields = FIELDS;
+  readonly rateBases = LANE_RATE_BASES;
+  readonly end = end;
+  readonly lane = signal<ContractLaneDraft>(blankLane());
+  readonly direct = signal(true);
+  readonly loadTypes = signal('');
   readonly form = signal<ContractDraft>(blankDraft());
   readonly edit = signal<ContractDraft>(blankDraft());
   readonly detail = signal<ContractDetail | null>(null);
@@ -219,6 +310,10 @@ export class ContractLifecycle {
     this.edit.update((f) => ({ ...f, [field]: value }));
   }
 
+  setLane(field: keyof ContractLaneDraft, value: string): void {
+    this.lane.update((l) => ({ ...l, [field]: value }));
+  }
+
   setCharge(field: keyof ContractChargeDraft, value: string): void {
     this.charge.update((c) => ({ ...c, [field]: value }));
   }
@@ -228,6 +323,8 @@ export class ContractLifecycle {
       const d = await this.gateway.contractDetail(id);
       this.detail.set(d);
       this.edit.set(draftOf(d));
+      this.direct.set(d.directOrdersAllowed);
+      this.loadTypes.set(d.allowedLoadTypes.join(', '));
       this.checklist.set(d.status === 'DRAFT' ? await this.gateway.contractChecklist(id) : []);
     } catch (e) {
       this.fail(e);
@@ -255,6 +352,47 @@ export class ContractLifecycle {
     await this.act(async () => {
       await this.gateway.reviseContractDraft(d, this.edit());
       this.message.set('Draft saved.');
+      await this.open(d.id);
+    });
+  }
+
+  /** Adds the lane typed to the draft: the lanes are restated whole, so a clash of codes is refused by name. */
+  async addLane(): Promise<void> {
+    const d = this.detail();
+    if (!d) {
+      return;
+    }
+    await this.act(async () => {
+      await this.gateway.reviseContractLanes(d, [...d.lanes, this.lane()], d.directOrdersAllowed, d.allowedLoadTypes);
+      this.message.set('Lane added.');
+      this.lane.set(blankLane());
+      await this.open(d.id);
+    });
+  }
+
+  async removeLane(laneCode: string): Promise<void> {
+    const d = this.detail();
+    if (!d) {
+      return;
+    }
+    await this.act(async () => {
+      await this.gateway.reviseContractLanes(d, d.lanes.filter((l) => l.laneCode !== laneCode), d.directOrdersAllowed,
+        d.allowedLoadTypes);
+      this.message.set('Lane removed.');
+      await this.open(d.id);
+    });
+  }
+
+  /** Whether orders outside the lanes are accepted, and which load types the contract covers. */
+  async saveAllowances(): Promise<void> {
+    const d = this.detail();
+    if (!d) {
+      return;
+    }
+    const types = this.loadTypes().split(',').map((t) => t.trim()).filter(Boolean);
+    await this.act(async () => {
+      await this.gateway.reviseContractLanes(d, d.lanes, this.direct(), types);
+      this.message.set('Allowances saved.');
       await this.open(d.id);
     });
   }

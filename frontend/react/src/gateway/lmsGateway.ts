@@ -492,6 +492,48 @@ export interface ContractDetail {
   storageUnitsPerPallet: number;
   billOnDispatch: boolean;
   services: Array<{ serviceCode: string; unit: string; rate: string }>;
+  /** Whether an order no lane serves is accepted; false refuses it by name. */
+  directOrdersAllowed: boolean;
+  /** The load or vehicle types the contract covers; empty is any. */
+  allowedLoadTypes: string[];
+  /** Part of the version: edited while a draft, frozen once it is not. */
+  lanes: ContractLaneDraft[];
+}
+
+/** The rate bases of a lane and of its weight slabs. */
+export const LANE_RATE_BASES = ['PER_KG', 'PER_TRIP', 'PER_TONNE'] as const;
+
+/**
+ * A lane as typed or restated: an end is a terminal id or a zone code (the other left blank), a
+ * blank mode or load type is any, and the weight slabs are one text, `min-max:BASIS:rate`
+ * separated by semicolons (a blank max is the open top band). Consignee ids are comma separated.
+ */
+export interface ContractLaneDraft {
+  laneCode: string;
+  originTerminalId: string;
+  originZone: string;
+  destinationTerminalId: string;
+  destinationZone: string;
+  freightMode: string;
+  loadType: string;
+  rateBasis: string;
+  rate: string;
+  transitDays: string;
+  slabs: string;
+  consigneeIds: string;
+}
+
+/** A lane of the contract in force, as the order desk offers it. */
+export interface ContractLaneChoice {
+  id: string;
+  laneCode: string;
+  originTerminalId: string;
+  destinationTerminalId: string;
+  freightMode: string;
+  loadType: string;
+  transitDays: string;
+  /** The lane in one line: code, places, mode, load type and days. */
+  label: string;
 }
 
 /** The terms a person types for a draft; a blank rate is left to the server's default of none. */
@@ -602,6 +644,10 @@ export interface OrderHeaderDraft {
   /** Both for a part-load order, neither for a full truckload. */
   originHubTerminalId: string;
   destinationHubTerminalId: string;
+  /** A lane of the customer's contract in force; blank has the contract's lane found at validation. */
+  contractLaneId: string;
+  /** The load or vehicle type the order is booked for; blank for none. */
+  loadType: string;
 }
 
 /** What raising an order needs; it starts as a draft. */
@@ -611,6 +657,9 @@ export interface OrderRaiseDraft {
   originTerminalId: string;
   requestedPickupAt: string;
   requestedDeliveryAt: string;
+  /** A lane of the customer's contract in force, picked at the desk; blank for none. */
+  contractLaneId: string;
+  loadType: string;
 }
 
 /**
@@ -893,6 +942,14 @@ export interface LmsGateway {
   createContractDraft(orgUnitId: string, clientId: string, draft: ContractDraft): Promise<string>;
   /** Replaces a draft's terms, keeping what the form does not show (services, tax, currency). */
   reviseContractDraft(current: ContractDetail, draft: ContractDraft): Promise<void>;
+  /**
+   * Replaces a draft's lanes and allowances whole, keeping every other term. Refusals carry their
+   * problem codes, such as `client-contract-lane-duplicated`.
+   */
+  reviseContractLanes(current: ContractDetail, lanes: ContractLaneDraft[], directOrdersAllowed: boolean,
+    allowedLoadTypes: string[]): Promise<void>;
+  /** The lanes of the contract in force for the client on a day (today when blank), for the order desk. */
+  contractLanes(clientId: string, onDate?: string): Promise<ContractLaneChoice[]>;
   deleteContractDraft(contractId: string, version: string): Promise<void>;
   /** Every completeness rule, with whether the draft passes it. */
   contractChecklist(contractId: string): Promise<ContractChecklistRow[]>;

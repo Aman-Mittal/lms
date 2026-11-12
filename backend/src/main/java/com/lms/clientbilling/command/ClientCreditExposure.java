@@ -55,9 +55,11 @@ class ClientCreditExposure implements ReceivablesSource {
     private final JdbcClient jdbc;
     private final ClientContractRepository contracts;
     private final ContractServiceRateRepository serviceRates;
+    private final ContractLaneStore laneStore;
 
     ClientCreditExposure(JdbcClient jdbc, ClientContractRepository contracts,
-                         ContractServiceRateRepository serviceRates) {
+                         ContractServiceRateRepository serviceRates, ContractLaneStore laneStore) {
+        this.laneStore = laneStore;
         this.jdbc = jdbc;
         this.contracts = contracts;
         this.serviceRates = serviceRates;
@@ -78,6 +80,7 @@ class ClientCreditExposure implements ReceivablesSource {
 
         Map<LocalDate, Optional<ClientContract>> contractOn = new HashMap<>();
         Map<UUID, Map<String, ContractServiceRate>> ratesOf = new HashMap<>();
+        Map<UUID, com.lms.clientbilling.command.domain.ContractLane> laneOf = new HashMap<>();
         BigDecimal charged = BigDecimal.ZERO;
         int unpriced = 0;
         for (ClientCharge charge : unbilled) {
@@ -92,7 +95,9 @@ class ClientCreditExposure implements ReceivablesSource {
                             .collect(Collectors.toMap(ContractServiceRate::serviceCode,
                                     Function.identity())));
             try {
-                BigDecimal amount = ChargePricing.price(charge, contract.get(), rates).amount();
+                com.lms.clientbilling.command.domain.ContractLane lane = charge.contractLaneId() == null ? null
+                        : laneOf.computeIfAbsent(charge.contractLaneId(), id -> laneStore.find(id).orElse(null));
+                BigDecimal amount = ChargePricing.price(charge, contract.get(), rates, lane).amount();
                 charged = charged.add(amount)
                         .add(Tax.on(amount, contract.get().taxRateFor(charge.serviceType())));
             } catch (BusinessRuleViolationException unpricedService) {

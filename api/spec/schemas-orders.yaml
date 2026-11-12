@@ -51,6 +51,32 @@ Order:
       $ref: "#/components/schemas/CloseKind"
     closeReason: { type: string, description: Why the order was closed, when a reason was given. }
     closedAt: { type: string, format: date-time }
+    contractId:
+      type: string
+      format: uuid
+      description: The client contract version in force on the order's date, which the order was resolved
+        against; null when the customer had none.
+    contractCode: { type: string }
+    contractLaneId:
+      type: string
+      format: uuid
+      description: The lane of that contract the order travels on; null for a direct order or before
+        the order has lines.
+    contractLaneCode: { type: string }
+    loadType: { type: string, description: The load or vehicle type the order is booked for. }
+    transitDays:
+      type: integer
+      description: |
+        Days the movement is promised to take: the lane's transit days, else
+        the straight-line distance between the order's origin and its
+        farthest destination divided by the `order.transit.kmPerDay` setting,
+        rounded up. Known once the order is validated (sooner when a chosen
+        lane names days).
+    expectedDeliveryDate:
+      type: string
+      format: date
+      description: The requested pickup day (else the day the order was raised)
+        plus `transitDays`; null while those are unknown.
 
 OrderLine:
   type: object
@@ -183,6 +209,24 @@ RaiseOrderRequest:
       format: uuid
       description: Required for LTL, refused for FTL. Must be a HUB terminal,
         as the origin hub must.
+    contractLaneId:
+      type: string
+      format: uuid
+      description: |
+        A lane of the contract version in force for the customer on the order's
+        date (its requested pickup day, else today), chosen at the order desk
+        from `GET /client-billing/clients/{clientId}/contract-lanes`. It must
+        start at `originTerminalId` and carry the order's mode and load type
+        (`order-outside-contract-lanes`, `order-load-type-not-allowed`). Left
+        out, the contract's lane is found when the order is validated, from
+        its lines.
+    loadType:
+      type: string
+      maxLength: 60
+      description: |
+        The load or vehicle type the order is booked for (stored upper case).
+        With a contract in force it must be one the contract lists
+        (`order-load-type-not-allowed`); a contract that lists none covers all.
   required: [orgUnitId, customerPartnerId, originTerminalId]
 
 AddOrderLineRequest:
@@ -222,6 +266,24 @@ UpdateOrderRequest:
     requestedDeliveryAt: { type: string, format: date-time }
     originHubTerminalId: { type: string, format: uuid }
     destinationHubTerminalId: { type: string, format: uuid }
+    contractLaneId:
+      type: string
+      format: uuid
+      description: |
+        A lane of the contract version in force for the customer on the order's
+        date (its requested pickup day, else today), chosen at the order desk
+        from `GET /client-billing/clients/{clientId}/contract-lanes`. It must
+        start at `originTerminalId` and carry the order's mode and load type
+        (`order-outside-contract-lanes`, `order-load-type-not-allowed`). Left
+        out, the contract's lane is found when the order is validated, from
+        its lines.
+    loadType:
+      type: string
+      maxLength: 60
+      description: |
+        The load or vehicle type the order is booked for (stored upper case).
+        With a contract in force it must be one the contract lists
+        (`order-load-type-not-allowed`); a contract that lists none covers all.
   required: [customerPartnerId, originTerminalId]
 
 ReplaceOrderLinesRequest:

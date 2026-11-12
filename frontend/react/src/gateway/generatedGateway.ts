@@ -53,11 +53,14 @@ import type { CloseKindChoice } from './lmsGateway';
 // Pickers
 import type { PickPage, PickQuery } from './lmsGateway';
 import {
-  ClientBillingApi, type ClientCharge, type ClientContract, type ClientInvoice, type ClientInvoiceLine,
+  ClientBillingApi, type ClientCharge, type ClientContract, type ClientContractLane, type ClientContractLaneRequest,
+  type ClientInvoice, type ClientInvoiceLine,
   type ClientStatementEntry,
 } from '../api';
 import type { ClientAgeingView, ClientInvoiceDetail, CreditNoteDraft, PaymentDraft } from './lmsGateway';
-import type { ContractChargeDraft, ContractChecklistRow, ContractDetail, ContractDraft } from './lmsGateway';
+import type {
+  ContractChargeDraft, ContractChecklistRow, ContractDetail, ContractDraft, ContractLaneChoice, ContractLaneDraft,
+} from './lmsGateway';
 // Commercial
 import {
   type AddSlabRequestRateBasisEnum, type Allocation as CommercialAllocation, type DefineGuideRequestStrategyEnum,
@@ -206,6 +209,60 @@ function contractDetailOf(c: ClientContract): ContractDetail {
     transportTaxRatePct: text(c.transportTaxRatePct), warehouseTaxRatePct: text(c.warehouseTaxRatePct),
     storageUnitsPerPallet: c.storageUnitsPerPallet ?? 1, billOnDispatch: !!c.billOnDispatch,
     services: (c.valueAddedServices ?? []).map((v) => ({ serviceCode: text(v.serviceCode), unit: text(v.unit), rate: text(v.rate) })),
+    directOrdersAllowed: c.directOrdersAllowed ?? true, allowedLoadTypes: c.allowedLoadTypes ?? [],
+    lanes: (c.lanes ?? []).map(laneDraftOf),
+  };
+}
+
+/** A stored lane as the editor restates it: terminal ids or zone codes, slabs as one text. */
+function laneDraftOf(l: ClientContractLane): ContractLaneDraft {
+  return {
+    laneCode: text(l.laneCode), originTerminalId: text(l.originTerminalId), originZone: text(l.originZone),
+    destinationTerminalId: text(l.destinationTerminalId), destinationZone: text(l.destinationZone),
+    freightMode: text(l.freightMode), loadType: text(l.loadType), rateBasis: text(l.rateBasis), rate: text(l.rate),
+    transitDays: text(l.transitDays),
+    slabs: (l.slabs ?? []).map((s) => `${text(s.minWeightKg)}-${text(s.maxWeightKg)}:${text(s.rateBasis)}:${text(s.rate)}`)
+      .join('; '),
+    consigneeIds: (l.consigneeIds ?? []).join(', '),
+  };
+}
+
+/** Weight slabs typed as `min-max:BASIS:rate; ...`, a blank max being the open top band. */
+function slabRequests(slabs: string): NonNullable<ClientContractLaneRequest['slabs']> {
+  return slabs.split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const [band = '', basis = '', rate = ''] = part.split(':').map((piece) => piece.trim());
+    const [min = '', max = ''] = band.split('-').map((piece) => piece.trim());
+    return {
+      minWeightKg: Number(min), maxWeightKg: max ? Number(max) : undefined,
+      rateBasis: basis as unknown as NonNullable<ClientContractLaneRequest['slabs']>[number]['rateBasis'],
+      rate: Number(rate),
+    };
+  });
+}
+
+/** A lane as the request carries it: a blank end, mode, load type or list is sent as absent. */
+function laneRequest(l: ContractLaneDraft): ClientContractLaneRequest {
+  return {
+    laneCode: l.laneCode.trim(), originTerminalId: blankAsAbsent(l.originTerminalId),
+    originZone: blankAsAbsent(l.originZone), destinationTerminalId: blankAsAbsent(l.destinationTerminalId),
+    destinationZone: blankAsAbsent(l.destinationZone),
+    freightMode: blankAsAbsent(l.freightMode) as unknown as ClientContractLaneRequest['freightMode'],
+    loadType: blankAsAbsent(l.loadType), rateBasis: l.rateBasis as unknown as ClientContractLaneRequest['rateBasis'],
+    rate: numberOrAbsent(l.rate), transitDays: numberOrAbsent(l.transitDays), slabs: slabRequests(l.slabs),
+    consigneeIds: l.consigneeIds.split(',').map((id) => id.trim()).filter(Boolean),
+  };
+}
+
+/** A lane of the contract in force as the order desk offers it, in one line. */
+function laneChoiceOf(l: ClientContractLane): ContractLaneChoice {
+  const place = (terminal?: string, code?: string, zone?: string) => text(code) || (zone ? `zone ${zone}` : text(terminal));
+  const route = `${place(l.originTerminalId, l.originTerminalCode, l.originZone)} to `
+    + place(l.destinationTerminalId, l.destinationTerminalCode, l.destinationZone);
+  const extras = [text(l.freightMode), text(l.loadType), l.transitDays ? `${l.transitDays} days` : ''].filter(Boolean);
+  return {
+    id: text(l.id), laneCode: text(l.laneCode), originTerminalId: text(l.originTerminalId),
+    destinationTerminalId: text(l.destinationTerminalId), freightMode: text(l.freightMode), loadType: text(l.loadType),
+    transitDays: text(l.transitDays), label: `${text(l.laneCode)}: ${route}${extras.length ? ` (${extras.join(', ')})` : ''}`,
   };
 }
 
@@ -460,6 +517,7 @@ function headerRequest(h: OrderHeaderDraft): UpdateOrderRequest {
     requestedDeliveryAt: instantOrAbsent(h.requestedDeliveryAt),
     originHubTerminalId: blankAsAbsent(h.originHubTerminalId),
     destinationHubTerminalId: blankAsAbsent(h.destinationHubTerminalId),
+    contractLaneId: blankAsAbsent(h.contractLaneId), loadType: blankAsAbsent(h.loadType),
   };
 }
 
@@ -509,12 +567,15 @@ function orderDeskOf(o: Order, lines: OrderLine[]): OrderDesk {
       totalDeadWeightKg: text(o.totalDeadWeightKg), containsHazmat: o.containsHazmat ? 'Yes' : '',
       requestedPickupAt: text(o.requestedPickupAt), requestedDeliveryAt: text(o.requestedDeliveryAt),
       closeKind: text(o.closeKind), closeReason: text(o.closeReason),
+      contractCode: text(o.contractCode), contractLaneCode: text(o.contractLaneCode), loadType: text(o.loadType),
+      transitDays: text(o.transitDays), expectedDeliveryDate: text(o.expectedDeliveryDate),
     },
     version: text(o.version),
     header: {
       customerPartnerId: text(o.customerPartnerId), originTerminalId: text(o.originTerminalId),
       requestedPickupAt: isoOf(o.requestedPickupAt), requestedDeliveryAt: isoOf(o.requestedDeliveryAt),
       originHubTerminalId: text(o.originHubTerminalId), destinationHubTerminalId: text(o.destinationHubTerminalId),
+      contractLaneId: text(o.contractLaneId), loadType: text(o.loadType),
     },
     lines: lines.map((l) => ({
       id: text(l.id), lineNo: l.lineNo ?? 0, materialCode: text(l.materialCode),
@@ -1194,6 +1255,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           orgUnitId, orderNo: blankAsAbsent(draft.orderNo), customerPartnerId: draft.customerPartnerId.trim(),
           originTerminalId: draft.originTerminalId.trim(), requestedPickupAt: instantOrAbsent(draft.requestedPickupAt),
           requestedDeliveryAt: instantOrAbsent(draft.requestedDeliveryAt),
+          contractLaneId: blankAsAbsent(draft.contractLaneId), loadType: blankAsAbsent(draft.loadType),
         },
       })).id)),
     reviseOrderHeader: (orderId: string, version: string, header: OrderHeaderDraft) =>
@@ -1278,6 +1340,31 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
           },
         });
       }),
+    reviseContractLanes: (current: ContractDetail, lanes: ContractLaneDraft[], directOrdersAllowed: boolean,
+      allowedLoadTypes: string[]): Promise<void> =>
+      guard(async () => {
+        await clientBilling.reviseClientContractDraft({
+          id: current.id, ifMatch: current.version,
+          reviseClientContractRequest: {
+            orgUnitId: current.orgUnitId, currency: current.currency, ...contractTerms({
+              code: current.code, effectiveFrom: current.effectiveFrom, validTill: current.validTill,
+              transportRatePerKg: current.transportRatePerKg, transportMinimumCharge: current.transportMinimumCharge,
+              storageRatePerPalletDay: current.storageRatePerPalletDay,
+              handlingInRatePerPallet: current.handlingInRatePerPallet,
+              handlingOutRatePerPallet: current.handlingOutRatePerPallet,
+            }),
+            transportTaxRatePct: Number(current.transportTaxRatePct || 0),
+            warehouseTaxRatePct: Number(current.warehouseTaxRatePct || 0),
+            storageUnitsPerPallet: current.storageUnitsPerPallet, billOnDispatch: current.billOnDispatch,
+            valueAddedServices: current.services.map((v) => ({ serviceCode: v.serviceCode, unit: v.unit, rate: Number(v.rate) })),
+            directOrdersAllowed, allowedLoadTypes, lanes: lanes.map(laneRequest),
+          },
+        });
+      }),
+    contractLanes: (clientId: string, onDate?: string): Promise<ContractLaneChoice[]> =>
+      guard(async () => (await clientBilling.listClientContractLanes({
+        clientId, onDate: onDate ? day(onDate) : undefined,
+      })).map(laneChoiceOf)),
     deleteContractDraft: (contractId: string, version: string): Promise<void> =>
       guard(async () => {
         await clientBilling.deleteClientContractDraft({ id: contractId, ifMatch: version });
@@ -2298,7 +2385,7 @@ type SettingsVerbs = Pick<LmsGateway, 'me' | 'settingDefinitions' | 'myPreferenc
 
 const SCOPE_WORDS: Record<string, string> = {
   PLATFORM: 'Platform', ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer',
-  VENDOR: 'Vendor', VEHICLE: 'Vehicle', USER: 'You',
+  VENDOR: 'Vendor', VEHICLE: 'Vehicle', CONTRACT: 'Contract', USER: 'You',
 };
 
 /** A `date` field as the generated client gives it (a Date at midnight UTC), as `YYYY-MM-DD`. */

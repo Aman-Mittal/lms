@@ -98,6 +98,13 @@ public class LoadLifecycleAdapter implements LoadLifecyclePort {
 
     @Override
     @Transactional(readOnly = true)
+    public java.util.Map<UUID, UUID> contractFamiliesAboard(UUID loadId) {
+        return loadId == null ? java.util.Map.of()
+                : links.contractFamiliesOnLoad(TenantContext.requireTenantId(), loadId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public String freightModeOf(UUID loadId) {
         return loadId == null ? null : links.freightModeOf(TenantContext.requireTenantId(), loadId);
     }

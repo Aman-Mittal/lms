@@ -131,6 +131,9 @@ public class ScopeReferences {
             case CUSTOMER -> "SELECT 1 FROM business_partner WHERE id = :id AND partner_type = 'CUSTOMER'";
             case VENDOR -> "SELECT 1 FROM business_partner WHERE id = :id AND partner_type = 'VENDOR'";
             case VEHICLE -> "SELECT 1 FROM vehicle WHERE id = :id";
+            // A contract is named by its family: the first version's id, which
+            // later versions carry as family_id.
+            case CONTRACT -> "SELECT 1 FROM client_contract WHERE coalesce(family_id, id) = :id LIMIT 1";
             case PLATFORM, ORG_DEFAULT, COMBINATION, USER -> null;
         };
         if (sql == null) {
@@ -148,6 +151,7 @@ public class ScopeReferences {
             case CUSTOMER -> "Customer";
             case VENDOR -> "Vendor";
             case VEHICLE -> "Vehicle";
+            case CONTRACT -> "Contract";
             default -> scopeType.name();
         };
     }

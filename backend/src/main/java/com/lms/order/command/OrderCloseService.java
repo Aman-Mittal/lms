@@ -197,7 +197,8 @@ public class OrderCloseService {
         SalesOrder order = orders.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order", orderId));
         if (order.status() != SalesOrder.OrderStatus.FULLY_PLANNED
-                || !settings.effectiveFor(order.orgUnitId(), order.customerPartnerId(), order.freightMode()).autoFulfil()) {
+                || !settings.effectiveFor(order.orgUnitId(), order.customerPartnerId(), order.freightMode(),
+                        order.contractFamilyId()).autoFulfil()) {
             return;
         }
         orders.save(order.transitionTo(SalesOrder.OrderStatus.FULFILLED));
@@ -224,7 +225,7 @@ public class OrderCloseService {
             return;
         }
         OrderCloseSettings.Policy policy = settings.effectiveFor(order.orgUnitId(), order.customerPartnerId(),
-                order.freightMode());
+                order.freightMode(), order.contractFamilyId());
         if (!policy.autoFulfil() || policy.tolerancePercent().signum() <= 0) {
             return;
         }

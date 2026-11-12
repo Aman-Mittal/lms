@@ -17,6 +17,7 @@ package com.lms.order.query;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -48,5 +49,20 @@ public record OrderView(
         /** How a CLOSED order was closed (NORMAL, SHORT, FORCE or AUTO); null otherwise. */
         String closeKind,
         String closeReason,
-        Instant closedAt) {
+        Instant closedAt,
+        /** The client contract version the order was resolved against; null when none was in force. */
+        UUID contractId,
+        String contractCode,
+        /** The lane of that contract the order travels on; null for a direct order. */
+        UUID contractLaneId,
+        String contractLaneCode,
+        /** The load or vehicle type the order is booked for; null when none is stated. */
+        String loadType,
+        /** Days the movement is promised to take: the lane's, else from distance. */
+        Integer transitDays,
+        /**
+         * When delivery is expected: the requested pickup day (else the day the
+         * order was raised) plus the transit days; null while those are unknown.
+         */
+        LocalDate expectedDeliveryDate) {
 }

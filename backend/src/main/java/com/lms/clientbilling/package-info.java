@@ -49,6 +49,16 @@
  * added by an approved {@code CONTRACT_CHARGE_ADD}, which publishes a successor
  * from a future date so no raised bill is ever repriced.
  *
+ * <p>A contract version also carries lanes (origin and destination as a
+ * terminal or an LTL zone, freight mode, load type, a rate basis with weight
+ * slabs, transit days, allowed consignors and consignees) and allowances
+ * (direct orders, load types). Lanes are part of the version: editable while
+ * it is a draft, frozen once it is not, copied into a charge-add successor.
+ * {@code order::api}'s {@code OrderContractPort} is implemented here: an order
+ * names the version in force on its date and the lane it travels on, or is
+ * refused by name; a transport charge is priced from that lane, never
+ * repriced once raised.
+ *
  * <p>Invoices carry tax per line at the contract's rate for the service
  * family, and are corrected only by credit notes, never edited.
  *
@@ -73,5 +83,5 @@
         displayName = "3PL Client Billing",
         allowedDependencies = {"execution::events", "identity::access", "warehouse::api",
                 "warehouse::events", "masterdata::api", "settings::api", "approvals::api",
-                "identity::numbering"})
+                "identity::numbering", "order::api"})
 package com.lms.clientbilling;

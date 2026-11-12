@@ -31,7 +31,12 @@ import com.lms.shared.error.BusinessRuleViolationException;
 public final class ChargePricing {
 
     /** What a line says and costs. */
-    public record Priced(String narrative, String unit, BigDecimal rate, BigDecimal amount) {
+    public record Priced(String narrative, String unit, BigDecimal rate, BigDecimal amount, BigDecimal quantity) {
+
+        /** Priced on the charge's own quantity. */
+        public Priced(String narrative, String unit, BigDecimal rate, BigDecimal amount) {
+            this(narrative, unit, rate, amount, null);
+        }
     }
 
     private ChargePricing() {
@@ -43,6 +48,21 @@ public final class ChargePricing {
      */
     public static Priced price(ClientCharge charge, ClientContract contract,
                                Map<String, ContractServiceRate> serviceRates) {
+        return price(charge, contract, serviceRates, null);
+    }
+
+    /**
+     * As {@link #price(ClientCharge, ClientContract, Map)}, pricing a transport
+     * charge from the contract lane its orders travelled on when that lane can
+     * rate the weight: its rate basis, and the weight slab covering the charge's
+     * quantity. A lane that cannot (the weight falls in a gap between slabs and
+     * the lane has no rate of its own) and no lane at all price by the
+     * contract's per-kilo rate. The contract's minimum charge still applies.
+     *
+     * @param lane the lane the charge was captured under, or null
+     */
+    public static Priced price(ClientCharge charge, ClientContract contract,
+                               Map<String, ContractServiceRate> serviceRates, ContractLane lane) {
         BigDecimal quantity = charge.quantity();
         String reference = charge.reference() == null || charge.reference().isBlank()
                 ? "" : " (" + charge.reference() + ")";
@@ -56,6 +76,13 @@ public final class ChargePricing {
             }
             return new Priced("Value-added service " + charge.serviceCode() + reference,
                     rate.unit(), rate.rate(), money(quantity.multiply(rate.rate())));
+        }
+
+        if (charge.serviceType() == ServiceType.TRANSPORT && lane != null) {
+            java.util.Optional<ContractLane.Rating> rated = lane.rate(quantity);
+            if (rated.isPresent()) {
+                return laneTransport(rated.get(), lane, contract, reference);
+            }
         }
 
         BigDecimal rate = contract.rateFor(charge.serviceType());
@@ -78,6 +105,18 @@ public final class ChargePricing {
             case HANDLING_OUT -> new Priced("Handling out" + reference, unit, rate, amount);
             case VALUE_ADDED -> throw new IllegalStateException("handled above");
         };
+    }
+
+    /** Transport rated by a lane: the lane's unit and rate show on the line, the floor still applies. */
+    private static Priced laneTransport(ContractLane.Rating rating, ContractLane lane, ClientContract contract,
+                                        String reference) {
+        BigDecimal floor = money(contract.transportMinimumCharge());
+        String label = "Transport on lane " + lane.laneCode() + reference;
+        if (rating.amount().compareTo(floor) < 0) {
+            return new Priced(label + ", minimum charge applied", rating.rateBasis().unit(), rating.rate(), floor,
+                    rating.quantity());
+        }
+        return new Priced(label, rating.rateBasis().unit(), rating.rate(), rating.amount(), rating.quantity());
     }
 
     private static BigDecimal money(BigDecimal value) {

@@ -18,6 +18,7 @@ package com.lms.clientbilling.command.domain;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import com.lms.shared.error.BusinessRuleViolationException;
@@ -78,7 +79,20 @@ public record ClientContract(
          */
         LocalDate validTill,
         /** Why verification was last refused, while the contract is back in DRAFT. */
-        String rejectionReason) {
+        String rejectionReason,
+        /**
+         * The contract as a person means it, shared by every version of it; null
+         * is this version's own id (see {@link #familyKey}). The key of the
+         * CONTRACT settings scope.
+         */
+        UUID familyId,
+        /**
+         * Whether orders outside the contract's lanes are accepted (and priced
+         * as before). False refuses an order the lanes do not cover.
+         */
+        boolean directOrdersAllowed,
+        /** The load or vehicle types the contract covers, comma separated and upper case; null is any. */
+        String allowedLoadTypes) {
 
     /**
      * Where a version is in its life. {@code EXPIRED} is not stored: it is
@@ -91,6 +105,34 @@ public record ClientContract(
         PENDING_VERIFICATION,
         /** Verified: immutable, and in force from its start date. */
         ACTIVE
+    }
+
+    /**
+     * What a version allows at order entry.
+     *
+     * @param directOrdersAllowed null is allowed (what every contract did before lanes)
+     * @param allowedLoadTypes    the load or vehicle types covered; null or empty is any
+     */
+    public record Allowances(Boolean directOrdersAllowed, List<String> allowedLoadTypes) {
+
+        public static final Allowances DEFAULT = new Allowances(null, null);
+
+        boolean direct() {
+            return directOrdersAllowed == null || directOrdersAllowed;
+        }
+
+        String loadTypes() {
+            if (allowedLoadTypes == null) {
+                return null;
+            }
+            String joined = allowedLoadTypes.stream().map(ContractLane::normaliseLoadType)
+                    .filter(java.util.Objects::nonNull).distinct().sorted()
+                    .collect(java.util.stream.Collectors.joining(","));
+            if (joined.length() > 500) {
+                throw new IllegalArgumentException("The allowed load types are at most 500 characters");
+            }
+            return joined.isEmpty() ? null : joined;
+        }
     }
 
     /**
@@ -133,20 +175,33 @@ public record ClientContract(
                                          LocalDate effectiveFrom, Rates rates,
                                          boolean billOnDispatch) {
         return build(id, tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom, null, rates,
-                billOnDispatch, Status.ACTIVE);
+                billOnDispatch, Status.ACTIVE, null, Allowances.DEFAULT);
     }
 
     /** A new version, still being written. {@code validTill} may be null. */
     public static ClientContract draft(UUID id, UUID tenantId, UUID orgUnitId, String code,
                                        UUID clientPartnerId, String currency, LocalDate effectiveFrom,
                                        LocalDate validTill, Rates rates, boolean billOnDispatch) {
+        return draft(id, tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom, validTill, rates,
+                billOnDispatch, null, Allowances.DEFAULT);
+    }
+
+    /**
+     * As the other {@code draft}, belonging to an existing contract family (null
+     * starts one) and carrying its allowances.
+     */
+    public static ClientContract draft(UUID id, UUID tenantId, UUID orgUnitId, String code,
+                                       UUID clientPartnerId, String currency, LocalDate effectiveFrom,
+                                       LocalDate validTill, Rates rates, boolean billOnDispatch, UUID familyId,
+                                       Allowances allowances) {
         return build(id, tenantId, orgUnitId, code, clientPartnerId, currency, effectiveFrom, validTill, rates,
-                billOnDispatch, Status.DRAFT);
+                billOnDispatch, Status.DRAFT, familyId, allowances);
     }
 
     private static ClientContract build(UUID id, UUID tenantId, UUID orgUnitId, String code,
                                         UUID clientPartnerId, String currency, LocalDate effectiveFrom,
-                                        LocalDate validTill, Rates rates, boolean billOnDispatch, Status status) {
+                                        LocalDate validTill, Rates rates, boolean billOnDispatch, Status status,
+                                        UUID familyId, Allowances allowances) {
         if (code == null || code.isBlank()) {
             throw new IllegalArgumentException("A client contract needs a name somebody can refer to");
         }
@@ -165,7 +220,8 @@ public record ClientContract(
                 percentage(rates.transportTaxRatePct(), "transport tax rate"),
                 percentage(rates.warehouseTaxRatePct(), "warehouse tax rate"),
                 unitsPerPallet(rates.storageUnitsPerPallet()),
-                null, Instant.now(), billOnDispatch, status, validTill, null);
+                null, Instant.now(), billOnDispatch, status, validTill, null, familyId == null ? id : familyId,
+                allowances.direct(), allowances.loadTypes());
     }
 
     /** The end date may not come before the start date. */
@@ -201,14 +257,23 @@ public record ClientContract(
     public ClientContract revised(UUID newOrgUnitId, String newCode, String newCurrency,
                                   LocalDate newEffectiveFrom, LocalDate newValidTill, Rates rates,
                                   boolean newBillOnDispatch) {
+        return revised(newOrgUnitId, newCode, newCurrency, newEffectiveFrom, newValidTill, rates,
+                newBillOnDispatch, Allowances.DEFAULT);
+    }
+
+    /** As the other {@code revised}, restating the allowances too. */
+    public ClientContract revised(UUID newOrgUnitId, String newCode, String newCurrency,
+                                  LocalDate newEffectiveFrom, LocalDate newValidTill, Rates rates,
+                                  boolean newBillOnDispatch, Allowances allowances) {
         requireDraft();
         ClientContract fresh = build(id, tenantId, newOrgUnitId, newCode, clientPartnerId, newCurrency,
-                newEffectiveFrom, newValidTill, rates, newBillOnDispatch, Status.DRAFT);
+                newEffectiveFrom, newValidTill, rates, newBillOnDispatch, Status.DRAFT, familyId, allowances);
         return new ClientContract(id, tenantId, fresh.orgUnitId, fresh.code, clientPartnerId, fresh.currency,
                 fresh.effectiveFrom, null, fresh.transportRatePerKg, fresh.transportMinimumCharge,
                 fresh.storageRatePerPalletDay, fresh.handlingInRatePerPallet, fresh.handlingOutRatePerPallet,
                 fresh.transportTaxRatePct, fresh.warehouseTaxRatePct, fresh.storageUnitsPerPallet, version,
-                createdAt, fresh.billOnDispatch, Status.DRAFT, fresh.validTill, rejectionReason);
+                createdAt, fresh.billOnDispatch, Status.DRAFT, fresh.validTill, rejectionReason, familyKey(),
+                fresh.directOrdersAllowed, fresh.allowedLoadTypes);
     }
 
     /** The draft the caller says it read at {@code expectedVersion}. */
@@ -279,7 +344,7 @@ public record ClientContract(
                 newEffectiveTo, transportRatePerKg, transportMinimumCharge, storageRatePerPalletDay,
                 handlingInRatePerPallet, handlingOutRatePerPallet, transportTaxRatePct, warehouseTaxRatePct,
                 storageUnitsPerPallet, newVersion, createdAt, billOnDispatch, newStatus, newValidTill,
-                newRejection);
+                newRejection, familyId, directOrdersAllowed, allowedLoadTypes);
     }
 
     /**
@@ -291,7 +356,27 @@ public record ClientContract(
         return new ClientContract(newId, tenantId, orgUnitId, code, clientPartnerId, currency, from, null,
                 transportRatePerKg, transportMinimumCharge, storageRatePerPalletDay, handlingInRatePerPallet,
                 handlingOutRatePerPallet, transportTaxRatePct, warehouseTaxRatePct, storageUnitsPerPallet, null,
-                Instant.now(), billOnDispatch, Status.ACTIVE, validTill, null);
+                Instant.now(), billOnDispatch, Status.ACTIVE, validTill, null, familyKey(), directOrdersAllowed,
+                allowedLoadTypes);
+    }
+
+    /**
+     * The contract family: shared by every version of the contract, so it is
+     * what a CONTRACT-scoped setting names. A version written before families
+     * existed, or the first of one, is its own family.
+     */
+    public UUID familyKey() {
+        return familyId != null ? familyId : id;
+    }
+
+    /** Whether the contract lists load types and this one is among them (or the contract lists none). */
+    public boolean covers(String loadType) {
+        try {
+            LaneMatching.requireLoadTypeAllowed(allowedLoadTypes, loadType);
+            return true;
+        } catch (BusinessRuleViolationException e) {
+            return false;
+        }
     }
 
     /**

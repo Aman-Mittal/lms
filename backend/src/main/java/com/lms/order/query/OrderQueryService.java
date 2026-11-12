@@ -55,9 +55,16 @@ public class OrderQueryService {
                    agg.line_count, agg.planned_line_count,
                    agg.total_dead_weight_kg, agg.contains_hazmat,
                    o.freight_mode, o.created_at, o.version,
-                   o.close_kind, o.close_reason, o.closed_at
+                   o.close_kind, o.close_reason, o.closed_at,
+                   o.contract_id, k.code AS contract_code, o.contract_lane_id, ln.lane_code AS contract_lane_code,
+                   o.load_type, o.transit_days,
+                   CASE WHEN o.transit_days IS NULL THEN NULL
+                        ELSE (coalesce(o.requested_pickup_at, o.created_at) AT TIME ZONE 'UTC')::date + o.transit_days END
+                       AS expected_delivery_date
               FROM sales_order o
               JOIN business_partner c ON c.id = o.customer_partner_id
+              LEFT JOIN client_contract k ON k.id = o.contract_id
+              LEFT JOIN client_contract_lane ln ON ln.id = o.contract_lane_id
               LEFT JOIN terminal t ON t.id = o.origin_terminal_id
               LEFT JOIN LATERAL (
                     SELECT count(*)::int AS line_count,

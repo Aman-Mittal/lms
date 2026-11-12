@@ -304,6 +304,17 @@
       Computes chargeable weight and refuses incompatible material on one
       order. Either succeeds or explains why, which is not something a status
       field could express.
+
+      With a client contract in force on the order's date, it is also judged
+      against the contract's lanes now that the lines say where freight goes:
+      the lane the person chose (or, failing that, the first one serving the
+      order) is recorded with the contract version and the promised transit
+      days. 409 `order-outside-contract-lanes` when no lane serves the order,
+      `order-load-type-not-allowed` for a load type the contract or lane does
+      not carry and `order-consignee-not-allowed` for a consignee the lane does
+      not list, each unless the contract allows direct orders, in which case
+      an order no lane serves is accepted without a lane. A customer with no
+      contract in force is validated as before.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     responses:

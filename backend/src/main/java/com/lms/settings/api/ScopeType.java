@@ -33,9 +33,12 @@ package com.lms.settings.api;
  *   <li>fleet: ORG_DEFAULT &lt; ORG_UNIT &lt; VEHICLE</li>
  *   <li>personal: ORG_DEFAULT &lt; ORG_UNIT &lt; USER</li>
  * </ul>
- * COMBINATION sits above VEHICLE, CUSTOMER and VENDOR and below USER: a
- * profile for several of those at once (and an org unit's subtree, and a
- * freight mode) is more specific than a profile for any one of them.
+ * COMBINATION sits above VEHICLE, CUSTOMER and VENDOR: a profile for several
+ * of those at once (and an org unit's subtree, and a freight mode) is more
+ * specific than a profile for any one of them. CONTRACT sits above
+ * COMBINATION and below USER: a client contract is the most specific
+ * commercial agreement a record can name, so what it says beats what the
+ * customer, the unit or a combination says.
  */
 public enum ScopeType {
 
@@ -66,6 +69,14 @@ public enum ScopeType {
      * the deeper org unit, then the higher priority.
      */
     COMBINATION,
+    /**
+     * One client contract, named by its <em>family</em> id: the contract as a
+     * person means it, shared by every version of it (a charge-add successor,
+     * a replacement with the same code for the same client). Not a version's
+     * id, so a profile survives a new version instead of being orphaned by
+     * it. Applies when the context names the contract.
+     */
+    CONTRACT,
     /** One user's own preferences, set only by that user. */
     USER;
 

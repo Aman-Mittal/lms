@@ -82,6 +82,9 @@ public class SettingProfileQueryService {
                        WHEN 'VENDOR' THEN (SELECT b.code || ' ' || b.legal_name
                                              FROM business_partner b WHERE b.id = p.scope_id)
                        WHEN 'VEHICLE' THEN (SELECT x.registration_no FROM vehicle x WHERE x.id = p.scope_id)
+                       WHEN 'CONTRACT' THEN (SELECT k.code FROM client_contract k
+                                              WHERE coalesce(k.family_id, k.id) = p.scope_id
+                                              ORDER BY k.effective_from DESC LIMIT 1)
                    END AS scope_label,
                    (SELECT jsonb_agg(jsonb_build_object('key', v.setting_key, 'effectiveFrom', v.effective_from,
                                                         'value', v.value)

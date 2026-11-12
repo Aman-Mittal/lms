@@ -16,8 +16,8 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import {
-  ApiProblem, MATERIAL_CLASSES, type CloseKindChoice, type HistoryEntryRow, type OrderDesk as Desk, type OrderHeaderDraft,
-  type OrderLineDraft, type OrderLineView, type OrderRaiseDraft,
+  ApiProblem, MATERIAL_CLASSES, type CloseKindChoice, type ContractLaneChoice, type HistoryEntryRow,
+  type OrderDesk as Desk, type OrderHeaderDraft, type OrderLineDraft, type OrderLineView, type OrderRaiseDraft,
 } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
@@ -49,6 +49,11 @@ function nextLine(lines: OrderLineDraft[]): OrderLineDraft {
 /** What the editor starts from: the stored lines, or one blank line for an order that has none. */
 function editableLines(lines: OrderLineView[]): OrderLineDraft[] {
   return lines.length > 0 ? lines.map(draftOf) : [nextLine([])];
+}
+
+/** The day an order is judged by for its contract: the pickup's day when it reads as one, else today. */
+function contractDay(pickup: string): string | undefined {
+  return /^\d{4}-\d{2}-\d{2}/.test(pickup) ? pickup.slice(0, 10) : undefined;
 }
 
 /** Once consignments are cut from an order, its lines belong to them. */
@@ -119,9 +124,35 @@ function RaiseOrder({ orgUnitId, onRaised }: { orgUnitId: string; onRaised: (id:
   const { gateway } = useSession();
   const blank: OrderRaiseDraft = {
     orderNo: '', customerPartnerId: '', originTerminalId: '', requestedPickupAt: '', requestedDeliveryAt: '',
+    contractLaneId: '', loadType: '',
   };
   const [draft, setDraft] = useState(blank);
   const [error, setError] = useState('');
+  const [lanes, setLanes] = useState<ContractLaneChoice[]>([]);
+
+  // The lanes of the customer's contract on the pickup's day; nothing when there is none.
+  useEffect(() => {
+    let current = true;
+    const customer = draft.customerPartnerId.trim();
+    if (!customer) {
+      setLanes([]);
+      return undefined;
+    }
+    gateway.contractLanes(customer, contractDay(draft.requestedPickupAt))
+      .then((found) => current && setLanes(found)).catch(() => current && setLanes([]));
+    return () => {
+      current = false;
+    };
+  }, [gateway, draft.customerPartnerId, draft.requestedPickupAt]);
+
+  /** Picking a lane fills the origin and the load type from it. */
+  function pickLane(laneId: string) {
+    const lane = lanes.find((l) => l.id === laneId);
+    setDraft((d) => ({
+      ...d, contractLaneId: laneId, originTerminalId: lane?.originTerminalId || d.originTerminalId,
+      loadType: lane?.loadType || d.loadType,
+    }));
+  }
 
   async function raise(event: FormEvent) {
     event.preventDefault();
@@ -129,6 +160,7 @@ function RaiseOrder({ orgUnitId, onRaised }: { orgUnitId: string; onRaised: (id:
     try {
       const id = await gateway.raiseOrder(orgUnitId, draft);
       setDraft(blank);
+      setLanes([]);
       onRaised(id);
     } catch (e) {
       setError((e as Error).message);
@@ -147,6 +179,15 @@ function RaiseOrder({ orgUnitId, onRaised }: { orgUnitId: string; onRaised: (id:
         value={draft.originTerminalId} onChange={set('originTerminalId')} required />
       <input placeholder="Pickup (ISO time, optional)" aria-label="New order pickup" value={draft.requestedPickupAt}
         onChange={(e) => set('requestedPickupAt')(e.target.value)} />
+      {lanes.length > 0 && (
+        <select aria-label="New order contract lane" data-testid="raise-lane" value={draft.contractLaneId}
+          onChange={(e) => pickLane(e.target.value)}>
+          <option value="">Contract lane (optional)</option>
+          {lanes.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+        </select>
+      )}
+      <input placeholder="Load type (optional)" aria-label="New order load type" value={draft.loadType}
+        onChange={(e) => set('loadType')(e.target.value)} />
       <button type="submit">Raise order</button>
       {error && <span className="error" role="alert"> {error}</span>}
     </form>
@@ -164,12 +205,35 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
   const [closeReason, setCloseReason] = useState('');
   const [slip, setSlip] = useState(false);
   const [tab, setTab] = useState<'details' | 'history'>('details');
+  const [editLanes, setEditLanes] = useState<ContractLaneChoice[]>([]);
 
   // A fresh read replaces what was being edited; a refused edit leaves it, to be tried again.
   useEffect(() => {
     setHeader(desk.header);
     setLines(editableLines(desk.lines));
   }, [desk]);
+
+  // The lanes the order's customer contract offers on its pickup day.
+  useEffect(() => {
+    let current = true;
+    gateway.contractLanes(desk.header.customerPartnerId, contractDay(desk.header.requestedPickupAt))
+      .then((found) => current && setEditLanes(found)).catch(() => current && setEditLanes([]));
+    return () => {
+      current = false;
+    };
+  }, [gateway, desk]);
+
+  /** Picking a lane fills the origin and load type, and the destination of every line, from it. */
+  function pickEditLane(laneId: string) {
+    const lane = editLanes.find((l) => l.id === laneId);
+    setHeader((h) => ({
+      ...h, contractLaneId: laneId, originTerminalId: lane?.originTerminalId || h.originTerminalId,
+      loadType: lane?.loadType || h.loadType,
+    }));
+    if (lane?.destinationTerminalId) {
+      setLines((now) => now.map((l) => ({ ...l, destinationTerminalId: lane.destinationTerminalId })));
+    }
+  }
 
   const draft = order.status === 'DRAFT';
   const validated = order.status === 'VALIDATED';
@@ -245,6 +309,11 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
         <div><dt>Lines</dt><dd data-testid="order-line-count">{order.lineCount}</dd></div>
         <div><dt>Weight kg</dt><dd data-testid="order-weight">{order.totalDeadWeightKg}</dd></div>
         <div><dt>Pickup</dt><dd>{order.requestedPickupAt || '—'}</dd></div>
+        <div><dt>Contract</dt><dd data-testid="order-contract">{order.contractCode || '—'}</dd></div>
+        <div><dt>Lane</dt><dd data-testid="order-lane">{order.contractLaneCode || '—'}</dd></div>
+        <div><dt>Load type</dt><dd data-testid="order-load-type">{order.loadType || '—'}</dd></div>
+        <div><dt>Transit days</dt><dd data-testid="order-transit">{order.transitDays || '—'}</dd></div>
+        <div><dt>Expected delivery</dt><dd data-testid="order-expected">{order.expectedDeliveryDate || '—'}</dd></div>
         {order.closeKind && (
           <div>
             <dt>Closed</dt>
@@ -383,6 +452,15 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
               onChange={(e) => setHeaderField('requestedPickupAt')(e.target.value)} />
             <input aria-label="Delivery" placeholder="Delivery (ISO time)" value={header.requestedDeliveryAt}
               onChange={(e) => setHeaderField('requestedDeliveryAt')(e.target.value)} />
+            {editLanes.length > 0 && (
+              <select aria-label="Contract lane" data-testid="edit-lane" value={header.contractLaneId}
+                onChange={(e) => pickEditLane(e.target.value)}>
+                <option value="">Contract lane (the contract finds one)</option>
+                {editLanes.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+              </select>
+            )}
+            <input aria-label="Load type" placeholder="Load type" value={header.loadType}
+              onChange={(e) => setHeaderField('loadType')(e.target.value)} />
           </div>
           <div className="table-scroll">
             <table data-testid="lines-editor">

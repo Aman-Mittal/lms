@@ -81,6 +81,34 @@ class SettingFoldTest {
     }
 
     @Test
+    @DisplayName("a contract's value beats the combination's and the customer's, and yields only to the person's own")
+    void contractScope() {
+        SettingDefinition terms = SettingDefinition.of(SettingKey.integer("test.contract"), "Contract",
+                "Kept per contract").defaultValue(0).alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER,
+                ScopeType.COMBINATION, ScopeType.CONTRACT, ScopeType.USER).build();
+        UUID contract = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+        Candidate forCustomer = value(CUSTOMER, ScopeType.CUSTOMER, 0, "test.contract", 40);
+        Candidate combined = value(UUID.fromString("00000000-0000-0000-0000-0000000000c2"), ScopeType.COMBINATION, 0,
+                "test.contract", 50);
+        Candidate forContract = value(contract, ScopeType.CONTRACT, 0, "test.contract", 60);
+
+        Resolved<Object> r = SettingFold.fold(List.of(terms), Map.of("test.contract", 0),
+                List.of(forContract, combined, forCustomer)).get("test.contract");
+        assertThat(r.value()).isEqualTo(60);
+        assertThat(r.source().scopeType()).isEqualTo(ScopeType.CONTRACT);
+        assertThat(r.source().label()).isEqualTo("Contract: CONTRACT profile");
+        assertThat(ScopeType.CONTRACT.precedence()).isGreaterThan(ScopeType.COMBINATION.precedence())
+                .isLessThan(ScopeType.USER.precedence());
+        assertThat(ScopeType.CONTRACT.needsScopeId()).isTrue();
+
+        // A key that does not opt into the scope never reads it.
+        SettingDefinition without = SettingDefinition.of(SettingKey.integer("test.contract"), "Contract",
+                "Kept per customer").defaultValue(0).alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER).build();
+        assertThat(SettingFold.fold(List.of(without), Map.of("test.contract", 0), List.of(forContract, forCustomer))
+                .get("test.contract").value()).isEqualTo(40);
+    }
+
+    @Test
     @DisplayName("a vendor's value beats the units' and the organisation's, and lies just above a customer's")
     void vendorScope() {
         SettingDefinition procurement = SettingDefinition.of(SettingKey.integer("test.vendor"), "Vendor",

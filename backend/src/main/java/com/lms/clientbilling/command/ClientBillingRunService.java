@@ -31,6 +31,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.lms.clientbilling.command.domain.ChargePricing;
+import com.lms.clientbilling.command.domain.ContractLane;
 import com.lms.clientbilling.command.domain.ClientCharge;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ClientInvoice;
@@ -79,6 +80,7 @@ public class ClientBillingRunService {
     private final AuditTrail audit;
     private final ApplicationEventPublisher events;
     private final CustomerCreditPort credit;
+    private final ContractLaneStore laneStore;
 
     public ClientBillingRunService(ClientChargeRepository charges,
                                    ClientContractRepository contracts,
@@ -86,7 +88,8 @@ public class ClientBillingRunService {
                                    ClientInvoiceRepository invoices,
                                    ClientInvoiceLineRepository lines, ClientPeriods periods,
                                    ClientAccess access, JdbcClient jdbc, AuditTrail audit,
-                                   ApplicationEventPublisher events, CustomerCreditPort credit) {
+                                   ApplicationEventPublisher events, CustomerCreditPort credit,
+                                   ContractLaneStore laneStore) {
         this.charges = charges;
         this.contracts = contracts;
         this.serviceRates = serviceRates;
@@ -98,6 +101,7 @@ public class ClientBillingRunService {
         this.audit = audit;
         this.events = events;
         this.credit = credit;
+        this.laneStore = laneStore;
     }
 
     /**
@@ -236,6 +240,7 @@ public class ClientBillingRunService {
                                   List<ClientCharge> unbilled) {
         Map<LocalDate, ClientContract> contractOn = new HashMap<>();
         Map<UUID, Map<String, ContractServiceRate>> ratesOf = new HashMap<>();
+        Map<UUID, ContractLane> laneOf = new HashMap<>();
         List<Priced> priced = new ArrayList<>(unbilled.size());
 
         for (ClientCharge charge : unbilled) {
@@ -249,7 +254,11 @@ public class ClientBillingRunService {
                     serviceRates.findForContract(tenantId, id).stream()
                             .collect(Collectors.toMap(ContractServiceRate::serviceCode,
                                     Function.identity())));
-            priced.add(new Priced(charge, contract, ChargePricing.price(charge, contract, rates)));
+            // The lane the work was ordered on prices it, whichever version is in
+            // force on the day: the lane is as immutable as the version it belongs to.
+            ContractLane lane = charge.contractLaneId() == null ? null
+                    : laneOf.computeIfAbsent(charge.contractLaneId(), id -> laneStore.find(id).orElse(null));
+            priced.add(new Priced(charge, contract, ChargePricing.price(charge, contract, rates, lane)));
         }
         return priced;
     }

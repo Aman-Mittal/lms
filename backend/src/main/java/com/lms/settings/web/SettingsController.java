@@ -115,10 +115,12 @@ public class SettingsController {
                                    @RequestParam(required = false) LocalDate asOf,
                                    @RequestParam(required = false) String country,
                                    @RequestParam(required = false) String state,
-                                   @RequestParam(required = false) String freightMode) {
+                                   @RequestParam(required = false) String freightMode,
+                                   @RequestParam(required = false) UUID contractId) {
         SettingContext context = SettingContext.ofOrgUnit(orgUnitId).withCustomer(customerId)
                 .withVehicle(vehicleId).withVendor(vendorId).asOf(asOf)
-                .inJurisdiction(blankToNull(country), blankToNull(state)).withFreightMode(blankToNull(freightMode));
+                .inJurisdiction(blankToNull(country), blankToNull(state)).withFreightMode(blankToNull(freightMode))
+                .withContract(contractId);
         return new EffectiveView(entries(registry.all(), context));
     }
 

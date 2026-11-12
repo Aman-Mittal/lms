@@ -60,7 +60,7 @@ class ExecutionSettingDefinitionsTest {
         assertThat(documents().category()).isEqualTo(SettingCategory.COMPLIANCE);
         assertThat(documents().effectiveDated()).isTrue();
         assertThat(documents().scopes()).containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT,
-                ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION);
+                ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION, ScopeType.CONTRACT);
     }
 
     @Test
