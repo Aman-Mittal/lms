@@ -853,6 +853,32 @@ export interface LmsGateway {
   /** Reads the pass for its version, then cancels it with that as `If-Match`. */
   cancelGatePass(id: string, reason: string): Promise<void>;
   checkGatePass(query: GatePassQuery): Promise<GatePassVerdict>;
+  // Charge catalogue, manual charges, vendor payables and advances (issue #225)
+  /** Entries by code; `active` narrows, `q` matches code or name. Needs one of the charge rights. */
+  listChargeCatalogue(filter: ChargeCatalogueFilter): Promise<ChargeEntryView[]>;
+  getChargeCatalogueEntry(id: string): Promise<ChargeEntryView>;
+  /** Resolves to the new entry's id. Needs CHARGE_CATALOGUE_MANAGE. */
+  createChargeCatalogueEntry(draft: ChargeEntryDraft): Promise<string>;
+  /** `version` is the entry's version as read; it goes out as `If-Match`. */
+  updateChargeCatalogueEntry(id: string, version: string, draft: ChargeEntryDraft): Promise<void>;
+  listManualCharges(filter: ManualChargeFilter): Promise<ManualChargeView[]>;
+  /** Pending is true when the amount is above the threshold and an approval request was raised instead. */
+  recordManualCharge(draft: ManualChargeDraft): Promise<MoneyRequestResult>;
+  /** Reads the charge for its version, then cancels it with that as `If-Match`. */
+  cancelManualCharge(id: string, reason: string): Promise<void>;
+  listVendorInvoices(filter: VendorInvoiceFilter): Promise<VendorInvoiceView[]>;
+  vendorInvoiceBills(id: string): Promise<VendorInvoiceBillView[]>;
+  vendorInvoicePayments(id: string): Promise<VendorPaymentView[]>;
+  /** Freight bills are named by number; each must be approved for payment. */
+  captureVendorInvoice(draft: VendorInvoiceDraft): Promise<string>;
+  listVendorPayments(): Promise<VendorPaymentView[]>;
+  recordVendorPayment(invoiceId: string, draft: VendorPaymentDraft): Promise<string>;
+  billSettlement(billId: string): Promise<BillSettlementView>;
+  listVendorAdvances(tripId?: string): Promise<VendorAdvanceView[]>;
+  requestVendorAdvance(draft: VendorAdvanceDraft): Promise<MoneyRequestResult>;
+  /** Reads the advance for its version, then records the payment with that as `If-Match`. */
+  payVendorAdvance(id: string, reference: string, paidOn: string): Promise<void>;
+  cancelVendorAdvance(id: string, reason: string): Promise<void>;
   // Trip stops
   tripStops(tripId: string): Promise<TripStopView[]>;
   /** The three below need TRIP_EXECUTE. */
@@ -1736,7 +1762,8 @@ export type CreditChangeStatus = (typeof CREDIT_CHANGE_STATUSES)[number];
 
 // Number series
 
-export const NUMBERED_DOCUMENT_TYPES = ['ORDER', 'CONSIGNMENT_NOTE', 'DOCKET', 'TRIP', 'GATE_PASS', 'LOAD', 'INVOICE'] as const;
+export const NUMBERED_DOCUMENT_TYPES = ['ORDER', 'CONSIGNMENT_NOTE', 'DOCKET', 'TRIP', 'GATE_PASS', 'LOAD', 'INVOICE', 'MANUAL_CHARGE', 'VENDOR_INVOICE',
+  'VENDOR_ADVANCE'] as const;
 /** The kinds of document a number series can number. */
 export type NumberedDocumentType = (typeof NUMBERED_DOCUMENT_TYPES)[number];
 
@@ -2012,4 +2039,184 @@ export interface OrgUnitEdit {
   unitType: string;
   countryCode: string;
   stateCode: string;
+}
+
+// ---------------------------------------------------------------- charges, payables and advances
+
+export const CHARGE_BASES = ['FLAT', 'PER_KG', 'PER_HOUR', 'PER_DAY', 'PER_UNIT'] as const;
+export type ChargeBasisChoice = (typeof CHARGE_BASES)[number];
+export const CHARGE_DIRECTIONS = ['RECEIVABLE', 'PAYABLE', 'BOTH'] as const;
+export type ChargeDirectionChoice = (typeof CHARGE_DIRECTIONS)[number];
+export const CHARGE_SIDES = ['RECEIVABLE', 'PAYABLE'] as const;
+export type ChargeSideChoice = (typeof CHARGE_SIDES)[number];
+export const CHARGE_SUBJECT_TYPES = ['TRIP', 'CONSIGNMENT', 'ORDER'] as const;
+export type ChargeSubjectType = (typeof CHARGE_SUBJECT_TYPES)[number];
+export const ADVANCE_MODES = ['BANK', 'CASH', 'FUEL_SLIP', 'FUEL_CARD'] as const;
+export type AdvanceModeChoice = (typeof ADVANCE_MODES)[number];
+export const PAYMENT_MODES = ['BANK_TRANSFER', 'CHEQUE', 'CASH', 'OTHER'] as const;
+export type PaymentModeChoice = (typeof PAYMENT_MODES)[number];
+
+/** A catalogue charge; `version` is its ETag. */
+export interface ChargeEntryView {
+  id: string;
+  code: string;
+  name: string;
+  basis: ChargeBasisChoice;
+  defaultRate: number;
+  currency: string;
+  direction: ChargeDirectionChoice;
+  active: boolean;
+  version: string;
+}
+
+export interface ChargeEntryDraft {
+  code: string;
+  name: string;
+  basis: ChargeBasisChoice;
+  defaultRate: string;
+  direction: ChargeDirectionChoice;
+  active: boolean;
+}
+
+export interface ChargeCatalogueFilter {
+  /** Null reads every entry. */
+  active: boolean | null;
+  q: string;
+}
+
+export interface ManualChargeView {
+  id: string;
+  chargeNo: string;
+  chargeCode: string;
+  chargeName: string;
+  direction: string;
+  subjectType: string;
+  subjectRef: string;
+  tripId: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: string;
+  billed: boolean;
+  clientChargeId: string;
+  freightBillNo: string;
+}
+
+export interface ManualChargeFilter {
+  status: string;
+  tripId: string;
+}
+
+export interface ManualChargeDraft {
+  catalogueId: string;
+  subjectType: ChargeSubjectType;
+  subjectId: string;
+  direction: ChargeSideChoice | '';
+  customerId: string;
+  quantity: string;
+  /** Blank takes the entry's default rate. */
+  rate: string;
+  reason: string;
+  evidenceRef: string;
+}
+
+/** What raising a charge or an advance came to: in force at once, or waiting for an approval. */
+export interface MoneyRequestResult {
+  id: string;
+  pending: boolean;
+}
+
+export interface VendorInvoiceFilter {
+  status: string;
+  overdue: boolean;
+}
+
+export interface VendorInvoiceView {
+  id: string;
+  invoiceNo: string;
+  vendorName: string;
+  vendorInvoiceNo: string;
+  invoiceDate: string;
+  dueDate: string;
+  totalAmount: number;
+  approvedAmount: number;
+  advancesDeducted: number;
+  netPayable: number;
+  paidAmount: number;
+  outstanding: number;
+  status: string;
+  overdue: boolean;
+  daysOverdue: number;
+  billCount: number;
+  currency: string;
+}
+
+export interface VendorInvoiceBillView {
+  billId: string;
+  billNo: string;
+  tripNo: string;
+  approvedAmount: number;
+}
+
+export interface VendorInvoiceDraft {
+  /** Freight bill numbers. */
+  billNos: string[];
+  vendorInvoiceNo: string;
+  invoiceDate: string;
+  amount: string;
+  taxAmount: string;
+  documentRef: string;
+}
+
+export interface VendorPaymentView {
+  id: string;
+  invoiceNo: string;
+  vendorInvoiceNo: string;
+  vendorName: string;
+  amount: number;
+  currency: string;
+  paidOn: string;
+  mode: string;
+  reference: string;
+}
+
+export interface VendorPaymentDraft {
+  amount: string;
+  paidOn: string;
+  mode: PaymentModeChoice;
+  reference: string;
+}
+
+export interface VendorAdvanceView {
+  id: string;
+  advanceNo: string;
+  tripNo: string;
+  vendorName: string;
+  mode: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: string;
+  paidReference: string;
+  paidOn: string;
+  freightReference: number;
+}
+
+export interface VendorAdvanceDraft {
+  tripId: string;
+  mode: AdvanceModeChoice;
+  amount: string;
+  reason: string;
+}
+
+export interface BillSettlementView {
+  billNo: string;
+  status: string;
+  freightAmount: number;
+  chargesAmount: number;
+  approvedAmount: number;
+  advancesPaid: number;
+  netPayable: number;
 }
