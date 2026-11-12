@@ -23,11 +23,22 @@ import java.util.UUID;
 /** One version of a client's contract, with its value-added service rates. */
 public record ClientContractView(
         UUID id,
+        UUID orgUnitId,
         String code,
         UUID clientPartnerId,
         String currency,
         LocalDate effectiveFrom,
         LocalDate effectiveTo,
+        /** The last day the contract applies, or null for no end date. */
+        LocalDate validTill,
+        /** Stored: DRAFT, PENDING_VERIFICATION or ACTIVE. */
+        String status,
+        /** What to show: the status, or EXPIRED for a version in force past its end date. */
+        String state,
+        /** Why verification was last refused, while the contract is back in DRAFT. */
+        String rejectionReason,
+        /** The version an edit sends back in {@code If-Match}. */
+        long version,
         BigDecimal transportRatePerKg,
         BigDecimal transportMinimumCharge,
         BigDecimal storageRatePerPalletDay,

@@ -25,7 +25,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import com.lms.client.ApiClient;
+import com.lms.client.api.ApprovalsApi;
 import com.lms.client.api.AuthenticationApi;
+import com.lms.client.api.ClientBillingApi;
 import com.lms.client.api.DeliveryAndClaimsApi;
 import com.lms.client.api.DriversApi;
 import com.lms.client.api.OrdersApi;
@@ -42,7 +44,9 @@ import com.lms.client.model.AssignConsignmentRequest;
 import com.lms.client.model.AssignTripRequest;
 import com.lms.client.model.AttachDocumentRequest;
 import com.lms.client.model.AttachTripDocumentRequest;
+import com.lms.client.model.ApprovalPolicyRequest;
 import com.lms.client.model.AuthResult;
+import com.lms.client.model.ClientContractDraftRequest;
 import com.lms.client.model.DefineGuideRequest;
 import com.lms.client.model.GateInRequest;
 import com.lms.client.model.IdResponse;
@@ -117,6 +121,22 @@ final class HttpWorld {
     /** The signed-in caller's bearer token, for a request the generated client cannot shape. */
     String accessToken() {
         return me.getAccessToken();
+    }
+
+    /**
+     * Drafts a client contract and puts it into force, for the many scenarios that
+     * need a contract and are not about verifying it. The demo tenant asks for
+     * approval by default, so the tenant's verification policy is switched off
+     * first (every call, so a scenario that switched it on cannot leave this
+     * one stranded); the lifecycle scenarios drive the same endpoints with it on.
+     */
+    UUID publishContract(ClientContractDraftRequest request) {
+        api(ApprovalsApi.class).setApprovalPolicy("CONTRACT_ACTIVATION",
+                new ApprovalPolicyRequest().required(false), null);
+        ClientBillingApi billing = api(ClientBillingApi.class);
+        UUID id = billing.createClientContractDraft(request, null).getId();
+        billing.requestClientContractVerification("\"" + billing.getClientContract(id).getVersion() + "\"", id, null);
+        return id;
     }
 
     <T extends ApiClient.Api> T api(Class<T> type) {

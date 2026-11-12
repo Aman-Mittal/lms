@@ -19,6 +19,7 @@ import { ApiProblem, type Row } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { ContractLifecycle } from './ContractLifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
@@ -90,12 +91,14 @@ function ClientDesk({ clientId }: { clientId: string }) {
         <p className="muted" data-testid="no-contract">This client holds no contract, so nothing is billed to it.</p>
       ) : (
         <Table rows={contracts.data ?? []} rowTestId="contract-row" columns={[
-          ['code', 'Contract'], ['effectiveFrom', 'From'], ['effectiveTo', 'To'], ['currency', 'Currency'],
+          ['code', 'Contract'], ['state', 'State'], ['effectiveFrom', 'From'], ['effectiveTo', 'To'],
+          ['validTill', 'Ends'], ['currency', 'Currency'],
           ['transportRatePerKg', 'Transport / kg'], ['handlingInRatePerPallet', 'Handling in / pallet'],
           ['handlingOutRatePerPallet', 'Handling out / pallet'], ['storageRatePerPalletDay', 'Storage / pallet-day'],
           ['billing', 'Transport billed'],
         ]} />
       )}
+      <ContractLifecycle clientId={clientId} contracts={contracts.data ?? []} onChanged={changed} />
 
       <h2>Charges</h2>
       <label>
