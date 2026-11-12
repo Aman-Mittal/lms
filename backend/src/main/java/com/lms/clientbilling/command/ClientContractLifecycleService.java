@@ -29,10 +29,13 @@ import com.lms.approvals.api.ApprovalSubject;
 import com.lms.approvals.api.ApprovalSubjectTypes;
 import com.lms.approvals.api.ApprovalTicket;
 import com.lms.clientbilling.command.domain.ClientContract;
+import com.lms.clientbilling.command.domain.ContractLane;
 import com.lms.clientbilling.command.domain.ContractServiceRate;
 import com.lms.clientbilling.query.ClientDirectory;
 import com.lms.identity.numbering.DocumentNumbers;
 import com.lms.identity.numbering.DocumentType;
+import com.lms.masterdata.api.PartnerStandingPort;
+import com.lms.masterdata.api.TerminalCategoryPort;
 import com.lms.settings.api.SettingContext;
 import com.lms.settings.api.Settings;
 import com.lms.shared.audit.AuditTrail;
@@ -104,11 +107,15 @@ public class ClientContractLifecycleService {
     private final ApprovalRequests approvals;
     private final Settings settings;
     private final DocumentNumbers numbers;
+    private final ContractLaneStore laneStore;
+    private final TerminalCategoryPort terminals;
+    private final PartnerStandingPort partners;
 
     public ClientContractLifecycleService(ClientContractRepository contracts,
                                           ContractServiceRateRepository serviceRates, ClientDirectory directory,
                                           JdbcClient jdbc, AuditTrail audit, ApprovalRequests approvals,
-                                          Settings settings, DocumentNumbers numbers) {
+                                          Settings settings, DocumentNumbers numbers, ContractLaneStore laneStore,
+                                          TerminalCategoryPort terminals, PartnerStandingPort partners) {
         this.contracts = contracts;
         this.serviceRates = serviceRates;
         this.directory = directory;
@@ -117,6 +124,9 @@ public class ClientContractLifecycleService {
         this.approvals = approvals;
         this.settings = settings;
         this.numbers = numbers;
+        this.laneStore = laneStore;
+        this.terminals = terminals;
+        this.partners = partners;
     }
 
     // ------------------------------------------------------------------ draft
@@ -131,6 +141,22 @@ public class ClientContractLifecycleService {
     public UUID createDraft(UUID orgUnitId, String code, UUID clientPartnerId, String currency,
                             LocalDate effectiveFrom, LocalDate validTill, ClientContract.Rates rates,
                             List<ClientContractService.ServiceRateTerm> valueAdded, boolean billOnDispatch) {
+        return createDraft(orgUnitId, code, clientPartnerId, currency, effectiveFrom, validTill, rates, valueAdded,
+                billOnDispatch, ClientContract.Allowances.DEFAULT, List.of());
+    }
+
+    /**
+     * As the other {@code createDraft}, with the version's allowances and its
+     * lanes. A draft whose code an earlier version of the same client already
+     * carries joins that contract's family; any other starts one.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('CLIENT_CONTRACT_MANAGE')"
+            + " and @abac.permitsIn('CLIENT_CONTRACT_MANAGE', #orgUnitId)")
+    public UUID createDraft(UUID orgUnitId, String code, UUID clientPartnerId, String currency,
+                            LocalDate effectiveFrom, LocalDate validTill, ClientContract.Rates rates,
+                            List<ClientContractService.ServiceRateTerm> valueAdded, boolean billOnDispatch,
+                            ClientContract.Allowances allowances, List<LaneTerm> laneTerms) {
         UUID tenantId = TenantContext.requireTenantId();
         if (!directory.isCustomer(clientPartnerId)) {
             throw new BusinessRuleViolationException("client-not-a-customer",
@@ -144,9 +170,12 @@ public class ClientContractLifecycleService {
                 "A contract needs a code: give one, or have the tenant configure a CONTRACT number series"))
                 : code;
         ClientContract draft = contracts.save(ClientContract.draft(UUID.randomUUID(), tenantId, orgUnitId, number,
-                clientPartnerId, currency, effectiveFrom, validTill, rates, billOnDispatch));
+                clientPartnerId, currency, effectiveFrom, validTill, rates, billOnDispatch,
+                familyOf(clientPartnerId, number), allowances == null ? ClientContract.Allowances.DEFAULT : allowances));
         List<ContractServiceRate> saved = saveRates(tenantId, draft.id(), terms);
-        audit.recordAtomically("CLIENT_CONTRACT_DRAFTED", AUDIT_TYPE, draft.id(), null, snapshot(draft, saved));
+        List<ContractLane> lanes = saveLanes(draft.id(), laneTerms);
+        audit.recordAtomically("CLIENT_CONTRACT_DRAFTED", AUDIT_TYPE, draft.id(), null,
+                snapshot(draft, saved, lanes));
         return draft.id();
     }
 
@@ -160,6 +189,21 @@ public class ClientContractLifecycleService {
     public void reviseDraft(UUID id, long expectedVersion, UUID orgUnitId, String code, String currency,
                             LocalDate effectiveFrom, LocalDate validTill, ClientContract.Rates rates,
                             List<ClientContractService.ServiceRateTerm> valueAdded, boolean billOnDispatch) {
+        reviseDraft(id, expectedVersion, orgUnitId, code, currency, effectiveFrom, validTill, rates, valueAdded,
+                billOnDispatch, ClientContract.Allowances.DEFAULT, null);
+    }
+
+    /**
+     * As the other {@code reviseDraft}, restating the allowances and replacing
+     * the lanes whole. What is left out (null) is kept as it is: a flag or list
+     * of load types the caller does not mention, and the lanes.
+     */
+    @Transactional
+    @PreAuthorize(MANAGE + " and @abac.permitsIn('CLIENT_CONTRACT_MANAGE', #orgUnitId)")
+    public void reviseDraft(UUID id, long expectedVersion, UUID orgUnitId, String code, String currency,
+                            LocalDate effectiveFrom, LocalDate validTill, ClientContract.Rates rates,
+                            List<ClientContractService.ServiceRateTerm> valueAdded, boolean billOnDispatch,
+                            ClientContract.Allowances allowances, List<LaneTerm> laneTerms) {
         UUID tenantId = TenantContext.requireTenantId();
         ClientContract before = requireVersion(require(id), expectedVersion);
         before.requireDraft();
@@ -167,13 +211,25 @@ public class ClientContractLifecycleService {
         ClientContractService.requireDistinctServices(terms);
         List<ContractServiceRate> beforeRates = serviceRates.findForContract(tenantId, id);
 
+        List<ContractLane> beforeLanes = laneStore.lanesOf(id);
+
+        ClientContract.Allowances stated = allowances == null ? ClientContract.Allowances.DEFAULT : allowances;
+        ClientContract.Allowances merged = new ClientContract.Allowances(
+                stated.directOrdersAllowed() == null ? before.directOrdersAllowed() : stated.directOrdersAllowed(),
+                stated.allowedLoadTypes() == null ? (before.allowedLoadTypes() == null ? null
+                        : List.of(before.allowedLoadTypes().split(","))) : stated.allowedLoadTypes());
         ClientContract revised = before.revised(orgUnitId, code == null || code.isBlank() ? before.code() : code,
-                currency, effectiveFrom, validTill, rates, billOnDispatch);
+                currency, effectiveFrom, validTill, rates, billOnDispatch, merged);
         ClientContract saved = contracts.save(revised);
         serviceRates.deleteAll(beforeRates);
         List<ContractServiceRate> afterRates = saveRates(tenantId, id, terms);
+        List<ContractLane> afterLanes = beforeLanes;
+        if (laneTerms != null) {
+            laneStore.deleteAllOf(id);
+            afterLanes = saveLanes(id, laneTerms);
+        }
         audit.recordAtomically("CLIENT_CONTRACT_DRAFT_REVISED", AUDIT_TYPE, id,
-                snapshot(before, beforeRates), snapshot(saved, afterRates));
+                snapshot(before, beforeRates, beforeLanes), snapshot(saved, afterRates, afterLanes));
     }
 
     /** Deletes a draft with its service rates, and gives back its number when a series issued it. */
@@ -184,10 +240,12 @@ public class ClientContractLifecycleService {
         ClientContract draft = requireVersion(require(id), expectedVersion);
         draft.requireDraft();
         List<ContractServiceRate> rates = serviceRates.findForContract(tenantId, id);
+        List<ContractLane> lanes = laneStore.lanesOf(id);
         serviceRates.deleteAll(rates);
+        laneStore.deleteAllOf(id);
         contracts.delete(draft);
         numbers.release(DocumentType.CONTRACT, draft.code(), "Contract draft deleted");
-        audit.recordAtomically("CLIENT_CONTRACT_DRAFT_DELETED", AUDIT_TYPE, id, snapshot(draft, rates), null);
+        audit.recordAtomically("CLIENT_CONTRACT_DRAFT_DELETED", AUDIT_TYPE, id, snapshot(draft, rates, lanes), null);
     }
 
     // ---------------------------------------------------------- verification
@@ -318,7 +376,7 @@ public class ClientContractLifecycleService {
                 .filter(incumbent -> !incumbent.id().equals(contract.id()))
                 .map(ClientContract::effectiveFrom).orElse(null);
         return new ContractChecklist.Facts(directory.isTradingCustomer(contract.clientPartnerId()),
-                LocalDate.now(ZoneOffset.UTC), incumbentFrom);
+                LocalDate.now(ZoneOffset.UTC), incumbentFrom, laneStore.lanesOf(contract.id()).size());
     }
 
     // -------------------------------------------------------------- extension
@@ -444,6 +502,9 @@ public class ClientContractLifecycleService {
         }
         serviceRates.save(ContractServiceRate.of(UUID.randomUUID(), tenantId, successor.id(), term.serviceCode(),
                 term.unit(), term.rate()));
+        // The lanes are part of the version: the successor carries them, so an
+        // order resolved against it finds the same corridors and prices.
+        laneStore.copyAll(id, successor.id());
         audit.recordAtomically("CLIENT_CONTRACT_CHARGE_ADDED", AUDIT_TYPE, id,
                 Json.object("effectiveTo", null),
                 Json.object("effectiveTo", closed.effectiveTo().toString(), "successor", successor.id().toString(),
@@ -505,6 +566,56 @@ public class ClientContractLifecycleService {
         return saved;
     }
 
+    /**
+     * The family a new draft joins: that of the client's latest version carrying
+     * the same code (the contract continued or replaced), else a new one.
+     */
+    private UUID familyOf(UUID clientPartnerId, String code) {
+        return jdbc.sql("""
+                        SELECT coalesce(family_id, id) FROM client_contract
+                         WHERE tenant_id = :tenantId AND client_partner_id = :client AND code = :code
+                         ORDER BY effective_from DESC, created_at DESC LIMIT 1
+                        """)
+                .param("tenantId", TenantContext.requireTenantId()).param("client", clientPartnerId)
+                .param("code", code).query(UUID.class).optional().orElse(null);
+    }
+
+    /**
+     * Validates and stores a draft's lanes: codes distinct, every terminal and
+     * partner one this tenant can see (looked up under row-level security: a
+     * foreign key would accept another tenant's), then the lanes themselves.
+     */
+    private List<ContractLane> saveLanes(UUID contractId, List<LaneTerm> terms) {
+        if (terms == null || terms.isEmpty()) {
+            return List.of();
+        }
+        List<ContractLane> lanes = terms.stream().map(term -> term.toLane(contractId)).toList();
+        if (lanes.stream().map(ContractLane::laneCode).map(String::toUpperCase).distinct().count() != lanes.size()) {
+            throw new BusinessRuleViolationException("client-contract-lane-duplicated",
+                    "Lane codes must be distinct within a contract");
+        }
+        for (ContractLane lane : lanes) {
+            requireTerminal(lane.origin().terminalId());
+            requireTerminal(lane.destination().terminalId());
+            lane.consignors().forEach(this::requirePartner);
+            lane.consignees().forEach(this::requirePartner);
+        }
+        laneStore.insertAll(contractId, lanes);
+        return lanes;
+    }
+
+    private void requireTerminal(UUID terminalId) {
+        if (terminalId != null && terminals.functionalCategoryOf(terminalId).isEmpty()) {
+            throw new ResourceNotFoundException("Terminal", terminalId);
+        }
+    }
+
+    private void requirePartner(UUID partnerId) {
+        if (!partners.exists(partnerId)) {
+            throw new ResourceNotFoundException("BusinessPartner", partnerId);
+        }
+    }
+
     private static String requireReason(String reason) {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("A reason is required");
@@ -516,7 +627,15 @@ public class ClientContractLifecycleService {
         return text.length() <= 80 ? text : text.substring(0, 79) + "...";
     }
 
-    private static Json snapshot(ClientContract c, List<ContractServiceRate> rates) {
+    private static Json snapshot(ClientContract c, List<ContractServiceRate> rates, List<ContractLane> lanes) {
+        String laneDigest = lanes.stream().sorted(java.util.Comparator.comparing(ContractLane::laneCode))
+                .map(l -> l.laneCode() + ":" + place(l.origin()) + ">" + place(l.destination())
+                        + (l.freightMode() == null ? "" : ":" + l.freightMode())
+                        + (l.loadType() == null ? "" : ":" + l.loadType()) + ":" + l.rateBasis()
+                        + (l.rate() == null ? "" : "=" + l.rate().toPlainString())
+                        + (l.slabs().isEmpty() ? "" : ":" + l.slabs().size() + " slabs")
+                        + (l.transitDays() == null ? "" : ":" + l.transitDays() + "d"))
+                .collect(java.util.stream.Collectors.joining("; "));
         StringBuilder services = new StringBuilder();
         for (ContractServiceRate r : rates.stream().sorted(java.util.Comparator.comparing(
                 ContractServiceRate::serviceCode)).toList()) {
@@ -537,6 +656,12 @@ public class ClientContractLifecycleService {
                 "transportTaxRatePct", c.transportTaxRatePct().toPlainString(),
                 "warehouseTaxRatePct", c.warehouseTaxRatePct().toPlainString(),
                 "storageUnitsPerPallet", String.valueOf(c.storageUnitsPerPallet()),
-                "billOnDispatch", String.valueOf(c.billOnDispatch()), "valueAdded", services.toString());
+                "billOnDispatch", String.valueOf(c.billOnDispatch()), "valueAdded", services.toString(),
+                "directOrdersAllowed", String.valueOf(c.directOrdersAllowed()),
+                "allowedLoadTypes", c.allowedLoadTypes(), "lanes", laneDigest);
+    }
+
+    private static String place(ContractLane.Place place) {
+        return place.terminalId() != null ? place.terminalId().toString() : "zone " + place.zone();
     }
 }
