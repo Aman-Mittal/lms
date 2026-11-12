@@ -120,6 +120,22 @@ public class ApprovalCommandService implements ApprovalRequests {
     }
 
     @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean withdraw(String subjectType, UUID subjectId, String action, String reason) {
+        Optional<ApprovalRequest> open = requests.findOpen(TenantContext.requireTenantId(), subjectType, subjectId,
+                action);
+        if (open.isEmpty()) {
+            return false;
+        }
+        UUID caller = actorId();
+        ApprovalRequest saved = requests.save(open.get().withdrawn(caller, reason, Instant.now()));
+        decide(saved, null, "CANCELLED", null, caller, saved.reason());
+        audit.record("APPROVAL_CANCELLED", AUDIT_TYPE, saved.id(), snapshot(open.get()), snapshot(saved));
+        announce(saved);
+        return true;
+    }
+
+    @Override
     @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
     public Optional<ApprovalTicket> openRequest(String subjectType, UUID subjectId, String action) {
         return requests.findOpen(TenantContext.requireTenantId(), subjectType, subjectId, action)
