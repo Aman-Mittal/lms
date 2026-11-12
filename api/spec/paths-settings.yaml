@@ -94,6 +94,12 @@
         required: false
         schema: { $ref: "#/components/schemas/FreightMode" }
         description: How the freight moves; only combination profiles naming a mode look at it. Omit for none.
+      - name: contractId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+        description: The client contract's family id (`familyId` of any of its versions), for settings
+          that opt into the CONTRACT scope. Omit for none.
     responses:
       "200":
         description: One entry per setting, in key order.

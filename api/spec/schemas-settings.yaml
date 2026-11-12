@@ -18,15 +18,17 @@
 
 SettingScopeType:
   type: string
-  enum: [PLATFORM, ORG_DEFAULT, ORG_UNIT, VEHICLE, CUSTOMER, VENDOR, COMBINATION, USER]
+  enum: [PLATFORM, ORG_DEFAULT, ORG_UNIT, VEHICLE, CUSTOMER, VENDOR, COMBINATION, CONTRACT, USER]
   description: |
     Where a profile applies, in ascending precedence. PLATFORM profiles belong
     to no tenant: the platform operator's values for every tenant, globally or
     per jurisdiction. ORG_DEFAULT has no scope id; ORG_UNIT names any unit
     (country, zone, branch...: a deeper one wins); CUSTOMER and VENDOR name a
     business partner of that type; COMBINATION names `conditions` instead of a
-    scope id, and a tenant may keep many; USER profiles are a person's own
-    preferences.
+    scope id, and a tenant may keep many; CONTRACT names a client contract by
+    its family id (the contract as a person means it, shared by every version
+    of it, so a profile survives a successor) and beats a COMBINATION; USER
+    profiles are a person's own preferences.
 
 SettingCategory:
   type: string
@@ -251,7 +253,7 @@ CreateSettingProfileRequest:
     scopeId:
       type: string
       format: uuid
-      description: The unit, customer, vendor or vehicle; omitted for ORG_DEFAULT and PLATFORM.
+      description: The unit, customer, vendor, vehicle or contract family; omitted for ORG_DEFAULT and PLATFORM.
     country:
       type: string
       maxLength: 2
