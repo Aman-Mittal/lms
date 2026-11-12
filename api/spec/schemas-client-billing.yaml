@@ -27,11 +27,13 @@ ClientContractServiceRate:
 ClientContract:
   type: object
   description: |
-    One version of what a client pays. Immutable once published; a
-    correction is a successor version, which closes this one the day
-    before it starts.
+    One version of what a client pays. A DRAFT is editable and deletable;
+    once in force (ACTIVE) it is immutable, and a correction is a successor
+    version, which closes this one the day before it starts. The only change
+    an active version accepts is an approved extension of `validTill`.
   properties:
     id: { type: string, format: uuid }
+    orgUnitId: { type: string, format: uuid }
     code: { type: string }
     clientPartnerId: { type: string, format: uuid }
     currency: { type: string }
@@ -40,6 +42,27 @@ ClientContract:
       type: string
       format: date
       description: Inclusive. Null while this is the version in force.
+    validTill:
+      type: string
+      format: date
+      description: The last day the contract applies; null for no end date.
+    status:
+      type: string
+      enum: [DRAFT, PENDING_VERIFICATION, ACTIVE]
+      description: Where the version is in its life, as stored.
+    state:
+      type: string
+      enum: [DRAFT, PENDING_VERIFICATION, ACTIVE, EXPIRED]
+      description: |
+        What to show: `status`, or EXPIRED for an ACTIVE version past its
+        `validTill`. Derived on every read; there is no job.
+    rejectionReason:
+      type: string
+      description: Why verification was last refused, while the contract is back in DRAFT.
+    version:
+      type: integer
+      format: int64
+      description: The version to send in `If-Match` (also the `ETag` of the single read).
     transportRatePerKg: { type: number }
     transportMinimumCharge: { type: number }
     storageRatePerPalletDay: { type: number }
@@ -64,11 +87,13 @@ ClientContract:
         trip is dispatched; false when it waits for each consignment's
         confirmed proof of delivery.
 
-PublishClientContractRequest:
+ClientContractDraftRequest:
   type: object
   properties:
     orgUnitId: { type: string, format: uuid }
-    code: { type: string }
+    code:
+      type: string
+      description: Omitted, the next number of the tenant's CONTRACT series.
     clientPartnerId:
       type: string
       format: uuid
@@ -77,7 +102,12 @@ PublishClientContractRequest:
     effectiveFrom:
       type: string
       format: date
-      description: Publishing closes the incumbent version the day before.
+      description: |
+        Verification closes the incumbent version the day before.
+    validTill:
+      type: string
+      format: date
+      description: Optional last day of the contract; not before `effectiveFrom`.
     transportRatePerKg: { type: number, minimum: 0 }
     transportMinimumCharge: { type: number, minimum: 0 }
     storageRatePerPalletDay: { type: number, minimum: 0 }
@@ -107,7 +137,7 @@ PublishClientContractRequest:
         each day divided by this, rounded up.
     valueAddedServices:
       type: array
-      description: Published with the version and immutable with it.
+      description: Part of the version; replaced whole while a draft, immutable once in force.
       items: { $ref: "#/components/schemas/ClientContractServiceRate" }
     billOnDispatch:
       type: boolean
@@ -118,7 +148,107 @@ PublishClientContractRequest:
         default), it is charged when the trip completes and invoiced only
         once each of the client's consignments on the trip has a confirmed
         proof of delivery or has been marked billable by hand.
-  required: [orgUnitId, code, clientPartnerId, effectiveFrom]
+  required: [orgUnitId, clientPartnerId, effectiveFrom]
+
+
+ReviseClientContractRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    code:
+      type: string
+      description: Omitted, the draft keeps its code.
+    currency: { type: string, default: INR }
+    effectiveFrom:
+      type: string
+      format: date
+      description: Verification closes the incumbent version the day before.
+    validTill:
+      type: string
+      format: date
+      description: Optional last day of the contract; not before `effectiveFrom`.
+    transportRatePerKg: { type: number, minimum: 0 }
+    transportMinimumCharge: { type: number, minimum: 0 }
+    storageRatePerPalletDay: { type: number, minimum: 0 }
+    handlingInRatePerPallet: { type: number, minimum: 0 }
+    handlingOutRatePerPallet: { type: number, minimum: 0 }
+    transportTaxRatePct:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: |
+        Tax on transport lines, in percent, at most three decimals. Omitted
+        is no tax. Applied per invoice line and rounded half-up to two
+        decimals on each line.
+    warehouseTaxRatePct:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: Tax on storage, handling and value-added service lines, in
+        percent, with the same per-line rounding. Omitted is no tax.
+    storageUnitsPerPallet:
+      type: integer
+      minimum: 1
+      default: 1
+      description: |
+        Units of the client's SKUs that make one pallet position. Storage
+        computed from the warehouse ledger is the units held at the end of
+        each day divided by this, rounded up.
+    valueAddedServices:
+      type: array
+      description: Replaces the draft list whole.
+      items: { $ref: "#/components/schemas/ClientContractServiceRate" }
+    billOnDispatch:
+      type: boolean
+      default: false
+      description: |
+        Advance billing. When true, a trip's transport is charged when the
+        trip is dispatched and is invoiceable at once. When false (the
+        default), it is charged when the trip completes and invoiced only
+        once each of the client's consignments on the trip has a confirmed
+        proof of delivery or has been marked billable by hand.
+  required: [orgUnitId, effectiveFrom]
+
+
+ClientContractChecklistItem:
+  type: object
+  properties:
+    code:
+      type: string
+      enum: [CUSTOMER_TRADING, EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT]
+    required:
+      type: boolean
+      description: Whether the tenant's setting makes this rule a condition of verification.
+    passed: { type: boolean }
+    message:
+      type: string
+      description: Why the contract fails the rule; absent when it passes.
+  required: [code, required, passed]
+
+ClientContractExtensionRequest:
+  type: object
+  properties:
+    validTill:
+      type: string
+      format: date
+      description: The new end date; later than the current one.
+    reason: { type: string, maxLength: 500 }
+  required: [validTill, reason]
+
+ClientContractChargeAdditionRequest:
+  type: object
+  properties:
+    serviceCode: { type: string }
+    unit: { type: string }
+    rate: { type: number, minimum: 0 }
+    effectiveFrom:
+      type: string
+      format: date
+      description: |
+        The day the successor version starts; after the current version began
+        and not in the past.
+    reason: { type: string, maxLength: 500 }
+  required: [serviceCode, unit, rate, effectiveFrom, reason]
 
 BillingEligibilityRequest:
   type: object

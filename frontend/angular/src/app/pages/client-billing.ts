@@ -19,6 +19,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiProblem, ClientAgeingView, ClientInvoiceDetail, LmsGateway, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { ContractLifecycle } from './contract-lifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
@@ -59,7 +60,8 @@ export class BillingTable {
 }
 
 const CONTRACT_COLUMNS: Array<[string, string]> = [
-  ['code', 'Contract'], ['effectiveFrom', 'From'], ['effectiveTo', 'To'], ['currency', 'Currency'],
+  ['code', 'Contract'], ['state', 'State'], ['effectiveFrom', 'From'], ['effectiveTo', 'To'], ['validTill', 'Ends'],
+  ['currency', 'Currency'],
   ['transportRatePerKg', 'Transport / kg'], ['handlingInRatePerPallet', 'Handling in / pallet'],
   ['handlingOutRatePerPallet', 'Handling out / pallet'], ['storageRatePerPalletDay', 'Storage / pallet-day'],
   ['billing', 'Transport billed'],
@@ -85,7 +87,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
  */
 @Component({
   selector: 'app-client-desk',
-  imports: [FormsModule, BillingTable, CreditPositionPanel, CreditOverride],
+  imports: [FormsModule, BillingTable, ContractLifecycle, CreditPositionPanel, CreditOverride],
   template: `
     <section data-testid="client-desk">
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -99,6 +101,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
       } @else {
         <app-billing-table [rows]="contracts()" [columns]="contractColumns" rowTestId="contract-row" />
       }
+      <app-contract-lifecycle [clientId]="clientId()" [contracts]="contracts()" (changed)="refresh()" />
 
       <h2>Charges</h2>
       <label>

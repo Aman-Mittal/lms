@@ -23,11 +23,13 @@ import java.util.UUID;
 
 import com.lms.clientbilling.command.ClientBillingRunService;
 import com.lms.clientbilling.command.ClientChargeService;
+import com.lms.clientbilling.command.ClientContractLifecycleService;
 import com.lms.clientbilling.command.ClientContractService;
 import com.lms.clientbilling.command.ClientCreditNoteService;
 import com.lms.clientbilling.command.ClientPaymentService;
 import com.lms.clientbilling.command.ClientStorageService;
 import com.lms.clientbilling.command.ConsignmentBillingService;
+import com.lms.approvals.api.ApprovalTicket;
 import com.lms.clientbilling.command.domain.ClientContract;
 import com.lms.clientbilling.command.domain.ServiceType;
 import com.lms.clientbilling.query.ClientAgeingQueryService;
@@ -44,16 +46,22 @@ import com.lms.clientbilling.query.ClientStorageView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -70,6 +78,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ClientBillingController {
 
     private final ClientContractService contracts;
+    private final ClientContractLifecycleService lifecycle;
     private final ClientChargeService charges;
     private final ClientBillingRunService runs;
     private final ClientCreditNoteService creditNotes;
@@ -79,7 +88,8 @@ public class ClientBillingController {
     private final ClientAgeingQueryService ageing;
     private final ConsignmentBillingService consignmentBilling;
 
-    public ClientBillingController(ClientContractService contracts, ClientChargeService charges,
+    public ClientBillingController(ClientContractService contracts,
+                                   ClientContractLifecycleService lifecycle, ClientChargeService charges,
                                    ClientBillingRunService runs,
                                    ClientCreditNoteService creditNotes,
                                    ClientPaymentService payments,
@@ -89,6 +99,7 @@ public class ClientBillingController {
                                    ConsignmentBillingService consignmentBilling) {
         this.consignmentBilling = consignmentBilling;
         this.contracts = contracts;
+        this.lifecycle = lifecycle;
         this.charges = charges;
         this.runs = runs;
         this.creditNotes = creditNotes;
@@ -98,25 +109,107 @@ public class ClientBillingController {
         this.queries = queries;
     }
 
+    /** Starts a draft version; it applies to nothing until it is verified. */
     @PostMapping("/contracts")
-    public ResponseEntity<IdResponse> publishContract(
-            @Valid @RequestBody PublishContractRequest request) {
-        UUID id = contracts.publishContract(request.orgUnitId(), request.code(),
-                request.clientPartnerId(), request.currency(), request.effectiveFrom(),
-                new ClientContract.Rates(request.transportRatePerKg(),
-                        request.transportMinimumCharge(), request.storageRatePerPalletDay(),
-                        request.handlingInRatePerPallet(), request.handlingOutRatePerPallet(),
-                        request.transportTaxRatePct(), request.warehouseTaxRatePct(),
-                        request.storageUnitsPerPallet()),
-                request.valueAddedServices() == null ? List.of()
-                        : request.valueAddedServices().stream()
-                        .map(s -> new ClientContractService.ServiceRateTerm(s.serviceCode(),
-                                s.unit(), s.rate()))
-                        .toList(),
-                Boolean.TRUE.equals(request.billOnDispatch()));
-        return ResponseEntity.created(URI.create("/api/v1/client-billing/clients/"
-                        + request.clientPartnerId() + "/contracts"))
+    public ResponseEntity<IdResponse> createContractDraft(
+            @Valid @RequestBody ContractDraftRequest request) {
+        UUID id = lifecycle.createDraft(request.orgUnitId(), request.code(),
+                request.clientPartnerId(), request.currency(), request.effectiveFrom(), request.validTill(),
+                ratesOf(request.transportRatePerKg(), request.transportMinimumCharge(),
+                        request.storageRatePerPalletDay(), request.handlingInRatePerPallet(),
+                        request.handlingOutRatePerPallet(), request.transportTaxRatePct(),
+                        request.warehouseTaxRatePct(), request.storageUnitsPerPallet()),
+                termsOf(request.valueAddedServices()), Boolean.TRUE.equals(request.billOnDispatch()));
+        return ResponseEntity.created(URI.create("/api/v1/client-billing/contracts/" + id))
                 .body(new IdResponse(id));
+    }
+
+    /** One contract version, its version as the {@code ETag} an edit sends back in {@code If-Match}. */
+    @GetMapping("/contracts/{id}")
+    public ResponseEntity<ClientContractView> contract(@PathVariable UUID id) {
+        ClientContractView view = queries.findContract(id)
+                .orElseThrow(() -> new ResourceNotFoundException("ClientContract", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
+    }
+
+    /** Replaces a draft's content; 409 {@code client-contract-not-draft} once it has been submitted. */
+    @PutMapping("/contracts/{id}")
+    public ResponseEntity<Void> reviseContractDraft(
+            @PathVariable UUID id, @RequestHeader(value = "If-Match", required = false) String ifMatch,
+            @Valid @RequestBody ReviseContractRequest request) {
+        lifecycle.reviseDraft(id, versionOf(ifMatch), request.orgUnitId(), request.code(), request.currency(),
+                request.effectiveFrom(), request.validTill(),
+                ratesOf(request.transportRatePerKg(), request.transportMinimumCharge(),
+                        request.storageRatePerPalletDay(), request.handlingInRatePerPallet(),
+                        request.handlingOutRatePerPallet(), request.transportTaxRatePct(),
+                        request.warehouseTaxRatePct(), request.storageUnitsPerPallet()),
+                termsOf(request.valueAddedServices()), Boolean.TRUE.equals(request.billOnDispatch()));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Deletes a draft. */
+    @DeleteMapping("/contracts/{id}")
+    public ResponseEntity<Void> deleteContractDraft(
+            @PathVariable UUID id, @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        lifecycle.deleteDraft(id, versionOf(ifMatch));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Every checklist rule, whether the tenant requires it and whether the contract passes it. */
+    @GetMapping("/contracts/{id}/checklist")
+    public List<ClientContractLifecycleService.ChecklistItem> checklist(@PathVariable UUID id) {
+        return lifecycle.checklistOf(id);
+    }
+
+    /**
+     * Asks for the draft to be verified: 202 with the approval request, or 204
+     * when the tenant's policy asks for none and the contract is in force.
+     */
+    @PostMapping("/contracts/{id}/verification-requests")
+    public ResponseEntity<ApprovalTicket> requestVerification(
+            @PathVariable UUID id, @RequestHeader(value = "If-Match", required = false) String ifMatch) {
+        return answer(lifecycle.requestVerification(id, versionOf(ifMatch)));
+    }
+
+    /** Asks to move the end date of a contract in force later: 202 with the request, or 204 when done. */
+    @PostMapping("/contracts/{id}/extensions")
+    public ResponseEntity<ApprovalTicket> requestExtension(
+            @PathVariable UUID id, @Valid @RequestBody ExtensionRequest request) {
+        return answer(lifecycle.requestExtension(id, request.validTill(), request.reason()));
+    }
+
+    /** Asks to add a value-added charge from a date: 202 with the request, or 204 when done. */
+    @PostMapping("/contracts/{id}/charge-additions")
+    public ResponseEntity<ApprovalTicket> requestChargeAddition(
+            @PathVariable UUID id, @Valid @RequestBody ChargeAdditionRequest request) {
+        return answer(lifecycle.requestChargeAddition(id, request.serviceCode(), request.unit(), request.rate(),
+                request.effectiveFrom(), request.reason()));
+    }
+
+    private static ResponseEntity<ApprovalTicket> answer(ClientContractLifecycleService.Outcome outcome) {
+        if (outcome.approval() != null) {
+            return ResponseEntity.accepted()
+                    .location(URI.create("/api/v1/approvals/" + outcome.approval().id()))
+                    .body(outcome.approval());
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    private static long versionOf(String ifMatch) {
+        return IfMatch.version(ifMatch, "the contract's version");
+    }
+
+    private static ClientContract.Rates ratesOf(BigDecimal transport, BigDecimal minimum, BigDecimal storage,
+                                                BigDecimal handlingIn, BigDecimal handlingOut,
+                                                BigDecimal transportTax, BigDecimal warehouseTax, Integer units) {
+        return new ClientContract.Rates(transport, minimum, storage, handlingIn, handlingOut, transportTax,
+                warehouseTax, units);
+    }
+
+    private static List<ClientContractService.ServiceRateTerm> termsOf(List<ValueAddedServiceRate> rates) {
+        return rates == null ? List.of() : rates.stream()
+                .map(s -> new ClientContractService.ServiceRateTerm(s.serviceCode(), s.unit(), s.rate()))
+                .toList();
     }
 
     @GetMapping("/clients/{clientId}/contracts")
@@ -262,21 +355,51 @@ public class ClientBillingController {
         return queries.margins(period, cursor, limit);
     }
 
-    public record PublishContractRequest(@NotNull UUID orgUnitId,
-                                         @NotBlank String code,
-                                         @NotNull UUID clientPartnerId,
-                                         String currency,
-                                         @NotNull LocalDate effectiveFrom,
-                                         BigDecimal transportRatePerKg,
-                                         BigDecimal transportMinimumCharge,
-                                         BigDecimal storageRatePerPalletDay,
-                                         BigDecimal handlingInRatePerPallet,
-                                         BigDecimal handlingOutRatePerPallet,
-                                         BigDecimal transportTaxRatePct,
-                                         BigDecimal warehouseTaxRatePct,
-                                         Integer storageUnitsPerPallet,
-                                         List<@Valid ValueAddedServiceRate> valueAddedServices,
-                                         Boolean billOnDispatch) {
+    /** @param code optional: the next number of the tenant's CONTRACT series when omitted */
+    public record ContractDraftRequest(@NotNull UUID orgUnitId,
+                                       String code,
+                                       @NotNull UUID clientPartnerId,
+                                       String currency,
+                                       @NotNull LocalDate effectiveFrom,
+                                       LocalDate validTill,
+                                       BigDecimal transportRatePerKg,
+                                       BigDecimal transportMinimumCharge,
+                                       BigDecimal storageRatePerPalletDay,
+                                       BigDecimal handlingInRatePerPallet,
+                                       BigDecimal handlingOutRatePerPallet,
+                                       BigDecimal transportTaxRatePct,
+                                       BigDecimal warehouseTaxRatePct,
+                                       Integer storageUnitsPerPallet,
+                                       List<@Valid ValueAddedServiceRate> valueAddedServices,
+                                       Boolean billOnDispatch) {
+    }
+
+    /** A draft's content, replaced whole; the client is not part of it. */
+    public record ReviseContractRequest(@NotNull UUID orgUnitId,
+                                        String code,
+                                        String currency,
+                                        @NotNull LocalDate effectiveFrom,
+                                        LocalDate validTill,
+                                        BigDecimal transportRatePerKg,
+                                        BigDecimal transportMinimumCharge,
+                                        BigDecimal storageRatePerPalletDay,
+                                        BigDecimal handlingInRatePerPallet,
+                                        BigDecimal handlingOutRatePerPallet,
+                                        BigDecimal transportTaxRatePct,
+                                        BigDecimal warehouseTaxRatePct,
+                                        Integer storageUnitsPerPallet,
+                                        List<@Valid ValueAddedServiceRate> valueAddedServices,
+                                        Boolean billOnDispatch) {
+    }
+
+    public record ExtensionRequest(@NotNull LocalDate validTill, @NotBlank @Size(max = 500) String reason) {
+    }
+
+    public record ChargeAdditionRequest(@NotBlank String serviceCode,
+                                        @NotBlank String unit,
+                                        @NotNull @PositiveOrZero BigDecimal rate,
+                                        @NotNull LocalDate effectiveFrom,
+                                        @NotBlank @Size(max = 500) String reason) {
     }
 
     public record BillingEligibilityRequest(@NotBlank String reason) {

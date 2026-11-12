@@ -49,7 +49,7 @@ Feature: Every refusal is a problem document a client can branch on
       | planItinerary              | /api/v1/itineraries                     | shipmentRef, legs                                   |
       | publishRailTariff          | /api/v1/rail-tariffs                    | code, carrierPartnerId, originTerminalId, effectiveFrom |
       | publishMilkRunRoute        | /api/v1/milk-run-routes                 | code, plantTerminalId, stops, days, departureTime   |
-      | publishClientContract      | /api/v1/client-billing/contracts        | orgUnitId, clientPartnerId, code, effectiveFrom     |
+      | createClientContractDraft  | /api/v1/client-billing/contracts        | orgUnitId, clientPartnerId, effectiveFrom           |
       | publishLtlRateCard         | /api/v1/ltl/rate-cards                  | code, originZone, destinationZone, rateBasis, rateAmount, kgPerCft |
       | ingestPings                | /api/v1/telematics/pings                | pings                                               |
       | createAccessPolicy         | /api/v1/access-policies                 | code, action, effect, description, condition        |
