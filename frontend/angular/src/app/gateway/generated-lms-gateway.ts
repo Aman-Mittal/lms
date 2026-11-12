@@ -130,6 +130,56 @@ import type {
   NumberSeriesView, NumberVerdict, NumberYearCode,
 } from './lms-gateway';
 
+// Yard gate and trip stops
+import {
+  GatePass as ApiGatePass, GatePurpose as ApiGatePurpose, GateVisit as ApiGateVisit, YardGateService,
+} from '../api';
+import type { TripStop as ApiTripStop } from '../api';
+import type {
+  GateEntryDraft, GateExitDraft, GatePassDraft, GatePassFilter, GatePassPage, GatePassQuery, GatePassVerdict,
+  GatePassView, GateRegisterFilter, GateVisitPage, GateVisitView, TripStopView,
+} from './lms-gateway';
+
+/** Minutes inside as people say them: `45 min`, `2 h 5 min`. */
+function dwellOf(minutes: number | undefined): string {
+  if (minutes === undefined || minutes === null) {
+    return '';
+  }
+  return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
+}
+
+function gateVisitOf(v: ApiGateVisit): GateVisitView {
+  return {
+    id: text(v.id), terminalCode: text(v.terminalCode), registrationNo: text(v.registrationNo),
+    driverName: text(v.driverName), purpose: text(v.purpose), tripNo: text(v.tripNo), gatePassNo: text(v.gatePassNo),
+    status: text(v.status), enteredAt: instant(v.enteredAt), exitedAt: instant(v.exitedAt), dwell: dwellOf(v.dwellMinutes),
+    entrySeals: (v.entrySealNos ?? []).join(', '), exitSeals: (v.exitSealNos ?? []).join(', '),
+    weightRef: text(v.exitWeightRef || v.entryWeightRef), remarks: text(v.exitRemarks || v.entryRemarks),
+  };
+}
+
+function gatePassOf(p: ApiGatePass): GatePassView {
+  return {
+    id: text(p.id), passNo: text(p.passNo), terminalCode: text(p.terminalCode), registrationNo: text(p.registrationNo),
+    tripNo: text(p.tripNo), purpose: text(p.purpose), validFrom: instant(p.validFrom), validUntil: instant(p.validUntil),
+    status: text(p.status), expired: p.expired === true, cancelReason: text(p.cancelReason),
+  };
+}
+
+function tripStopOf(s: ApiTripStop): TripStopView {
+  return {
+    id: text(s.id), seq: s.seq ?? 0, kind: text(s.kind), terminalCode: text(s.terminalCode),
+    terminalName: text(s.terminalName), plannedArrivalAt: instant(s.plannedArrivalAt), status: text(s.status),
+    arrivedAt: instant(s.arrivedAt), departedAt: instant(s.departedAt), skipReason: text(s.skipReason),
+    outOfOrder: s.outOfOrder === true, lateMinutes: s.lateMinutes ?? 0,
+  };
+}
+
+/** A `datetime-local` value (the browser's zone) as an instant. */
+function instantOf(local: string): string {
+  return new Date(local).toISOString();
+}
+
 /** An instant as the React console shows one: `YYYY-MM-DD HH:mm` in UTC. */
 function instant(v: string | null | undefined): string {
   return v ? text(new Date(v)) : '';
@@ -648,7 +698,6 @@ function conditionsRequest(c: SettingConditions): SettingCombinationConditions {
     priority: c.priority,
   };
 }
-
 function orgUnitViewOf(u: OrgUnit): OrgUnitView {
   return {
     id: text(u.id), parentId: text(u.parentId), slug: text(u.slug), path: text(u.path), name: text(u.name),
@@ -2000,6 +2049,97 @@ export class GeneratedLmsGateway extends LmsGateway {
     return this.call(this.credit.rejectCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }),
       () => undefined);
   }
+
+  // Yard gate
+  private readonly gate = inject(YardGateService);
+
+  openGateVisits(): Promise<GateVisitView[]> {
+    return this.call(this.gate.listOpenGateVisits({}), (visits) => visits.map(gateVisitOf));
+  }
+
+  gateVisits(filter: GateRegisterFilter, cursor?: string): Promise<GateVisitPage> {
+    return this.call(this.gate.listGateVisits({
+      status: filter.status || undefined, q: filter.q.trim() || undefined, cursor: cursor || undefined, limit: 25,
+    }), (s) => ({ items: s.items.map(gateVisitOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null }));
+  }
+
+  recordGateEntry(draft: GateEntryDraft): Promise<string> {
+    return this.call(this.gate.recordGateEntry({
+      gateEntryRequest: {
+        terminalId: draft.terminalId || undefined, vehicleId: draft.vehicleId || undefined,
+        registrationNo: draft.vehicleId ? undefined : blankAsAbsent(draft.registrationNo),
+        driverId: draft.driverId || undefined, driverName: draft.driverId ? undefined : blankAsAbsent(draft.driverName),
+        purpose: draft.purpose as unknown as ApiGatePurpose, tripId: draft.tripId || undefined,
+        gatePassNo: blankAsAbsent(draft.gatePassNo), sealNos: draft.sealNos.length ? draft.sealNos : undefined,
+        weightRef: blankAsAbsent(draft.weightRef), remarks: blankAsAbsent(draft.remarks),
+      },
+    }), (r) => text(r.id));
+  }
+
+  recordGateExit(visitId: string, draft: GateExitDraft): Promise<void> {
+    return this.call(this.gate.recordGateExit({
+      id: visitId,
+      gateExitRequest: {
+        sealNos: draft.sealNos.length ? draft.sealNos : undefined, weightRef: blankAsAbsent(draft.weightRef),
+        remarks: blankAsAbsent(draft.remarks),
+      },
+    }), () => undefined);
+  }
+
+  gatePasses(filter: GatePassFilter, cursor?: string): Promise<GatePassPage> {
+    return this.call(this.gate.listGatePasses({
+      status: filter.status || undefined, q: filter.q.trim() || undefined, cursor: cursor || undefined, limit: 25,
+    }), (s) => ({ items: s.items.map(gatePassOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null }));
+  }
+
+  issueGatePass(draft: GatePassDraft): Promise<string> {
+    return this.call(this.gate.issueGatePass({
+      issueGatePassRequest: {
+        terminalId: draft.terminalId || undefined, vehicleId: draft.vehicleId || undefined,
+        registrationNo: draft.vehicleId ? undefined : blankAsAbsent(draft.registrationNo),
+        tripId: draft.tripId || undefined, purpose: draft.purpose as unknown as ApiGatePurpose,
+        validFrom: instantOf(draft.validFrom), validUntil: instantOf(draft.validUntil),
+        passNo: blankAsAbsent(draft.passNo),
+      },
+    }), (r) => text(r.id));
+  }
+
+  async cancelGatePass(id: string, reason: string): Promise<void> {
+    // The version is read fresh: a cancellation must not rest on what the list showed earlier.
+    const pass = await this.call(this.gate.getGatePass({ id }), (p) => p);
+    return this.call(this.gate.cancelGatePass({
+      id, ifMatch: `"${pass.version ?? 0}"`, cancelGatePassRequest: { reason: reason.trim() },
+    }), () => undefined);
+  }
+
+  checkGatePass(query: GatePassQuery): Promise<GatePassVerdict> {
+    return this.call(this.gate.checkGatePass({
+      terminalId: query.terminalId || undefined, vehicleId: query.vehicleId || undefined,
+      registrationNo: query.vehicleId ? undefined : blankAsAbsent(query.registrationNo),
+      tripId: query.tripId || undefined, passNo: blankAsAbsent(query.passNo),
+    }), (v) => ({
+      admits: v.admits, passRequired: v.passRequired, passNo: text(v.passNo), code: text(v.code), message: text(v.message),
+    }));
+  }
+
+  // Trip stops
+  tripStops(tripId: string): Promise<TripStopView[]> {
+    return this.call(this.trips.getTripStops({ id: tripId }), (s) => s.stops.map(tripStopOf));
+  }
+
+  arriveAtStop(tripId: string, stopId: string): Promise<void> {
+    return this.call(this.trips.arriveAtTripStop({ id: tripId, stopId, milestoneRequest: {} }), () => undefined);
+  }
+
+  departFromStop(tripId: string, stopId: string): Promise<void> {
+    return this.call(this.trips.departFromTripStop({ id: tripId, stopId, milestoneRequest: {} }), () => undefined);
+  }
+
+  skipStop(tripId: string, stopId: string, reason: string): Promise<void> {
+    return this.call(this.trips.skipTripStop({ id: tripId, stopId, skipTripStopRequest: { reason: reason.trim() } }),
+      () => undefined);
+  }
+
 
   // Number series
   private readonly numbering = inject(NumberSeriesService);
