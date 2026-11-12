@@ -110,7 +110,9 @@ public record ExceptionTicket(
         /** A trip's projected arrival slipped past its committed one by more than the tolerance. */
         ETA_SLIP_DETECTED,
         /** A reefer's temperature stayed outside its band for longer than the tolerance. */
-        TEMPERATURE_EXCURSION_DETECTED
+        TEMPERATURE_EXCURSION_DETECTED,
+        /** A trip's vehicle reached a planned stop later than its tolerance allows. */
+        STOP_LATE_DETECTED
     }
 
     /** What a ticket is about, when it is not (only) a trip. */
@@ -122,7 +124,9 @@ public record ExceptionTicket(
         /** An advance shipping notice being received into a warehouse. */
         ASN,
         /** An order being picked out of a warehouse. */
-        OUTBOUND_ORDER
+        OUTBOUND_ORDER,
+        /** One planned stop of a trip. */
+        TRIP_STOP
     }
 
     /**

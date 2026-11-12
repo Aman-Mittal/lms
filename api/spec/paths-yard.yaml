@@ -1,0 +1,338 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+/api/v1/gate/entries:
+  post:
+    tags: [Yard gate]
+    operationId: recordGateEntry
+    summary: A vehicle enters a site
+    description: |
+      Requires `GATE_REGISTER`, held to the site's organisational unit by the
+      access policies. The site is an organisational unit (`orgUnitId`) or one
+      of its terminals (`terminalId`, whose own unit is then the site; naming
+      both requires they agree, `gate-terminal-not-in-unit`). The vehicle is a
+      registered one (`vehicleId`) or a visitor's typed `registrationNo`;
+      registration numbers are compared upper case with no blanks.
+
+      A second entry while the vehicle is inside is refused,
+      `gate-entry-already-open`. Where the site's unit sets
+      `yard.gate.passRequired`, or a `gatePassNo` is presented, the pass is
+      checked and consumed in the same transaction: `gate-pass-required`,
+      `gate-pass-expired`, `gate-pass-used`, `gate-pass-cancelled` or
+      `gate-pass-trip-mismatch`. A `tripId` links the visit to a trip, whose own
+      vehicle must be the one entering (`gate-trip-vehicle-mismatch`). A trip's
+      own gate-in (`POST /trips/{id}/gate-in`) enters its vehicle here too.
+      Audited (`GATE_ENTRY`) and announced as `GATE_ENTRY_RECORDED`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GateEntryRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/gate/visits:
+  get:
+    tags: [Yard gate]
+    operationId: listGateVisits
+    summary: The gate register, newest entry first
+    description: |
+      Requires `GATE_REGISTER` or `GATE_PASS_MANAGE`. Keyset-paged on the entry
+      time and id. `q` matches the registration number.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - name: orgUnitId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: terminalId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: purpose
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/GatePurpose" }
+      - name: tripId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/q"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of visits.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GateVisitSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/gate/visits/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the visit.
+  get:
+    tags: [Yard gate]
+    operationId: getGateVisit
+    summary: One visit
+    responses:
+      "200":
+        description: The visit.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GateVisit" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/gate/visits/{id}/exit:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the visit.
+  post:
+    tags: [Yard gate]
+    operationId: recordGateExit
+    summary: A vehicle leaves; its visit is closed
+    description: |
+      Requires `GATE_REGISTER`. Closes the open visit with the exit time, seal
+      numbers and weight reference; a visit already closed is
+      `gate-visit-closed` and an exit before the entry `gate-exit-before-entry`.
+      Audited (`GATE_EXIT`) and announced as `GATE_EXIT_RECORDED` with the
+      minutes spent inside. The body may be empty.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GateExitRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/gate/open:
+  get:
+    tags: [Yard gate]
+    operationId: listOpenGateVisits
+    summary: Who is inside now
+    description: |
+      Requires `GATE_REGISTER` or `GATE_PASS_MANAGE`. The open visits, longest
+      inside first, at most 500, optionally for one unit or terminal. `dwellMinutes`
+      is the time inside so far.
+    parameters:
+      - name: orgUnitId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: terminalId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+    responses:
+      "200":
+        description: The open visits.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/GateVisit" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/gate/passes:
+  get:
+    tags: [Yard gate]
+    operationId: listGatePasses
+    summary: Gate passes, newest first
+    description: |
+      Requires `GATE_REGISTER` or `GATE_PASS_MANAGE`. Keyset-paged on the issue
+      time and id. `q` matches the pass number or the registration number.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - name: orgUnitId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/q"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of passes.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatePassSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Yard gate]
+    operationId: issueGatePass
+    summary: Issue a gate pass for a vehicle
+    description: |
+      Requires `GATE_PASS_MANAGE`, held to the site's unit. For a registered
+      vehicle or a visitor's registration number, a purpose and a validity
+      window, optionally for a trip. The number is drawn from the `GATE_PASS`
+      number series covering the unit, in this transaction; where none covers
+      it the issuer gives `passNo` (`gate-pass-number-required`, and
+      `gate-pass-number-taken` for a repeat). A window that does not end after
+      it starts is `gate-pass-window-invalid`. Audited (`GATE_PASS_ISSUED`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/IssueGatePassRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/gate/passes/check:
+  get:
+    tags: [Yard gate]
+    operationId: checkGatePass
+    summary: What the gate would decide for a vehicle
+    description: |
+      Requires `GATE_REGISTER` or `GATE_PASS_MANAGE`. The verdict of the entry's
+      own pass rule for a vehicle (`vehicleId` or `registrationNo`) at a site
+      (`orgUnitId` or `terminalId`) at `at` (now by default), with the pass
+      presented (`passNo`) or, without one, the vehicle's passes searched.
+      Nothing is consumed or written. Always 200: a refusal is in the body.
+    parameters:
+      - name: orgUnitId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: terminalId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: vehicleId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: registrationNo
+        in: query
+        required: false
+        schema: { type: string, maxLength: 30 }
+      - name: tripId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: passNo
+        in: query
+        required: false
+        schema: { type: string, maxLength: 60 }
+      - name: at
+        in: query
+        required: false
+        schema: { type: string, format: date-time }
+    responses:
+      "200":
+        description: The verdict.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatePassCheck" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/gate/passes/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the pass.
+  get:
+    tags: [Yard gate]
+    operationId: getGatePass
+    summary: One gate pass
+    description: The `ETag` is the version `POST .../cancellation` sends back in `If-Match`.
+    responses:
+      "200":
+        description: The pass.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GatePass" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/gate/passes/{id}/cancellation:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the pass.
+  post:
+    tags: [Yard gate]
+    operationId: cancelGatePass
+    summary: Withdraw a pass that has not been used
+    description: |
+      Requires `GATE_PASS_MANAGE`, held to the pass's unit. A reason is
+      mandatory. A pass that has admitted a vehicle is `gate-pass-used`, one
+      already cancelled `gate-pass-cancelled`. The number goes back to its
+      series with the reason. Audited (`GATE_PASS_CANCELLED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelGatePassRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
