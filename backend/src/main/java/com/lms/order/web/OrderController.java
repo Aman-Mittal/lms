@@ -147,7 +147,7 @@ public class OrderController {
                 request.requestedDeliveryAt(),
                 request.source() == null ? SalesOrder.OrderSource.MANUAL : request.source(),
                 request.freightMode(), request.originHubTerminalId(),
-                request.destinationHubTerminalId());
+                request.destinationHubTerminalId(), request.contractLaneId(), request.loadType());
         return ResponseEntity.created(URI.create("/api/v1/orders/" + id))
                 .body(new IdResponse(id));
     }
@@ -296,11 +296,14 @@ public class OrderController {
             Instant requestedPickupAt,
             Instant requestedDeliveryAt,
             UUID originHubTerminalId,
-            UUID destinationHubTerminalId) {
+            UUID destinationHubTerminalId,
+            /** A lane of the customer's contract in force; omitted, the contract's lane is found at validation. */
+            UUID contractLaneId,
+            @Size(max = 60) String loadType) {
 
         OrderHeaderChange toChange() {
             return new OrderHeaderChange(customerPartnerId, originTerminalId, requestedPickupAt,
-                    requestedDeliveryAt, originHubTerminalId, destinationHubTerminalId);
+                    requestedDeliveryAt, originHubTerminalId, destinationHubTerminalId, contractLaneId, loadType);
         }
     }
 
@@ -344,7 +347,11 @@ public class OrderController {
             FreightMode freightMode,
             /** Required for LTL, refused for FTL. */
             UUID originHubTerminalId,
-            UUID destinationHubTerminalId) {
+            UUID destinationHubTerminalId,
+            /** A lane of the customer's contract in force; omitted, the contract's lane is found at validation. */
+            UUID contractLaneId,
+            /** The load or vehicle type the order is booked for; checked against the contract's allowed types. */
+            @Size(max = 60) String loadType) {
     }
 
     /**
