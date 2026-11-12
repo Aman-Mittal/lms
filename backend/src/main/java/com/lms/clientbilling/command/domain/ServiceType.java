@@ -36,7 +36,13 @@ public enum ServiceType {
      * Labelling, kitting, shrink-wrapping and the like. The unit is whatever
      * the contract's rate for that service code says.
      */
-    VALUE_ADDED(null);
+    VALUE_ADDED(null),
+    /**
+     * A charge raised by hand (finance's manual charges: detention recharged,
+     * loading, a penalty). It carries its own rate and amount, chosen by the
+     * person who raised it, so no contract rate prices it.
+     */
+    MANUAL("UNIT");
 
     private final String unit;
 
@@ -51,6 +57,6 @@ public enum ServiceType {
 
     /** Whether usage of this type may be recorded by hand or by a warehouse feed. */
     public boolean isWarehouseService() {
-        return this != TRANSPORT;
+        return this != TRANSPORT && this != MANUAL;
     }
 }

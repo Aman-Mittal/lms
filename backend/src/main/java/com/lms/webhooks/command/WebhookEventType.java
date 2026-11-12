@@ -45,6 +45,10 @@ public enum WebhookEventType {
     GATE_EXIT_RECORDED,
     TRIP_STOP_ARRIVED,
     TRIP_STOP_DEPARTED,
+    MANUAL_CHARGE_APPROVED,
+    VENDOR_INVOICE_CAPTURED,
+    VENDOR_PAYMENT_RECORDED,
+    VENDOR_ADVANCE_PAID,
     PING;
 
     public boolean subscribable() {

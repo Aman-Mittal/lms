@@ -45,7 +45,9 @@ public record FreightBillLine(
         BigDecimal rate,
         BigDecimal amount,
         @Version Long version,
-        Instant createdAt) {
+        Instant createdAt,
+        /** The manual charge this line is, for a {@code MANUAL_CHARGE} line; null for every other. */
+        UUID manualChargeId) {
 
     public enum ChargeType {
         BASE_FREIGHT,
@@ -55,7 +57,9 @@ public record FreightBillLine(
         ADDITIONAL_DROP,
         FUEL_SURCHARGE,
         /** A milk-run supplier actually collected from, at the route's per-stop fee. */
-        COLLECTION_STOP
+        COLLECTION_STOP,
+        /** A payable charge raised by hand, attached while the bill was an open draft. */
+        MANUAL_CHARGE
     }
 
     public static FreightBillLine of(UUID id, UUID tenantId, UUID billId, int lineNo,
@@ -63,6 +67,14 @@ public record FreightBillLine(
                                      BigDecimal quantity, String unit, BigDecimal rate,
                                      BigDecimal amount) {
         return new FreightBillLine(id, tenantId, billId, lineNo, chargeType, narrative,
-                quantity, unit, rate, amount, null, Instant.now());
+                quantity, unit, rate, amount, null, Instant.now(), null);
+    }
+
+    /** The line a manual payable charge adds to an open draft bill. */
+    public static FreightBillLine forManualCharge(UUID id, UUID tenantId, UUID billId, int lineNo, String narrative,
+                                                  BigDecimal quantity, String unit, BigDecimal rate,
+                                                  BigDecimal amount, UUID manualChargeId) {
+        return new FreightBillLine(id, tenantId, billId, lineNo, ChargeType.MANUAL_CHARGE, narrative, quantity, unit,
+                rate, amount, null, Instant.now(), manualChargeId);
     }
 }
