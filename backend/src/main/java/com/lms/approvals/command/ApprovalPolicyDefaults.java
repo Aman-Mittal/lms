@@ -42,11 +42,17 @@ import com.lms.approvals.api.ApprovalSubjectTypes;
  *       only through an audited approval, and no tenant setting turns that
  *       off. One holder of {@code POD_REVERSAL_APPROVE}, not the requester,
  *       within 72 hours, then it expires.
+ *   <li>{@code CONTRACT_ACTIVATION}, {@code CONTRACT_EXTENSION} and
+ *       {@code CONTRACT_CHARGE_ADD}: required, though a tenant may switch them
+ *       off. One holder of {@code CLIENT_CONTRACT_APPROVE}, not the requester,
+ *       within 14 days, after which the request expires and the contract stays
+ *       as it is (a draft goes back to DRAFT).
  * </ul>
  */
 public final class ApprovalPolicyDefaults {
 
     private static final Duration THREE_DAYS = Duration.ofHours(72);
+    private static final Duration TWO_WEEKS = Duration.ofDays(14);
 
     private static final Map<String, ApprovalPolicy> DEFAULTS = new LinkedHashMap<>();
 
@@ -55,6 +61,11 @@ public final class ApprovalPolicyDefaults {
                 List.of("ORDER_APPROVE"), true, false, THREE_DAYS, Expiry.EXPIRE));
         add(new ApprovalPolicy(ApprovalSubjectTypes.POD_REVERSAL, true, true,
                 List.of("POD_REVERSAL_APPROVE"), true, false, THREE_DAYS, Expiry.EXPIRE));
+        for (String type : List.of(ApprovalSubjectTypes.CONTRACT_ACTIVATION, ApprovalSubjectTypes.CONTRACT_EXTENSION,
+                ApprovalSubjectTypes.CONTRACT_CHARGE_ADD)) {
+            add(new ApprovalPolicy(type, true, false, List.of("CLIENT_CONTRACT_APPROVE"), true, false, TWO_WEEKS,
+                    Expiry.EXPIRE));
+        }
     }
 
     private ApprovalPolicyDefaults() {

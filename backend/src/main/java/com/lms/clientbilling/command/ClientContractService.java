@@ -38,7 +38,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Publishing client contracts, and binding client portal users.
+ * Publishing client contracts directly, and binding client portal users.
+ *
+ * <p>{@link #publishContract} is the in-process path -- imports and tests -- that
+ * puts a version into force at once. Over HTTP a contract is drafted and
+ * verified: see {@link ClientContractLifecycleService}.
  */
 @Service
 public class ClientContractService {
@@ -86,14 +90,7 @@ public class ClientContractService {
         UUID tenantId = TenantContext.requireTenantId();
         requireCustomer(clientPartnerId);
 
-        Set<String> seen = new HashSet<>();
-        for (ServiceRateTerm term : valueAdded == null ? List.<ServiceRateTerm>of() : valueAdded) {
-            if (!seen.add(ContractServiceRate.normalise(term.serviceCode()))) {
-                throw new BusinessRuleViolationException("client-service-rate-duplicated",
-                        "Value-added service " + term.serviceCode()
-                                + " is priced twice in one contract");
-            }
-        }
+        requireDistinctServices(valueAdded == null ? List.of() : valueAdded);
 
         contracts.findOpenVersion(tenantId, clientPartnerId).ifPresent(incumbent -> {
             if (!effectiveFrom.isAfter(incumbent.effectiveFrom())) {
@@ -155,6 +152,17 @@ public class ClientContractService {
 
         audit.recordAtomically("CLIENT_PORTAL_ACCESS_GRANTED", "APP_USER", userId, null,
                 Json.object("client", clientPartnerId.toString()));
+    }
+
+    /** A value-added service is priced once per contract version. */
+    static void requireDistinctServices(List<ServiceRateTerm> terms) {
+        Set<String> seen = new HashSet<>();
+        for (ServiceRateTerm term : terms) {
+            if (!seen.add(ContractServiceRate.normalise(term.serviceCode()))) {
+                throw new BusinessRuleViolationException("client-service-rate-duplicated",
+                        "Value-added service " + term.serviceCode() + " is priced twice in one contract");
+            }
+        }
     }
 
     private void requireCustomer(UUID partnerId) {

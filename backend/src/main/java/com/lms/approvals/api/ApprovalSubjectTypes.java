@@ -32,6 +32,15 @@ public final class ApprovalSubjectTypes {
     /** Reversing a confirmed proof of delivery before billing uses it. Owned by {@code delivery}. */
     public static final String POD_REVERSAL = "POD_REVERSAL";
 
+    /** Verifying a client contract draft so that it goes into force. Owned by {@code clientbilling}. */
+    public static final String CONTRACT_ACTIVATION = "CONTRACT_ACTIVATION";
+
+    /** Moving the end date of a client contract in force later. Owned by {@code clientbilling}. */
+    public static final String CONTRACT_EXTENSION = "CONTRACT_EXTENSION";
+
+    /** Adding a value-added charge to a client contract from a date. Owned by {@code clientbilling}. */
+    public static final String CONTRACT_CHARGE_ADD = "CONTRACT_CHARGE_ADD";
+
     private ApprovalSubjectTypes() {
     }
 }

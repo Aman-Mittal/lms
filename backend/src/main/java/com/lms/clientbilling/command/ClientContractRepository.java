@@ -31,8 +31,10 @@ public interface ClientContractRepository extends CrudRepository<ClientContract,
             SELECT * FROM client_contract
              WHERE tenant_id = :tenantId
                AND client_partner_id = :clientPartnerId
+               AND status = 'ACTIVE'
                AND effective_from <= :onDate
                AND (effective_to IS NULL OR effective_to >= :onDate)
+               AND (valid_till IS NULL OR valid_till >= :onDate)
              ORDER BY effective_from DESC
              LIMIT 1
             """)
@@ -40,20 +42,25 @@ public interface ClientContractRepository extends CrudRepository<ClientContract,
                                            @Param("clientPartnerId") UUID clientPartnerId,
                                            @Param("onDate") LocalDate onDate);
 
-    /** The open-ended version, of which the partial unique index permits one. */
+    /** The open-ended version in force, of which the partial unique index permits one. */
     @Query("""
             SELECT * FROM client_contract
              WHERE tenant_id = :tenantId
                AND client_partner_id = :clientPartnerId
                AND effective_to IS NULL
+               AND status = 'ACTIVE'
             """)
     Optional<ClientContract> findOpenVersion(@Param("tenantId") UUID tenantId,
                                              @Param("clientPartnerId") UUID clientPartnerId);
 
-    /** Whether the partner holds any contract at all -- which is what makes it a client. */
+    /**
+     * Whether the partner holds any contract in force or past -- which is what
+     * makes it a client. A draft waiting to be verified does not.
+     */
     @Query("""
             SELECT count(*) FROM client_contract
              WHERE tenant_id = :tenantId AND client_partner_id = :clientPartnerId
+               AND status = 'ACTIVE'
             """)
     long countForClient(@Param("tenantId") UUID tenantId,
                         @Param("clientPartnerId") UUID clientPartnerId);

@@ -33,5 +33,7 @@ public enum DocumentType {
     TRIP,
     GATE_PASS,
     LOAD,
-    INVOICE
+    INVOICE,
+    /** A client contract draft; without a series, the code its maker types. */
+    CONTRACT
 }

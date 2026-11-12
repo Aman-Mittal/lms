@@ -36,8 +36,10 @@ public final class ClientBillability {
                       WHERE k.tenant_id = ch.tenant_id
                         AND k.client_partner_id = ch.client_partner_id
                         AND k.bill_on_dispatch
+                        AND k.status = 'ACTIVE'
                         AND k.effective_from <= ch.occurred_on
-                        AND (k.effective_to IS NULL OR k.effective_to >= ch.occurred_on))
+                        AND (k.effective_to IS NULL OR k.effective_to >= ch.occurred_on)
+                        AND (k.valid_till IS NULL OR k.valid_till >= ch.occurred_on))
                  AND EXISTS (
                      SELECT 1
                        FROM trip t

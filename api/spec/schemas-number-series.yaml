@@ -21,8 +21,9 @@ NumberedDocumentType:
     The kinds of document a series can number. ORDER, CONSIGNMENT_NOTE (a
     full-truckload lorry receipt) and DOCKET (a part load) draw from a series
     when one covers the document's unit; without one they keep their built-in
-    numbering. The others can be configured, issued by hand and verified.
-  enum: [ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE]
+    numbering. CONTRACT numbers a client contract draft created without a
+    code. The others can be configured, issued by hand and verified.
+  enum: [ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE, CONTRACT]
 
 NumberYearCode:
   type: string

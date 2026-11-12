@@ -38,6 +38,17 @@
  * client's own SKUs held at the end of each day, in pallets of the contract's
  * units-per-pallet, rounded up per day.
  *
+ * <p>A contract version is a draft first (editable and deletable by its maker,
+ * numbered from a CONTRACT series when the tenant has one), checked against a
+ * completeness checklist the tenant tunes (a COMPLIANCE setting), and put into
+ * force by an approval -- {@code CONTRACT_ACTIVATION}, decided by somebody
+ * other than the maker -- which is when it closes the version it succeeds.
+ * An optional {@code validTill} ends it; whether it has expired is derived from
+ * the date, never stored. The only change a version in force accepts is an
+ * approved extension of that date ({@code CONTRACT_EXTENSION}); a new charge is
+ * added by an approved {@code CONTRACT_CHARGE_ADD}, which publishes a successor
+ * from a future date so no raised bill is ever repriced.
+ *
  * <p>Invoices carry tax per line at the contract's rate for the service
  * family, and are corrected only by credit notes, never edited.
  *
@@ -61,5 +72,6 @@
 @org.springframework.modulith.ApplicationModule(
         displayName = "3PL Client Billing",
         allowedDependencies = {"execution::events", "identity::access", "warehouse::api",
-                "warehouse::events", "masterdata::api"})
+                "warehouse::events", "masterdata::api", "settings::api", "approvals::api",
+                "identity::numbering"})
 package com.lms.clientbilling;
