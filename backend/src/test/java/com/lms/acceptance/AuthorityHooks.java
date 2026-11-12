@@ -87,7 +87,8 @@ public class AuthorityHooks {
             "EXCEPTION_READ", "EXCEPTION_RAISE", "EXCEPTION_MANAGE", "EXCEPTION_CLOSE",
             "AUDIT_READ",
             "POD_RECORD", "POD_READ", "SETTLEMENT_HOLD_RELEASE",
-            "APPROVAL_READ", "APPROVAL_POLICY_MANAGE", "ORDER_APPROVE", "POD_REVERSE", "POD_REVERSAL_APPROVE");
+            "APPROVAL_READ", "APPROVAL_POLICY_MANAGE", "ORDER_APPROVE", "POD_REVERSE", "POD_REVERSAL_APPROVE",
+            "GATE_REGISTER", "GATE_PASS_MANAGE");
 
     /**
      * Runs before the tenant-scope hooks, because a step that issues a command

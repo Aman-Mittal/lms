@@ -21,7 +21,8 @@ WebhookEventType:
          ORDER_RAISED, ORDER_AMENDED, ORDER_CANCELLED, ORDER_FULFILLED, ORDER_CLOSED,
          CONSIGNMENTS_GENERATED, CONSIGNMENT_SPLIT, TRIP_DISPATCHED, TRIP_COMPLETED, TRIP_CANCELLED,
          DELIVERY_PROOF_RECORDED, CLAIM_RAISED, CLAIM_STATUS_CHANGED, CONSIGNMENT_IN_TRANSIT,
-         CONSIGNMENT_DELIVERED, CONSIGNMENT_CANCELLED, APPROVAL_REQUESTED, APPROVAL_DECIDED, PING]
+         CONSIGNMENT_DELIVERED, CONSIGNMENT_CANCELLED, APPROVAL_REQUESTED, APPROVAL_DECIDED,
+         GATE_ENTRY_RECORDED, GATE_EXIT_RECORDED, TRIP_STOP_ARRIVED, TRIP_STOP_DEPARTED, PING]
 
 WebhookSubscriptionRequest:
   type: object
@@ -148,6 +149,14 @@ WebhookEnvelope:
     - `APPROVAL_REQUESTED`: approvalId, subjectType, subjectId, action, summary, dueAt
     - `APPROVAL_DECIDED`: approvalId, subjectType, subjectId, action, status (APPROVED, REJECTED,
       CANCELLED or EXPIRED) -- once, when the request closes; the reason is not sent
+    - `GATE_ENTRY_RECORDED`: visitId, orgUnitId, terminalId, vehicleId, registrationNo, purpose, tripId,
+      gatePassNo, enteredAt -- every entry in the gate register, a trip's or a visitor's
+    - `GATE_EXIT_RECORDED`: visitId, orgUnitId, terminalId, vehicleId, registrationNo, purpose, tripId,
+      enteredAt, exitedAt, dwellMinutes
+    - `TRIP_STOP_ARRIVED`: tripId, tripNo, stopId, seq, kind, terminalId, plannedArrivalAt, arrivedAt,
+      outOfOrder, source (MANUAL, GEOFENCE or TRIP)
+    - `TRIP_STOP_DEPARTED`: tripId, tripNo, stopId, seq, kind, terminalId, arrivedAt, departedAt,
+      completed (true for the trip's last stop), source
     - `PING`: subscriptionId, message
 
     Ids and times are strings (UUIDs and ISO-8601 instants); amounts and weights are numbers.

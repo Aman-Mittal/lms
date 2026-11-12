@@ -67,6 +67,9 @@ public class ExecutionSettingDefinitions implements SettingContributor {
     public static final SettingKey<Boolean> AUTO_COMPLETION =
             SettingKey.bool("execution.tracking.autoCompleteOnExit");
 
+    /** Whether a vehicle may enter a site only with a valid gate pass (issue #223); set per unit. */
+    public static final SettingKey<Boolean> GATE_PASS_REQUIRED = SettingKey.bool("yard.gate.passRequired");
+
     private static final ScopeType[] TRIP_SCOPES = {ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER};
 
     private final BigDecimal defaultWeightTolerance;
@@ -104,7 +107,12 @@ public class ExecutionSettingDefinitions implements SettingContributor {
                                 "Whether an arrived trip completes by itself when its vehicle leaves the"
                                         + " destination's geofence; off (the default) waits for a person to"
                                         + " complete it.")
-                        .defaultValue(false).alsoAt(TRIP_SCOPES).build());
+                        .defaultValue(false).alsoAt(TRIP_SCOPES).build(),
+                SettingDefinition.of(GATE_PASS_REQUIRED, "Gate pass required to enter",
+                                "Whether a vehicle may enter a site of this unit only with a valid gate"
+                                        + " pass; off (the default) lets any vehicle in and checks a pass only"
+                                        + " when one is presented.")
+                        .defaultValue(false).alsoAt(ScopeType.ORG_UNIT).build());
     }
 
     /** The document types a resolved checklist requires, in name order. */
