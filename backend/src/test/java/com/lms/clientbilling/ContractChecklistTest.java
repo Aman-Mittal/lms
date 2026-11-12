@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ContractChecklistTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 6, 15);
-    private static final Facts GOOD = new Facts(true, TODAY, null);
+    private static final Facts GOOD = new Facts(true, TODAY, null, 1);
 
     private static ClientContract draft(BigDecimal perKg, BigDecimal minimum, LocalDate from, LocalDate till) {
         return ClientContract.draft(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "C-1",
@@ -55,7 +55,7 @@ class ContractChecklistTest {
     @DisplayName("every failing rule is named, in checklist order, not only the first")
     void listsEveryFailure() {
         ClientContract bad = draft(BigDecimal.ZERO, BigDecimal.ZERO, TODAY.minusDays(20), TODAY.minusDays(2));
-        Map<String, String> failures = ContractChecklist.failures(bad, new Facts(false, TODAY, null),
+        Map<String, String> failures = ContractChecklist.failures(bad, new Facts(false, TODAY, null, 1),
                 ContractChecklist.ITEMS);
         assertThat(failures.keySet()).containsExactly("CUSTOMER_TRADING", "EFFECTIVE_DATES", "TRANSPORT_RATE");
         assertThat(failures.get("EFFECTIVE_DATES")).contains("already passed");
@@ -87,6 +87,18 @@ class ContractChecklistTest {
         assertThat(ContractChecklist.failures(bad, new Facts(false, TODAY, null), List.of())).isEmpty();
         assertThat(ContractChecklist.failures(bad, new Facts(false, TODAY, null),
                 List.of(ContractChecklist.CUSTOMER_TRADING))).containsOnlyKeys("CUSTOMER_TRADING");
+    }
+
+    @Test
+    @DisplayName("the lanes rule is optional, and passes only when the contract defines a lane")
+    void lanesRule() {
+        assertThat(ContractChecklist.failures(complete(), new Facts(true, TODAY, null, 0),
+                List.of(ContractChecklist.LANES))).containsOnlyKeys("LANES");
+        assertThat(ContractChecklist.failures(complete(), new Facts(true, TODAY, null, 2),
+                List.of(ContractChecklist.LANES))).isEmpty();
+        // Not required unless the tenant says so: a contract with no lanes still passes the other rules.
+        assertThat(ContractChecklist.failures(complete(), new Facts(true, TODAY, null, 0),
+                List.of(ContractChecklist.CUSTOMER_TRADING, ContractChecklist.TRANSPORT_RATE))).isEmpty();
     }
 
     @Test

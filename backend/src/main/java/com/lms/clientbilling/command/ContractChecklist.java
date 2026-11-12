@@ -47,9 +47,12 @@ public final class ContractChecklist {
     /** The contract belongs to an organisational unit. */
     public static final String ORG_UNIT = "ORG_UNIT";
 
+    /** At least one lane is defined. Not in the system default: a tenant opts in. */
+    public static final String LANES = "LANES";
+
     /** Every rule, in the order a refusal lists them. */
     public static final List<String> ITEMS =
-            List.of(CUSTOMER_TRADING, EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT);
+            List.of(CUSTOMER_TRADING, EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT, LANES);
 
     private ContractChecklist() {
     }
@@ -60,8 +63,13 @@ public final class ContractChecklist {
      * @param customerTrading whether the client may be dealt with
      * @param today           the day to judge an end date by
      * @param incumbentFrom   when the version in force began; null when there is none
+     * @param laneCount       how many lanes the contract defines
      */
-    public record Facts(boolean customerTrading, LocalDate today, LocalDate incumbentFrom) {
+    public record Facts(boolean customerTrading, LocalDate today, LocalDate incumbentFrom, int laneCount) {
+
+        public Facts(boolean customerTrading, LocalDate today, LocalDate incumbentFrom) {
+            this(customerTrading, today, incumbentFrom, 0);
+        }
     }
 
     /**
@@ -94,6 +102,7 @@ public final class ContractChecklist {
             case TAX_RATES -> percentage(c.transportTaxRatePct()) && percentage(c.warehouseTaxRatePct()) ? null
                     : "Tax rates must be percentages between 0 and 100";
             case ORG_UNIT -> c.orgUnitId() != null ? null : "Name the organisational unit the contract belongs to";
+            case LANES -> facts.laneCount() > 0 ? null : "Define at least one lane: where the contract's freight moves";
             default -> throw new IllegalArgumentException("Unknown checklist item " + item);
         };
     }

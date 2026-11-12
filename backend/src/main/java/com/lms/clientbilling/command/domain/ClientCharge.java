@@ -53,13 +53,31 @@ public record ClientCharge(
         BigDecimal costShare,
         UUID invoiceId,
         @Version Long version,
-        Instant createdAt) {
+        Instant createdAt,
+        /**
+         * The contract lane a transport charge was captured under: the lane its
+         * orders were raised on. Pricing uses that lane's rate basis and slabs
+         * whichever contract version is in force when the invoice is raised;
+         * null prices by the contract's per-kilo rate, as before lanes.
+         */
+        UUID contractLaneId) {
 
     public static ClientCharge capture(UUID id, UUID tenantId, UUID clientPartnerId,
                                        ServiceType serviceType, String serviceCode,
                                        BigDecimal quantity, String unit, LocalDate occurredOn,
                                        LocalDate billingPeriod, String sourceKey,
                                        String reference, UUID tripId, BigDecimal costShare) {
+        return capture(id, tenantId, clientPartnerId, serviceType, serviceCode, quantity, unit, occurredOn,
+                billingPeriod, sourceKey, reference, tripId, costShare, null);
+    }
+
+    /** As the other {@code capture}, under the contract lane the work was ordered on. */
+    public static ClientCharge capture(UUID id, UUID tenantId, UUID clientPartnerId,
+                                       ServiceType serviceType, String serviceCode,
+                                       BigDecimal quantity, String unit, LocalDate occurredOn,
+                                       LocalDate billingPeriod, String sourceKey,
+                                       String reference, UUID tripId, BigDecimal costShare,
+                                       UUID contractLaneId) {
         if (quantity == null || quantity.signum() <= 0) {
             throw new IllegalArgumentException("A charge needs a positive quantity");
         }
@@ -78,7 +96,7 @@ public record ClientCharge(
         return new ClientCharge(id, tenantId, clientPartnerId, serviceType,
                 ContractServiceRate.normalise(serviceCode), quantity, unit, occurredOn,
                 billingPeriod, sourceKey.trim(), reference, tripId, costShare, null, null,
-                Instant.now());
+                Instant.now(), contractLaneId);
     }
 
     /** The month a day falls in, as its first day. */

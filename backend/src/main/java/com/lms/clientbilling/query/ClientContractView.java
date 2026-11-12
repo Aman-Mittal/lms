@@ -49,10 +49,19 @@ public record ClientContractView(
         int storageUnitsPerPallet,
         List<ServiceRate> valueAddedServices,
         /** True when trip transport is invoiceable on dispatch rather than on proof. */
-        boolean billOnDispatch) {
+        boolean billOnDispatch,
+        /** The contract as a person means it, shared by every version; what a CONTRACT-scoped setting names. */
+        UUID familyId,
+        /** Whether orders outside the lanes are accepted. */
+        boolean directOrdersAllowed,
+        /** The load or vehicle types covered; empty is any. */
+        List<String> allowedLoadTypes,
+        List<ContractLaneView> lanes) {
 
     public ClientContractView {
         valueAddedServices = valueAddedServices == null ? List.of() : List.copyOf(valueAddedServices);
+        allowedLoadTypes = allowedLoadTypes == null ? List.of() : List.copyOf(allowedLoadTypes);
+        lanes = lanes == null ? List.of() : List.copyOf(lanes);
     }
 
     public record ServiceRate(String serviceCode, String unit, BigDecimal rate) {

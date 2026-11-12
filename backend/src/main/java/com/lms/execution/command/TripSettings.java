@@ -75,13 +75,15 @@ class TripSettings {
             customers.add(null);
         }
         String mode = loads.freightModeOf(trip.loadId());
+        Map<UUID, UUID> contracts = loads.contractFamiliesAboard(trip.loadId());
         Map<String, String> requiredBy = new LinkedHashMap<>();
         BigDecimal tolerance = null;
         String toleranceFrom = null;
         for (UUID customer : customers) {
             EffectiveSettings resolved = settings.resolveAll(
                     List.of(ExecutionSettingDefinitions.REQUIRED_DOCUMENTS, ExecutionSettingDefinitions.WEIGHT_TOLERANCE),
-                    context(trip, customer).withFreightMode(mode).asOf(day));
+                    context(trip, customer).withFreightMode(mode).withContract(customer == null ? null : contracts.get(customer))
+                            .asOf(day));
             Resolved<Map<String, Object>> documents = resolved.resolved(ExecutionSettingDefinitions.REQUIRED_DOCUMENTS);
             for (String type : ExecutionSettingDefinitions.required(documents.value())) {
                 requiredBy.putIfAbsent(type, describe(documents.source()));
@@ -120,6 +122,7 @@ class TripSettings {
             case CUSTOMER -> "customer";
             case VENDOR -> "vendor";
             case COMBINATION -> "combination";
+            case CONTRACT -> "contract";
             case USER -> "user";
         };
         return scope + " profile \"" + source.profileName() + "\""

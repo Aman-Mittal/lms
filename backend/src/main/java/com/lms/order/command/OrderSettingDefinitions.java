@@ -25,7 +25,7 @@ import com.lms.settings.api.SettingKey;
 import org.springframework.stereotype.Component;
 
 /**
- * The order module's settings. Both may be set for the tenant, for an
+ * The order module's settings. The close settings may be set for the tenant, for an
  * organisational unit (an order raised there or beneath it) and for a
  * customer (that customer's orders): the order's customer beats its unit,
  * and a deeper unit beats a shallower one.
@@ -35,6 +35,8 @@ public class OrderSettingDefinitions implements SettingContributor {
 
     public static final SettingKey<BigDecimal> CLOSE_TOLERANCE = SettingKey.decimal("order.close.tolerancePercent");
     public static final SettingKey<Boolean> AUTO_FULFIL = SettingKey.bool("order.close.autoFulfil");
+    /** How far freight is taken to travel in a day, for an order whose lane names no transit days. */
+    public static final SettingKey<Integer> TRANSIT_KM_PER_DAY = SettingKey.integer("order.transit.kmPerDay");
 
     @Override
     public List<SettingDefinition> definitions() {
@@ -44,11 +46,18 @@ public class OrderSettingDefinitions implements SettingContributor {
                                         + " undelivered when the platform closes the order by itself."
                                         + " Never applied to a close asked for by hand.")
                         .defaultValue(BigDecimal.ZERO).range(0, 100).scale(2)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER, ScopeType.COMBINATION).build(),
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER, ScopeType.COMBINATION, ScopeType.CONTRACT)
+                        .build(),
                 SettingDefinition.of(AUTO_FULFIL, "Fulfil on delivery",
                                 "Whether delivering an order's last consignment fulfils it; off leaves"
                                         + " delivered orders for a person to close.")
                         .defaultValue(true)
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER).build(),
+                SettingDefinition.of(TRANSIT_KM_PER_DAY, "Transit distance per day (km)",
+                                "Kilometres freight is taken to travel in a day. An order whose contract lane names"
+                                        + " no transit days is promised for the straight-line distance between its"
+                                        + " origin and destination divided by this, rounded up.")
+                        .defaultValue(400).range(1, 5_000)
                         .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER).build());
     }
 }

@@ -82,8 +82,18 @@ public class OrderCloseSettings {
      */
     @Transactional(readOnly = true)
     public Policy effectiveFor(UUID orgUnitId, UUID customerId, FreightMode mode) {
+        return effectiveFor(orgUnitId, customerId, mode, null);
+    }
+
+    /**
+     * As the other {@code effectiveFor}, for an order raised under a client
+     * contract (named by its family id, see {@code ScopeType.CONTRACT}): the
+     * contract's own profile is the most specific one below a person's.
+     */
+    @Transactional(readOnly = true)
+    public Policy effectiveFor(UUID orgUnitId, UUID customerId, FreightMode mode, UUID contractFamilyId) {
         return policy(SettingContext.ofOrgUnit(orgUnitId).withCustomer(customerId)
-                .withFreightMode(mode == null ? null : mode.name()));
+                .withFreightMode(mode == null ? null : mode.name()).withContract(contractFamilyId));
     }
 
     @Transactional(readOnly = true)
