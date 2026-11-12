@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import com.lms.shared.geo.GeoUtils;
 import com.lms.shared.geo.LatLon;
+import com.lms.shared.query.Slice;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -282,7 +283,7 @@ public class TelematicsQueryService {
     public List<DeviationView> openDeviations() {
         return jdbc.sql("""
                         SELECT d.id, d.trip_id, t.trip_no, d.detected_at,
-                               d.distance_m, d.corridor_m, d.lat, d.lon
+                               d.distance_m, d.corridor_m, d.lat, d.lon, d.reference
                           FROM route_deviation d
                           JOIN trip t ON t.id = d.trip_id
                          WHERE d.resolved_at IS NULL
@@ -291,5 +292,72 @@ public class TelematicsQueryService {
                         """)
                 .query(DeviationView.class)
                 .list();
+    }
+
+    private static final String CORRIDOR_SELECT = """
+            SELECT c.id, c.origin_terminal_id, ot.code AS origin_terminal_code, c.destination_terminal_id,
+                   dt.code AS destination_terminal_code, c.name, c.point_count, c.width_metres,
+                   %s AS points, c.version, c.updated_at
+              FROM route_corridor c
+              JOIN terminal ot ON ot.id = c.origin_terminal_id
+              JOIN terminal dt ON dt.id = c.destination_terminal_id
+            """;
+
+    /** Imported corridors by lane, without their positions; keyset on the lane (origin and destination ids). */
+    public Slice<RouteCorridorView> corridors(String cursor, Integer limit) {
+        int pageSize = Slice.clampLimit(limit);
+        UUID[] after = parseLane(cursor);
+        List<RouteCorridorView> rows = jdbc.sql(CORRIDOR_SELECT.formatted("NULL::text") + """
+                         WHERE (CAST(:originAfter AS uuid) IS NULL
+                                OR (c.origin_terminal_id, c.destination_terminal_id)
+                                   > (CAST(:originAfter AS uuid), CAST(:destinationAfter AS uuid)))
+                         ORDER BY c.origin_terminal_id, c.destination_terminal_id
+                         LIMIT :limit
+                        """)
+                .param("originAfter", after == null ? null : after[0])
+                .param("destinationAfter", after == null ? null : after[1])
+                .param("limit", pageSize + 1)
+                .query((rs, row) -> corridorRow(rs, false))
+                .list();
+        return Slice.of(rows, pageSize, row -> row.originTerminalId() + "_" + row.destinationTerminalId());
+    }
+
+    /** One corridor with its positions. */
+    public Optional<RouteCorridorView> corridor(UUID id) {
+        return jdbc.sql(CORRIDOR_SELECT.formatted("c.points::text") + " WHERE c.id = :id")
+                .param("id", id)
+                .query((rs, row) -> corridorRow(rs, true))
+                .optional();
+    }
+
+    private static RouteCorridorView corridorRow(java.sql.ResultSet rs, boolean withPoints) throws java.sql.SQLException {
+        List<List<Double>> points = null;
+        if (withPoints) {
+            points = new java.util.ArrayList<>();
+            String text = rs.getString("points");
+            // [[lon,lat],...] as Postgres prints it: numbers, commas and brackets only.
+            java.util.regex.Matcher pair = java.util.regex.Pattern
+                    .compile("\\[\\s*(-?[0-9.eE+-]+)\\s*,\\s*(-?[0-9.eE+-]+)\\s*\\]").matcher(text);
+            while (pair.find()) {
+                points.add(List.of(Double.parseDouble(pair.group(1)), Double.parseDouble(pair.group(2))));
+            }
+        }
+        return new RouteCorridorView(rs.getObject("id", UUID.class), rs.getObject("origin_terminal_id", UUID.class),
+                rs.getString("origin_terminal_code"), rs.getObject("destination_terminal_id", UUID.class),
+                rs.getString("destination_terminal_code"), rs.getString("name"), rs.getInt("point_count"),
+                rs.getBigDecimal("width_metres"), points, (Long) rs.getObject("version"),
+                toInstant(rs.getObject("updated_at")));
+    }
+
+    private static UUID[] parseLane(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            String[] parts = cursor.split("_", 2);
+            return new UUID[] {UUID.fromString(parts[0]), UUID.fromString(parts[1])};
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("The cursor is not one this list handed out", e);
+        }
     }
 }
