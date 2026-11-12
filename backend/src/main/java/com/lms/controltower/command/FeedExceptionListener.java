@@ -15,6 +15,7 @@
  */
 package com.lms.controltower.command;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -25,6 +26,7 @@ import com.lms.controltower.command.domain.ExceptionCategory;
 import com.lms.controltower.command.domain.ExceptionTicket.Source;
 import com.lms.controltower.command.domain.ExceptionTicket.Subject;
 import com.lms.controltower.command.domain.ExceptionTicket.SubjectType;
+import com.lms.execution.events.TripStopArrived;
 import com.lms.milkrun.events.CircuitStopLate;
 import com.lms.milkrun.events.CircuitStopSkipped;
 import com.lms.multimodal.events.ConnectionMissed;
@@ -66,11 +68,13 @@ public class FeedExceptionListener {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'").withZone(ZoneOffset.UTC);
 
     private final ExceptionCommandService exceptions;
+    private final DetectorSettingsService detectorSettings;
     private final TransactionTemplate requiresNew;
 
-    public FeedExceptionListener(ExceptionCommandService exceptions,
+    public FeedExceptionListener(ExceptionCommandService exceptions, DetectorSettingsService detectorSettings,
                                  PlatformTransactionManager transactionManager) {
         this.exceptions = exceptions;
+        this.detectorSettings = detectorSettings;
         this.requiresNew = new TransactionTemplate(transactionManager);
         this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -114,6 +118,38 @@ public class FeedExceptionListener {
                         + event.runDate() + " was reached " + event.minutesLate()
                         + " minutes after its window closed at "
                         + AT.format(event.windowClosesAt())));
+    }
+
+    /**
+     * A stop reached later than planned by more than the trip's tolerance. A
+     * stop with no planned arrival, or reached in time, raises nothing; one
+     * ticket per stop (the source key), so a redelivery is a no-op.
+     */
+    @TransactionalEventListener
+    public void onStopArrived(TripStopArrived event) {
+        if (event.plannedArrivalAt() == null) {
+            return;
+        }
+        try {
+            UUID id = TenantContext.callWith(event.tenantId(), null, () -> requiresNew.execute(status -> {
+                Duration tolerance = detectorSettings.stopLateFor(event.tripId());
+                Duration late = Duration.between(event.plannedArrivalAt(), event.arrivedAt());
+                if (late.compareTo(tolerance) <= 0) {
+                    return null;
+                }
+                return exceptions.raiseDetected(new DetectedException("stop-late:" + event.stopId(),
+                        ExceptionCategory.STOP_LATE, Source.STOP_LATE_DETECTED, event.tripId(),
+                        new Subject(SubjectType.TRIP_STOP, event.stopId(),
+                                event.tripNo() + " stop " + event.seq()),
+                        "Stop " + event.seq() + " (" + event.kind() + ") of trip " + event.tripNo()
+                                + " was reached at " + AT.format(event.arrivedAt()) + ", " + late.toMinutes()
+                                + " minutes after the planned " + AT.format(event.plannedArrivalAt())
+                                + "; the tolerance is " + tolerance.toMinutes() + " minutes"));
+            }));
+            log.debug("Late arrival at stop {} is ticket {}", event.stopId(), id);
+        } catch (DuplicateKeyException concurrentDelivery) {
+            log.debug("Late arrival at stop {} was raised by a concurrent delivery", event.stopId());
+        }
     }
 
     @TransactionalEventListener
