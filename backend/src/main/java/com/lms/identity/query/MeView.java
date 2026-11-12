@@ -26,6 +26,8 @@ import java.util.UUID;
  * token's, because they are what this session may actually do.
  *
  * @param roles the codes of the roles the user holds
+ * @param cacheEpoch changes when this caller's tenant, unit, roles or permissions change, and
+ *                   otherwise stays put; a console wipes what it cached on a change (DOCS/adr/0007)
  */
 public record MeView(
         UUID userId,
@@ -38,5 +40,6 @@ public record MeView(
         String orgPath,
         String orgUnitName,
         List<String> roles,
-        List<String> permissions) {
+        List<String> permissions,
+        String cacheEpoch) {
 }

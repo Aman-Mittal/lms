@@ -119,9 +119,25 @@
     description: |
       Raw points while the trip runs, the simplified polyline once retention
       has collapsed it. The caller cannot tell which and should not need to.
+
+      With `afterSeq` only the raw points recorded after that cursor are
+      returned, oldest first, at most 5000 a call, each as `[lon, lat, seq]`:
+      `seq` is the point's recorded time in epoch microseconds and the
+      `afterSeq` of the next call (`0` reads from the start). It is what a
+      console that cached the track asks for, so the cost is the new points.
+      When the trip has no raw points at all the simplified polyline comes
+      back as two-element pairs, which means: what you hold is obsolete,
+      replace it. A point that arrives late and is dated before the cursor is
+      not returned.
+    parameters:
+      - name: afterSeq
+        in: query
+        required: false
+        schema: { type: integer, format: int64, minimum: 0 }
+        description: The `seq` of the last point already held.
     responses:
       "200":
-        description: "`[lon, lat]` pairs, GeoJSON order."
+        description: "`[lon, lat]` pairs, GeoJSON order; `[lon, lat, seq]` triples with `afterSeq`."
         content:
           application/json:
             schema:
@@ -130,7 +146,7 @@
                 type: array
                 items: { type: number }
                 minItems: 2
-                maxItems: 2
+                maxItems: 3
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }

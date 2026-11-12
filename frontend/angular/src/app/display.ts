@@ -30,11 +30,13 @@ export interface DisplayPreferences {
   locale: string;
   pageSize: number;
   landingPage: string;
+  /** `ui.clientCache`: whether maps, tracks and tiles may be kept in the browser. */
+  clientCache: boolean;
 }
 
 export const DEFAULT_DISPLAY: DisplayPreferences = {
   theme: 'system', dateFormat: 'YYYY-MM-DD', timeZone: 'UTC', locale: 'en-GB', pageSize: 50,
-  landingPage: 'dashboard',
+  landingPage: 'dashboard', clientCache: true,
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -60,6 +62,8 @@ export function applyDisplay(effective: Array<{ key: string; value: unknown }>):
     locale: text('ui.locale', DEFAULT_DISPLAY.locale),
     pageSize: Number.isFinite(size) && size > 0 ? size : DEFAULT_DISPLAY.pageSize,
     landingPage: text('ui.landingPage', DEFAULT_DISPLAY.landingPage),
+    // Anything but an explicit false keeps the default (on).
+    clientCache: value('ui.clientCache') !== false,
   };
   paint();
   return current;

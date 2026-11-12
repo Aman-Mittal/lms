@@ -20,6 +20,11 @@
     tags: [Terminals]
     operationId: listTerminals
     summary: A page of terminals
+    description: |
+      Carries an `ETag` over the page's terminals and their versions. A caller
+      that sends it back in `If-None-Match` gets `304 Not Modified` with no body
+      while none has changed, which is how a console revalidates cached
+      geometry.
     parameters:
       - name: category
         in: query
@@ -30,9 +35,15 @@
     responses:
       "200":
         description: One page of terminals.
+        headers:
+          ETag:
+            description: A digest of the page's terminals and their versions.
+            schema: { type: string }
         content:
           application/json:
             schema: { $ref: "#/components/schemas/TerminalSlice" }
+      "304":
+        description: The page is as the caller's `If-None-Match` says.
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
@@ -48,12 +59,21 @@
     tags: [Terminals]
     operationId: getTerminal
     summary: One terminal
+    description: |
+      Its version is the `ETag`; `If-None-Match` with it answers `304 Not
+      Modified` while the terminal (and so its geofence) is unchanged.
     responses:
       "200":
         description: The terminal.
+        headers:
+          ETag:
+            description: The terminal's version.
+            schema: { type: string }
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Terminal" }
+      "304":
+        description: Unchanged since the caller's `If-None-Match`.
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
