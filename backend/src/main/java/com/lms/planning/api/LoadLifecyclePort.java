@@ -95,6 +95,17 @@ public interface LoadLifecyclePort {
     List<UUID> customersAboard(UUID loadId);
 
     /**
+     * Per customer aboard, the client contract family (see the settings'
+     * CONTRACT scope) its freight was ordered under, for each customer whose
+     * orders aboard all name the same one. A customer whose orders name none,
+     * or several, is absent, and is judged without a contract. Empty by
+     * default, for an implementation that knows nothing of contracts.
+     */
+    default java.util.Map<UUID, UUID> contractFamiliesAboard(UUID loadId) {
+        return java.util.Map.of();
+    }
+
+    /**
      * The name of the load's freight mode ({@code FTL}, {@code LTL}), or null
      * when there is no such load. What a combination setting profile naming a
      * freight mode is matched against for the load's trip.
