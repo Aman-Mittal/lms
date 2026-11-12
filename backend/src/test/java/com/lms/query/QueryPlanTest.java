@@ -1377,6 +1377,162 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the charge catalogue is found by code and paged by code from an index, without sorting")
+    void chargeCatalogueReads() {
+        assertIndexed("""
+                SELECT * FROM charge_catalogue
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND code = 'LOADING'
+                """, "charge_catalogue");
+        String page = """
+                SELECT id FROM charge_catalogue
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND active = true AND code > 'LOADING'
+                 ORDER BY code
+                 LIMIT 51
+                """;
+        assertIndexed(page, "charge_catalogue");
+        assertNoSort(page);
+    }
+
+    @Test
+    @DisplayName("manual charges page newest first, by subject, by trip and as a vendor's waiting payables from an index")
+    void manualChargeReads() {
+        String page = """
+                SELECT m.id FROM manual_charge m
+                 WHERE m.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (m.created_at, m.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                               '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY m.created_at DESC, m.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(page, "manual_charge");
+        assertNoSort(page);
+        String subject = """
+                SELECT m.id FROM manual_charge m
+                 WHERE m.tenant_id = '00000000-0000-0000-0000-000000000001' AND m.subject_type = 'TRIP'
+                   AND m.subject_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY m.created_at DESC, m.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(subject, "manual_charge");
+        assertNoSort(subject);
+        assertIndexed("""
+                SELECT * FROM manual_charge
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND trip_id = '00000000-0000-0000-0000-000000000002'
+                """, "manual_charge");
+        String waiting = """
+                SELECT * FROM manual_charge
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND direction = 'PAYABLE' AND status = 'APPROVED' AND freight_bill_id IS NULL
+                 ORDER BY created_at, id
+                """;
+        assertIndexed(waiting, "manual_charge");
+        assertNoSort(waiting);
+        assertIndexed("""
+                SELECT * FROM manual_charge
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND freight_bill_id = '00000000-0000-0000-0000-000000000002'
+                """, "manual_charge");
+    }
+
+    @Test
+    @DisplayName("vendor invoices are found by the vendor's number and paged newest first from an index")
+    void vendorInvoiceReads() {
+        assertIndexed("""
+                SELECT * FROM vendor_invoice
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                   AND lower(btrim(vendor_invoice_no)) = lower(btrim('INV-1'))
+                """, "vendor_invoice");
+        String page = """
+                SELECT i.id FROM vendor_invoice i
+                 WHERE i.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (i.created_at, i.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                               '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY i.created_at DESC, i.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(page, "vendor_invoice");
+        assertNoSort(page);
+    }
+
+    @Test
+    @DisplayName("the overdue list is the earliest due first from the partial index, without sorting")
+    void overdueVendorInvoices() {
+        String sql = """
+                SELECT i.id FROM vendor_invoice i
+                 WHERE i.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND i.status <> 'PAID' AND i.due_date < '2026-11-12'::date
+                   AND (i.due_date, i.id) > ('2026-10-01'::date, '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY i.due_date, i.id
+                 LIMIT 51
+                """;
+        assertIndexed(sql, "vendor_invoice");
+        assertNoSort(sql);
+        String vendor = """
+                SELECT i.id FROM vendor_invoice i
+                 WHERE i.tenant_id = '00000000-0000-0000-0000-000000000001' AND i.vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY i.due_date, i.id
+                 LIMIT 51
+                """;
+        assertIndexed(vendor, "vendor_invoice");
+    }
+
+    @Test
+    @DisplayName("an invoice's bills and payments, and the payments list, are index-served")
+    void vendorPaymentReads() {
+        assertIndexed("""
+                SELECT * FROM vendor_invoice_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND freight_bill_id = '00000000-0000-0000-0000-000000000002'
+                """, "vendor_invoice_bill");
+        assertIndexed("""
+                SELECT * FROM vendor_payment
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND invoice_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY paid_on, id
+                """, "vendor_payment");
+        String page = """
+                SELECT p.id FROM vendor_payment p
+                 WHERE p.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (p.created_at, p.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                               '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY p.created_at DESC, p.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(page, "vendor_payment");
+        assertNoSort(page);
+    }
+
+    @Test
+    @DisplayName("vendor advances page newest first, by trip and by vendor from an index, and a trip's paid ones are found")
+    void vendorAdvanceReads() {
+        String page = """
+                SELECT a.id FROM vendor_advance a
+                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (a.created_at, a.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                               '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY a.created_at DESC, a.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(page, "vendor_advance");
+        assertNoSort(page);
+        assertIndexed("""
+                SELECT * FROM vendor_advance
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND trip_id = '00000000-0000-0000-0000-000000000002' AND status = 'PAID'
+                 ORDER BY paid_on, created_at, id
+                """, "vendor_advance");
+        String vendor = """
+                SELECT a.id FROM vendor_advance a
+                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000001' AND a.vendor_partner_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY a.created_at DESC, a.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(vendor, "vendor_advance");
+        assertNoSort(vendor);
+        assertIndexed("""
+                SELECT coalesce(sum(amount), 0) FROM vendor_advance
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND trip_id = '00000000-0000-0000-0000-000000000002'
+                   AND status IN ('PENDING_APPROVAL', 'APPROVED', 'PAID', 'DEDUCTED')
+                """, "vendor_advance");
+    }
+
+    @Test
     @DisplayName("every tenant-scoped table leads its primary lookup index with tenant_id")
     void indexesLeadWithTenantId() {
         // Row-level security adds `tenant_id = …` to every query, so an index

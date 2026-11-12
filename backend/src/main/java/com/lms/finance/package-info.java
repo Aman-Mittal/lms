@@ -76,10 +76,24 @@
  * or one recording a shortage or damage -- is held from settlement, and the
  * hold lifts when the last clean proof arrives or when a person with
  * {@code SETTLEMENT_HOLD_RELEASE} releases it, saying why.
+ *
+ * <p>Money around a freight bill (issue #225). A per-tenant charge catalogue and
+ * manual charges against a trip, consignment or order, approved through
+ * {@code approvals::api} above {@code finance.manualCharge.approvalThreshold}: a
+ * receivable becomes a client charge through {@link com.lms.finance.api.ReceivableChargePort}
+ * (which client billing implements, so finance never imports it), a payable a
+ * line of the trip's bill while that is a draft and otherwise of the vendor's next
+ * one. Vendor invoices are captured against approved bills (matched by the same
+ * tolerance, due by {@code finance.payables.paymentTermsDays}) with part
+ * payments and an overdue list, and vendor advances against a trip are capped by
+ * {@code finance.advance.maxPercentOfFreight}, approved, paid and deducted at
+ * settlement. Trips are read through {@code execution::api}; consignments and
+ * orders only by SQL under row-level security, like the proofs elsewhere.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Rating & Settlement",
         allowedDependencies = {"planning::api", "planning::events", "execution::events",
                 "controltower::events", "identity::access", "milkrun::events",
-                "multimodal::events", "masterdata::api", "delivery::events", "settings::api"})
+                "multimodal::events", "masterdata::api", "delivery::events", "settings::api", "execution::api",
+                "approvals::api", "identity::numbering"})
 package com.lms.finance;

@@ -1,0 +1,653 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/charge-catalogue:
+  get:
+    tags: [Charges]
+    operationId: listChargeCatalogue
+    summary: The charge catalogue, by code
+    description: |
+      Requires `CHARGE_CATALOGUE_MANAGE`, `MANUAL_CHARGE_RECORD` or `MANUAL_CHARGE_APPROVE`.
+      Keyset-paged by code. `direction` RECEIVABLE or PAYABLE also returns the
+      entries that are BOTH; `q` matches the code or the name.
+    parameters:
+      - name: active
+        in: query
+        required: false
+        schema: { type: boolean }
+      - name: direction
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/ChargeSide" }
+      - $ref: "#/components/parameters/q"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChargeCatalogueSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Charges]
+    operationId: createChargeCatalogueEntry
+    summary: Add a charge to the catalogue
+    description: |
+      Requires `CHARGE_CATALOGUE_MANAGE`. The code is kept upper case, is unique
+      per tenant (`charge-code-taken`) and never changes. Audited
+      (`CHARGE_CATALOGUE_CREATED`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateChargeCatalogueEntryRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/charge-catalogue/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the catalogue entry.
+  get:
+    tags: [Charges]
+    operationId: getChargeCatalogueEntry
+    summary: One catalogue entry
+    description: The `ETag` is the version `PUT` sends back in `If-Match`.
+    responses:
+      "200":
+        description: The entry.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChargeCatalogueEntry" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Charges]
+    operationId: updateChargeCatalogueEntry
+    summary: Edit a catalogue entry
+    description: |
+      Requires `CHARGE_CATALOGUE_MANAGE`. Everything but the code; a stale
+      `If-Match` is 409 `concurrent-modification`. Charges already raised keep
+      what the entry said when they were raised. Audited
+      (`CHARGE_CATALOGUE_UPDATED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateChargeCatalogueEntryRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/manual-charges:
+  get:
+    tags: [Charges]
+    operationId: listManualCharges
+    summary: Manual charges, newest first
+    description: |
+      Requires `MANUAL_CHARGE_RECORD`, `MANUAL_CHARGE_APPROVE` or `INVOICE_READ`.
+      Keyset-paged on creation time and id. Name `subjectType` and `subjectId` (or
+      `tripId`) to list what a trip, consignment or order carries. A partner-bound
+      caller sees only the charges that name that partner.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - name: direction
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/ChargeSide" }
+      - name: subjectType
+        in: query
+        required: false
+        schema: { $ref: "#/components/schemas/ManualChargeSubjectType" }
+      - name: subjectId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: tripId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: vendorId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: customerId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/q"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManualChargeSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Charges]
+    operationId: recordManualCharge
+    summary: Raise a charge by hand
+    description: |
+      Requires `MANUAL_CHARGE_RECORD`. From a catalogue entry (active:
+      `charge-inactive`) against a trip, consignment or order, with a quantity,
+      a rate (the entry's unless given), a reason and an evidence reference.
+      The amount is quantity times rate, rounded to two decimals (a FLAT
+      charge counts as one); a charge of nothing is `manual-charge-amount-zero`.
+      A receivable is billed to the customer of the subject; a payable is paid
+      to the vendor of a trip and is raised against a trip only
+      (`manual-charge-payable-needs-trip`, `manual-charge-trip-has-no-vendor`).
+      A cancelled subject takes no charge (`manual-charge-subject-cancelled`).
+
+      The amount is compared on the server with
+      `finance.manualCharge.approvalThreshold`, resolved for the subject's unit
+      and the customer or vendor. At or below it the charge is in force at once
+      (201). Above it, when the tenant's `MANUAL_CHARGE` approval policy asks
+      (it does by default), nothing happens yet: 202 with the charge and the
+      approval request that decides it, charge `PENDING_APPROVAL`.
+
+      In force, a receivable becomes a client charge on the customer's next
+      invoice (when the customer holds a client contract) and a payable becomes
+      a `MANUAL_CHARGE` line of the trip's freight bill while that is a draft
+      nobody has matched, else waits for the vendor's next bill. Nothing
+      already priced, matched or approved is re-priced. Audited
+      (`MANUAL_CHARGE_RECORDED`) and announced as `MANUAL_CHARGE_APPROVED`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RecordManualChargeRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "202":
+        description: Above the approval threshold; the charge waits and the request is raised.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PendingMoneyRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/manual-charges/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the charge.
+  get:
+    tags: [Charges]
+    operationId: getManualCharge
+    summary: One manual charge
+    description: The `ETag` is the version `POST .../cancellation` sends back in `If-Match`.
+    responses:
+      "200":
+        description: The charge.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManualCharge" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/manual-charges/{id}/cancellation:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the charge.
+  post:
+    tags: [Charges]
+    operationId: cancelManualCharge
+    summary: Cancel a charge that has not been billed
+    description: |
+      Requires `MANUAL_CHARGE_RECORD`; a reason is mandatory. A pending charge
+      is cancelled by withdrawing its approval request. An approved receivable is
+      cancelled while its client charge is on no invoice
+      (`manual-charge-already-billed` after: it is credited, not cancelled), an
+      approved payable while the bill it is a line of is still a draft (its line
+      is removed and the bill's amount reduced) or before it is on any bill.
+      Audited (`MANUAL_CHARGE_CANCELLED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelMoneyRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/vendor-invoices:
+  get:
+    tags: [Vendor payables]
+    operationId: listVendorInvoices
+    summary: Vendor invoices
+    description: |
+      Requires `PAYABLES_MANAGE` or `INVOICE_READ`. Newest first, keyset-paged on
+      creation time and id. With `overdue=true` the list is what is still owed past its
+      due date, earliest due first (keyset on due date and id). A vendor-bound caller
+      sees only that vendor's invoices. `q` matches our number and the vendor's.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - name: vendorId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: overdue
+        in: query
+        required: false
+        schema: { type: boolean }
+      - $ref: "#/components/parameters/q"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorInvoiceSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Vendor payables]
+    operationId: captureVendorInvoice
+    summary: Capture a vendor's invoice against approved freight bills
+    description: |
+      Requires `PAYABLES_MANAGE`. The bills must be approved for payment
+      (`vendor-invoice-bill-not-approved`), one vendor's
+      (`vendor-invoice-mixed-vendors`) and not already covered by an invoice
+      (`vendor-invoice-bill-already-invoiced`); the vendor's own number is unique
+      per vendor ignoring case (`vendor-invoice-duplicate`).
+
+      The invoice amount is matched with what the bills were approved at (the
+      vendor's claim each was approved against, else its computed amount) by the
+      allowance of `finance.match.tolerancePercent` and `.toleranceAbsolute` for
+      the bills' unit and vendor; outside it the invoice is refused,
+      `vendor-invoice-mismatch`, and nothing is recorded. The due date is the
+      invoice date plus `finance.payables.paymentTermsDays` for that vendor.
+      Advances paid against the covered trips are deducted, oldest first and while
+      they fit. Numbered from a `VENDOR_INVOICE` series when one covers the unit,
+      otherwise `VI-` and a random suffix. Audited
+      (`VENDOR_INVOICE_CAPTURED`) and announced as `VENDOR_INVOICE_CAPTURED`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CaptureVendorInvoiceRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/vendor-invoices/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the vendor invoice.
+  get:
+    tags: [Vendor payables]
+    operationId: getVendorInvoice
+    summary: One vendor invoice with its balance
+    responses:
+      "200":
+        description: The invoice.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorInvoice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/vendor-invoices/{id}/bills:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the vendor invoice.
+  get:
+    tags: [Vendor payables]
+    operationId: listVendorInvoiceBills
+    summary: The freight bills an invoice covers
+    responses:
+      "200":
+        description: The bills, by number.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/VendorInvoiceBill" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/vendor-invoices/{id}/payments:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the vendor invoice.
+  get:
+    tags: [Vendor payables]
+    operationId: listVendorInvoicePayments
+    summary: The payments made against an invoice, newest first
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of payments.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorPaymentSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Vendor payables]
+    operationId: recordVendorPayment
+    summary: Record a payment against an invoice
+    description: |
+      Requires `PAYABLES_MANAGE`. Part or the whole of what is outstanding
+      (the total less advances deducted and payments so far), never more
+      (`vendor-payment-exceeds-balance`); the invoice becomes `PARTIALLY_PAID`,
+      then `PAID`. The reference is unique per vendor
+      (`vendor-payment-reference-taken`) and the date is not before the invoice
+      nor in the future (`vendor-payment-date-invalid`). The invoice is locked
+      while the payment is recorded, so two payments racing for the last of the
+      balance are served one after the other. Audited
+      (`VENDOR_PAYMENT_RECORDED`) and announced as `VENDOR_PAYMENT_RECORDED`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RecordVendorPaymentRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/vendor-payments:
+  get:
+    tags: [Vendor payables]
+    operationId: listVendorPayments
+    summary: Payments made to vendors, newest first
+    description: |
+      Requires `PAYABLES_MANAGE` or `INVOICE_READ`. Keyset-paged on creation time
+      and id.
+    parameters:
+      - name: vendorId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorPaymentSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/freight-bills/{id}/settlement:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the freight bill.
+  get:
+    tags: [Vendor payables]
+    operationId: getBillSettlement
+    summary: What a freight bill is approved at, the advances against it and what is payable
+    description: |
+      Requires `PAYABLES_MANAGE` or `INVOICE_READ`. Derived on read: the approved
+      amount (the vendor's claim the bill was approved against, else the computed
+      amount) split into freight and manual charges, the advances paid against
+      the bill's trip, and the net payable after them. A bill that is not
+      approved yet shows its computed amount.
+    responses:
+      "200":
+        description: The settlement.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BillSettlement" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/vendor-advances:
+  get:
+    tags: [Vendor advances]
+    operationId: listVendorAdvances
+    summary: Vendor advances, newest first
+    description: |
+      Requires `ADVANCE_REQUEST`, `ADVANCE_APPROVE`, `PAYABLES_MANAGE` or
+      `INVOICE_READ`. Keyset-paged on creation time and id; `tripId` lists a trip's.
+      A vendor-bound caller sees only that vendor's advances.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - name: tripId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - name: vendorId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorAdvanceSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Vendor advances]
+    operationId: requestVendorAdvance
+    summary: Request an advance for a vendor against a trip
+    description: |
+      Requires `ADVANCE_REQUEST`. The trip must have a vendor and not be
+      cancelled. All live advances on a trip together stay within
+      `finance.advance.maxPercentOfFreight` of its freight, resolved for the
+      trip's unit and vendor (`advance-exceeds-cap`); the freight is the trip's
+      freight bill, else the platform's price of the load on the rate card in
+      force, and a trip with neither is `advance-freight-unknown`. One advance
+      per mode per trip while it is alive (`advance-mode-already-used`).
+
+      Where the `VENDOR_ADVANCE` approval policy asks (it does by default) the
+      answer is 202 with the advance and the approval request, advance
+      `PENDING_APPROVAL`; otherwise 201 and the advance is `APPROVED`. Audited
+      (`VENDOR_ADVANCE_REQUESTED`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RequestVendorAdvanceRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "202":
+        description: Approval is required; the advance waits and the request is raised.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PendingMoneyRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/vendor-advances/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the advance.
+  get:
+    tags: [Vendor advances]
+    operationId: getVendorAdvance
+    summary: One advance
+    description: The `ETag` is the version `.../payment` and `.../cancellation` send back in `If-Match`.
+    responses:
+      "200":
+        description: The advance.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VendorAdvance" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/vendor-advances/{id}/payment:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the advance.
+  post:
+    tags: [Vendor advances]
+    operationId: payVendorAdvance
+    summary: Record that an approved advance was paid
+    description: |
+      Requires `PAYABLES_MANAGE`. The advance must be `APPROVED`
+      (`advance-illegal-transition` otherwise). It becomes `PAID` with its
+      reference and day, and is deducted when the vendor's invoice for the trip
+      is captured. Audited (`VENDOR_ADVANCE_PAID`) and announced as
+      `VENDOR_ADVANCE_PAID`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PayVendorAdvanceRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/vendor-advances/{id}/cancellation:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the advance.
+  post:
+    tags: [Vendor advances]
+    operationId: cancelVendorAdvance
+    summary: Cancel an advance that has not been paid
+    description: |
+      Requires `ADVANCE_REQUEST`; a reason is mandatory. A pending advance is
+      cancelled by withdrawing its approval request. Once paid it is
+      `advance-already-paid`: the money has left. The mode is given back.
+      Audited (`VENDOR_ADVANCE_CANCELLED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelMoneyRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

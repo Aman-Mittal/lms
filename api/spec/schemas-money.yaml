@@ -1,0 +1,373 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+ChargeBasis:
+  type: string
+  enum: [FLAT, PER_KG, PER_HOUR, PER_DAY, PER_UNIT]
+  description: |
+    What a charge is counted in. A flat charge is one thing whatever quantity
+    is sent (the quantity charged is 1); the others are quantity times rate,
+    rounded half-up to two decimals.
+
+ChargeDirection:
+  type: string
+  enum: [RECEIVABLE, PAYABLE, BOTH]
+  description: Billed to the customer, paid to the vendor, or either.
+
+ChargeSide:
+  type: string
+  enum: [RECEIVABLE, PAYABLE]
+
+ManualChargeSubjectType:
+  type: string
+  enum: [TRIP, CONSIGNMENT, ORDER]
+
+ManualChargeStatus:
+  type: string
+  enum: [PENDING_APPROVAL, APPROVED, REJECTED, CANCELLED]
+
+ChargeCatalogueEntry:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    code: { type: string }
+    name: { type: string }
+    basis: { $ref: "#/components/schemas/ChargeBasis" }
+    defaultRate: { type: number }
+    currency: { type: string }
+    direction: { $ref: "#/components/schemas/ChargeDirection" }
+    active: { type: boolean }
+    version: { type: integer, format: int64 }
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+  required: [id, code, name, basis, defaultRate, currency, direction, active, version]
+
+CreateChargeCatalogueEntryRequest:
+  type: object
+  properties:
+    code: { type: string, maxLength: 40, description: "Letters, digits, dash and underscore; kept upper case; never changed." }
+    name: { type: string, maxLength: 120 }
+    basis: { $ref: "#/components/schemas/ChargeBasis" }
+    defaultRate: { type: number, minimum: 0 }
+    direction: { $ref: "#/components/schemas/ChargeDirection" }
+    active: { type: boolean, description: On when omitted. }
+  required: [code, name, basis, defaultRate, direction]
+
+UpdateChargeCatalogueEntryRequest:
+  type: object
+  description: Everything but the code. Switch an entry off with active false; it is never deleted.
+  properties:
+    name: { type: string, maxLength: 120 }
+    basis: { $ref: "#/components/schemas/ChargeBasis" }
+    defaultRate: { type: number, minimum: 0 }
+    direction: { $ref: "#/components/schemas/ChargeDirection" }
+    active: { type: boolean, description: Unchanged when omitted. }
+  required: [name, basis, defaultRate, direction]
+
+ChargeCatalogueSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ChargeCatalogueEntry" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+RecordManualChargeRequest:
+  type: object
+  description: |
+    A charge from a catalogue entry against a trip, a consignment or an order.
+    `rate` defaults to the entry's. `direction` is required when the entry is
+    BOTH and must agree with it otherwise. A receivable on a trip carrying
+    several customers' freight names the customer with `customerId`.
+  properties:
+    catalogueId: { type: string, format: uuid }
+    subjectType: { $ref: "#/components/schemas/ManualChargeSubjectType" }
+    subjectId: { type: string, format: uuid }
+    direction: { $ref: "#/components/schemas/ChargeSide" }
+    customerId: { type: string, format: uuid }
+    quantity: { type: number, exclusiveMinimum: 0 }
+    rate: { type: number, minimum: 0 }
+    reason: { type: string, maxLength: 500 }
+    evidenceRef: { type: string, maxLength: 200, description: "A reference to the evidence (a toll receipt number, a photo, a ticket)." }
+  required: [catalogueId, subjectType, subjectId, quantity, reason]
+
+ManualCharge:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    chargeNo: { type: string }
+    catalogueId: { type: string, format: uuid }
+    chargeCode: { type: string }
+    chargeName: { type: string }
+    basis: { $ref: "#/components/schemas/ChargeBasis" }
+    direction: { $ref: "#/components/schemas/ChargeSide" }
+    subjectType: { $ref: "#/components/schemas/ManualChargeSubjectType" }
+    subjectId: { type: string, format: uuid }
+    subjectRef: { type: string, description: "The trip, consignment or order number." }
+    tripId: { type: string, format: uuid }
+    customerPartnerId: { type: string, format: uuid }
+    customerName: { type: string }
+    vendorPartnerId: { type: string, format: uuid }
+    vendorName: { type: string }
+    quantity: { type: number }
+    rate: { type: number }
+    amount: { type: number }
+    currency: { type: string }
+    reason: { type: string }
+    evidenceRef: { type: string }
+    status: { $ref: "#/components/schemas/ManualChargeStatus" }
+    approvalId: { type: string, format: uuid }
+    clientChargeId:
+      type: string
+      format: uuid
+      description: The client charge an approved receivable became, on the customer's next invoice. Null when the customer holds no client contract.
+    clientInvoiceId: { type: string, format: uuid, description: "The invoice that client charge is on, once billed." }
+    freightBillId:
+      type: string
+      format: uuid
+      description: The freight bill an approved payable is a line of. Null while it waits for the vendor's next bill.
+    freightBillNo: { type: string }
+    billed:
+      type: boolean
+      description: True once the charge is on an invoice or on a bill that is no longer a draft; it can then no longer be cancelled.
+    cancelReason: { type: string }
+    version: { type: integer, format: int64 }
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+  required: [id, chargeNo, chargeCode, chargeName, basis, direction, subjectType, subjectId, subjectRef, quantity, rate, amount, currency, reason, status, billed, version]
+
+ManualChargeSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/ManualCharge" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+PendingMoneyRequest:
+  type: object
+  description: The charge or advance that waits, and the approval request that decides it.
+  properties:
+    id: { type: string, format: uuid }
+    approval: { $ref: "#/components/schemas/ApprovalTicket" }
+  required: [id, approval]
+
+CancelMoneyRequest:
+  type: object
+  properties:
+    reason: { type: string, maxLength: 500 }
+  required: [reason]
+
+CaptureVendorInvoiceRequest:
+  type: object
+  properties:
+    vendorInvoiceNo: { type: string, maxLength: 60, description: "The vendor's own number; unique per vendor ignoring case." }
+    invoiceDate: { type: string, format: date }
+    amount: { type: number, exclusiveMinimum: 0, description: The invoiced amount before tax; matched against what the covered bills were approved at. }
+    taxAmount: { type: number, minimum: 0 }
+    freightBillIds:
+      type: array
+      minItems: 1
+      maxItems: 100
+      items: { type: string, format: uuid }
+    documentRef: { type: string, maxLength: 200 }
+    remarks: { type: string, maxLength: 500 }
+  required: [vendorInvoiceNo, invoiceDate, amount, freightBillIds]
+
+VendorInvoiceStatus:
+  type: string
+  enum: [OPEN, PARTIALLY_PAID, PAID]
+
+VendorInvoice:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    vendorPartnerId: { type: string, format: uuid }
+    vendorName: { type: string }
+    vendorInvoiceNo: { type: string }
+    invoiceDate: { type: string, format: date }
+    dueDate: { type: string, format: date }
+    paymentTermsDays: { type: integer }
+    amount: { type: number }
+    taxAmount: { type: number }
+    totalAmount: { type: number }
+    currency: { type: string }
+    approvedAmount: { type: number, description: What the covered bills were approved at. }
+    varianceAmount: { type: number, description: Invoiced less approved; signed. }
+    advancesDeducted: { type: number, description: Advances paid against the covered trips and taken off at capture. }
+    netPayable: { type: number, description: Total less advances. }
+    paidAmount: { type: number }
+    outstanding: { type: number }
+    status: { $ref: "#/components/schemas/VendorInvoiceStatus" }
+    overdue: { type: boolean, description: Something is owed and the due date has passed. Read against today. }
+    daysOverdue: { type: integer, format: int64 }
+    billCount: { type: integer, format: int64 }
+    documentRef: { type: string }
+    remarks: { type: string }
+    version: { type: integer, format: int64 }
+    createdAt: { type: string, format: date-time }
+  required: [id, invoiceNo, vendorPartnerId, vendorInvoiceNo, invoiceDate, dueDate, paymentTermsDays, amount, taxAmount, totalAmount, currency, approvedAmount, varianceAmount, advancesDeducted, netPayable, paidAmount, outstanding, status, overdue, daysOverdue, billCount, version]
+
+VendorInvoiceSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/VendorInvoice" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+VendorInvoiceBill:
+  type: object
+  properties:
+    billId: { type: string, format: uuid }
+    billNo: { type: string }
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    approvedAmount: { type: number }
+  required: [billId, billNo, approvedAmount]
+
+VendorPaymentMode:
+  type: string
+  enum: [BANK_TRANSFER, CHEQUE, CASH, OTHER]
+
+RecordVendorPaymentRequest:
+  type: object
+  properties:
+    amount: { type: number, exclusiveMinimum: 0, description: Part or all of what is outstanding. }
+    paidOn: { type: string, format: date }
+    mode: { $ref: "#/components/schemas/VendorPaymentMode" }
+    reference: { type: string, maxLength: 80, description: "The bank, cheque or voucher reference; unique per vendor." }
+  required: [amount, paidOn, reference]
+
+VendorPayment:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    invoiceId: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    vendorInvoiceNo: { type: string }
+    vendorPartnerId: { type: string, format: uuid }
+    vendorName: { type: string }
+    amount: { type: number }
+    currency: { type: string }
+    paidOn: { type: string, format: date }
+    mode: { $ref: "#/components/schemas/VendorPaymentMode" }
+    reference: { type: string }
+    createdAt: { type: string, format: date-time }
+  required: [id, invoiceId, invoiceNo, vendorPartnerId, amount, paidOn, mode, reference]
+
+VendorPaymentSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/VendorPayment" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+VendorAdvanceMode:
+  type: string
+  enum: [BANK, CASH, FUEL_SLIP, FUEL_CARD]
+
+VendorAdvanceStatus:
+  type: string
+  enum: [PENDING_APPROVAL, APPROVED, PAID, DEDUCTED, REJECTED, CANCELLED]
+
+RequestVendorAdvanceRequest:
+  type: object
+  properties:
+    tripId: { type: string, format: uuid }
+    mode: { $ref: "#/components/schemas/VendorAdvanceMode" }
+    amount: { type: number, exclusiveMinimum: 0 }
+    reason: { type: string, maxLength: 500 }
+  required: [tripId, mode, amount, reason]
+
+VendorAdvance:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    advanceNo: { type: string }
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    vendorPartnerId: { type: string, format: uuid }
+    vendorName: { type: string }
+    mode: { $ref: "#/components/schemas/VendorAdvanceMode" }
+    amount: { type: number }
+    currency: { type: string }
+    reason: { type: string }
+    freightReference: { type: number, description: The freight the cap was measured against. }
+    freightSource: { type: string, enum: [BILL, ESTIMATE], description: "The trip's freight bill, or the platform's price of the load on the rate card in force." }
+    maxPercent: { type: number, description: The cap in force for the trip's unit and vendor when it was requested. }
+    status: { $ref: "#/components/schemas/VendorAdvanceStatus" }
+    approvalId: { type: string, format: uuid }
+    paidReference: { type: string }
+    paidOn: { type: string, format: date }
+    deductedInvoiceId: { type: string, format: uuid }
+    cancelReason: { type: string }
+    version: { type: integer, format: int64 }
+    createdAt: { type: string, format: date-time }
+  required: [id, advanceNo, tripId, vendorPartnerId, mode, amount, currency, reason, freightReference, freightSource, maxPercent, status, version]
+
+VendorAdvanceSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/VendorAdvance" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+PayVendorAdvanceRequest:
+  type: object
+  properties:
+    reference: { type: string, maxLength: 80, description: "The transfer, slip or card top-up reference." }
+    paidOn: { type: string, format: date }
+  required: [reference, paidOn]
+
+BillSettlement:
+  type: object
+  description: |
+    The balance settlement of a freight bill, derived from the records it
+    names: the approved amount split into freight and manual charges, the
+    advances paid against the trip and what is payable after them.
+  properties:
+    billId: { type: string, format: uuid }
+    billNo: { type: string }
+    status: { type: string }
+    currency: { type: string }
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    freightAmount: { type: number }
+    chargesAmount: { type: number, description: The manual charges that are lines of the bill. }
+    approvedAmount: { type: number, description: "The vendor's claim the bill was approved against, else the computed amount." }
+    advancesPaid: { type: number }
+    advancesDeducted: { type: number }
+    netPayable: { type: number }
+    invoiceId: { type: string, format: uuid }
+    invoiceNo: { type: string }
+    invoiceStatus: { $ref: "#/components/schemas/VendorInvoiceStatus" }
+    invoiceOutstanding: { type: number }
+    advances:
+      type: array
+      items: { $ref: "#/components/schemas/VendorAdvance" }
+  required: [billId, billNo, status, currency, freightAmount, chargesAmount, approvedAmount, advancesPaid, advancesDeducted, netPayable, advances]

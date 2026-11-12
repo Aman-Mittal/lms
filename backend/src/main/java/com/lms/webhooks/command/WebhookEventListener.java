@@ -28,6 +28,10 @@ import com.lms.delivery.events.ClaimRaised;
 import com.lms.delivery.events.ClaimStatusChanged;
 import com.lms.delivery.events.DeliveryProofRecorded;
 import com.lms.execution.events.GateEntryRecorded;
+import com.lms.finance.events.ManualChargeApproved;
+import com.lms.finance.events.VendorAdvancePaid;
+import com.lms.finance.events.VendorInvoiceCaptured;
+import com.lms.finance.events.VendorPaymentRecorded;
 import com.lms.execution.events.GateExitRecorded;
 import com.lms.execution.events.TripCancelled;
 import com.lms.execution.events.TripCompleted;
@@ -203,6 +207,43 @@ public class WebhookEventListener {
     }
 
     @TransactionalEventListener
+    public void on(ManualChargeApproved e) {
+        record(e.tenantId(), WebhookEventType.MANUAL_CHARGE_APPROVED, e.chargeId().toString(), e.occurredAt(),
+                fields("chargeId", e.chargeId(), "chargeNo", e.chargeNo(), "direction", e.direction(),
+                        "chargeCode", e.chargeCode(), "subjectType", e.subjectType(), "subjectId", e.subjectId(),
+                        "tripId", e.tripId(), "customerPartnerId", e.customerPartnerId(),
+                        "vendorPartnerId", e.vendorPartnerId(), "amount", e.amount(), "currency", e.currency(),
+                        "clientChargeId", e.clientChargeId(), "freightBillId", e.freightBillId()));
+    }
+
+    @TransactionalEventListener
+    public void on(VendorInvoiceCaptured e) {
+        record(e.tenantId(), WebhookEventType.VENDOR_INVOICE_CAPTURED, e.invoiceId().toString(), e.occurredAt(),
+                fields("invoiceId", e.invoiceId(), "invoiceNo", e.invoiceNo(), "vendorPartnerId", e.vendorPartnerId(),
+                        "vendorInvoiceNo", e.vendorInvoiceNo(), "invoiceDate", e.invoiceDate(),
+                        "dueDate", e.dueDate(), "amount", e.amount(), "taxAmount", e.taxAmount(),
+                        "totalAmount", e.totalAmount(), "advancesDeducted", e.advancesDeducted(),
+                        "currency", e.currency(), "billCount", e.billCount()));
+    }
+
+    @TransactionalEventListener
+    public void on(VendorPaymentRecorded e) {
+        record(e.tenantId(), WebhookEventType.VENDOR_PAYMENT_RECORDED, e.paymentId().toString(), e.occurredAt(),
+                fields("paymentId", e.paymentId(), "invoiceId", e.invoiceId(), "invoiceNo", e.invoiceNo(),
+                        "vendorPartnerId", e.vendorPartnerId(), "amount", e.amount(), "paidOn", e.paidOn(),
+                        "mode", e.mode(), "reference", e.reference(), "outstanding", e.outstanding(),
+                        "invoiceStatus", e.invoiceStatus(), "currency", e.currency()));
+    }
+
+    @TransactionalEventListener
+    public void on(VendorAdvancePaid e) {
+        record(e.tenantId(), WebhookEventType.VENDOR_ADVANCE_PAID, e.advanceId().toString(), e.occurredAt(),
+                fields("advanceId", e.advanceId(), "advanceNo", e.advanceNo(), "tripId", e.tripId(),
+                        "vendorPartnerId", e.vendorPartnerId(), "mode", e.mode(), "amount", e.amount(),
+                        "currency", e.currency(), "reference", e.reference(), "paidOn", e.paidOn()));
+    }
+
+    @TransactionalEventListener
     public void on(DeliveryProofRecorded e) {
         record(e.tenantId(), WebhookEventType.DELIVERY_PROOF_RECORDED, e.consignmentId().toString(),
                 e.occurredAt(), fields("consignmentId", e.consignmentId(), "deliveredAt", e.deliveredAt(),
@@ -290,7 +331,7 @@ public class WebhookEventListener {
         Map<String, Object> data = new LinkedHashMap<>();
         for (int i = 0; i < namesAndValues.length; i += 2) {
             Object value = namesAndValues[i + 1];
-            if (value instanceof UUID || value instanceof Instant) {
+            if (value instanceof UUID || value instanceof Instant || value instanceof java.time.LocalDate) {
                 value = value.toString();
             }
             data.put((String) namesAndValues[i], value);

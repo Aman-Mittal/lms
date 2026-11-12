@@ -140,6 +140,72 @@ import type {
   GatePassView, GateRegisterFilter, GateVisitPage, GateVisitView, TripStopView,
 } from './lms-gateway';
 
+// Charges, payables and advances
+import {
+  BillSettlement, ChargeCatalogueEntry, ChargesService, ManualCharge as ApiManualCharge,
+  VendorAdvance as ApiVendorAdvance, VendorAdvancesService, VendorInvoice as ApiVendorInvoice,
+  VendorInvoiceBill, VendorPayablesService, VendorPayment as ApiVendorPayment,
+} from '../api';
+import type {
+  BillSettlementView, ChargeCatalogueFilter, ChargeCataloguePage, ChargeEntryDraft, ChargeEntryView,
+  InvoiceBillView, ManualChargeDraft, ManualChargeFilter, ManualChargePage, ManualChargeView, MoneyOutcome,
+  VendorAdvanceDraft, VendorAdvancePage, VendorAdvanceView, VendorInvoiceDraft, VendorInvoiceFilter,
+  VendorInvoicePage, VendorInvoiceView, VendorPaymentDraft, VendorPaymentPage, VendorPaymentView,
+} from './lms-gateway';
+
+function chargeEntryOf(e: ChargeCatalogueEntry): ChargeEntryView {
+  return {
+    id: text(e.id), code: text(e.code), name: text(e.name), basis: text(e.basis), defaultRate: Number(e.defaultRate ?? 0),
+    direction: text(e.direction), active: e.active !== false, version: Number(e.version ?? 0),
+  };
+}
+
+function manualChargeOf(c: ApiManualCharge): ManualChargeView {
+  return {
+    id: text(c.id), chargeNo: text(c.chargeNo), chargeCode: text(c.chargeCode), chargeName: text(c.chargeName),
+    direction: text(c.direction), subjectType: text(c.subjectType), subjectRef: text(c.subjectRef), tripId: text(c.tripId),
+    quantity: Number(c.quantity ?? 0), rate: Number(c.rate ?? 0), amount: Number(c.amount ?? 0), currency: text(c.currency),
+    reason: text(c.reason), status: text(c.status), billed: c.billed === true, clientInvoiceId: text(c.clientInvoiceId),
+    freightBillNo: text(c.freightBillNo), cancelReason: text(c.cancelReason),
+  };
+}
+
+function vendorInvoiceOf(i: ApiVendorInvoice): VendorInvoiceView {
+  return {
+    id: text(i.id), invoiceNo: text(i.invoiceNo), vendorName: text(i.vendorName), vendorInvoiceNo: text(i.vendorInvoiceNo),
+    invoiceDate: text(i.invoiceDate), dueDate: text(i.dueDate), amount: Number(i.amount ?? 0), taxAmount: Number(i.taxAmount ?? 0),
+    totalAmount: Number(i.totalAmount ?? 0), currency: text(i.currency), approvedAmount: Number(i.approvedAmount ?? 0),
+    advancesDeducted: Number(i.advancesDeducted ?? 0), netPayable: Number(i.netPayable ?? 0),
+    paidAmount: Number(i.paidAmount ?? 0), outstanding: Number(i.outstanding ?? 0), status: text(i.status),
+    overdue: i.overdue === true, daysOverdue: Number(i.daysOverdue ?? 0),
+  };
+}
+
+function invoiceBillOf(b: VendorInvoiceBill): InvoiceBillView {
+  return { billId: text(b.billId), billNo: text(b.billNo), tripNo: text(b.tripNo), approvedAmount: Number(b.approvedAmount ?? 0) };
+}
+
+function vendorPaymentOf(p: ApiVendorPayment): VendorPaymentView {
+  return {
+    id: text(p.id), invoiceNo: text(p.invoiceNo), vendorName: text(p.vendorName), amount: Number(p.amount ?? 0),
+    paidOn: text(p.paidOn), mode: text(p.mode), reference: text(p.reference),
+  };
+}
+
+function vendorAdvanceOf(a: ApiVendorAdvance): VendorAdvanceView {
+  return {
+    id: text(a.id), advanceNo: text(a.advanceNo), tripNo: text(a.tripNo), vendorName: text(a.vendorName), mode: text(a.mode),
+    amount: Number(a.amount ?? 0), currency: text(a.currency), status: text(a.status), paidReference: text(a.paidReference),
+    paidOn: text(a.paidOn), reason: text(a.reason),
+  };
+}
+
+/** The answer to raising a charge or an advance: a 202 carries the approval request beside the id. */
+function moneyOutcomeOf(r: unknown): MoneyOutcome {
+  const body = r as { id?: string; approval?: { id?: string } };
+  return { id: text(body.id), pending: !!body.approval, approvalId: text(body.approval?.id) };
+}
+
 /** Minutes inside as people say them: `45 min`, `2 h 5 min`. */
 function dwellOf(minutes: number | undefined): string {
   if (minutes === undefined || minutes === null) {
@@ -2140,6 +2206,149 @@ export class GeneratedLmsGateway extends LmsGateway {
       () => undefined);
   }
 
+
+  // Charges, payables and advances
+  private readonly charges = inject(ChargesService);
+  private readonly payables = inject(VendorPayablesService);
+  private readonly advances = inject(VendorAdvancesService);
+
+  chargeCatalogue(filter: ChargeCatalogueFilter, cursor?: string): Promise<ChargeCataloguePage> {
+    return this.call(this.charges.listChargeCatalogue({
+      q: filter.q.trim() || undefined, active: filter.activeOnly ? true : undefined, cursor: cursor || undefined, limit: 50,
+    }), (s) => ({ items: s.items.map(chargeEntryOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null }));
+  }
+
+  chargeEntry(id: string): Promise<ChargeEntryView> {
+    return this.call(this.charges.getChargeCatalogueEntry({ id }), chargeEntryOf);
+  }
+
+  createChargeEntry(draft: ChargeEntryDraft): Promise<string> {
+    return this.call(this.charges.createChargeCatalogueEntry({
+      createChargeCatalogueEntryRequest: {
+        code: draft.code.trim(), name: draft.name.trim(), basis: draft.basis as never, defaultRate: draft.defaultRate,
+        direction: draft.direction as never, active: draft.active,
+      },
+    }), (r) => text(r.id));
+  }
+
+  updateChargeEntry(id: string, version: number, draft: ChargeEntryDraft): Promise<void> {
+    return this.call(this.charges.updateChargeCatalogueEntry({
+      id, ifMatch: `"${version}"`,
+      updateChargeCatalogueEntryRequest: {
+        name: draft.name.trim(), basis: draft.basis as never, defaultRate: draft.defaultRate,
+        direction: draft.direction as never, active: draft.active,
+      },
+    }), () => undefined);
+  }
+
+  manualCharges(filter: ManualChargeFilter, cursor?: string): Promise<ManualChargePage> {
+    return this.call(this.charges.listManualCharges({
+      status: filter.status || undefined, tripId: filter.tripId || undefined, cursor: cursor || undefined, limit: 25,
+    }), (s) => ({ items: s.items.map(manualChargeOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null }));
+  }
+
+  recordManualCharge(draft: ManualChargeDraft): Promise<MoneyOutcome> {
+    return this.call(this.charges.recordManualCharge({
+      recordManualChargeRequest: {
+        catalogueId: draft.catalogueId, subjectType: draft.subjectType as never, subjectId: draft.subjectId.trim(),
+        direction: (draft.direction || undefined) as never, customerId: blankAsAbsent(draft.customerId),
+        quantity: draft.quantity, rate: draft.rate ?? undefined, reason: draft.reason.trim(),
+        evidenceRef: blankAsAbsent(draft.evidenceRef),
+      },
+    }), moneyOutcomeOf);
+  }
+
+  async cancelManualCharge(id: string, reason: string): Promise<void> {
+    const charge = await this.call(this.charges.getManualCharge({ id }), (c) => c);
+    return this.call(this.charges.cancelManualCharge({
+      id, ifMatch: `"${charge.version ?? 0}"`, cancelMoneyRequest: { reason: reason.trim() },
+    }), () => undefined);
+  }
+
+  vendorInvoices(filter: VendorInvoiceFilter, cursor?: string): Promise<VendorInvoicePage> {
+    return this.call(this.payables.listVendorInvoices({
+      status: filter.status || undefined, overdue: filter.overdue ? true : undefined, cursor: cursor || undefined, limit: 25,
+    }), (s) => ({ items: s.items.map(vendorInvoiceOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null }));
+  }
+
+  vendorInvoice(id: string): Promise<VendorInvoiceView> {
+    return this.call(this.payables.getVendorInvoice({ id }), vendorInvoiceOf);
+  }
+
+  vendorInvoiceBills(id: string): Promise<InvoiceBillView[]> {
+    return this.call(this.payables.listVendorInvoiceBills({ id }), (bills) => bills.map(invoiceBillOf));
+  }
+
+  async captureVendorInvoice(draft: VendorInvoiceDraft): Promise<string> {
+    const ids: string[] = [];
+    for (const number of draft.billNumbers) {
+      const found = await this.call(this.freightBills.listFreightBills({ q: number, status: 'APPROVED_FOR_PAYMENT', limit: 50 }),
+        (s) => s.items.find((b) => b.billNo === number));
+      if (!found) {
+        throw new ApiProblem(`No freight bill numbered ${number} is approved for payment.`, 404, {}, 'not-found');
+      }
+      ids.push(text(found.id));
+    }
+    return this.call(this.payables.captureVendorInvoice({
+      captureVendorInvoiceRequest: {
+        vendorInvoiceNo: draft.vendorInvoiceNo.trim(), invoiceDate: draft.invoiceDate, amount: draft.amount,
+        taxAmount: draft.taxAmount, freightBillIds: ids, documentRef: blankAsAbsent(draft.documentRef),
+      },
+    }), (r) => text(r.id));
+  }
+
+  vendorPayments(invoiceId?: string, cursor?: string): Promise<VendorPaymentPage> {
+    const page = (s: { items: ApiVendorPayment[]; hasMore: boolean; nextCursor?: string }): VendorPaymentPage =>
+      ({ items: s.items.map(vendorPaymentOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null });
+    return invoiceId
+      ? this.call(this.payables.listVendorInvoicePayments({ id: invoiceId, cursor: cursor || undefined, limit: 50 }), page)
+      : this.call(this.payables.listVendorPayments({ cursor: cursor || undefined, limit: 25 }), page);
+  }
+
+  recordVendorPayment(invoiceId: string, draft: VendorPaymentDraft): Promise<string> {
+    return this.call(this.payables.recordVendorPayment({
+      id: invoiceId,
+      recordVendorPaymentRequest: {
+        amount: draft.amount, paidOn: draft.paidOn, mode: draft.mode as never, reference: draft.reference.trim(),
+      },
+    }), (r) => text(r.id));
+  }
+
+  billSettlement(billId: string): Promise<BillSettlementView> {
+    return this.call(this.payables.getBillSettlement({ id: billId }), (b: BillSettlement) => ({
+      billNo: text(b.billNo), status: text(b.status), freightAmount: Number(b.freightAmount ?? 0),
+      chargesAmount: Number(b.chargesAmount ?? 0), approvedAmount: Number(b.approvedAmount ?? 0),
+      advancesPaid: Number(b.advancesPaid ?? 0), netPayable: Number(b.netPayable ?? 0), invoiceNo: text(b.invoiceNo),
+      invoiceStatus: text(b.invoiceStatus),
+    }));
+  }
+
+  vendorAdvances(tripId?: string, cursor?: string): Promise<VendorAdvancePage> {
+    return this.call(this.advances.listVendorAdvances({ tripId: tripId || undefined, cursor: cursor || undefined, limit: 50 }),
+      (s) => ({ items: s.items.map(vendorAdvanceOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null }));
+  }
+
+  requestVendorAdvance(draft: VendorAdvanceDraft): Promise<MoneyOutcome> {
+    return this.call(this.advances.requestVendorAdvance({
+      requestVendorAdvanceRequest: {
+        tripId: draft.tripId, mode: draft.mode as never, amount: draft.amount, reason: draft.reason.trim(),
+      },
+    }), moneyOutcomeOf);
+  }
+
+  async payVendorAdvance(id: string, reference: string, paidOn: string): Promise<void> {
+    const advance = await this.call(this.advances.getVendorAdvance({ id }), (a) => a);
+    return this.call(this.advances.payVendorAdvance({
+      id, ifMatch: `"${advance.version ?? 0}"`, payVendorAdvanceRequest: { reference: reference.trim(), paidOn },
+    }), () => undefined);
+  }
+
+  async cancelVendorAdvance(id: string, reason: string): Promise<void> {
+    const advance = await this.call(this.advances.getVendorAdvance({ id }), (a) => a);
+    return this.call(this.advances.cancelVendorAdvance({
+      id, ifMatch: `"${advance.version ?? 0}"`, cancelMoneyRequest: { reason: reason.trim() },
+    }), () => undefined);
+  }
 
   // Number series
   private readonly numbering = inject(NumberSeriesService);

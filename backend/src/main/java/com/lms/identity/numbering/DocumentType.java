@@ -35,5 +35,11 @@ public enum DocumentType {
     LOAD,
     INVOICE,
     /** A client contract draft; without a series, the code its maker types. */
-    CONTRACT
+    CONTRACT,
+    /** A manual charge raised against a trip, consignment or order; without a series, a random {@code MC-} reference. */
+    MANUAL_CHARGE,
+    /** Our reference for a vendor's invoice; without a series, a random {@code VI-} reference. */
+    VENDOR_INVOICE,
+    /** An advance to a vendor against a trip; without a series, a random {@code ADV-} reference. */
+    VENDOR_ADVANCE
 }

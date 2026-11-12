@@ -78,6 +78,12 @@ public final class ChargePricing {
                     rate.unit(), rate.rate(), money(quantity.multiply(rate.rate())));
         }
 
+        if (charge.serviceType() == ServiceType.MANUAL) {
+            // Priced by whoever raised it: the amount on the line is theirs, never recomputed here.
+            return new Priced(charge.narrative() + reference, charge.unit(), charge.manualRate(),
+                    charge.manualAmount(), quantity);
+        }
+
         if (charge.serviceType() == ServiceType.TRANSPORT && lane != null) {
             java.util.Optional<ContractLane.Rating> rated = lane.rate(quantity);
             if (rated.isPresent()) {
@@ -103,7 +109,7 @@ public final class ChargePricing {
             case STORAGE -> new Priced("Storage" + reference, unit, rate, amount);
             case HANDLING_IN -> new Priced("Handling in" + reference, unit, rate, amount);
             case HANDLING_OUT -> new Priced("Handling out" + reference, unit, rate, amount);
-            case VALUE_ADDED -> throw new IllegalStateException("handled above");
+            case VALUE_ADDED, MANUAL -> throw new IllegalStateException("handled above");
         };
     }
 

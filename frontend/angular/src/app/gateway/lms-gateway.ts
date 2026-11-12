@@ -854,6 +854,30 @@ export abstract class LmsGateway {
   /** Reads the pass for its version, then cancels it with that as `If-Match`. */
   abstract cancelGatePass(id: string, reason: string): Promise<void>;
   abstract checkGatePass(query: GatePassQuery): Promise<GatePassVerdict>;
+  // Charges, payables and advances
+  abstract chargeCatalogue(filter: ChargeCatalogueFilter, cursor?: string): Promise<ChargeCataloguePage>;
+  /** Reads one entry; its `version` is what an edit sends as `If-Match`. Needs CHARGE_CATALOGUE_MANAGE or a charge right. */
+  abstract chargeEntry(id: string): Promise<ChargeEntryView>;
+  abstract createChargeEntry(draft: ChargeEntryDraft): Promise<string>;
+  abstract updateChargeEntry(id: string, version: number, draft: ChargeEntryDraft): Promise<void>;
+  abstract manualCharges(filter: ManualChargeFilter, cursor?: string): Promise<ManualChargePage>;
+  /** Raises a charge: `pending` is true when it is above the threshold and an approval request was raised instead. */
+  abstract recordManualCharge(draft: ManualChargeDraft): Promise<MoneyOutcome>;
+  /** Reads the charge for its version, then cancels it with that as `If-Match`. */
+  abstract cancelManualCharge(id: string, reason: string): Promise<void>;
+  abstract vendorInvoices(filter: VendorInvoiceFilter, cursor?: string): Promise<VendorInvoicePage>;
+  abstract vendorInvoice(id: string): Promise<VendorInvoiceView>;
+  abstract vendorInvoiceBills(id: string): Promise<InvoiceBillView[]>;
+  /** Captures an invoice against freight bills named by number (resolved among those approved for payment). */
+  abstract captureVendorInvoice(draft: VendorInvoiceDraft): Promise<string>;
+  abstract vendorPayments(invoiceId?: string, cursor?: string): Promise<VendorPaymentPage>;
+  abstract recordVendorPayment(invoiceId: string, draft: VendorPaymentDraft): Promise<string>;
+  abstract billSettlement(billId: string): Promise<BillSettlementView>;
+  abstract vendorAdvances(tripId?: string, cursor?: string): Promise<VendorAdvancePage>;
+  abstract requestVendorAdvance(draft: VendorAdvanceDraft): Promise<MoneyOutcome>;
+  /** Reads the advance for its version, then records its payment with that as `If-Match`. */
+  abstract payVendorAdvance(id: string, reference: string, paidOn: string): Promise<void>;
+  abstract cancelVendorAdvance(id: string, reason: string): Promise<void>;
   // Trip stops
   abstract tripStops(tripId: string): Promise<TripStopView[]>;
   /** The three below need TRIP_EXECUTE. */
@@ -1431,6 +1455,202 @@ export interface FreightBillDetail {
   lines: Row[];
 }
 
+// ---------------------------------------------------------------- charges, payables and advances
+
+export const CHARGE_BASES = ['FLAT', 'PER_KG', 'PER_HOUR', 'PER_DAY', 'PER_UNIT'] as const;
+export const CHARGE_DIRECTIONS = ['RECEIVABLE', 'PAYABLE', 'BOTH'] as const;
+export const CHARGE_SUBJECT_TYPES = ['TRIP', 'CONSIGNMENT', 'ORDER'] as const;
+export const ADVANCE_MODES = ['BANK', 'CASH', 'FUEL_SLIP', 'FUEL_CARD'] as const;
+export const PAYMENT_MODES = ['BANK_TRANSFER', 'CHEQUE', 'CASH', 'OTHER'] as const;
+
+export interface ChargeEntryView {
+  id: string;
+  code: string;
+  name: string;
+  basis: string;
+  defaultRate: number;
+  direction: string;
+  active: boolean;
+  version: number;
+}
+
+export interface ChargeEntryDraft {
+  code: string;
+  name: string;
+  basis: string;
+  defaultRate: number;
+  direction: string;
+  active: boolean;
+}
+
+export interface ChargeCatalogueFilter {
+  q: string;
+  /** Only active entries when true. */
+  activeOnly: boolean;
+}
+
+export interface ChargeCataloguePage {
+  items: ChargeEntryView[];
+  nextCursor: string | null;
+}
+
+export interface ManualChargeView {
+  id: string;
+  chargeNo: string;
+  chargeCode: string;
+  chargeName: string;
+  direction: string;
+  subjectType: string;
+  subjectRef: string;
+  tripId: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: string;
+  billed: boolean;
+  clientInvoiceId: string;
+  freightBillNo: string;
+  cancelReason: string;
+}
+
+export interface ManualChargeFilter {
+  status: string;
+  tripId: string;
+}
+
+export interface ManualChargePage {
+  items: ManualChargeView[];
+  nextCursor: string | null;
+}
+
+export interface ManualChargeDraft {
+  catalogueId: string;
+  subjectType: string;
+  subjectId: string;
+  direction: string;
+  customerId: string;
+  quantity: number;
+  rate: number | null;
+  reason: string;
+  evidenceRef: string;
+}
+
+/** What raising a charge or an advance answered: created, or waiting for the approval request named. */
+export interface MoneyOutcome {
+  id: string;
+  pending: boolean;
+  approvalId: string;
+}
+
+export interface VendorInvoiceView {
+  id: string;
+  invoiceNo: string;
+  vendorName: string;
+  vendorInvoiceNo: string;
+  invoiceDate: string;
+  dueDate: string;
+  amount: number;
+  taxAmount: number;
+  totalAmount: number;
+  currency: string;
+  approvedAmount: number;
+  advancesDeducted: number;
+  netPayable: number;
+  paidAmount: number;
+  outstanding: number;
+  status: string;
+  overdue: boolean;
+  daysOverdue: number;
+}
+
+export interface VendorInvoiceFilter {
+  status: string;
+  overdue: boolean;
+}
+
+export interface VendorInvoicePage {
+  items: VendorInvoiceView[];
+  nextCursor: string | null;
+}
+
+export interface InvoiceBillView {
+  billId: string;
+  billNo: string;
+  tripNo: string;
+  approvedAmount: number;
+}
+
+export interface VendorInvoiceDraft {
+  billNumbers: string[];
+  vendorInvoiceNo: string;
+  invoiceDate: string;
+  amount: number;
+  taxAmount: number;
+  documentRef: string;
+}
+
+export interface VendorPaymentView {
+  id: string;
+  invoiceNo: string;
+  vendorName: string;
+  amount: number;
+  paidOn: string;
+  mode: string;
+  reference: string;
+}
+
+export interface VendorPaymentPage {
+  items: VendorPaymentView[];
+  nextCursor: string | null;
+}
+
+export interface VendorPaymentDraft {
+  amount: number;
+  paidOn: string;
+  mode: string;
+  reference: string;
+}
+
+export interface VendorAdvanceView {
+  id: string;
+  advanceNo: string;
+  tripNo: string;
+  vendorName: string;
+  mode: string;
+  amount: number;
+  currency: string;
+  status: string;
+  paidReference: string;
+  paidOn: string;
+  reason: string;
+}
+
+export interface VendorAdvancePage {
+  items: VendorAdvanceView[];
+  nextCursor: string | null;
+}
+
+export interface VendorAdvanceDraft {
+  tripId: string;
+  mode: string;
+  amount: number;
+  reason: string;
+}
+
+export interface BillSettlementView {
+  billNo: string;
+  status: string;
+  freightAmount: number;
+  chargesAmount: number;
+  approvedAmount: number;
+  advancesPaid: number;
+  netPayable: number;
+  invoiceNo: string;
+  invoiceStatus: string;
+}
+
 // ---------------------------------------------------------------- yard gate and trip stops
 
 export const GATE_PURPOSES = ['TRIP', 'VISITOR', 'MAINTENANCE', 'RETURN', 'OTHER'] as const;
@@ -1737,7 +1957,8 @@ export type CreditChangeStatus = (typeof CREDIT_CHANGE_STATUSES)[number];
 
 // Number series
 
-export const NUMBERED_DOCUMENT_TYPES = ['ORDER', 'CONSIGNMENT_NOTE', 'DOCKET', 'TRIP', 'GATE_PASS', 'LOAD', 'INVOICE'] as const;
+export const NUMBERED_DOCUMENT_TYPES = ['ORDER', 'CONSIGNMENT_NOTE', 'DOCKET', 'TRIP', 'GATE_PASS', 'LOAD', 'INVOICE',
+  'MANUAL_CHARGE', 'VENDOR_INVOICE', 'VENDOR_ADVANCE'] as const;
 /** The kinds of document a number series can number. */
 export type NumberedDocumentType = (typeof NUMBERED_DOCUMENT_TYPES)[number];
 

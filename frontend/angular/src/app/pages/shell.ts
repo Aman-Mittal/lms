@@ -75,6 +75,12 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Finance' && session.can('CLIENT_BILLING_READ')) {
                 <a routerLink="/client-billing" routerLinkActive="active" data-testid="nav-client-billing">Client billing</a>
               }
+              @if (group === 'Finance' && session.can('MANUAL_CHARGE_RECORD')) {
+                <a routerLink="/manual-charges" routerLinkActive="active" data-testid="nav-manual-charges">Manual charges</a>
+              }
+              @if (group === 'Finance' && session.can('PAYABLES_MANAGE')) {
+                <a routerLink="/payables" routerLinkActive="active" data-testid="nav-payables">Vendor payables</a>
+              }
               <!-- Commercial -->
               @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE')
                   || session.can('ROUTING_GUIDE_MANAGE') || session.can('LOAD_ALLOCATE'))) {
@@ -117,7 +123,8 @@ import { GROUPS, RESOURCES } from './resources';
           <!-- Administration -->
           @if (session.can('ACCESS_POLICY_MANAGE') || session.can('VEHICLE_READ') || session.can('CREDIT_LIMIT_REQUEST')
                || session.can('CREDIT_LIMIT_APPROVE') || session.can('NUMBER_SERIES_MANAGE')
-               || session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE') || session.can('ORG_UNIT_MANAGE')) {
+               || session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE') || session.can('ORG_UNIT_MANAGE')
+               || session.can('CHARGE_CATALOGUE_MANAGE')) {
             <div class="group" data-testid="nav-admin">
               <h6>Administration</h6>
               @if (session.can('ACCESS_POLICY_MANAGE')) {
@@ -138,6 +145,10 @@ import { GROUPS, RESOURCES } from './resources';
               @if (session.can('ORG_UNIT_MANAGE')) {
                 <a routerLink="/admin/org-units" routerLinkActive="active"
                    data-testid="nav-admin-org-units">Organisation units</a>
+              }
+              @if (session.can('CHARGE_CATALOGUE_MANAGE')) {
+                <a routerLink="/charge-catalogue" routerLinkActive="active"
+                   data-testid="nav-charge-catalogue">Charge catalogue</a>
               }
               @if (session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE')) {
                 <a routerLink="/admin/settings" routerLinkActive="active"

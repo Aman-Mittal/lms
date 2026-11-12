@@ -41,6 +41,12 @@ public final class ApprovalSubjectTypes {
     /** Adding a value-added charge to a client contract from a date. Owned by {@code clientbilling}. */
     public static final String CONTRACT_CHARGE_ADD = "CONTRACT_CHARGE_ADD";
 
+    /** A manual charge above the tenant's threshold taking effect. Owned by {@code finance}. */
+    public static final String MANUAL_CHARGE = "MANUAL_CHARGE";
+
+    /** Paying a vendor an advance against a trip. Owned by {@code finance}. */
+    public static final String VENDOR_ADVANCE = "VENDOR_ADVANCE";
+
     private ApprovalSubjectTypes() {
     }
 }

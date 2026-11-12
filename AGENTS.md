@@ -178,12 +178,12 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 | `sourcing` | Routing guides, cascading and round-robin allocation, offer timeouts. |
 | `execution` | Trip state machine, gate log, weighbridge, dispatch gate, LTL delivery leg. |
 | `telematics` | GPS ingest, geofence crossings, route deviation, stoppage detection, retention. |
-| `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables, rail-leg carrier payables. |
+| `finance` | Versioned rate cards, freight bills, tolerance matching, settlement holds, LTL zone rating and docket receivables, milk-run circuit payables, rail-leg carrier payables; a charge catalogue and manual charges, vendor invoices with payments and an overdue list, vendor advances (V60). |
 | `controltower` | Exception tickets from people and detectors (route deviation, stoppage, ETA slip, temperature excursion, missed rail connections, skipped or late milk-run stops, receipt variances, pick shortfalls). |
 | `milkrun` | Versioned multi-stop pickup routes, generated circuit runs, per-stop recording, priced completion. |
 | `multimodal` | Itineraries of road and rail legs, railhead terminals, versioned rail rate cards, hand-off dwell rule, missed-connection sweep, announces released rail legs. |
 | `warehouse` | ASN receipt with variances, putaway to bins, append-only stock ledger, pick/wave/pack/dispatch of handling units, back-orders, quarantine, cross-dock. |
-| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates; a version is a draft, then verified through approvals, with an optional end date, an approved extension and approved charge additions; lanes -- origin and destination as a terminal or an LTL zone, mode, load type, a rate basis with weight slabs, transit days, allowed consignees -- and allowances (direct orders, load types) that an order resolves against), service usage, storage computed from the warehouse ledger, client charges, monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
+| `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates; a version is a draft, then verified through approvals, with an optional end date, an approved extension and approved charge additions; lanes -- origin and destination as a terminal or an LTL zone, mode, load type, a rate basis with weight slabs, transit days, allowed consignees -- and allowances (direct orders, load types) that an order resolves against), service usage, storage computed from the warehouse ledger, client charges (including manual ones raised by finance), monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
 | `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, combination, contract, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
 | `approvals` | One approvals module for every flow: requests with a frozen payload, a policy per subject type (copied onto each request), decisions applied in-process by the owning module's handler, the inbox, expiry. Depends on `identity::access` only. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
@@ -263,6 +263,12 @@ Rules that make the split worth having:
   side; a lane a person chose (`lane_chosen`) is held to when the order
   is judged again, otherwise the first lane by code that serves every line is
   found at validation, never before the order has lines.
+  `finance::api` defines `ReceivableChargePort` (V60, issue #225; client billing
+  implements it, so `clientbilling` declares `finance::api` and `finance` never
+  depends on `clientbilling`): an approved manual receivable is captured as a
+  `MANUAL` client charge in the same transaction, and withdrawn while it is on
+  no invoice. A customer with no client contract captures nothing (the same rule
+  transport and hand-off charges follow) and finance records the receivable alone.
 - **Anything that needs a person to agree first goes through `approvals`.**
   Never build a second maker-checker. To add a flow: a constant in
   `approvals.api.ApprovalSubjectTypes`, its code default in
@@ -353,8 +359,11 @@ customer, combination; default 30 minutes, V59); `yard.gate.passRequired`
 known document types), `execution.dispatch.weightTolerancePct` and
 `execution.tracking.autoDeparture` / `.autoArrival` / `.autoCompleteOnExit`
 (unit, vehicle, customer); `finance.match.tolerancePercent` and
-`.toleranceAbsolute` (unit, vendor); and the calendar, UI and notification
-preferences; `approvals.policy.orderCancellation` and `.podReversal` (unit,
+`.toleranceAbsolute` (unit, vendor); `finance.manualCharge.approvalThreshold` (decimal, default 10000.00;
+unit, customer, vendor, combination), `finance.payables.paymentTermsDays` (integer, default 30; unit, vendor,
+combination) and `finance.advance.maxPercentOfFreight` (decimal, default 70; unit, vendor, combination), V60; and the calendar, UI and notification
+preferences; `approvals.policy.orderCancellation`, `.podReversal`, `.manualCharge` and
+`.vendorAdvance` (unit,
 customer, combination; a JSON policy, refused for an unknown permission through
 `SettingContributor.refusal`, a write-time check only the owning module can
 make). CONTRACT (V58) is opted into by the order close tolerance and the
@@ -489,6 +498,97 @@ All in `execution` (and `telematics` for corridors). Decisions worth knowing:
   `PUT /telematics/corridors` (`TELEMATICS_INGEST`). Deviation is measured
   against it (`route_deviation.reference = CORRIDOR`, its optional width
   replacing the setting) and falls back to the straight line without one.
+
+### Money: charge catalogue, manual charges, vendor payables, advances (V60, issue #225)
+
+All in `finance` (`finance::api` for the one SPI, `finance::events` for the four
+webhook facts); `clientbilling` implements the receivable side. Decisions worth knowing:
+
+- **Nothing is re-priced.** Tariffs and priced freight bills are untouched. A manual
+  payable is a `MANUAL_CHARGE` line (`freight_bill_line.manual_charge_id`) added to
+  the trip's bill **only while the bill is a DRAFT nobody has matched**
+  (`FreightBill.withManualAdjustment` refuses any other status,
+  `bill-not-open`); the bill's computed amount moves by the charge, so the vendor's
+  claim is matched against freight plus charges. A trip whose bill is approved,
+  disputed or cancelled, or not raised yet, leaves the charge `APPROVED` and
+  **waiting**: the next freight bill raised for that vendor (trip, circuit or rail
+  leg) takes every waiting payable up as lines when it is created
+  (`PayableAttachment.takeUpWaiting`, called by `BillingService`). So an addition
+  after approval is a supplementary line on the vendor's next bill, never a change
+  to a judged bill and never a bill of its own. Waiting charges are listed with
+  `status=APPROVED` and no `freightBillId`.
+- **Catalogue** (`charge_catalogue`, `CHARGE_CATALOGUE_MANAGE`): code (upper case,
+  unique per tenant, never changes), name, basis (`FLAT`, `PER_KG`, `PER_HOUR`,
+  `PER_DAY`, `PER_UNIT`), default rate, direction (`RECEIVABLE`, `PAYABLE`, `BOTH`),
+  `active`; edited under `If-Match`, switched off rather than deleted, audited. A
+  raised charge keeps a copy of what the entry said. A `FLAT` charge counts as one
+  whatever quantity is sent; the others are quantity times rate, half-up to two
+  decimals (`ChargeBasis`).
+- **Manual charges** (`manual_charge`, `MANUAL_CHARGE_RECORD`): against a TRIP,
+  CONSIGNMENT or ORDER; a receivable is billed to the customer of the subject (a trip
+  with several customers aboard takes `customerId`), a payable is raised against a
+  TRIP only and is owed to its vendor. Needs approval when the amount exceeds
+  `finance.manualCharge.approvalThreshold`, **resolved for the record in hand**
+  (its unit and the customer or vendor) and read on the server, never from the
+  request, and when `approvals.isRequired(MANUAL_CHARGE, context)` (policy
+  `approvals.policy.manualCharge`, permission `MANUAL_CHARGE_APPROVE`, required by
+  default, a tenant may switch it off). Answers 201, or 202 with the charge and the
+  ticket (`PENDING_APPROVAL`); the handler `ManualChargeApproval` re-validates
+  (`manual-charge-not-pending`) and applies in the deciding transaction.
+  Rejected or expired is `REJECTED`; withdrawn is `CANCELLED`. A receivable becomes a
+  `MANUAL` client charge (`ServiceType.MANUAL`, `client_charge.manual_rate/_amount/
+  narrative`, priced by its own amount at the billing run, taxed at the contract's
+  transport rate) for the customer's next open month. Cancellation (If-Match, reason)
+  only before billing: pending (the request is withdrawn through
+  `ApprovalRequests.withdraw`), a receivable whose client charge is on no invoice (the
+  delete is one conditional statement under the client's period lock, so a billing
+  run racing it decides it; `manual-charge-already-billed` after), a payable whose
+  bill is still a draft (its line is removed and the amount reduced) or not yet on
+  any bill. Numbered from a `MANUAL_CHARGE` series when one covers the unit, else
+  `MC-` and a random suffix.
+- **Vendor invoices** (`vendor_invoice`, `vendor_invoice_bill`, `PAYABLES_MANAGE`):
+  one or more freight bills **approved for payment**, one vendor, one currency, each
+  invoiced once (`vendor_invoice_bill_once`); the vendor's number is unique per
+  vendor ignoring case. The amount is matched with what the bills were approved at
+  (the vendor's claim each was approved against, else its computed amount) by the
+  allowance of `finance.match.tolerancePercent` / `.toleranceAbsolute` for the
+  bills' unit and vendor (`InvoiceMatch`); outside it `vendor-invoice-mismatch` and
+  nothing is recorded. Due date is the invoice date plus
+  `finance.payables.paymentTermsDays` for that vendor, kept on the invoice. Numbered
+  from a `VENDOR_INVOICE` series, else `VI-` and a random suffix. **Overdue is read
+  against today, never stored**, so there is no job; the overdue list is the partial
+  index `vendor_invoice_due_idx` (`status <> 'PAID'`), keyset on due date and id.
+- **Payments** (`vendor_payment`): part or whole, never more than outstanding
+  (`vendor-payment-exceeds-balance`); the invoice row is locked `FOR UPDATE` first so
+  two payments racing for the last of the balance are served in turn; the reference is
+  unique per vendor. Outstanding is arithmetic: total less advances deducted less
+  payments. A freight bill's balance settlement is `GET /freight-bills/{id}/settlement`
+  (approved amount split into freight and charges, advances paid, net payable), derived
+  on read.
+- **Advances** (`vendor_advance`, `ADVANCE_REQUEST`; paying is `PAYABLES_MANAGE`):
+  against a trip with a vendor; `BANK`, `CASH`, `FUEL_SLIP` or `FUEL_CARD`, one live
+  advance per mode per trip (`vendor_advance_mode_once_idx`). The cap is
+  `finance.advance.maxPercentOfFreight` (resolved for the trip's unit and vendor)
+  across **every live advance on the trip**, serialised by a per-trip advisory lock;
+  the freight is the trip's freight bill, else the platform's own price of the load on
+  the rate card in force (`AdvanceFreight`, no detention), else
+  `advance-freight-unknown`; it is never taken from the request. Approval through
+  `approvals.policy.vendorAdvance` (permission `ADVANCE_APPROVE`, required by default),
+  then paid with a reference, then **deducted when the vendor's invoice for the trip is
+  captured** (oldest first, while the running total fits the invoice). Cancelling is
+  only before payment (`advance-already-paid`), and gives the mode and the cap back.
+  Numbered from a `VENDOR_ADVANCE` series, else `ADV-` and a random suffix.
+- **Rights**: `CHARGE_CATALOGUE_MANAGE`, `MANUAL_CHARGE_RECORD`,
+  `MANUAL_CHARGE_APPROVE`, `PAYABLES_MANAGE`, `ADVANCE_REQUEST`, `ADVANCE_APPROVE`.
+  Reads accept any right of the family (and `INVOICE_READ` for payables); a
+  partner-bound caller sees only rows naming that partner. Not yet held to an org unit
+  by ABAC (the unit is derived from the subject on the server).
+- **Webhooks**: `MANUAL_CHARGE_APPROVED`, `VENDOR_INVOICE_CAPTURED`,
+  `VENDOR_PAYMENT_RECORDED`, `VENDOR_ADVANCE_PAID`. Every transition is audited in its
+  own transaction (`TransitionAudit`). Not built: TDS, vendor debit/credit notes,
+  payment requests, a fuel-card provider, an e-payment export, editing a manual
+  charge (cancel and raise again), a supplementary bill for a vendor with no further
+  bill.
 
 ### Idempotency is required on every state-changing endpoint
 

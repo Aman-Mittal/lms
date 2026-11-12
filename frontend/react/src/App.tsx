@@ -60,6 +60,9 @@ const CreditLimits = lazy(() => import('./pages/Credit').then((m) => ({ default:
 const NumberSeries = lazy(() => import('./pages/NumberSeries').then((m) => ({ default: m.NumberSeries })));
 const ProfileSettings = lazy(() => import('./pages/ProfileSettings').then((m) => ({ default: m.ProfileSettings })));
 const OrgUnits = lazy(() => import('./pages/OrgUnits').then((m) => ({ default: m.OrgUnits })));
+const ChargeCatalogue = lazy(() => import('./pages/ChargeCatalogue').then((m) => ({ default: m.ChargeCatalogue })));
+const ManualCharges = lazy(() => import('./pages/ManualCharges').then((m) => ({ default: m.ManualCharges })));
+const VendorPayables = lazy(() => import('./pages/VendorPayables').then((m) => ({ default: m.VendorPayables })));
 const MyProfile = lazy(() => import('./pages/MyProfile').then((m) => ({ default: m.MyProfile })));
 
 function Deferred({ children }: { children: ReactNode }) {
@@ -112,6 +115,9 @@ export function App() {
           <Route path="admin/number-series" element={<Deferred><NumberSeries /></Deferred>} />
           <Route path="admin/settings" element={<Deferred><ProfileSettings /></Deferred>} />
           <Route path="admin/org-units" element={<Deferred><OrgUnits /></Deferred>} />
+          <Route path="charge-catalogue" element={<Deferred><ChargeCatalogue /></Deferred>} />
+          <Route path="manual-charges" element={<Deferred><ManualCharges /></Deferred>} />
+          <Route path="payables" element={<Deferred><VendorPayables /></Deferred>} />
           <Route path="me" element={<Deferred><MyProfile /></Deferred>} />
           {/* Control tower */}
           <Route path="exception-desk" element={<ExceptionDesk />} />

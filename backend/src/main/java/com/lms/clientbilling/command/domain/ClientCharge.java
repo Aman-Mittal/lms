@@ -60,7 +60,11 @@ public record ClientCharge(
          * whichever contract version is in force when the invoice is raised;
          * null prices by the contract's per-kilo rate, as before lanes.
          */
-        UUID contractLaneId) {
+        UUID contractLaneId,
+        /** A {@code MANUAL} charge's own rate, amount and invoice line; null for every other type. */
+        BigDecimal manualRate,
+        BigDecimal manualAmount,
+        String narrative) {
 
     public static ClientCharge capture(UUID id, UUID tenantId, UUID clientPartnerId,
                                        ServiceType serviceType, String serviceCode,
@@ -96,7 +100,25 @@ public record ClientCharge(
         return new ClientCharge(id, tenantId, clientPartnerId, serviceType,
                 ContractServiceRate.normalise(serviceCode), quantity, unit, occurredOn,
                 billingPeriod, sourceKey.trim(), reference, tripId, costShare, null, null,
-                Instant.now(), contractLaneId);
+                Instant.now(), contractLaneId, null, null, null);
+    }
+
+    /**
+     * A charge raised by hand, priced at capture by the person who raised it:
+     * {@code amount} is what the invoice line will show, whatever the contract
+     * rates say.
+     */
+    public static ClientCharge manual(UUID id, UUID tenantId, UUID clientPartnerId, BigDecimal quantity, String unit,
+                                      BigDecimal rate, BigDecimal amount, String narrative, LocalDate occurredOn,
+                                      LocalDate billingPeriod, String sourceKey, String reference, UUID tripId) {
+        if (quantity == null || quantity.signum() <= 0 || amount == null || amount.signum() <= 0 || rate == null
+                || rate.signum() < 0 || narrative == null || narrative.isBlank() || sourceKey == null
+                || sourceKey.isBlank()) {
+            throw new IllegalArgumentException("A manual charge needs a quantity, a rate, an amount, a narrative and a key");
+        }
+        return new ClientCharge(id, tenantId, clientPartnerId, ServiceType.MANUAL, null, quantity, unit, occurredOn,
+                billingPeriod, sourceKey.trim(), reference, tripId, null, null, null, Instant.now(), null, rate,
+                amount, narrative.strip());
     }
 
     /** The month a day falls in, as its first day. */

@@ -22,8 +22,10 @@ NumberedDocumentType:
     full-truckload lorry receipt) and DOCKET (a part load) draw from a series
     when one covers the document's unit; without one they keep their built-in
     numbering. CONTRACT numbers a client contract draft created without a
-    code. The others can be configured, issued by hand and verified.
-  enum: [ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE, CONTRACT]
+    code. MANUAL_CHARGE, VENDOR_INVOICE and VENDOR_ADVANCE number the money
+    documents of issue 225; without a series each keeps a random reference. The
+    others can be configured, issued by hand and verified.
+  enum: [ORDER, CONSIGNMENT_NOTE, DOCKET, TRIP, GATE_PASS, LOAD, INVOICE, CONTRACT, MANUAL_CHARGE, VENDOR_INVOICE, VENDOR_ADVANCE]
 
 NumberYearCode:
   type: string

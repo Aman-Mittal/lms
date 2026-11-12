@@ -21,11 +21,12 @@ import { LmsGateway, TripRoute as Route, TripStopView } from '../gateway/lms-gat
 import { Session } from '../session';
 import { MapView } from './map-view';
 import { EntityPicker } from './entity-picker';
+import { TripMoney } from './trip-money';
 
 /** A trip's track so far and where it is now. */
 @Component({
   selector: 'app-trip-route',
-  imports: [FormsModule, MapView, EntityPicker],
+  imports: [FormsModule, MapView, EntityPicker, TripMoney],
   template: `
     <h1>Trip route</h1>
     <p class="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
@@ -109,6 +110,7 @@ import { EntityPicker } from './entity-picker';
           </table>
         }
       </section>
+      <app-trip-money [tripId]="shownTripId()" />
     }
   `,
 })
@@ -122,6 +124,7 @@ export class TripRoute implements OnInit {
   readonly typed = signal('');
   readonly stops = signal<TripStopView[]>([]);
   readonly stopError = signal('');
+  readonly shownTripId = signal('');
   readonly skipping = signal('');
   readonly skipReason = signal('');
   /** The trip the stops belong to: what was looked up, not what is typed since. */
@@ -138,6 +141,7 @@ export class TripRoute implements OnInit {
 
   async lookUp(): Promise<void> {
     this.route.set(null);
+    this.shownTripId.set('');
     this.stops.set([]);
     this.error.set('');
     this.stopError.set('');
@@ -145,6 +149,7 @@ export class TripRoute implements OnInit {
     try {
       this.shownTrip = this.typed().trim();
       this.route.set(await this.gateway.tripRoute(this.shownTrip));
+      this.shownTripId.set(this.shownTrip);
       await this.loadStops();
     } catch (e) {
       this.error.set((e as Error).message);

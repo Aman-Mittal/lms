@@ -34,10 +34,15 @@ class FinanceSettingDefinitionsTest {
                 new FinanceSettingDefinitions(new BigDecimal("2"), new BigDecimal("100")).definitions();
 
         assertThat(definitions).extracting(SettingDefinition::key)
-                .containsExactly("finance.match.tolerancePercent", "finance.match.toleranceAbsolute");
+                .containsExactly("finance.match.tolerancePercent", "finance.match.toleranceAbsolute",
+                        "finance.manualCharge.approvalThreshold", "finance.payables.paymentTermsDays",
+                        "finance.advance.maxPercentOfFreight");
         assertThat(definitions).extracting(SettingDefinition::defaultValue)
-                .containsExactly(new BigDecimal("2"), new BigDecimal("100"));
-        assertThat(definitions).allSatisfy(d -> assertThat(d.scopes())
+                .containsExactly(new BigDecimal("2"), new BigDecimal("100"), new BigDecimal("10000.00"), 30,
+                        new BigDecimal("70"));
+        assertThat(definitions.subList(0, 2)).allSatisfy(d -> assertThat(d.scopes())
                 .containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT, ScopeType.VENDOR, ScopeType.COMBINATION));
+        assertThat(definitions.get(2).scopes()).containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT,
+                ScopeType.CUSTOMER, ScopeType.VENDOR, ScopeType.COMBINATION);
     }
 }

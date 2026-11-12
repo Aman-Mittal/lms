@@ -44,6 +44,20 @@ public class FinanceSettingDefinitions implements SettingContributor {
     public static final SettingKey<BigDecimal> MATCH_TOLERANCE_ABSOLUTE =
             SettingKey.decimal("finance.match.toleranceAbsolute");
 
+    /**
+     * The amount above which a manual charge needs an approval (when the
+     * tenant's {@code MANUAL_CHARGE} policy asks for one), in the charge's
+     * currency. Resolved for the record in hand: its unit, the customer of a
+     * receivable or the vendor of a payable.
+     */
+    public static final SettingKey<BigDecimal> MANUAL_CHARGE_APPROVAL_THRESHOLD =
+            SettingKey.decimal("finance.manualCharge.approvalThreshold");
+    /** Days from the vendor's invoice date to its due date, for the vendor and the unit that owes it. */
+    public static final SettingKey<Integer> PAYMENT_TERMS_DAYS = SettingKey.integer("finance.payables.paymentTermsDays");
+    /** The most of a trip's freight that may be advanced to its vendor, in percent. */
+    public static final SettingKey<BigDecimal> ADVANCE_MAX_PERCENT_OF_FREIGHT =
+            SettingKey.decimal("finance.advance.maxPercentOfFreight");
+
     private final BigDecimal defaultPercent;
     private final BigDecimal defaultAbsolute;
 
@@ -67,6 +81,21 @@ public class FinanceSettingDefinitions implements SettingContributor {
                                         + " tolerated; the allowance is the greater of this and the"
                                         + " percentage.")
                         .defaultValue(defaultAbsolute).range(0, 100_000_000).scale(2)
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR, ScopeType.COMBINATION).build(),
+                SettingDefinition.of(MANUAL_CHARGE_APPROVAL_THRESHOLD, "Manual charge approval threshold",
+                                "A manual charge whose amount is above this needs an approval before it takes"
+                                        + " effect; one at or below it is in force at once.")
+                        .defaultValue(new BigDecimal("10000.00")).range(0, 1_000_000_000).scale(2)
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER, ScopeType.VENDOR, ScopeType.COMBINATION)
+                        .build(),
+                SettingDefinition.of(PAYMENT_TERMS_DAYS, "Vendor payment terms (days)",
+                                "Days from a vendor's invoice date to the day it falls due.")
+                        .defaultValue(30).range(0, 365)
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR, ScopeType.COMBINATION).build(),
+                SettingDefinition.of(ADVANCE_MAX_PERCENT_OF_FREIGHT, "Advance cap (% of freight)",
+                                "The most of a trip's freight, in percent, that may be advanced to its"
+                                        + " vendor, across every live advance on the trip.")
+                        .defaultValue(new BigDecimal("70")).range(0, 100).scale(2)
                         .alsoAt(ScopeType.ORG_UNIT, ScopeType.VENDOR, ScopeType.COMBINATION).build());
     }
 }
