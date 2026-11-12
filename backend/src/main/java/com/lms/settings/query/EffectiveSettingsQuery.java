@@ -182,6 +182,7 @@ public class EffectiveSettingsQuery {
                           OR (p.scope_type = 'CUSTOMER' AND p.scope_id = CAST(:customerId AS uuid))
                           OR (p.scope_type = 'VEHICLE' AND p.scope_id = CAST(:vehicleId AS uuid))
                           OR (p.scope_type = 'VENDOR' AND p.scope_id = CAST(:vendorId AS uuid))
+                          OR (p.scope_type = 'CONTRACT' AND p.scope_id = CAST(:contractId AS uuid))
                           OR (p.scope_type = 'USER' AND p.scope_id = CAST(:userId AS uuid))
                           OR (p.scope_type = 'COMBINATION'
                               AND (p.match_org_unit_id IS NULL OR starts_with(ctx.path, cu.path))
@@ -206,6 +207,7 @@ public class EffectiveSettingsQuery {
                 .param("customerId", context.customerId())
                 .param("vehicleId", context.vehicleId())
                 .param("vendorId", context.vendorId())
+                .param("contractId", context.contractId())
                 .param("userId", context.userId())
                 .param("country", context.country())
                 .param("state", context.state())
