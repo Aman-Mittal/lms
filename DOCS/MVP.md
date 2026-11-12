@@ -583,6 +583,38 @@ request after a quiet spell pays the start-up cost above.
   `_CHARGE_ADDED`, ...). The in-process `ClientContractService.publishContract`
   still puts a version in force at once, for imports and tests; it has no HTTP
   route. Both consoles' client desk has a contract lifecycle panel.
+- **Contract lanes and choosing the contract at order entry** (V58, issue #219):
+  a contract version carries lanes, written with the draft (`lanes` on
+  `POST`/`PUT /client-billing/contracts`, replaced whole, left out kept):
+  origin and destination each a terminal or an LTL zone, freight mode, load
+  type, a rate basis (PER_KG, PER_TRIP, PER_TONNE) with optional weight slabs
+  (half-open bands copied from a carrier rate card, each with its own basis),
+  transit days and optional consignor and consignee lists. They are frozen with
+  the version (the database refuses any write to a lane once it is not a draft)
+  and copied into a charge-add successor. The checklist has an optional `LANES`
+  rule (not in the system default). The version also carries `directOrdersAllowed`
+  and `allowedLoadTypes`. An order takes an optional `contractLaneId` and
+  `loadType`; the contract version in force on its date (requested pickup day,
+  else today) and the lane are recorded on it (`contractId`, `contractLaneId`,
+  `transitDays`, `expectedDeliveryDate` on the order view). A lane the person
+  chose is held to; otherwise the first lane by code that serves the lines is
+  found at validation. 409 `order-outside-contract-lanes`,
+  `order-load-type-not-allowed` and `order-consignee-not-allowed` refuse the
+  rest, unless the contract allows direct orders (then an order no lane serves is
+  accepted without a lane, priced as before). No contract in force is today's
+  behaviour. A transport charge is priced from the lane its orders travelled on
+  (rate basis, the weight slab covering the charge, the contract's minimum
+  charge still applying), the lane recorded on the charge when it is captured, so
+  a raised bill is never repriced. Transit days are the lane's, else the
+  straight-line distance over setting `order.transit.kmPerDay` (default 400).
+  Settings gain a CONTRACT scope keyed by the contract family (the same through
+  every version), used by the order close tolerance and the dispatch checklist.
+  `GET /client-billing/clients/{id}/contract-lanes` feeds the order desk's lane
+  pick in both consoles, which fills the origin, load type and destinations from
+  the lane and shows the contract, lane and promised days on the order. Not
+  built: consignor lists are stored and shown but not enforced (an order has no
+  consignor besides its customer), contract quantity or value caps, bulk lane
+  upload, and a console picker for CONTRACT-scope profiles.
 - Not wired yet (the same seam): order change
   approvals (FR-ORD-005/027), cost and charge approval, terminal creation,
   seals, vendor advances.
@@ -736,8 +768,8 @@ confirm image-backed deploys on the *free* instance type. The image and
 blueprint are ready, and the container was exercised under the free tier's
 memory and CPU limits locally (see the measurement above), but creating the
 service requires a Render account. If free instances turn out to be
-build-from-repo only, the fallback is the `jvm` Dockerfile target, which has
-not been measured here.
+build-from-repo only, the fallback is the `jvm` Dockerfile target, which
+has not been measured here.
 
 Backups and disaster recovery (RPO < 5 min, RTO < 1 h for a self-hosted
 database: pgBackRest archiving, point-in-time restore, a weekly restore drill)
