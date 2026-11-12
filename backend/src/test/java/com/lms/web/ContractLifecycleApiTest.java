@@ -347,7 +347,8 @@ class ContractLifecycleApiTest {
             assertThat(c.getState()).isEqualTo(ClientContract.StateEnum.EXPIRED);
         });
         // Nothing prices work done after the end date.
-        assertProblem(() -> desk.recordClientServiceUsage(otherClient, usage("e-1"), null), 409, null);
+        assertProblem(() -> desk.recordClientServiceUsage(otherClient, usage("e-1").occurredOn(TODAY), null), 409,
+                "client-contract-expired");
     }
 
     // -------------------------------------------------------------- extension

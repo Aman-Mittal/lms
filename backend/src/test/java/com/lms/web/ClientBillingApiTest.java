@@ -496,7 +496,8 @@ class ClientBillingApiTest {
         String token = tokens.issueAccessToken(desk, orgPath, List.of("APPROVAL_POLICY_MANAGE")).value();
         apiClient.getFeignBuilder().requestInterceptor(template -> template.header("Authorization", "Bearer " + token));
         apiClient.buildClient(ApprovalsApi.class).setApprovalPolicy("CONTRACT_ACTIVATION",
-                new ApprovalPolicyRequest().required(false), null);
+                new ApprovalPolicyRequest().required(false)
+                        .decidePermissions(java.util.List.of("CLIENT_CONTRACT_APPROVE")), null);
     }
 
     private ClientContractDraftRequest contractRequest(UUID client, String code,
