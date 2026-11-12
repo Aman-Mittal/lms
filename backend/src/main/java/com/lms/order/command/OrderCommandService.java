@@ -85,6 +85,7 @@ public class OrderCommandService {
     private final DocumentNumbers documentNumbers;
     private final OrderCreditGate creditGate;
     private final ApprovalRequests approvals;
+    private final OrderContractDesk contractDesk;
 
     /**
      * How many assigned numbers are skipped, at most, because a caller already
@@ -100,7 +101,8 @@ public class OrderCommandService {
                                List<OrderCancellationHook> cancellationHooks,
                                List<OrderAmendmentGuard> amendmentGuards, TransitionAudit audit,
                                OrderNumberSequence numbers, OrderCreditGate creditGate,
-                               DocumentNumbers documentNumbers, ApprovalRequests approvals) {
+                               DocumentNumbers documentNumbers, ApprovalRequests approvals,
+                               OrderContractDesk contractDesk) {
         this.orders = orders;
         this.lines = lines;
         this.events = events;
@@ -113,6 +115,7 @@ public class OrderCommandService {
         this.creditGate = creditGate;
         this.documentNumbers = documentNumbers;
         this.approvals = approvals;
+        this.contractDesk = contractDesk;
     }
 
     /** Raises a full-truckload order, which is what an order without a mode has always been. */
@@ -146,6 +149,32 @@ public class OrderCommandService {
                            Instant requestedDeliveryAt, SalesOrder.OrderSource source,
                            FreightMode freightMode, UUID originHubTerminalId,
                            UUID destinationHubTerminalId) {
+        return raiseOrder(orgUnitId, customerPartnerId, orderNo, originTerminalId, requestedPickupAt,
+                requestedDeliveryAt, source, freightMode, originHubTerminalId, destinationHubTerminalId, null, null);
+    }
+
+    /**
+     * As the other {@code raiseOrder}, booked for a load or vehicle type and,
+     * optionally, on a lane of the customer's contract.
+     *
+     * <p>The contract version in force on the order's date (its requested pickup
+     * day, else today) is resolved and recorded. A customer with none in force
+     * is raised for exactly as before. With one, the load type must be one it
+     * covers ({@code order-load-type-not-allowed}) and a lane chosen must start
+     * at the order's origin and carry its mode and load type
+     * ({@code order-outside-contract-lanes}). The lane is otherwise found when
+     * the order is validated, once its lines say where freight goes.
+     *
+     * @param contractLaneId a lane of the contract in force, or null to have one found
+     * @param loadType       the load or vehicle type, or null for none
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('ORDER_CREATE') and @abac.permitsIn('ORDER_CREATE', #orgUnitId)")
+    public UUID raiseOrder(UUID orgUnitId, UUID customerPartnerId, String orderNo,
+                           UUID originTerminalId, Instant requestedPickupAt,
+                           Instant requestedDeliveryAt, SalesOrder.OrderSource source,
+                           FreightMode freightMode, UUID originHubTerminalId,
+                           UUID destinationHubTerminalId, UUID contractLaneId, String loadType) {
         UUID tenantId = TenantContext.requireTenantId();
 
         // Ids from the body, looked up under row-level security: a foreign
@@ -168,18 +197,21 @@ public class OrderCommandService {
         SalesOrder order = SalesOrder.raise(UUID.randomUUID(), tenantId, orgUnitId,
                 customerPartnerId, orderNo, originTerminalId,
                 requestedPickupAt, requestedDeliveryAt, source, freightMode,
-                originHubTerminalId, destinationHubTerminalId);
+                originHubTerminalId, destinationHubTerminalId, loadType);
 
         if (order.freightMode() == FreightMode.LTL) {
             requireHub(orderNo, "origin", originHubTerminalId);
             requireHub(orderNo, "destination", destinationHubTerminalId);
         }
 
-        SalesOrder raised = orders.save(order);
+        SalesOrder raised = orders.save(contractDesk.resolved(order, contractLaneId, List.of()));
         audit.record("ORDER_RAISED", AUDIT_TYPE, raised.id(), null,
                 Json.object("status", raised.status().name(), "orderNo", raised.orderNo(),
                         "customerPartnerId", raised.customerPartnerId().toString(),
-                        "freightMode", raised.freightMode().name()));
+                        "freightMode", raised.freightMode().name(),
+                        "contractId", raised.contractId() == null ? null : raised.contractId().toString(),
+                        "contractLaneId", raised.contractLaneId() == null ? null : raised.contractLaneId().toString(),
+                        "loadType", raised.loadType()));
         events.publishEvent(new OrderRaised(tenantId, raised.id(), raised.orderNo(),
                 raised.customerPartnerId(), raised.freightMode().name(), raised.source().name(),
                 assigned, Instant.now()));
@@ -298,11 +330,18 @@ public class OrderCommandService {
         requireValid(order, orderLines);
         creditGate.requireTrading(order);
 
-        orders.save(order.transitionTo(SalesOrder.OrderStatus.VALIDATED));
+        // The contract and lane are judged on the lines now stated: the first
+        // moment the order says where freight goes. Refusals leave it a draft.
+        SalesOrder contracted = contractDesk.resolved(order, laneChoiceOf(order),
+                OrderContractDesk.legsOfLines(orderLines));
+        orders.save(contracted.transitionTo(SalesOrder.OrderStatus.VALIDATED));
         creditGate.afterValidating(order);
         audit.record("ORDER_VALIDATED", AUDIT_TYPE, orderId,
                 Json.object("status", order.status().name()),
-                Json.object("status", "VALIDATED", "lines", String.valueOf(orderLines.size())));
+                Json.object("status", "VALIDATED", "lines", String.valueOf(orderLines.size()),
+                        "contractId", contracted.contractId() == null ? null : contracted.contractId().toString(),
+                        "contractLaneId",
+                        contracted.contractLaneId() == null ? null : contracted.contractLaneId().toString()));
 
         BigDecimal totalChargeable = orderLines.stream()
                 .map(OrderLine::chargeableWeightKg)
@@ -437,7 +476,8 @@ public class OrderCommandService {
         SalesOrder order = requireEditable(orderId, expectedVersion);
         List<OrderLine> current = lines.findByOrder(tenantId, orderId);
 
-        SalesOrder revised = reviseHeader(order, header, expectedVersion);
+        SalesOrder revised = contractDesk.resolved(reviseHeader(order, header, expectedVersion),
+                header.contractLaneId(), List.of());
         SalesOrder saved = orders.save(revised);
         audit.record("ORDER_REVISED", AUDIT_TYPE, orderId,
                 snapshot(order, current), snapshot(saved, current));
@@ -541,6 +581,9 @@ public class OrderCommandService {
 
         SalesOrder revised = header == null ? order.expecting(expectedVersion)
                 : reviseHeader(order, header, expectedVersion);
+        // Judged again on the order as amended: its contract, lane and promised days follow it.
+        revised = contractDesk.resolved(revised, header == null ? laneChoiceOf(order) : header.contractLaneId(),
+                specs == null ? OrderContractDesk.legsOfLines(before) : OrderContractDesk.legsOfSpecs(specs));
         creditGate.beforeAmending(revised);
         SalesOrder saved = orders.save(revised);
         List<OrderLine> after = specs == null ? before : swapLines(tenantId, orderId, before, specs);
@@ -577,10 +620,16 @@ public class OrderCommandService {
         }
     }
 
+    /** The lane a person named for the order, which is held to; null leaves the contract to find one. */
+    private static UUID laneChoiceOf(SalesOrder order) {
+        return order.laneChosen() ? order.contractLaneId() : null;
+    }
+
     private SalesOrder reviseHeader(SalesOrder order, OrderHeaderChange header, long expectedVersion) {
         SalesOrder revised = order.revised(header.customerPartnerId(), header.originTerminalId(),
                 header.requestedPickupAt(), header.requestedDeliveryAt(),
-                header.originHubTerminalId(), header.destinationHubTerminalId(), expectedVersion);
+                header.originHubTerminalId(), header.destinationHubTerminalId(), header.loadType(),
+                expectedVersion);
         if (revised.freightMode() == FreightMode.LTL) {
             requireHub(order.orderNo(), "origin", header.originHubTerminalId());
             requireHub(order.orderNo(), "destination", header.destinationHubTerminalId());
@@ -640,6 +689,9 @@ public class OrderCommandService {
                 "requestedDeliveryAt", order.requestedDeliveryAt() == null ? null : order.requestedDeliveryAt().toString(),
                 "originHubTerminalId", order.originHubTerminalId() == null ? null : order.originHubTerminalId().toString(),
                 "destinationHubTerminalId", order.destinationHubTerminalId() == null ? null : order.destinationHubTerminalId().toString(),
+                "contractId", order.contractId() == null ? null : order.contractId().toString(),
+                "contractLaneId", order.contractLaneId() == null ? null : order.contractLaneId().toString(),
+                "loadType", order.loadType(),
                 "lineCount", String.valueOf(orderLines.size()),
                 "totalChargeableWeightKg", chargeable.toPlainString(),
                 "lines", digest);
