@@ -97,6 +97,11 @@ GateInRequest:
     terminalId: { type: string, format: uuid }
     at: { type: string, format: date-time }
     remarks: { type: string }
+    gatePassNo:
+      type: string
+      description: The gate pass presented. Checked, and consumed, where the
+        origin's unit sets `yard.gate.passRequired` or a pass is given; the
+        gate-in is also entered in the gate register when the trip has a vehicle.
   required: [terminalId]
 
 WeighingRequest:
@@ -121,3 +126,64 @@ TripSlice:
       description: Pass as `cursor` for the next page. Null on the last.
     hasMore: { type: boolean }
   required: [items, hasMore]
+
+TripStop:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    seq: { type: integer, description: Position in the plan, from 1. }
+    kind: { type: string, enum: [PICKUP, DROP, CHECKPOINT] }
+    terminalId: { type: string, format: uuid }
+    terminalCode: { type: string }
+    terminalName: { type: string }
+    lat: { type: number, description: The terminal's centre, for a map. }
+    lon: { type: number }
+    plannedArrivalAt: { type: string, format: date-time }
+    status: { type: string, enum: [PLANNED, ARRIVED, DEPARTED, COMPLETED, SKIPPED] }
+    arrivedAt: { type: string, format: date-time }
+    departedAt: { type: string, format: date-time }
+    completedAt: { type: string, format: date-time }
+    skippedAt: { type: string, format: date-time }
+    skipReason: { type: string }
+    outOfOrder:
+      type: boolean
+      description: Reached while an earlier stop was still waiting.
+    arrivalSource: { type: string, enum: [MANUAL, GEOFENCE, TRIP] }
+    departureSource: { type: string, enum: [MANUAL, GEOFENCE, TRIP] }
+    lateMinutes:
+      type: integer
+      format: int64
+      description: Minutes past the planned arrival (0 when on time); absent until
+        reached or when no arrival was planned.
+    version: { type: integer, format: int64 }
+
+TripStops:
+  type: object
+  properties:
+    stops:
+      type: array
+      items: { $ref: "#/components/schemas/TripStop" }
+    etag: { type: string, description: The same tag as the `ETag` header. }
+  required: [stops, etag]
+
+ReplaceTripStopsRequest:
+  type: object
+  properties:
+    stops:
+      type: array
+      minItems: 1
+      maxItems: 50
+      items:
+        type: object
+        properties:
+          kind: { type: string, enum: [PICKUP, DROP, CHECKPOINT] }
+          terminalId: { type: string, format: uuid }
+          plannedArrivalAt: { type: string, format: date-time }
+        required: [kind, terminalId]
+  required: [stops]
+
+SkipTripStopRequest:
+  type: object
+  properties:
+    reason: { type: string, maxLength: 500 }
+  required: [reason]

@@ -36,7 +36,10 @@ import org.springframework.stereotype.Service;
  * origin and destination, not against a road-network route. That is a real
  * limitation and it is stated rather than hidden: a genuine route needs a
  * routing engine, and every Apache-compatible option is either a service with
- * an API key or a dataset larger than this deployment's whole database.
+ * an API key or a dataset larger than this deployment's whole database. Where
+ * the lane has a corridor imported for it ({@link RouteCorridorService}) the
+ * vehicle is measured against that polyline instead, and the straight line
+ * remains the fallback for every lane without one.
  *
  * <p>The consequence is that the corridor has to be wide -- wide enough for a
  * road that bends around a hill. Set narrow, it would alert on every legitimate
@@ -74,18 +77,40 @@ public class RouteDeviationService {
      */
     public Optional<RouteDeviation> evaluate(UUID tenantId, TripTrackingPort.ActiveTrip trip,
                                              GpsPing ping, BigDecimal corridorMetres) {
+        return evaluate(tenantId, trip, ping, corridorMetres, Optional.empty());
+    }
+
+    /**
+     * As above, measured against the lane's imported corridor when it has one
+     * ({@code corridor}), in which case the corridor's own width is the limit
+     * when it states one; against the straight line otherwise.
+     */
+    public Optional<RouteDeviation> evaluate(UUID tenantId, TripTrackingPort.ActiveTrip trip,
+                                             GpsPing ping, BigDecimal corridorMetres,
+                                             Optional<RouteCorridorService.Corridor> corridor) {
         if (trip.destinationTerminalId() == null) {
             return Optional.empty();
         }
 
-        Optional<LatLon> origin = terminals.centreOf(trip.originTerminalId());
-        Optional<LatLon> destination = terminals.centreOf(trip.destinationTerminalId());
-        if (origin.isEmpty() || destination.isEmpty()) {
-            return Optional.empty();
+        List<LatLon> reference;
+        String measuredAgainst;
+        if (corridor.isPresent()) {
+            reference = corridor.get().points();
+            measuredAgainst = "CORRIDOR";
+            if (corridor.get().widthMetres() != null) {
+                corridorMetres = corridor.get().widthMetres();
+            }
+        } else {
+            Optional<LatLon> origin = terminals.centreOf(trip.originTerminalId());
+            Optional<LatLon> destination = terminals.centreOf(trip.destinationTerminalId());
+            if (origin.isEmpty() || destination.isEmpty()) {
+                return Optional.empty();
+            }
+            reference = List.of(origin.get(), destination.get());
+            measuredAgainst = "STRAIGHT_LINE";
         }
 
-        double distance = GeoUtils.distanceToPolylineMetres(ping.point(),
-                List.of(origin.get(), destination.get()));
+        double distance = GeoUtils.distanceToPolylineMetres(ping.point(), reference);
 
         Optional<RouteDeviation> open = deviations.findOpen(tenantId, trip.tripId());
         BigDecimal measured = BigDecimal.valueOf(distance).setScale(2, RoundingMode.HALF_UP);
@@ -108,6 +133,6 @@ public class RouteDeviationService {
 
         return Optional.of(deviations.save(RouteDeviation.open(UUID.randomUUID(), tenantId,
                 trip.tripId(), ping.recordedAt(), ping.lat(), ping.lon(),
-                measured, corridorMetres)));
+                measured, corridorMetres, measuredAgainst)));
     }
 }

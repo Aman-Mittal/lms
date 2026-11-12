@@ -6,6 +6,7 @@
 body { margin:0; font:15px/1.5 system-ui, sans-serif; color:var(--ink); background:var(--bg); }
 h1 { font-size:1.45rem; margin:.25rem 0 1rem; } h2 { font-size:1.1rem; margin:2rem 0 .75rem; } h3 { font-size:1rem; margin:1.25rem 0 .5rem; }
 .muted { color:var(--muted); } .error { color:var(--err); } .ok { color:var(--ok); }
+.badge { display:inline-block; padding:.1rem .5rem; margin-right:.25rem; border:1px solid var(--line); border-radius:999px; font-size:.8rem; }
 
 .app { display:flex; min-height:100vh; }
 .sidebar { width:14.5rem; flex:none; background:var(--side); color:#cdd6e4; padding:1rem .75rem; position:sticky; top:0; height:100vh; overflow-y:auto; }
