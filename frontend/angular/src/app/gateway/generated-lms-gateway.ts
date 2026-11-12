@@ -15,7 +15,13 @@
  */
 
 import { displayPreferences, formatDay, formatInstant } from '../display';
-import { HttpErrorResponse } from '@angular/common/http';
+import { API_URL } from '../config';
+import {
+  GEOMETRY_TTL_MS, cacheGet, cachePut, cacheTouch, clientCacheEnabled, isFresh, onEpoch,
+} from '../client-cache';
+import { syncTrack } from '../track-sync';
+
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom, Observable } from 'rxjs';
 import { DemoDataService } from '../api';
@@ -742,6 +748,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly vehicles = inject(VehiclesService);
   private readonly drivers = inject(DriversService);
   private readonly terminals = inject(TerminalsService);
+  private readonly http = inject(HttpClient);
   private readonly orders = inject(OrdersService);
   private readonly loads = inject(PlanningService);
   private readonly trips = inject(TripsService);
@@ -1042,7 +1049,7 @@ export class GeneratedLmsGateway extends LmsGateway {
 
   async networkMap(): Promise<Mapped> {
     const [sites, positions] = await Promise.all([
-      this.call(this.terminals.listTerminals({ limit: 200 }), (x) => x),
+      this.sitesForMap(),
       this.call(this.telematics.listPositions(), (x) => x),
     ]);
     const rows = sites.items.map((t) => ({
@@ -1064,7 +1071,11 @@ export class GeneratedLmsGateway extends LmsGateway {
   async tripRoute(tripId: string): Promise<TripRoute> {
     const trip = await this.call(this.trips.getTrip({ id: tripId }), (x) => x);
     const [track, progress] = await Promise.all([
-      this.call(this.telematics.getTrack({ tripId }), (x) => x),
+      // Cached points plus the new end of the track; long tracks are thinned in a worker before drawing.
+      syncTrack(tripId,
+        (afterSeq) => this.call(this.telematics.getTrack({ tripId, afterSeq }), (x) => x),
+        () => this.call(this.telematics.getTrack({ tripId }), (x) => x))
+        .then(async (points) => (await import('../display-worker')).simplifyTrack(points)),
       this.call(this.telematics.getProgress({ tripId }), (x) => x).catch(() => null),
     ]);
     const features: MapFeature[] = [];
@@ -1906,8 +1917,44 @@ export class GeneratedLmsGateway extends LmsGateway {
   /** Each distinct terminal named, read once. */
   private async terminalsById(ids: Array<string | null | undefined>): Promise<Map<string, Terminal>> {
     const distinct = [...new Set(ids.filter((id): id is string => !!id))];
-    const read = await Promise.all(distinct.map((id) => this.call(this.terminals.getTerminal({ id }), (t) => t)));
+    const read = await Promise.all(distinct.map((id) => this.cachedGet<Terminal>(`terminal:${id}`, `/api/v1/terminals/${id}`,
+      () => this.call(this.terminals.getTerminal({ id }), (t) => t))));
     return new Map(read.map((t) => [text(t.id), t]));
+  }
+
+  /** Every site with its geofence, from the browser's copy while the server says it has not changed. */
+  private sitesForMap(): Promise<{ items: Terminal[] }> {
+    return this.cachedGet('terminals:map', '/api/v1/terminals?limit=200',
+      () => this.call(this.terminals.listTerminals({ limit: 200 }), (x) => x));
+  }
+
+  /**
+   * A reference read kept in the browser (DOCS/adr/0007) and revalidated with its ETag: inside the
+   * fresh window it costs no request, after it a conditional one, and a 304 costs no body. Anything
+   * unexpected, or the cache being off, is the ordinary call.
+   */
+  private async cachedGet<T>(key: string, path: string, load: () => Promise<T>): Promise<T> {
+    if (!clientCacheEnabled()) {
+      return load();
+    }
+    const held = await cacheGet<T>(key);
+    if (held && isFresh(held)) {
+      return held.value;
+    }
+    try {
+      const headers: Record<string, string> = held?.version ? { 'If-None-Match': held.version } : {};
+      const response = await firstValueFrom(this.http.get<T>(`${API_URL}${path}`, { observe: 'response', headers }));
+      if (response.body !== null) {
+        await cachePut(key, response.body, GEOMETRY_TTL_MS, response.headers.get('ETag'));
+        return response.body;
+      }
+    } catch (e) {
+      if (e instanceof HttpErrorResponse && e.status === 304 && held) {
+        await cacheTouch(key, GEOMETRY_TTL_MS);
+        return held.value;
+      }
+    }
+    return load();
   }
 
   /** Awaits a generated call, maps its result, and turns any failure into an ApiProblem. */
@@ -2030,11 +2077,16 @@ export class GeneratedLmsGateway extends LmsGateway {
   private readonly settingsApi = inject(SettingsService);
 
   me(): Promise<MeView> {
-    return this.call(this.users.getMe(), (m) => ({
-      userId: text(m.userId), email: text(m.email), fullName: text(m.fullName), tenantCode: text(m.tenantCode),
-      tenantName: text(m.tenantName), orgUnitName: text(m.orgUnitName), orgPath: text(m.orgPath),
-      roles: m.roles ?? [], permissions: m.permissions ?? [],
-    }));
+    return this.call(this.users.getMe(), (m) => {
+      // Every /me load checks the epoch: rights that changed since the cache was filled empty it.
+      void onEpoch(text(m.cacheEpoch));
+      return {
+        userId: text(m.userId), tenantId: text(m.tenantId), cacheEpoch: text(m.cacheEpoch), email: text(m.email),
+        fullName: text(m.fullName), tenantCode: text(m.tenantCode),
+        tenantName: text(m.tenantName), orgUnitName: text(m.orgUnitName), orgPath: text(m.orgPath),
+        roles: m.roles ?? [], permissions: m.permissions ?? [],
+      };
+    });
   }
 
   settingDefinitions(): Promise<SettingDefinitionView[]> {
@@ -2044,7 +2096,7 @@ export class GeneratedLmsGateway extends LmsGateway {
   myPreferences(): Promise<MyPreferencesView> {
     return this.call(this.settingsApi.getMyPreferences(), (m) => ({
       version: text(m.version), values: (m.values ?? {}) as Record<string, SettingValue>,
-      effective: m.effective.map(effectiveOf),
+      effective: m.effective.map(effectiveOf), policy: (m.policy ?? []).map(effectiveOf),
     }));
   }
 
@@ -2053,7 +2105,7 @@ export class GeneratedLmsGateway extends LmsGateway {
       ifMatch: `"${version}"`, updateMyPreferencesRequest: { values },
     }), (m) => ({
       version: text(m.version), values: (m.values ?? {}) as Record<string, SettingValue>,
-      effective: m.effective.map(effectiveOf),
+      effective: m.effective.map(effectiveOf), policy: (m.policy ?? []).map(effectiveOf),
     }));
   }
 

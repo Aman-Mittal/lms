@@ -391,6 +391,11 @@ export class TripPanel {
       @if (listed() && tickets().length === 0) {
         <p class="muted" data-testid="no-tickets">No ticket matches.</p>
       } @else {
+        @if (counts().length > 0) {
+          <p class="muted" data-testid="ticket-counts">
+            @for (c of counts(); track c[0]) { <span data-testid="ticket-count" [attr.data-key]="c[0]">{{ c[0] }} {{ c[1] }}</span>{{ $last ? '' : ' · ' }} }
+          </p>
+        }
         <div class="table-scroll">
           <table>
             <thead><tr><th>Ticket</th><th>Severity</th><th>Status</th><th>Category</th><th>About</th><th>Assignee</th></tr></thead>
@@ -502,6 +507,8 @@ export class ExceptionDeskPage implements OnInit {
   readonly status = signal('');
   readonly severity = signal('');
   readonly tickets = signal<Row[]>([]);
+  /** Tickets by severity then status, counted off the main thread from the rows already loaded. */
+  readonly counts = signal<Array<[string, number]>>([]);
   readonly listed = signal(false);
   readonly listError = signal('');
 
@@ -533,8 +540,13 @@ export class ExceptionDeskPage implements OnInit {
   async list(): Promise<void> {
     this.listError.set('');
     try {
-      this.tickets.set(await this.gateway.exceptionTickets({ status: this.status(), severity: this.severity() }));
+      const rows = await this.gateway.exceptionTickets({ status: this.status(), severity: this.severity() });
+      this.tickets.set(rows);
       this.listed.set(true);
+      const { tallyBy } = await import('../display-worker');
+      const slim = (field: string) => rows.map((r) => ({ [field]: String(r[field] ?? '') }));
+      const [severities, statuses] = await Promise.all([tallyBy(slim('severity'), 'severity'), tallyBy(slim('status'), 'status')]);
+      this.counts.set([...severities, ...statuses]);
     } catch (e) {
       this.listError.set((e as Error).message);
     }

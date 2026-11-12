@@ -340,7 +340,11 @@ request after a quiet spell pays the start-up cost above.
   sends notifications yet) and **Administration > Profile settings** (profiles
   by scope with the existing pickers, typed inputs, versions, history, and
   what is in force for a unit, customer, vehicle, vendor and day). Theme, date format,
-  time zone, rows per page and landing page are applied by the consoles. The
+  time zone, rows per page and landing page are applied by the consoles. The consoles also keep map
+  geometry, trip tracks and map tiles in the browser (IndexedDB, a Web Worker and a
+  tile service worker), switched by the `ui.clientCache` setting (default on) and
+  wiped on sign-out or when `GET /me`'s `cacheEpoch` changes; the track read takes
+  `afterSeq` and terminal reads answer `If-None-Match` (DOCS/adr/0007). The
   one compliance rule registered so far is the dispatch checklist's required
   documents; the platform scope is there for rules the operator keeps for all
   tenants.

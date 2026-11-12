@@ -308,7 +308,13 @@ MyPreferences:
       type: array
       items: { $ref: "#/components/schemas/EffectiveSetting" }
       description: Every personal preference as it applies to the caller.
-  required: [version, values, effective]
+    policy:
+      type: array
+      items: { $ref: "#/components/schemas/EffectiveSetting" }
+      description: >-
+        UI settings the organisation decides for the caller and the caller cannot change
+        (for example `ui.clientCache`), as they apply to the caller.
+  required: [version, values, effective, policy]
 
 UpdateMyPreferencesRequest:
   type: object

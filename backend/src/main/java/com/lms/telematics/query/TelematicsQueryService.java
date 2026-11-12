@@ -17,6 +17,7 @@ package com.lms.telematics.query;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -123,6 +124,48 @@ public class TelematicsQueryService {
                 .list();
 
         return raw.isEmpty() ? simplifiedTrack(tripId) : raw;
+    }
+
+    /** Most points one incremental read returns; a longer gap is read in more than one round. */
+    public static final int TRACK_PAGE = 5000;
+
+    /**
+     * The raw points recorded after a cursor, oldest first, each as
+     * {@code [lon, lat, seq]}, where {@code seq} is the point's recorded time in
+     * epoch microseconds: the cursor for the next read.
+     *
+     * <p>Served by the trip's {@code (tenant, trip, recorded_at)} index, so the
+     * cost is the new points, not the track. When the trip has no raw points at
+     * all (retention has collapsed them) the simplified track comes back as
+     * two-element pairs instead, which tells the caller that what it holds is
+     * obsolete and is to be replaced. A point that arrives late and is dated
+     * before the cursor is not returned; a display that needs it reloads.
+     */
+    public List<double[]> trackAfter(UUID tripId, long afterSeq) {
+        long seconds = Math.floorDiv(afterSeq, 1_000_000L);
+        long micros = Math.floorMod(afterSeq, 1_000_000L);
+        Instant after = Instant.ofEpochSecond(seconds, micros * 1000L);
+        List<double[]> fresh = jdbc.sql("""
+                        SELECT lon, lat, recorded_at FROM gps_ping
+                         WHERE trip_id = :tripId AND recorded_at > :after
+                         ORDER BY recorded_at
+                         LIMIT :limit
+                        """)
+                .param("tripId", tripId)
+                .param("after", Timestamp.from(after))
+                .param("limit", TRACK_PAGE)
+                .query((rs, rowNum) -> {
+                    Instant at = rs.getTimestamp("recorded_at").toInstant();
+                    return new double[] {rs.getDouble("lon"), rs.getDouble("lat"),
+                            at.getEpochSecond() * 1_000_000d + at.getNano() / 1000};
+                })
+                .list();
+        if (!fresh.isEmpty()) {
+            return fresh;
+        }
+        boolean anyRaw = jdbc.sql("SELECT EXISTS (SELECT 1 FROM gps_ping WHERE trip_id = :tripId)")
+                .param("tripId", tripId).query(Boolean.class).single();
+        return anyRaw ? List.of() : simplifiedTrack(tripId);
     }
 
     private List<double[]> simplifiedTrack(UUID tripId) {

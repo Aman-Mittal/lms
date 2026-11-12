@@ -39,6 +39,8 @@ public class DisplayPreferences implements SettingContributor {
     public static final SettingKey<String> THEME = SettingKey.enumeration("ui.theme");
     public static final SettingKey<Integer> PAGE_SIZE = SettingKey.integer("ui.defaultPageSize");
     public static final SettingKey<String> LANDING_PAGE = SettingKey.enumeration("ui.landingPage");
+    /** Whether the consoles keep map geometry, tracks and tiles in the browser (DOCS/adr/0007). */
+    public static final SettingKey<Boolean> CLIENT_CACHE = SettingKey.bool("ui.clientCache");
 
     @Override
     public List<SettingDefinition> definitions() {
@@ -65,6 +67,11 @@ public class DisplayPreferences implements SettingContributor {
                         .defaultValue("dashboard")
                         .values("dashboard", "order-desk", "consignments", "load-building", "exception-desk",
                                 "warehouse", "client-billing", "delivery", "map")
-                        .category(SettingCategory.UI).alsoAt(ScopeType.ORG_UNIT, ScopeType.USER).build());
+                        .category(SettingCategory.UI).alsoAt(ScopeType.ORG_UNIT, ScopeType.USER).build(),
+                SettingDefinition.of(CLIENT_CACHE, "Client-side cache",
+                                "Whether a console keeps maps, tracks and tiles in the browser so the server "
+                                        + "is asked for less. Off on a shared device, or where policy forbids it.")
+                        .defaultValue(true)
+                        .category(SettingCategory.UI).alsoAt(ScopeType.ORG_UNIT).build());
     }
 }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { lazy, Suspense, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ApiProblem, EXCEPTION_SEVERITIES, EXCEPTION_STATUSES, MANUAL_EXCEPTION_CATEGORIES, type Row,
@@ -100,6 +100,23 @@ function TicketList({ onOpen, reload }: { onOpen: (id: string) => void; reload: 
   const [severity, setSeverity] = useState('');
   const [typed, setTyped] = useState('');
   const tickets = useLoad(() => gateway.exceptionTickets({ status, severity }), `${status}:${severity}:${reload}`);
+  // Tickets by severity then status, counted off the main thread from the rows already loaded.
+  const [counts, setCounts] = useState<Array<[string, number]>>([]);
+  useEffect(() => {
+    const rows = tickets.data;
+    if (!rows) {
+      return;
+    }
+    let ignore = false;
+    const slim = (field: string) => rows.map((r) => ({ [field]: String(r[field] ?? '') }));
+    void import('../display-worker').then(async ({ tallyBy }) => {
+      const [severities, statuses] = await Promise.all([tallyBy(slim('severity'), 'severity'), tallyBy(slim('status'), 'status')]);
+      if (!ignore) {
+        setCounts([...severities, ...statuses]);
+      }
+    });
+    return () => { ignore = true; };
+  }, [tickets.data]);
 
   function open(event: FormEvent) {
     event.preventDefault();
@@ -134,6 +151,14 @@ function TicketList({ onOpen, reload }: { onOpen: (id: string) => void; reload: 
       {tickets.data && tickets.data.length === 0 ? (
         <p className="muted" data-testid="no-tickets">No ticket matches.</p>
       ) : (
+        <>
+        {counts.length > 0 && (
+          <p className="muted" data-testid="ticket-counts">
+            {counts.map(([key, n], i) => (
+              <span key={key}><span data-testid="ticket-count" data-key={key}>{key} {n}</span>{i < counts.length - 1 ? ' · ' : ''}</span>
+            ))}
+          </p>
+        )}
         <div className="table-scroll">
           <table>
             <thead>
@@ -150,6 +175,7 @@ function TicketList({ onOpen, reload }: { onOpen: (id: string) => void; reload: 
             </tbody>
           </table>
         </div>
+        </>
       )}
     </section>
   );

@@ -172,7 +172,7 @@ export class MyProfilePage implements OnInit {
     this.busy.set(true);
     try {
       const mine = await this.gateway.saveMyPreferences(this.version, values);
-      applyDisplay(mine.effective);
+      applyDisplay([...mine.effective, ...mine.policy]);
       this.show(mine.version, mine.values, mine.effective);
       this.saved.set('Saved.');
     } finally {

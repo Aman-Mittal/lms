@@ -15,6 +15,10 @@
  */
 package com.lms.identity.query;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -127,11 +131,37 @@ public class UserQueryService {
                 .param("userId", userId)
                 .query(String.class)
                 .list();
+        UUID orgUnitId = user.map(UserView::orgUnitId).orElse(head.orgUnitId());
+        String path = user.map(UserView::orgPath).orElse(orgPath);
+        List<String> sortedPermissions = permissions.stream().sorted().toList();
         return new MeView(userId, user.map(UserView::email).orElse(email),
                 user.map(UserView::fullName).orElse(fullName), tenantId, head.tenantCode(),
-                head.tenantName(), user.map(UserView::orgUnitId).orElse(head.orgUnitId()),
-                user.map(UserView::orgPath).orElse(orgPath),
-                user.map(UserView::orgName).orElse(head.orgUnitName()), roles,
-                permissions.stream().sorted().toList());
+                head.tenantName(), orgUnitId, path,
+                user.map(UserView::orgName).orElse(head.orgUnitName()), roles, sortedPermissions,
+                cacheEpoch(tenantId, userId, orgUnitId, path, roles, sortedPermissions));
+    }
+
+    /**
+     * A digest of everything that decides what this caller may see: who and
+     * where they are, the roles they hold and the permissions in force.
+     *
+     * <p>Computed from values this read has already fetched, so it costs no
+     * query and needs no counter or table to be bumped by every role, grant
+     * and unit write (and so none can be forgotten). Anything that changes the
+     * caller's rights changes one of the inputs; nothing else does. A console
+     * discards its cache when the value differs from the one it stored.
+     */
+    static String cacheEpoch(UUID tenantId, UUID userId, UUID orgUnitId, String orgPath,
+                             List<String> roles, List<String> permissions) {
+        StringBuilder in = new StringBuilder();
+        in.append(tenantId).append('|').append(userId).append('|').append(orgUnitId).append('|')
+                .append(orgPath).append('|').append(String.join(",", roles)).append('|')
+                .append(String.join(",", permissions));
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(in.toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest, 0, 12);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is a required JDK algorithm", e);
+        }
     }
 }

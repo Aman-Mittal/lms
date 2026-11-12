@@ -41,6 +41,10 @@ import type {
 } from './lmsGateway';
 import { ORG_UNIT_WORDS } from './lmsGateway';
 import { API_URL } from '../config';
+import {
+  GEOMETRY_TTL_MS, cacheGet, cachePut, cacheTouch, clientCacheEnabled, isFresh, onEpoch,
+} from '../client-cache';
+import { syncTrack } from '../track-sync';
 import { DemoDataApi } from '../api';
 import {
   ApprovalsApi, type Approval as ApiApproval, type ApprovalScope as ApiApprovalScope,
@@ -623,6 +627,38 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
   // a console left signed in must not send its token to a route that ignores it.
   const publicTracking = new PublicTrackingApi(new Configuration({ basePath: API_URL }));
 
+  /**
+   * A reference read kept in the browser (DOCS/adr/0007) and revalidated with its ETag: inside the
+   * fresh window it costs no request, after it a conditional one, and a 304 costs no body. Anything
+   * unexpected, or the cache being off, is the ordinary call.
+   */
+  const cachedGet = async <T>(key: string, path: string, load: () => Promise<T>): Promise<T> => {
+    if (!clientCacheEnabled()) {
+      return load();
+    }
+    const held = await cacheGet<T>(key);
+    if (held && isFresh(held)) {
+      return held.value;
+    }
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${getToken() ?? ''}` };
+      if (held?.version) {
+        headers['If-None-Match'] = held.version;
+      }
+      const response = await fetch(`${API_URL}${path}`, { headers });
+      if (response.status === 304 && held) {
+        await cacheTouch(key, GEOMETRY_TTL_MS);
+        return held.value;
+      }
+      if (response.ok) {
+        const body = (await response.json()) as T;
+        await cachePut(key, body, GEOMETRY_TTL_MS, response.headers.get('ETag'));
+        return body;
+      }
+    } catch { /* the ordinary call below says what went wrong */ }
+    return load();
+  };
+
   const listClaims = async (consignmentId?: string) =>
     (await delivery.listClaims({ consignmentId: consignmentId || undefined, limit: 50 })).items.map((c) => ({
       id: text(c.id), claimNo: text(c.claimNo), claimType: text(c.claimType), amount: text(c.amount),
@@ -928,7 +964,8 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     networkMap: (): Promise<Mapped> =>
       guard(async () => {
         const [sites, positions] = await Promise.all([
-          terminals.listTerminals({ limit: 200 }), telematics.listPositions(),
+          cachedGet('terminals:map', '/api/v1/terminals?limit=200', () => terminals.listTerminals({ limit: 200 })),
+          telematics.listPositions(),
         ]);
         const rows = sites.items.map((t) => ({
           id: text(t.id), code: text(t.code), name: text(t.name), functionalCategory: text(t.functionalCategory),
@@ -950,7 +987,9 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       guard(async () => {
         const trip = await trips.getTrip({ id: tripId });
         const [track, progress] = await Promise.all([
-          telematics.getTrack({ tripId }),
+          // Cached points plus the new end of the track; long tracks are thinned in a worker before drawing.
+          syncTrack(tripId, (afterSeq) => telematics.getTrack({ tripId, afterSeq }), () => telematics.getTrack({ tripId }))
+            .then(async (points) => (await import('../display-worker')).simplifyTrack(points)),
           telematics.getProgress({ tripId }).catch(() => null),
         ]);
         const features: MapFeature[] = [];
@@ -985,7 +1024,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
         const i = await multimodal.getItinerary({ id });
         const legs = [...(i.legs ?? [])].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
         const ids = [...new Set(legs.flatMap((l) => [l.fromTerminalId, l.toTerminalId]).filter(Boolean) as string[])];
-        const sites = new Map((await Promise.all(ids.map((t) => terminals.getTerminal({ id: t })))).map((t) => [t.id, t]));
+        const sites = new Map((await Promise.all(ids.map((t) => cachedGet(`terminal:${t}`, `/api/v1/terminals/${t}`, () => terminals.getTerminal({ id: t }))))).map((t) => [t.id, t]));
         const features: MapFeature[] = [];
         for (const l of legs) {
           const from = anchorOf(sites.get(l.fromTerminalId ?? ''));
@@ -1033,7 +1072,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
         ]);
         const ordered = [...stops].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
         const ids = [...new Set([route.plantTerminalId, ...ordered.map((s) => s.terminalId)].filter(Boolean) as string[])];
-        const sites = new Map((await Promise.all(ids.map((t) => terminals.getTerminal({ id: t })))).map((t) => [t.id, t]));
+        const sites = new Map((await Promise.all(ids.map((t) => cachedGet(`terminal:${t}`, `/api/v1/terminals/${t}`, () => terminals.getTerminal({ id: t }))))).map((t) => [t.id, t]));
         const features: MapFeature[] = [];
         const plant = sites.get(route.plantTerminalId ?? '');
         const plantFeature = plant ? terminalFeature(plant, 'plant') : null;
@@ -2494,14 +2533,18 @@ function settingsVerbs(config: Configuration): SettingsVerbs {
   const settings = new SettingsApi(config);
   const units = new OrganisationUnitsApi(config);
   const users = new UsersApi(config);
-  const mine = (m: { version: number; values: object; effective: EffectiveSetting[] }): MyPreferencesView => ({
+  const mine = (m: { version: number; values: object; effective: EffectiveSetting[]; policy?: EffectiveSetting[] }):
+    MyPreferencesView => ({
     version: text(m.version), values: m.values as Record<string, SettingValue>, effective: m.effective.map(effectiveOf),
+    policy: (m.policy ?? []).map(effectiveOf),
   });
   return {
     me: () => guard(async () => {
       const m = await users.getMe();
+      // Every /me load checks the epoch: rights that changed since the cache was filled empty it.
+      void onEpoch(text(m.cacheEpoch));
       return {
-        userId: text(m.userId), email: text(m.email), fullName: text(m.fullName), tenantCode: text(m.tenantCode),
+        userId: text(m.userId), tenantId: text(m.tenantId), cacheEpoch: text(m.cacheEpoch), email: text(m.email), fullName: text(m.fullName), tenantCode: text(m.tenantCode),
         tenantName: text(m.tenantName), orgUnitName: text(m.orgUnitName), orgPath: text(m.orgPath),
         roles: m.roles ?? [], permissions: m.permissions ?? [],
       } satisfies MeView;

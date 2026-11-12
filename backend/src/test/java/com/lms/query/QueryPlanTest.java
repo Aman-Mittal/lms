@@ -1250,6 +1250,22 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a trip's track read after a cursor is index-served")
+    void tripTrackAfterCursor() {
+        // The incremental read a console makes on every visit to a trip it has
+        // cached the track of: only the new end of the largest table, never a
+        // walk of the trip's points.
+        assertIndexed("""
+                SELECT lon, lat, recorded_at FROM gps_ping
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                   AND recorded_at > '2026-01-01T10:00:00Z'
+                 ORDER BY recorded_at
+                 LIMIT 5000
+                """, "gps_ping");
+    }
+
+    @Test
     @DisplayName("every tenant-scoped table leads its primary lookup index with tenant_id")
     void indexesLeadWithTenantId() {
         // Row-level security adds `tenant_id = …` to every query, so an index

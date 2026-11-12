@@ -195,9 +195,14 @@ public class SettingsController {
                 .withUser(userId);
         List<SettingDefinition> personal = registry.all().stream().filter(SettingDefinition::userPreference)
                 .toList();
+        // UI settings the organisation decides for this person and they cannot change (the client
+        // cache, say): the console needs them at sign-in, the profile page must not offer them.
+        List<SettingDefinition> policy = registry.all().stream()
+                .filter(d -> !d.userPreference() && d.category() == SettingCategory.UI)
+                .toList();
         return ResponseEntity.ok().header(HttpHeaders.ETAG, IfMatch.etag(version))
                 .body(new MyPreferencesView(version, own == null ? Map.of() : own.values(),
-                        entries(personal, context)));
+                        entries(personal, context), entries(policy, context)));
     }
 
     @PatchMapping(value = "/me", consumes = {"application/json", "application/merge-patch+json"})
@@ -293,7 +298,8 @@ public class SettingsController {
     public record EffectiveView(List<EffectiveEntry> items) {
     }
 
-    public record MyPreferencesView(long version, Map<String, Object> values, List<EffectiveEntry> effective) {
+    public record MyPreferencesView(long version, Map<String, Object> values, List<EffectiveEntry> effective,
+                                    List<EffectiveEntry> policy) {
     }
 
     /** One version of a key, from its first day; a null value removes the version. */

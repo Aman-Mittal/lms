@@ -16,6 +16,7 @@
 
 import java.net.URI;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,7 +29,9 @@ import com.lms.masterdata.query.TerminalView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.geo.LatLon;
 import com.lms.shared.query.Slice;
+import com.lms.shared.web.ConditionalGet;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -40,6 +43,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -67,17 +71,30 @@ public class TerminalController {
     }
 
     @GetMapping
-    public Slice<TerminalView> list(@RequestParam(required = false) String category,
-                                    @RequestParam(required = false) String cursor,
-                                    @RequestParam(required = false) Integer limit,
-                                    @RequestParam(required = false) String q) {
-        return masterData.listTerminals(category, cursor, limit, q);
+    public ResponseEntity<Slice<TerminalView>> list(@RequestParam(required = false) String category,
+                                                    @RequestParam(required = false) String cursor,
+                                                    @RequestParam(required = false) Integer limit,
+                                                    @RequestParam(required = false) String q,
+                                                    @RequestHeader(value = "If-None-Match", required = false)
+                                                    String ifNoneMatch) {
+        Slice<TerminalView> page = masterData.listTerminals(category, cursor, limit, q);
+        // The tag a console revalidates its cached geometry with: each terminal's id and version.
+        List<Object> identity = new ArrayList<>();
+        page.items().forEach(t -> {
+            identity.add(t.id());
+            identity.add(t.version());
+        });
+        identity.add(page.nextCursor());
+        return ConditionalGet.respond(ifNoneMatch, ConditionalGet.tag(identity), page);
     }
 
     @GetMapping("/{id}")
-    public TerminalView get(@PathVariable UUID id) {
-        return masterData.findTerminal(id)
+    public ResponseEntity<TerminalView> get(@PathVariable UUID id,
+                                            @RequestHeader(value = "If-None-Match", required = false)
+                                            String ifNoneMatch) {
+        TerminalView terminal = masterData.findTerminal(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Terminal", id));
+        return ConditionalGet.respond(ifNoneMatch, IfMatch.etag(terminal.version()), terminal);
     }
 
     @PostMapping("/polygon")

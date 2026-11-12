@@ -16,6 +16,7 @@
 
 import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createGeneratedGateway } from './gateway/generatedGateway';
+import { clearAllClientCache } from './client-cache';
 import type { LmsGateway, SignedIn } from './gateway/lmsGateway';
 
 /*
@@ -57,7 +58,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // The token is published to the gateway at once, so a call made right
     // after signing in (the person's preferences) is already authenticated.
     start: (result) => { tokenRef.current = result.token; setAuth(result); },
-    end: () => setAuth(null),
+    // What was cached for this person goes with the session (DOCS/adr/0007).
+    end: () => { setAuth(null); void clearAllClientCache(); },
   };
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

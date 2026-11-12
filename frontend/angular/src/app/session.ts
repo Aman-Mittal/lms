@@ -15,6 +15,7 @@
  */
 
 import { Injectable, computed, signal } from '@angular/core';
+import { clearAllClientCache } from './client-cache';
 import { SignedIn } from './gateway/lms-gateway';
 
 /**
@@ -42,5 +43,7 @@ export class Session {
 
   end(): void {
     this.auth.set(null);
+    // What was cached for this person goes with the session, however it ended (DOCS/adr/0007).
+    void clearAllClientCache();
   }
 }

@@ -29,6 +29,7 @@ import com.lms.telematics.query.VehiclePositionView;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +38,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -108,10 +110,16 @@ public class TelematicsController {
      * <p>Raw points while the trip is running, the simplified polyline once
      * retention has collapsed it. The caller cannot tell which, and should not
      * need to: it is the shape of the journey either way.
+     *
+     * <p>With {@code afterSeq} only the raw points newer than that cursor are
+     * returned, each as {@code [lon, lat, seq]} (see {@link
+     * TelematicsQueryService#trackAfter}), so a console that cached the track
+     * asks for the new end of it. Without it the answer is unchanged.
      */
     @GetMapping("/trips/{tripId}/track")
-    public List<double[]> track(@PathVariable UUID tripId) {
-        return telematics.trackFor(tripId);
+    public List<double[]> track(@PathVariable UUID tripId,
+                                @RequestParam(required = false) @PositiveOrZero Long afterSeq) {
+        return afterSeq == null ? telematics.trackFor(tripId) : telematics.trackAfter(tripId, afterSeq);
     }
 
     @GetMapping("/trips/{tripId}/progress")

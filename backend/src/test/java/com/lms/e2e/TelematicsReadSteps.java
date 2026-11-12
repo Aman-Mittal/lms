@@ -241,7 +241,7 @@ public class TelematicsReadSteps {
 
     @Then("the track holds the good fixes in time order and none of the bad ones")
     public void track() {
-        List<List<BigDecimal>> track = world.api(TelematicsApi.class).getTrack(tripId);
+        List<List<BigDecimal>> track = world.api(TelematicsApi.class).getTrack(tripId, (Long) null);
         assertThat(track).hasSize(goodPings.size());
         for (int i = 0; i < goodPings.size(); i++) {
             // GeoJSON order: longitude first.
@@ -454,10 +454,10 @@ public class TelematicsReadSteps {
         MovementSupport.assertRefused(() -> telematics.getPosition(nobody), 404, "not-found");
         MovementSupport.assertRefused(() -> telematics.getPosition(idleLorry), 404, "not-found");
         MovementSupport.assertRefused(() -> telematics.getProgress(nobody), 404, "not-found");
-        assertThat(telematics.getTrack(nobody)).isEmpty();
+        assertThat(telematics.getTrack(nobody, (Long) null)).isEmpty();
         assertThat(telematics.listCrossings(nobody)).isEmpty();
         // A trip that exists but has not been tracked yet has an empty track too.
-        assertThat(telematics.getTrack(tripId)).isEmpty();
+        assertThat(telematics.getTrack(tripId, (Long) null)).isEmpty();
         assertThat(telematics.listCrossings(tripId)).isEmpty();
         JsonNode untracked = support.rawGet("/api/v1/telematics/trips/" + tripId + "/progress");
         assertThat(MovementSupport.absent(untracked.path("lat"))).isTrue();
@@ -496,7 +496,7 @@ public class TelematicsReadSteps {
         TelematicsApi theirs = support.as(otherTenant, TelematicsApi.class);
         MovementSupport.assertRefused(() -> theirs.getPosition(lorry), 404, "not-found");
         MovementSupport.assertRefused(() -> theirs.getProgress(tripId), 404, "not-found");
-        assertThat(theirs.getTrack(tripId)).isEmpty();
+        assertThat(theirs.getTrack(tripId, (Long) null)).isEmpty();
         assertThat(theirs.listCrossings(tripId)).isEmpty();
         assertThat(theirs.listOpenDeviations()).isEmpty();
         assertThat(theirs.listPositions()).extracting(VehiclePosition::getVehicleId)

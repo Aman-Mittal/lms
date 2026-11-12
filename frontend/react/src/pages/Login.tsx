@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import { applyDisplay, landingRoute, resetDisplay } from '../display';
+import { applyDisplay, displayPreferences, landingRoute, resetDisplay } from '../display';
+import { activateClientCache } from '../client-cache';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEMO_TENANT } from '../config';
@@ -44,9 +45,20 @@ export function Login() {
       start(result);
       // Preferences come next: a failure here must not keep a person out.
       try {
-        applyDisplay((await gateway.myPreferences()).effective);
+        const prefs = await gateway.myPreferences();
+        applyDisplay([...prefs.effective, ...prefs.policy]);
       } catch {
         resetDisplay();
+      }
+      // Then the browser cache, bound to this person and tenant; a failure here is a console without one.
+      try {
+        const me = await gateway.me();
+        await activateClientCache({
+          tenantId: me.tenantId, userId: me.userId, epoch: me.cacheEpoch,
+          enabled: displayPreferences().clientCache, tileWorker: import.meta.env.PROD,
+        });
+      } catch {
+        await activateClientCache({ tenantId: '', userId: '', epoch: '', enabled: false, tileWorker: false });
       }
       navigate(landingRoute());
     } catch (e) {

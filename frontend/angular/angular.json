@@ -43,7 +43,10 @@
           "options": {
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
-            "assets": [],
+            "webWorkerTsConfig": "tsconfig.worker.json",
+            "assets": [
+              { "glob": "tile-sw.js", "input": "src", "output": "/" }
+            ],
             "allowedCommonJsDependencies": [
               "leaflet",
               "qrcode"

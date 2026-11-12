@@ -123,7 +123,7 @@ test.describe('maps', () => {
     await page.route(`**/api/v1/trips/${tripId}`, (route) => route.fulfill({ json: {
       id: tripId, tripNo: 'TRP-MAP-1', status: 'IN_TRANSIT', originTerminalCode: 'ORIG', destinationTerminalCode: 'DEST',
     } }));
-    await page.route(`**/api/v1/telematics/trips/${tripId}/track`, (route) => route.fulfill({ json: track }));
+    await page.route(`**/api/v1/telematics/trips/${tripId}/track**`, (route) => route.fulfill({ json: track }));
     await page.route(`**/api/v1/telematics/trips/${tripId}/progress`, (route) => route.fulfill({ json: {
       tripId, tripNo: 'TRP-MAP-1', status: 'IN_TRANSIT', lat: 19.35, lon: 73.4, completionPct: 40,
       lastFixAt: new Date().toISOString(),
