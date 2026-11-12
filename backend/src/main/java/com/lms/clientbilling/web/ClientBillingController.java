@@ -29,8 +29,10 @@ import com.lms.clientbilling.command.ClientCreditNoteService;
 import com.lms.clientbilling.command.ClientPaymentService;
 import com.lms.clientbilling.command.ClientStorageService;
 import com.lms.clientbilling.command.ConsignmentBillingService;
+import com.lms.clientbilling.command.LaneTerm;
 import com.lms.approvals.api.ApprovalTicket;
 import com.lms.clientbilling.command.domain.ClientContract;
+import com.lms.clientbilling.command.domain.ContractLane;
 import com.lms.clientbilling.command.domain.ServiceType;
 import com.lms.clientbilling.query.ClientAgeingQueryService;
 import com.lms.clientbilling.query.ClientAgeingView;
@@ -43,6 +45,7 @@ import com.lms.clientbilling.query.ClientInvoiceView;
 import com.lms.clientbilling.query.ClientMarginView;
 import com.lms.clientbilling.query.ClientStatementEntryView;
 import com.lms.clientbilling.query.ClientStorageView;
+import com.lms.clientbilling.query.ContractLaneView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
@@ -119,7 +122,8 @@ public class ClientBillingController {
                         request.storageRatePerPalletDay(), request.handlingInRatePerPallet(),
                         request.handlingOutRatePerPallet(), request.transportTaxRatePct(),
                         request.warehouseTaxRatePct(), request.storageUnitsPerPallet()),
-                termsOf(request.valueAddedServices()), Boolean.TRUE.equals(request.billOnDispatch()));
+                termsOf(request.valueAddedServices()), Boolean.TRUE.equals(request.billOnDispatch()),
+                allowancesOf(request.directOrdersAllowed(), request.allowedLoadTypes()), laneTermsOf(request.lanes()));
         return ResponseEntity.created(URI.create("/api/v1/client-billing/contracts/" + id))
                 .body(new IdResponse(id));
     }
@@ -143,7 +147,8 @@ public class ClientBillingController {
                         request.storageRatePerPalletDay(), request.handlingInRatePerPallet(),
                         request.handlingOutRatePerPallet(), request.transportTaxRatePct(),
                         request.warehouseTaxRatePct(), request.storageUnitsPerPallet()),
-                termsOf(request.valueAddedServices()), Boolean.TRUE.equals(request.billOnDispatch()));
+                termsOf(request.valueAddedServices()), Boolean.TRUE.equals(request.billOnDispatch()),
+                allowancesOf(request.directOrdersAllowed(), request.allowedLoadTypes()), laneTermsOf(request.lanes()));
         return ResponseEntity.noContent().build();
     }
 
@@ -206,6 +211,19 @@ public class ClientBillingController {
                 warehouseTax, units);
     }
 
+    /** Null for either part means "not stated": a new draft takes the defaults, a revision keeps what it has. */
+    private static ClientContract.Allowances allowancesOf(Boolean directOrdersAllowed, List<String> loadTypes) {
+        return new ClientContract.Allowances(directOrdersAllowed, loadTypes);
+    }
+
+    private static List<LaneTerm> laneTermsOf(List<LaneRequest> lanes) {
+        return lanes == null ? null : lanes.stream().map(l -> new LaneTerm(l.laneCode(), l.originTerminalId(),
+                l.originZone(), l.destinationTerminalId(), l.destinationZone(), l.freightMode(), l.loadType(),
+                l.rateBasis(), l.rate(), l.transitDays(), l.slabs() == null ? null : l.slabs().stream()
+                .map(s -> new LaneTerm.SlabTerm(s.minWeightKg(), s.maxWeightKg(), s.rateBasis(), s.rate()))
+                .toList(), l.consignorIds(), l.consigneeIds())).toList();
+    }
+
     private static List<ClientContractService.ServiceRateTerm> termsOf(List<ValueAddedServiceRate> rates) {
         return rates == null ? List.of() : rates.stream()
                 .map(s -> new ClientContractService.ServiceRateTerm(s.serviceCode(), s.unit(), s.rate()))
@@ -215,6 +233,18 @@ public class ClientBillingController {
     @GetMapping("/clients/{clientId}/contracts")
     public List<ClientContractView> contracts(@PathVariable UUID clientId) {
         return queries.contractsOf(clientId);
+    }
+
+    /**
+     * The lanes of the contract version in force for the client on a day (today
+     * by default): what the order desk picks a lane from. Empty when the client
+     * has no contract in force.
+     */
+    @GetMapping("/clients/{clientId}/contract-lanes")
+    public List<ContractLaneView> contractLanes(
+            @PathVariable UUID clientId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate onDate) {
+        return queries.lanesInForce(clientId, onDate == null ? LocalDate.now(java.time.ZoneOffset.UTC) : onDate);
     }
 
     @PostMapping("/clients/{clientId}/portal-users")
@@ -371,7 +401,10 @@ public class ClientBillingController {
                                        BigDecimal warehouseTaxRatePct,
                                        Integer storageUnitsPerPallet,
                                        List<@Valid ValueAddedServiceRate> valueAddedServices,
-                                       Boolean billOnDispatch) {
+                                       Boolean billOnDispatch,
+                                       Boolean directOrdersAllowed,
+                                       List<String> allowedLoadTypes,
+                                       List<@Valid LaneRequest> lanes) {
     }
 
     /** A draft's content, replaced whole; the client is not part of it. */
@@ -389,7 +422,38 @@ public class ClientBillingController {
                                         BigDecimal warehouseTaxRatePct,
                                         Integer storageUnitsPerPallet,
                                         List<@Valid ValueAddedServiceRate> valueAddedServices,
-                                        Boolean billOnDispatch) {
+                                        Boolean billOnDispatch,
+                                        Boolean directOrdersAllowed,
+                                        List<String> allowedLoadTypes,
+                                        List<@Valid LaneRequest> lanes) {
+    }
+
+    /**
+     * A lane of a draft: each end a terminal or a zone code (one of the two),
+     * mode and load type optional, a rate basis with a rate and/or weight slabs,
+     * the days the movement takes, and the optional lists of consignors and
+     * consignees.
+     */
+    public record LaneRequest(@NotBlank @Size(max = 60) String laneCode,
+                              UUID originTerminalId,
+                              String originZone,
+                              UUID destinationTerminalId,
+                              String destinationZone,
+                              String freightMode,
+                              String loadType,
+                              @NotNull ContractLane.RateBasis rateBasis,
+                              @PositiveOrZero BigDecimal rate,
+                              @Positive Integer transitDays,
+                              List<@Valid LaneSlabRequest> slabs,
+                              List<UUID> consignorIds,
+                              List<UUID> consigneeIds) {
+    }
+
+    /** A half-open weight band [min, max) of a lane; a null max is the open top band. */
+    public record LaneSlabRequest(@NotNull @PositiveOrZero BigDecimal minWeightKg,
+                                  @Positive BigDecimal maxWeightKg,
+                                  @NotNull ContractLane.RateBasis rateBasis,
+                                  @NotNull @PositiveOrZero BigDecimal rate) {
     }
 
     public record ExtensionRequest(@NotNull LocalDate validTill, @NotBlank @Size(max = 500) String reason) {

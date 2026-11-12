@@ -86,6 +86,28 @@ ClientContract:
       description: True when a trip's transport is invoiceable as soon as the
         trip is dispatched; false when it waits for each consignment's
         confirmed proof of delivery.
+    familyId:
+      type: string
+      format: uuid
+      description: |
+        The contract as a person means it: shared by every version of it (a
+        charge-add successor, a replacement with the same code for the same
+        client). What a CONTRACT-scoped setting profile names, so a profile
+        survives a new version.
+    directOrdersAllowed:
+      type: boolean
+      description: Whether an order no lane of the contract serves is accepted
+        (and priced by the per-kilo rate). False refuses it, by name.
+    allowedLoadTypes:
+      type: array
+      items: { type: string }
+      description: The load or vehicle types the contract covers; empty is any.
+    lanes:
+      type: array
+      description: |
+        Part of the version: editable while a draft, frozen once it is not,
+        copied into a charge-add successor.
+      items: { $ref: "#/components/schemas/ClientContractLane" }
 
 ClientContractDraftRequest:
   type: object
@@ -148,8 +170,108 @@ ClientContractDraftRequest:
         default), it is charged when the trip completes and invoiced only
         once each of the client's consignments on the trip has a confirmed
         proof of delivery or has been marked billable by hand.
+    directOrdersAllowed:
+      type: boolean
+      description: Whether an order no lane serves is accepted. Omitted is true for a new draft
+        and unchanged for a revision.
+    allowedLoadTypes:
+      type: array
+      items: { type: string }
+      description: The load or vehicle types the contract covers (stored upper case); empty
+        is any. Omitted is any for a new draft and unchanged for a revision.
+    lanes:
+      type: array
+      description: |
+        The version's lanes. On a revision this replaces them whole (an empty list
+        removes them all) and leaving it out keeps them. Lane codes are distinct
+        within the contract (409 `client-contract-lane-duplicated`); every terminal
+        and partner must be the tenant's (404).
+      items: { $ref: "#/components/schemas/ClientContractLaneRequest" }
   required: [orgUnitId, clientPartnerId, effectiveFrom]
 
+
+ClientContractLaneSlab:
+  type: object
+  description: |
+    A weight band of a lane, as a carrier rate card's: half-open `[min, max)`
+    in kilograms, a null `maxWeightKg` being the open top band, each with its
+    own rate basis. The band covering the charge's weight prices it.
+  properties:
+    minWeightKg: { type: number, minimum: 0 }
+    maxWeightKg: { type: number, exclusiveMinimum: 0 }
+    rateBasis: { $ref: "#/components/schemas/LaneRateBasis" }
+    rate: { type: number, minimum: 0 }
+  required: [minWeightKg, rateBasis, rate]
+
+LaneRateBasis:
+  type: string
+  enum: [PER_KG, PER_TRIP, PER_TONNE]
+  description: PER_KG multiplies the chargeable kilograms, PER_TONNE the tonnes, PER_TRIP
+    is the whole movement whatever is aboard.
+
+ClientContractLane:
+  type: object
+  description: |
+    A corridor of a contract version. An end is a terminal or an LTL rating zone.
+    An order is served by the first lane (by code) whose origin covers the order's
+    origin terminal, whose mode and load type agree where the order states them,
+    and that runs to every destination on the order and lists every consignee
+    (when it lists any).
+  properties:
+    id: { type: string, format: uuid }
+    contractId: { type: string, format: uuid }
+    laneCode: { type: string }
+    originTerminalId: { type: string, format: uuid }
+    originTerminalCode: { type: string }
+    originZone: { type: string }
+    destinationTerminalId: { type: string, format: uuid }
+    destinationTerminalCode: { type: string }
+    destinationZone: { type: string }
+    freightMode: { type: string, enum: [FTL, LTL], description: Null for either. }
+    loadType: { type: string, description: Null for any. }
+    rateBasis: { $ref: "#/components/schemas/LaneRateBasis" }
+    rate:
+      type: number
+      description: The price when no slab covers the weight; null when only slabs price the lane.
+    transitDays: { type: integer, description: The days the movement is promised to take. }
+    slabs:
+      type: array
+      items: { $ref: "#/components/schemas/ClientContractLaneSlab" }
+    consignorIds:
+      type: array
+      items: { type: string, format: uuid }
+      description: Partners allowed to consign on the lane; empty is anyone. Recorded and shown;
+        an order carries no consignor other than its customer, so it is not enforced.
+    consigneeIds:
+      type: array
+      items: { type: string, format: uuid }
+      description: Partners allowed to receive on the lane; empty is anyone. A line to another
+        consignee (or none) is refused with `order-consignee-not-allowed`.
+
+ClientContractLaneRequest:
+  type: object
+  properties:
+    laneCode: { type: string, maxLength: 60 }
+    originTerminalId: { type: string, format: uuid, description: Exactly one of the terminal and the zone. }
+    originZone: { type: string }
+    destinationTerminalId: { type: string, format: uuid, description: Exactly one of the terminal and the zone. }
+    destinationZone: { type: string }
+    freightMode: { type: string, enum: [FTL, LTL] }
+    loadType: { type: string, maxLength: 60 }
+    rateBasis: { $ref: "#/components/schemas/LaneRateBasis" }
+    rate: { type: number, minimum: 0 }
+    transitDays: { type: integer, minimum: 1 }
+    slabs:
+      type: array
+      description: Non-overlapping bands; a lane needs a `rate`, slabs, or both.
+      items: { $ref: "#/components/schemas/ClientContractLaneSlab" }
+    consignorIds:
+      type: array
+      items: { type: string, format: uuid }
+    consigneeIds:
+      type: array
+      items: { type: string, format: uuid }
+  required: [laneCode, rateBasis]
 
 ReviseClientContractRequest:
   type: object
@@ -207,6 +329,23 @@ ReviseClientContractRequest:
         default), it is charged when the trip completes and invoiced only
         once each of the client's consignments on the trip has a confirmed
         proof of delivery or has been marked billable by hand.
+    directOrdersAllowed:
+      type: boolean
+      description: Whether an order no lane serves is accepted. Omitted is true for a new draft
+        and unchanged for a revision.
+    allowedLoadTypes:
+      type: array
+      items: { type: string }
+      description: The load or vehicle types the contract covers (stored upper case); empty
+        is any. Omitted is any for a new draft and unchanged for a revision.
+    lanes:
+      type: array
+      description: |
+        The version's lanes. On a revision this replaces them whole (an empty list
+        removes them all) and leaving it out keeps them. Lane codes are distinct
+        within the contract (409 `client-contract-lane-duplicated`); every terminal
+        and partner must be the tenant's (404).
+      items: { $ref: "#/components/schemas/ClientContractLaneRequest" }
   required: [orgUnitId, effectiveFrom]
 
 
@@ -215,7 +354,7 @@ ClientContractChecklistItem:
   properties:
     code:
       type: string
-      enum: [CUSTOMER_TRADING, EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT]
+      enum: [CUSTOMER_TRADING, EFFECTIVE_DATES, TRANSPORT_RATE, TAX_RATES, ORG_UNIT, LANES]
     required:
       type: boolean
       description: Whether the tenant's setting makes this rule a condition of verification.
