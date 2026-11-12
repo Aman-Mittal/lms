@@ -393,15 +393,18 @@ public record ClientContract(
             case HANDLING_OUT -> handlingOutRatePerPallet;
             case VALUE_ADDED -> throw new IllegalArgumentException(
                     "A value-added service is priced from the contract's service rates");
+            case MANUAL -> throw new IllegalArgumentException("A manual charge carries its own rate");
         };
     }
 
     /**
      * The tax rate, in percent, for a line of this service type: the transport
-     * rate for movements, the warehouse rate for everything else.
+     * rate for movements and for charges raised by hand (detention, loading, a
+     * penalty are the movement's), the warehouse rate for everything else.
      */
     public BigDecimal taxRateFor(ServiceType type) {
-        return type == ServiceType.TRANSPORT ? transportTaxRatePct : warehouseTaxRatePct;
+        return type == ServiceType.TRANSPORT || type == ServiceType.MANUAL ? transportTaxRatePct
+                : warehouseTaxRatePct;
     }
 
     /**

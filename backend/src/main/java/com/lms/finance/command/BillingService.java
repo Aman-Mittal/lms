@@ -69,6 +69,7 @@ public class BillingService {
     private final AuditTrail audit;
     private final ApplicationEventPublisher events;
     private final SettlementHolds holds;
+    private final PayableAttachment attachment;
 
     /**
      * How far a vendor's invoice may differ from the computed cost before it is
@@ -87,7 +88,7 @@ public class BillingService {
                           FuelSurchargeIndexRepository fuelIndex, LoadLifecyclePort loads,
                           RatingEngine rating, AuditTrail audit,
                           ApplicationEventPublisher events, SettlementHolds holds,
-                          Settings settings) {
+                          Settings settings, PayableAttachment attachment) {
         this.bills = bills;
         this.lines = lines;
         this.tariffs = tariffs;
@@ -99,6 +100,7 @@ public class BillingService {
         this.events = events;
         this.holds = holds;
         this.settings = settings;
+        this.attachment = attachment;
     }
 
     /**
@@ -166,7 +168,7 @@ public class BillingService {
                     charge.rate(), charge.amount()));
         }
 
-        publishRaised(tenantId, bill, true);
+        publishRaised(tenantId, attachment.takeUpWaiting(bill), true);
         return Optional.of(bill.id());
     }
 
@@ -249,7 +251,7 @@ public class BillingService {
                     charge.rate(), charge.amount()));
         }
 
-        publishRaised(tenantId, bill, true);
+        publishRaised(tenantId, attachment.takeUpWaiting(bill), true);
         return Optional.of(bill.id());
     }
 
@@ -294,7 +296,7 @@ public class BillingService {
                     charge.rate(), charge.amount()));
         }
 
-        publishRaised(tenantId, bill, true);
+        publishRaised(tenantId, attachment.takeUpWaiting(bill), true);
         return Optional.of(bill.id());
     }
 
