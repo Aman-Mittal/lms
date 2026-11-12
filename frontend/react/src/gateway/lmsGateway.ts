@@ -1727,6 +1727,8 @@ export interface MyPreferencesView {
   version: string;
   values: Record<string, SettingValue>;
   effective: EffectiveSettingView[];
+  /** Organisation-decided UI settings the caller cannot change, such as `ui.clientCache`. */
+  policy: EffectiveSettingView[];
 }
 
 /** One version of one key in a profile. */
