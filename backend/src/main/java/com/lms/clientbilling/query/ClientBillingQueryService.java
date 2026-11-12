@@ -102,7 +102,8 @@ public class ClientBillingQueryService {
                        transport_rate_per_kg, transport_minimum_charge,
                        storage_rate_per_pallet_day, handling_in_rate_per_pallet,
                        handling_out_rate_per_pallet, transport_tax_rate_pct,
-                       warehouse_tax_rate_pct, storage_units_per_pallet, bill_on_dispatch
+                       warehouse_tax_rate_pct, storage_units_per_pallet, bill_on_dispatch,
+                       coalesce(family_id, id) AS family_id, direct_orders_allowed, allowed_load_types
                   FROM client_contract
                 """ + where + " " + order + " LIMIT :limit")
                 .param("limit", limit);
@@ -128,6 +129,7 @@ public class ClientBillingQueryService {
                         r -> new ClientContractView.ServiceRate(r.serviceCode(), r.unit(),
                                 r.rate()), Collectors.toList())));
 
+        Map<UUID, List<ContractLaneView>> lanes = lanesOf(rows.stream().map(ContractRow::id).toList());
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         return rows.stream().map(r -> new ClientContractView(r.id(), r.orgUnitId(), r.code(),
                 r.clientPartnerId(), r.currency(), r.effectiveFrom(), r.effectiveTo(), r.validTill(),
@@ -136,7 +138,88 @@ public class ClientBillingQueryService {
                 r.transportRatePerKg(), r.transportMinimumCharge(), r.storageRatePerPalletDay(),
                 r.handlingInRatePerPallet(), r.handlingOutRatePerPallet(),
                 r.transportTaxRatePct(), r.warehouseTaxRatePct(), r.storageUnitsPerPallet(),
-                rates.getOrDefault(r.id(), List.of()), r.billOnDispatch())).toList();
+                rates.getOrDefault(r.id(), List.of()), r.billOnDispatch(), r.familyId(),
+                r.directOrdersAllowed(), r.allowedLoadTypes() == null ? List.of()
+                : List.of(r.allowedLoadTypes().split(",")), lanes.getOrDefault(r.id(), List.of()))).toList();
+    }
+
+    private record LaneRow(UUID id, UUID contractId, String laneCode, UUID originTerminalId,
+                           String originTerminalCode, String originZone, UUID destinationTerminalId,
+                           String destinationTerminalCode, String destinationZone, String freightMode,
+                           String loadType, String rateBasis, BigDecimal rate, Integer transitDays) {
+    }
+
+    private record SlabRow(UUID laneId, BigDecimal minWeightKg, BigDecimal maxWeightKg, String rateBasis,
+                           BigDecimal rate) {
+    }
+
+    private record PartyRow(UUID laneId, String role, UUID partnerId) {
+    }
+
+    /** The lanes of these versions, each list by code; one statement each for lanes, slabs and parties. */
+    private Map<UUID, List<ContractLaneView>> lanesOf(List<UUID> contractIds) {
+        List<LaneRow> rows = jdbc.sql("""
+                        SELECT l.id, l.contract_id, l.lane_code, l.origin_terminal_id, ot.code AS origin_terminal_code,
+                               l.origin_zone, l.destination_terminal_id, dt.code AS destination_terminal_code,
+                               l.destination_zone, l.freight_mode, l.load_type, l.rate_basis, l.rate, l.transit_days
+                          FROM client_contract_lane l
+                          LEFT JOIN terminal ot ON ot.id = l.origin_terminal_id
+                          LEFT JOIN terminal dt ON dt.id = l.destination_terminal_id
+                         WHERE l.contract_id IN (:ids)
+                         ORDER BY l.contract_id, l.lane_code
+                        """)
+                .param("ids", contractIds).query(LaneRow.class).list();
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> laneIds = rows.stream().map(LaneRow::id).toList();
+        Map<UUID, List<ContractLaneView.Slab>> slabs = new java.util.HashMap<>();
+        jdbc.sql("""
+                        SELECT lane_id, min_weight_kg, max_weight_kg, rate_basis, rate
+                          FROM client_contract_lane_slab WHERE lane_id IN (:ids)
+                         ORDER BY lane_id, min_weight_kg
+                        """)
+                .param("ids", laneIds).query(SlabRow.class).list()
+                .forEach(s -> slabs.computeIfAbsent(s.laneId(), k -> new java.util.ArrayList<>())
+                        .add(new ContractLaneView.Slab(s.minWeightKg(), s.maxWeightKg(), s.rateBasis(), s.rate())));
+        Map<UUID, List<UUID>> consignors = new java.util.HashMap<>();
+        Map<UUID, List<UUID>> consignees = new java.util.HashMap<>();
+        jdbc.sql("""
+                        SELECT lane_id, role, partner_id FROM client_contract_lane_party
+                         WHERE lane_id IN (:ids) ORDER BY lane_id, role, partner_id
+                        """)
+                .param("ids", laneIds).query(PartyRow.class).list()
+                .forEach(p -> ("CONSIGNOR".equals(p.role()) ? consignors : consignees)
+                        .computeIfAbsent(p.laneId(), k -> new java.util.ArrayList<>()).add(p.partnerId()));
+        Map<UUID, List<ContractLaneView>> out = new java.util.HashMap<>();
+        for (LaneRow r : rows) {
+            out.computeIfAbsent(r.contractId(), k -> new java.util.ArrayList<>()).add(new ContractLaneView(r.id(),
+                    r.contractId(), r.laneCode(), r.originTerminalId(), r.originTerminalCode(), r.originZone(),
+                    r.destinationTerminalId(), r.destinationTerminalCode(), r.destinationZone(), r.freightMode(),
+                    r.loadType(), r.rateBasis(), r.rate(), r.transitDays(), slabs.get(r.id()),
+                    consignors.get(r.id()), consignees.get(r.id())));
+        }
+        return out;
+    }
+
+    /**
+     * The lanes of the contract version in force for a client on a day, for the
+     * order desk to pick from; empty when none is in force (or the client has
+     * no lanes). Read with the order desk's own right, not the contract
+     * manager's: the lanes are what a person raising an order chooses between.
+     */
+    @PreAuthorize("hasAnyAuthority('CLIENT_BILLING_READ', 'ORDER_CREATE', 'ORDER_UPDATE')")
+    public List<ContractLaneView> lanesInForce(UUID clientPartnerId, LocalDate onDate) {
+        access.requireAccessTo(clientPartnerId);
+        List<UUID> versions = jdbc.sql("""
+                        SELECT id FROM client_contract
+                         WHERE client_partner_id = :client AND status = 'ACTIVE'
+                           AND effective_from <= :day AND (effective_to IS NULL OR effective_to >= :day)
+                           AND (valid_till IS NULL OR valid_till >= :day)
+                         ORDER BY effective_from DESC LIMIT 1
+                        """)
+                .param("client", clientPartnerId).param("day", onDate).query(UUID.class).list();
+        return versions.isEmpty() ? List.of() : lanesOf(versions).getOrDefault(versions.get(0), List.of());
     }
 
     /** The charges filed under one billing period, in capture order. */
@@ -506,7 +589,8 @@ public class ClientBillingQueryService {
                        BigDecimal storageRatePerPalletDay, BigDecimal handlingInRatePerPallet,
                        BigDecimal handlingOutRatePerPallet, BigDecimal transportTaxRatePct,
                        BigDecimal warehouseTaxRatePct, int storageUnitsPerPallet,
-                       boolean billOnDispatch) {
+                       boolean billOnDispatch, UUID familyId, boolean directOrdersAllowed,
+                       String allowedLoadTypes) {
     }
 
     record RateRow(UUID contractId, String serviceCode, String unit, BigDecimal rate) {
