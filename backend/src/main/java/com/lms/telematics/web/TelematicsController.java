@@ -20,6 +20,10 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.Slice;
+import com.lms.shared.web.IdResponse;
+import com.lms.telematics.command.RouteCorridorService;
+import com.lms.telematics.query.RouteCorridorView;
 import com.lms.telematics.api.PingIngestPort;
 import com.lms.telematics.query.DeviationView;
 import com.lms.telematics.query.GeofenceCrossingView;
@@ -27,15 +31,18 @@ import com.lms.telematics.query.TelematicsQueryService;
 import com.lms.telematics.query.TripProgressView;
 import com.lms.telematics.query.VehiclePositionView;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -69,10 +76,13 @@ public class TelematicsController {
 
     private final PingIngestPort ingest;
     private final TelematicsQueryService telematics;
+    private final RouteCorridorService corridors;
 
-    public TelematicsController(PingIngestPort ingest, TelematicsQueryService telematics) {
+    public TelematicsController(PingIngestPort ingest, TelematicsQueryService telematics,
+                                RouteCorridorService corridors) {
         this.ingest = ingest;
         this.telematics = telematics;
+        this.corridors = corridors;
     }
 
     @PostMapping("/pings")
@@ -128,9 +138,51 @@ public class TelematicsController {
                 .orElseThrow(() -> new ResourceNotFoundException("Trip", tripId));
     }
 
+    // ------------------------------------------------------------- corridors
+
+    /**
+     * Imports the corridor of a lane (an origin and a destination terminal),
+     * replacing the one it had. {@code points} are {@code [lon, lat]} pairs in
+     * the order travelled. A trip on that lane is then measured against the
+     * polyline instead of the straight line.
+     */
+    @PutMapping("/corridors")
+    public ResponseEntity<IdResponse> importCorridor(@Valid @RequestBody CorridorRequest request) {
+        UUID id = corridors.importCorridor(request.originTerminalId(), request.destinationTerminalId(),
+                request.name(), request.points().stream().map(p -> p.stream().mapToDouble(Double::doubleValue).toArray())
+                        .toList(), request.widthMetres());
+        return ResponseEntity.ok(new IdResponse(id));
+    }
+
+    @GetMapping("/corridors")
+    public Slice<RouteCorridorView> corridorList(@RequestParam(required = false) String cursor,
+                                                 @RequestParam(required = false) Integer limit) {
+        return telematics.corridors(cursor, limit);
+    }
+
+    @GetMapping("/corridors/{id}")
+    public RouteCorridorView corridor(@PathVariable UUID id) {
+        return telematics.corridor(id).orElseThrow(() -> new ResourceNotFoundException("RouteCorridor", id));
+    }
+
+    /** Clears a lane's corridor; its trips go back to the straight line. */
+    @DeleteMapping("/corridors/{id}")
+    public ResponseEntity<Void> clearCorridor(@PathVariable UUID id) {
+        corridors.clear(id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/deviations")
     public List<DeviationView> openDeviations() {
         return telematics.openDeviations();
+    }
+
+    public record CorridorRequest(
+            @NotNull UUID originTerminalId,
+            @NotNull UUID destinationTerminalId,
+            @NotBlank @Size(max = 120) String name,
+            @NotEmpty @Size(min = 2, max = 5000) List<@NotNull @Size(min = 2, max = 2) List<@NotNull Double>> points,
+            BigDecimal widthMetres) {
     }
 
     public record PingBatchRequest(

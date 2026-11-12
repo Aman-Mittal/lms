@@ -19,7 +19,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** A trip currently outside its corridor. */
+/** A trip currently outside its corridor; {@code reference} is STRAIGHT_LINE or CORRIDOR (an imported polyline). */
 public record DeviationView(
         UUID id,
         UUID tripId,
@@ -28,5 +28,6 @@ public record DeviationView(
         BigDecimal distanceM,
         BigDecimal corridorM,
         BigDecimal lat,
-        BigDecimal lon) {
+        BigDecimal lon,
+        String reference) {
 }

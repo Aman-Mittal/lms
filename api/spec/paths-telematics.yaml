@@ -188,3 +188,86 @@
               items: { $ref: "#/components/schemas/Deviation" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
+
+/api/v1/telematics/corridors:
+  get:
+    tags: [Telematics]
+    operationId: listRouteCorridors
+    summary: Imported route corridors
+    description: Without their positions. Keyset-paged by lane.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of corridors.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RouteCorridorSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Telematics]
+    operationId: importRouteCorridor
+    summary: Import the corridor of a lane
+    description: |
+      Requires `TELEMATICS_INGEST`. Route corridors are import only: the
+      platform draws no routes, it measures against the polyline it is given.
+      A trip whose origin and destination are the lane's is then measured for
+      route deviation against this polyline (the deviation's `reference` is
+      `CORRIDOR`) instead of the straight line, which remains the fallback for
+      every lane without one. Replaces the lane's corridor if it has one.
+      Positions are `[lon, lat]`, 2 to 5000 (`route-corridor-points-invalid`);
+      the terminals must differ (`route-corridor-lane-invalid`). Audited.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RouteCorridorRequest" }
+    responses:
+      "200":
+        description: The corridor's identifier.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/telematics/corridors/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the corridor.
+  get:
+    tags: [Telematics]
+    operationId: getRouteCorridor
+    summary: One corridor with its positions
+    responses:
+      "200":
+        description: The corridor.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RouteCorridor" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  delete:
+    tags: [Telematics]
+    operationId: clearRouteCorridor
+    summary: Clear a corridor
+    description: Requires `TELEMATICS_INGEST`. Its lane's trips are measured against the straight line again.
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
