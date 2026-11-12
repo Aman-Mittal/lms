@@ -37,9 +37,11 @@ class TripCompletion {
     private final LoadLifecyclePort loads;
     private final AuditTrail audit;
     private final ApplicationEventPublisher events;
+    private final TripStops tripStops;
 
     TripCompletion(TripRepository trips, LoadLifecyclePort loads, AuditTrail audit,
-                   ApplicationEventPublisher events) {
+                   ApplicationEventPublisher events, TripStops tripStops) {
+        this.tripStops = tripStops;
         this.trips = trips;
         this.loads = loads;
         this.audit = audit;
@@ -52,6 +54,10 @@ class TripCompletion {
         // freight aboard -- a part-load line haul's dockets have now arrived
         // at their destination hub -- and a refusal there must undo this.
         loads.recordTripCompleted(completed.loadId());
+        if (completed.destinationTerminalId() != null) {
+            tripStops.leftTerminal(completed, completed.destinationTerminalId(), when,
+                    com.lms.execution.command.domain.TripStop.Source.TRIP);
+        }
         audit.recordAtomically("TRIP_COMPLETED", "TRIP", completed.id(), TripCommandService.snapshot(trip),
                 TripCommandService.snapshot(completed, "at", when.toString()));
 

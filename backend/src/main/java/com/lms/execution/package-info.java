@@ -29,11 +29,16 @@
  * dispatch cannot be eventually consistent, because by the time the answer
  * arrives the lorry has gone.
  *
+ * <p>Also the yard (issue #223): the gate register of every vehicle that comes
+ * in and goes out, the gate passes that let it, and a trip's ordered stops.
+ * Passes are numbered from the {@code GATE_PASS} series through
+ * {@code identity::numbering}.
+ *
  * <p>Reads its dispatch checklist and tracking switches through
  * {@code settings::api}, resolved for the trip's unit, vehicle and customers.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Trip Execution",
         allowedDependencies = {"planning::api", "masterdata::api", "identity::access",
-                "settings::api"})
+                "identity::numbering", "settings::api"})
 package com.lms.execution;

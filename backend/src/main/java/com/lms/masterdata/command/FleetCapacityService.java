@@ -29,9 +29,22 @@ import org.springframework.transaction.annotation.Transactional;
 public class FleetCapacityService implements FleetCapacityPort {
 
     private final VehicleRepository vehicles;
+    private final DriverRepository drivers;
 
-    public FleetCapacityService(VehicleRepository vehicles) {
+    public FleetCapacityService(VehicleRepository vehicles, DriverRepository drivers) {
         this.vehicles = vehicles;
+        this.drivers = drivers;
+    }
+
+    @Override
+    public Optional<String> registrationOf(UUID vehicleId) {
+        return vehicleId == null ? Optional.empty()
+                : vehicles.findById(vehicleId).map(Vehicle::registrationNo);
+    }
+
+    @Override
+    public boolean isDriverRegistered(UUID driverId) {
+        return driverId != null && drivers.findById(driverId).isPresent();
     }
 
     @Override

@@ -59,7 +59,9 @@ public enum ExceptionCategory {
     /** An ASN line was counted in short, over or damaged. */
     RECEIPT_VARIANCE(Severity.P3),
     /** An outbound line could not be picked in full. */
-    PICK_SHORTFALL(Severity.P3);
+    PICK_SHORTFALL(Severity.P3),
+    /** A trip's vehicle reached a stop later than planned by more than the tolerance. */
+    STOP_LATE(Severity.P3);
 
     private final Severity severity;
 

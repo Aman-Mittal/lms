@@ -30,6 +30,10 @@ import org.springframework.data.relational.core.mapping.Table;
  * reports every thirty seconds, and an alert per report is an alert nobody
  * reads -- which is the failure mode that makes monitoring systems get switched
  * off.
+ *
+ * <p>{@code reference} says what the distance was measured against:
+ * STRAIGHT_LINE between the trip's terminals, or CORRIDOR, a polyline imported
+ * for its lane.
  */
 @Table("route_deviation")
 public record RouteDeviation(
@@ -41,15 +45,16 @@ public record RouteDeviation(
         BigDecimal lon,
         BigDecimal distanceM,
         BigDecimal corridorM,
+        String reference,
         Instant resolvedAt,
         @Version Long version,
         Instant createdAt) {
 
     public static RouteDeviation open(UUID id, UUID tenantId, UUID tripId, Instant detectedAt,
                                       BigDecimal lat, BigDecimal lon,
-                                      BigDecimal distanceM, BigDecimal corridorM) {
+                                      BigDecimal distanceM, BigDecimal corridorM, String reference) {
         return new RouteDeviation(id, tenantId, tripId, detectedAt, lat, lon,
-                distanceM, corridorM, null, null, Instant.now());
+                distanceM, corridorM, reference, null, null, Instant.now());
     }
 
     public boolean isOpen() {
@@ -59,7 +64,7 @@ public record RouteDeviation(
     /** Closed when the vehicle comes back inside the corridor. */
     public RouteDeviation resolve(Instant at) {
         return new RouteDeviation(id, tenantId, tripId, detectedAt, lat, lon,
-                distanceM, corridorM, at, version, createdAt);
+                distanceM, corridorM, reference, at, version, createdAt);
     }
 
     /**
@@ -74,6 +79,6 @@ public record RouteDeviation(
             return this;
         }
         return new RouteDeviation(id, tenantId, tripId, detectedAt, lat, lon,
-                distance, corridorM, resolvedAt, version, createdAt);
+                distance, corridorM, reference, resolvedAt, version, createdAt);
     }
 }

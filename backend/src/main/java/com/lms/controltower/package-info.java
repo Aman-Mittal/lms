@@ -45,12 +45,16 @@
  * ticket when readings stay out of band for longer than the tenant's duration.
  * Each is at most one unclosed ticket per trip and kind.
  *
+ * <p>A trip's vehicle reaching a stop later than its planned arrival by more
+ * than the tenant's tolerance ({@code controltower.detector.stopLateTolerance})
+ * raises a STOP_LATE ticket, one per stop, from {@code execution::events}.
+ *
  * <p>Uses {@code identity::access} to tell the access decision point whether a
  * ticket is holding money, which is what decides who may close it.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Exception & Control Tower",
-        allowedDependencies = {"execution::api", "telematics::api", "telematics::events",
+        allowedDependencies = {"execution::api", "execution::events", "telematics::api", "telematics::events",
                 "multimodal::events", "milkrun::events", "warehouse::events",
                 "identity::access", "settings::api"})
 package com.lms.controltower;

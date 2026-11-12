@@ -41,6 +41,10 @@ public enum WebhookEventType {
     CONSIGNMENT_CANCELLED,
     APPROVAL_REQUESTED,
     APPROVAL_DECIDED,
+    GATE_ENTRY_RECORDED,
+    GATE_EXIT_RECORDED,
+    TRIP_STOP_ARRIVED,
+    TRIP_STOP_DEPARTED,
     PING;
 
     public boolean subscribable() {
