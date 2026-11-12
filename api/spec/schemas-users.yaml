@@ -48,4 +48,10 @@ Me:
       type: array
       items: { type: string }
       description: What this session's token allows.
+    cacheEpoch:
+      type: string
+      description: |
+        Changes when the caller's tenant, unit, roles or permissions change,
+        and otherwise stays the same. A console that keeps data in the browser
+        discards it when the value differs from the one it stored.
   required: [tenantId, roles, permissions]

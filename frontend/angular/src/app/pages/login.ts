@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, isDevMode, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { LmsGateway } from '../gateway/lms-gateway';
 import { DEMO_TENANT } from '../config';
 import { Session } from '../session';
-import { applyDisplay, landingRoute, resetDisplay } from '../display';
+import { applyDisplay, displayPreferences, landingRoute, resetDisplay } from '../display';
+import { activateClientCache } from '../client-cache';
 
 @Component({
   selector: 'app-login',
@@ -61,6 +62,16 @@ export class LoginPage {
         applyDisplay((await this.gateway.myPreferences()).effective);
       } catch {
         resetDisplay();
+      }
+      // Then the browser cache, bound to this person and tenant; a failure here is a console without one.
+      try {
+        const me = await this.gateway.me();
+        await activateClientCache({
+          tenantId: me.tenantId, userId: me.userId, epoch: me.cacheEpoch,
+          enabled: displayPreferences().clientCache, tileWorker: !isDevMode(),
+        });
+      } catch {
+        await activateClientCache({ tenantId: '', userId: '', epoch: '', enabled: false, tileWorker: false });
       }
       await this.router.navigateByUrl(landingRoute());
     } catch (e) {

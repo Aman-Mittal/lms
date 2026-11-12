@@ -37,7 +37,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   // In CI each shard writes a blob report; a later job merges them into one.
   reporter: process.env.CI ? [['github'], ['blob']] : 'list',
-  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  // The consoles register a tile-caching service worker in production builds. Playwright cannot route
+  // requests a worker makes, so the specs that stub tiles would stop seeing them; block it everywhere.
+  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure', serviceWorkers: 'block' },
   projects: [
     { name: 'angular', use: { baseURL: `${origin}/angular/` } },
     { name: 'react', use: { baseURL: `${origin}/react/` } },
