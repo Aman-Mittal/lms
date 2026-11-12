@@ -38,10 +38,13 @@ export function TripRoute() {
   const [stopError, setStopError] = useState('');
   const [skipping, setSkipping] = useState('');
   const [skipReason, setSkipReason] = useState('');
+  // Each "Show route" counts, so the money panel re-reads even when the trip is the same one.
+  const [lookups, setLookups] = useState(0);
 
   function lookUp(event: FormEvent) {
     event.preventDefault();
     setTripId(typed.trim());
+    setLookups((n) => n + 1);
   }
 
   async function act(action: () => Promise<void>) {
@@ -148,7 +151,7 @@ export function TripRoute() {
           )}
         </section>
       )}
-      {route.data && tripId && <TripMoney tripId={tripId} />}
+      {route.data && tripId && <TripMoney key={`${tripId}:${lookups}`} tripId={tripId} />}
     </>
   );
 }
