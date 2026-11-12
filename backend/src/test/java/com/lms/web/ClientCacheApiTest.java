@@ -201,6 +201,16 @@ class ClientCacheApiTest {
         List<String> scopes = new java.util.ArrayList<>();
         cache.get("scopes").forEach(s -> scopes.add(s.asString()));
         assertThat(scopes).containsExactly("ORG_DEFAULT", "ORG_UNIT");
+
+        // Not a preference the person sets, yet the console needs it at sign-in: /settings/me
+        // carries it under policy, and never among the preferences the profile page edits.
+        JsonNode mine = kit.parse(kit.get(tenant, "/api/v1/settings/me"));
+        List<String> policyKeys = new java.util.ArrayList<>();
+        mine.get("policy").forEach(e -> policyKeys.add(e.get("key").asString()));
+        List<String> personalKeys = new java.util.ArrayList<>();
+        mine.get("effective").forEach(e -> personalKeys.add(e.get("key").asString()));
+        assertThat(policyKeys).contains("ui.clientCache");
+        assertThat(personalKeys).doesNotContain("ui.clientCache");
     }
 
     private String etagOf(String path) {

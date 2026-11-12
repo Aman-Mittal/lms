@@ -45,7 +45,8 @@ export function Login() {
       start(result);
       // Preferences come next: a failure here must not keep a person out.
       try {
-        applyDisplay((await gateway.myPreferences()).effective);
+        const prefs = await gateway.myPreferences();
+        applyDisplay([...prefs.effective, ...prefs.policy]);
       } catch {
         resetDisplay();
       }

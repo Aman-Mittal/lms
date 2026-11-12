@@ -91,7 +91,7 @@ export function MyProfile() {
     setBusy(true);
     try {
       const mine = await gateway.saveMyPreferences(prefs.version, values);
-      applyDisplay(mine.effective);
+      applyDisplay([...mine.effective, ...mine.policy]);
       show(mine);
       setSaved('Saved.');
     } finally {

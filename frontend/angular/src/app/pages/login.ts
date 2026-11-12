@@ -59,7 +59,8 @@ export class LoginPage {
         { tenantCode: this.tenantCode, email: this.email, password: this.password }));
       // Preferences come next: a failure here must not keep a person out.
       try {
-        applyDisplay((await this.gateway.myPreferences()).effective);
+        const prefs = await this.gateway.myPreferences();
+        applyDisplay([...prefs.effective, ...prefs.policy]);
       } catch {
         resetDisplay();
       }
