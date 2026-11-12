@@ -295,6 +295,24 @@ public record FreightBill(
                 .withMatch(claimedAmount, varianceAmount, variancePct, reason, matchedAt);
     }
 
+    /**
+     * The bill with a manual charge's amount added to (or, negative, taken
+     * from) what it is computed at. Only while the bill is a draft nobody has
+     * matched: once the vendor's claim has been judged against the amount, the
+     * amount is what it was judged at and is never moved.
+     */
+    public FreightBill withManualAdjustment(BigDecimal delta) {
+        if (status != BillStatus.DRAFT) {
+            throw new BusinessRuleViolationException("bill-not-open",
+                    "Bill " + billNo + " is " + status + "; a charge is not added to it");
+        }
+        return new FreightBill(id, tenantId, orgUnitId, tripId, loadId, circuitRunId, itineraryLegId,
+                vendorPartnerId, billNo, status, currency, tariffId, pricedOn, chargeableWeightKg,
+                detentionHours, dropCount, baseFreight, detentionAmount, multiDropAmount,
+                fuelSurchargeAmount, computedAmount.add(delta), claimedAmount, varianceAmount,
+                variancePct, resolution, matchedAt, version, createdAt, Instant.now());
+    }
+
     private FreightBill moveTo(BillStatus target) {
         if (!TRANSITIONS.getOrDefault(status, Set.of()).contains(target)) {
             throw new BusinessRuleViolationException("bill-illegal-transition",
