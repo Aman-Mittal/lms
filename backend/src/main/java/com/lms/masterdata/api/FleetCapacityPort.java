@@ -56,6 +56,16 @@ public interface FleetCapacityPort {
     boolean isRegistered(UUID vehicleId);
 
     /**
+     * The registration number of a vehicle on this tenant's register, in any
+     * status, or empty when there is no such vehicle. What the gate register
+     * knows a registered vehicle by.
+     */
+    Optional<String> registrationOf(UUID vehicleId);
+
+    /** Whether the driver is on this tenant's register; the same row-level read as {@link #isRegistered}. */
+    boolean isDriverRegistered(UUID driverId);
+
+    /**
      * @param payloadCapacityKg gross weight less tare, which is what a load may
      *                          actually weigh -- not the laden total, which
      *                          would over-allocate every vehicle by its own mass

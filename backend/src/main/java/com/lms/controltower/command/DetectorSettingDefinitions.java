@@ -43,17 +43,23 @@ public class DetectorSettingDefinitions implements SettingContributor {
     public static final SettingKey<Duration> TEMPERATURE_EXCURSION =
             SettingKey.duration("controltower.detector.temperatureExcursionTolerance");
 
+    /** How late past its planned arrival a trip may reach a stop before it is an exception (issue #223). */
+    public static final SettingKey<Duration> STOP_LATE = SettingKey.duration("controltower.detector.stopLateTolerance");
+
     static final Duration SHORTEST = Duration.ofMinutes(1);
     static final Duration LONGEST = Duration.ofDays(7);
 
     private final int defaultEtaSlipMinutes;
     private final int defaultTemperatureMinutes;
+    private final int defaultStopLateMinutes;
 
     public DetectorSettingDefinitions(@Value("${lms.controltower.eta-slip-minutes:60}") int defaultEtaSlipMinutes,
                                       @Value("${lms.controltower.temperature-excursion-minutes:15}")
-                                      int defaultTemperatureMinutes) {
+                                      int defaultTemperatureMinutes,
+                                      @Value("${lms.controltower.stop-late-minutes:30}") int defaultStopLateMinutes) {
         this.defaultEtaSlipMinutes = defaultEtaSlipMinutes;
         this.defaultTemperatureMinutes = defaultTemperatureMinutes;
+        this.defaultStopLateMinutes = defaultStopLateMinutes;
     }
 
     @Override
@@ -68,6 +74,11 @@ public class DetectorSettingDefinitions implements SettingContributor {
                                 "How long a watched trip's cargo may stay outside its band before the"
                                         + " control tower raises a temperature excursion.")
                         .defaultValue(Duration.ofMinutes(defaultTemperatureMinutes)).between(SHORTEST, LONGEST)
-                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION).build());
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.VEHICLE, ScopeType.CUSTOMER, ScopeType.COMBINATION).build(),
+                SettingDefinition.of(STOP_LATE, "Late-at-stop tolerance",
+                                "How much later than its planned arrival a trip's vehicle may reach a stop"
+                                        + " before the control tower raises a late-at-stop exception.")
+                        .defaultValue(Duration.ofMinutes(defaultStopLateMinutes)).between(SHORTEST, LONGEST)
+                        .alsoAt(ScopeType.ORG_UNIT, ScopeType.CUSTOMER, ScopeType.COMBINATION).build());
     }
 }

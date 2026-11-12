@@ -1,0 +1,171 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+GatePurpose:
+  type: string
+  enum: [TRIP, VISITOR, MAINTENANCE, RETURN, OTHER]
+
+GateEntryRequest:
+  type: object
+  description: |
+    Name the site with `orgUnitId`, `terminalId` or both, and the vehicle with
+    `vehicleId` or `registrationNo`. List fields may be omitted.
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    terminalId: { type: string, format: uuid }
+    vehicleId: { type: string, format: uuid }
+    registrationNo: { type: string, maxLength: 30, description: A visitor's vehicle. Ignored when `vehicleId` is given. }
+    driverId: { type: string, format: uuid }
+    driverName: { type: string, maxLength: 120, description: A visitor's driver. }
+    purpose: { $ref: "#/components/schemas/GatePurpose" }
+    tripId: { type: string, format: uuid }
+    gatePassNo: { type: string, maxLength: 60 }
+    at: { type: string, format: date-time, description: Now when omitted. }
+    sealNos:
+      type: array
+      maxItems: 20
+      items: { type: string, maxLength: 60 }
+    weightRef: { type: string, maxLength: 120, description: The weighbridge ticket or reading this entry refers to. }
+    remarks: { type: string, maxLength: 500 }
+  required: [purpose]
+
+GateExitRequest:
+  type: object
+  properties:
+    at: { type: string, format: date-time, description: Now when omitted. }
+    sealNos:
+      type: array
+      maxItems: 20
+      items: { type: string, maxLength: 60 }
+    weightRef: { type: string, maxLength: 120 }
+    remarks: { type: string, maxLength: 500 }
+
+GateVisit:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    orgUnitId: { type: string, format: uuid }
+    orgUnitName: { type: string }
+    terminalId: { type: string, format: uuid }
+    terminalCode: { type: string }
+    vehicleId: { type: string, format: uuid, description: Absent for a visitor's vehicle. }
+    registrationNo: { type: string, description: Upper case, no blanks. }
+    driverId: { type: string, format: uuid }
+    driverName: { type: string }
+    purpose: { $ref: "#/components/schemas/GatePurpose" }
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    gatePassId: { type: string, format: uuid }
+    gatePassNo: { type: string }
+    status: { type: string, enum: [OPEN, CLOSED] }
+    enteredAt: { type: string, format: date-time }
+    entrySealNos: { type: array, items: { type: string } }
+    entryWeightRef: { type: string }
+    entryRemarks: { type: string }
+    exitedAt: { type: string, format: date-time }
+    exitSealNos: { type: array, items: { type: string } }
+    exitWeightRef: { type: string }
+    exitRemarks: { type: string }
+    dwellMinutes: { type: integer, format: int64, description: Time inside; so far for an open visit. }
+    version: { type: integer, format: int64 }
+
+GateVisitSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/GateVisit" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+IssueGatePassRequest:
+  type: object
+  description: |
+    Name the site with `orgUnitId`, `terminalId` or both, and the vehicle with
+    `vehicleId` or `registrationNo`.
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    terminalId: { type: string, format: uuid }
+    vehicleId: { type: string, format: uuid }
+    registrationNo: { type: string, maxLength: 30 }
+    tripId: { type: string, format: uuid }
+    purpose: { $ref: "#/components/schemas/GatePurpose" }
+    validFrom: { type: string, format: date-time }
+    validUntil: { type: string, format: date-time }
+    passNo:
+      type: string
+      maxLength: 60
+      description: Used only where no `GATE_PASS` number series covers the unit.
+  required: [purpose, validFrom, validUntil]
+
+CancelGatePassRequest:
+  type: object
+  properties:
+    reason: { type: string, maxLength: 500 }
+  required: [reason]
+
+GatePass:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    passNo: { type: string }
+    orgUnitId: { type: string, format: uuid }
+    orgUnitName: { type: string }
+    terminalId: { type: string, format: uuid }
+    terminalCode: { type: string }
+    vehicleId: { type: string, format: uuid }
+    registrationNo: { type: string }
+    tripId: { type: string, format: uuid }
+    tripNo: { type: string }
+    purpose: { $ref: "#/components/schemas/GatePurpose" }
+    validFrom: { type: string, format: date-time }
+    validUntil: { type: string, format: date-time }
+    status: { type: string, enum: [ISSUED, USED, CANCELLED] }
+    expired:
+      type: boolean
+      description: True for an ISSUED pass whose window has closed. Read from the clock, not stored.
+    usedAt: { type: string, format: date-time }
+    usedVisitId: { type: string, format: uuid }
+    cancelledAt: { type: string, format: date-time }
+    cancelReason: { type: string }
+    version: { type: integer, format: int64 }
+    createdAt: { type: string, format: date-time }
+
+GatePassSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/GatePass" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+GatePassCheck:
+  type: object
+  properties:
+    admits: { type: boolean }
+    passRequired: { type: boolean, description: Whether the site's unit demands a pass (`yard.gate.passRequired`). }
+    passId: { type: string, format: uuid }
+    passNo: { type: string }
+    code:
+      type: string
+      description: The refusal's problem code when `admits` is false.
+      enum: [gate-pass-required, gate-pass-expired, gate-pass-used, gate-pass-cancelled, gate-pass-trip-mismatch]
+    message: { type: string }
+  required: [admits, passRequired]

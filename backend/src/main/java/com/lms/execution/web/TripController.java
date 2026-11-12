@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.execution.command.TripCommandService;
+import com.lms.execution.command.TripStopService;
+import com.lms.execution.command.domain.TripStop;
+import com.lms.execution.query.TripStopsView;
 import com.lms.execution.command.domain.WeighbridgeReading;
 import com.lms.execution.query.GateEventView;
 import com.lms.execution.query.TripQueryService;
@@ -34,13 +37,17 @@ import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -66,12 +73,14 @@ public class TripController {
     private final TripCommandService trips;
     private final TripQueryService tripQueries;
     private final AuditHistoryQueryService history;
+    private final TripStopService stops;
 
     public TripController(TripCommandService trips, TripQueryService tripQueries,
-                          AuditHistoryQueryService history) {
+                          AuditHistoryQueryService history, TripStopService stops) {
         this.trips = trips;
         this.tripQueries = tripQueries;
         this.history = history;
+        this.stops = stops;
     }
 
     @GetMapping
@@ -129,7 +138,49 @@ public class TripController {
     @PostMapping("/{id}/gate-in")
     public ResponseEntity<Void> gateIn(@PathVariable UUID id,
                                        @Valid @RequestBody GateInRequest request) {
-        trips.gateIn(id, request.terminalId(), request.at(), request.remarks());
+        trips.gateIn(id, request.terminalId(), request.at(), request.remarks(), request.gatePassNo());
+        return ResponseEntity.noContent().build();
+    }
+
+    // ----------------------------------------------------------------- stops
+
+    /** The trip's ordered stops; the {@code ETag} is what {@code PUT} sends back in {@code If-Match}. */
+    @GetMapping("/{id}/stops")
+    public ResponseEntity<TripStopsView> stops(@PathVariable UUID id) {
+        get(id);
+        TripStopsView view = tripQueries.findStops(id);
+        return ResponseEntity.ok().eTag(view.etag()).body(view);
+    }
+
+    /** Replaces the plan of stops, in the order given; refused once any stop has been reached or skipped. */
+    @PutMapping("/{id}/stops")
+    public ResponseEntity<TripStopsView> replaceStops(@PathVariable UUID id,
+                                                      @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                                      @Valid @RequestBody ReplaceStopsRequest request) {
+        stops.replace(id, ifMatch, request.stops().stream()
+                .map(stop -> new TripStop.Draft(stop.kind(), stop.terminalId(), stop.plannedArrivalAt())).toList());
+        TripStopsView view = tripQueries.findStops(id);
+        return ResponseEntity.ok().eTag(view.etag()).body(view);
+    }
+
+    @PostMapping("/{id}/stops/{stopId}/arrival")
+    public ResponseEntity<Void> arriveAtStop(@PathVariable UUID id, @PathVariable UUID stopId,
+                                             @RequestBody(required = false) AtRequest request) {
+        stops.arrive(id, stopId, at(request));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/stops/{stopId}/departure")
+    public ResponseEntity<Void> departFromStop(@PathVariable UUID id, @PathVariable UUID stopId,
+                                               @RequestBody(required = false) AtRequest request) {
+        stops.depart(id, stopId, at(request));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/stops/{stopId}/skip")
+    public ResponseEntity<Void> skipStop(@PathVariable UUID id, @PathVariable UUID stopId,
+                                         @Valid @RequestBody SkipStopRequest request) {
+        stops.skip(id, stopId, request.reason());
         return ResponseEntity.noContent().build();
     }
 
@@ -220,7 +271,17 @@ public class TripController {
             @NotBlank String documentRef) {
     }
 
-    public record GateInRequest(@NotNull UUID terminalId, Instant at, String remarks) {
+    /** {@code gatePassNo} is the pass presented at the gate, checked where the unit requires one. */
+    public record GateInRequest(@NotNull UUID terminalId, Instant at, String remarks, String gatePassNo) {
+    }
+
+    public record StopRequest(@NotNull TripStop.Kind kind, @NotNull UUID terminalId, Instant plannedArrivalAt) {
+    }
+
+    public record ReplaceStopsRequest(@NotEmpty @Size(max = 50) List<@Valid StopRequest> stops) {
+    }
+
+    public record SkipStopRequest(@NotBlank @Size(max = 500) String reason) {
     }
 
     public record WeighingRequest(

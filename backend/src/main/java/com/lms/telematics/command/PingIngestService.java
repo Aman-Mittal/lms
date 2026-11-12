@@ -82,6 +82,7 @@ public class PingIngestService implements PingIngestPort {
     private final GeofencePresenceStore presence;
     private final GeofenceEventRepository geofenceEvents;
     private final RouteDeviationService deviations;
+    private final RouteCorridorService corridors;
     private final StoppageService stoppages;
     private final TrackingThresholds thresholds;
     private final TerminalGeofencePort terminals;
@@ -92,7 +93,8 @@ public class PingIngestService implements PingIngestPort {
 
     public PingIngestService(PingWriter pings, GeofencePresenceStore presence,
                              GeofenceEventRepository geofenceEvents,
-                             RouteDeviationService deviations, StoppageService stoppages,
+                             RouteDeviationService deviations, RouteCorridorService corridors,
+                             StoppageService stoppages,
                              TrackingThresholds thresholds,
                              TerminalGeofencePort terminals, FleetCapacityPort fleet,
                              TripTrackingPort tripTracking,
@@ -103,6 +105,7 @@ public class PingIngestService implements PingIngestPort {
         this.presence = presence;
         this.geofenceEvents = geofenceEvents;
         this.deviations = deviations;
+        this.corridors = corridors;
         this.stoppages = stoppages;
         this.thresholds = thresholds;
         this.terminals = terminals;
@@ -157,6 +160,8 @@ public class PingIngestService implements PingIngestPort {
         // The detector thresholds of each trip in the batch, read once per trip:
         // a flush of 500 fixes is one settings read, not 500.
         Map<UUID, TrackingThresholds.Thresholds> limits = new HashMap<>();
+        // The imported corridor of each trip's lane in the batch, read once per trip.
+        Map<UUID, Optional<RouteCorridorService.Corridor>> lanes = new HashMap<>();
 
         for (PingReport report : ordered) {
             UUID vehicleId = report.vehicleId();
@@ -203,7 +208,9 @@ public class PingIngestService implements PingIngestPort {
 
             trip.ifPresent(active -> {
                 evaluate(tenantId, active, ping, limits.computeIfAbsent(active.tripId(),
-                        id -> thresholds.forTrip(id, active.vehicleId())));
+                        id -> thresholds.forTrip(id, active.vehicleId())),
+                        lanes.computeIfAbsent(active.tripId(), id -> corridors.forLane(
+                                active.originTerminalId(), active.destinationTerminalId())));
                 reportTemperature(tenantId, active, ping);
                 latestPerTrip.put(active.tripId(), new TripFix(active, ping));
             });
@@ -230,7 +237,8 @@ public class PingIngestService implements PingIngestPort {
      * "did it just enter" into a comparison instead of a query per point.
      */
     private void evaluate(UUID tenantId, TripTrackingPort.ActiveTrip trip, GpsPing ping,
-                          TrackingThresholds.Thresholds limits) {
+                          TrackingThresholds.Thresholds limits,
+                          Optional<RouteCorridorService.Corridor> corridor) {
         LatLon point = ping.point();
 
         Set<UUID> inside = new LinkedHashSet<>();
@@ -256,7 +264,7 @@ public class PingIngestService implements PingIngestPort {
             }
         }
 
-        deviations.evaluate(tenantId, trip, ping, limits.corridorMetres())
+        deviations.evaluate(tenantId, trip, ping, limits.corridorMetres(), corridor)
                 .ifPresent(deviation -> events.publishEvent(new RouteDeviationDetected(
                         tenantId, trip.tripId(), trip.tripNo(), deviation.distanceM(),
                         deviation.corridorM(), ping.lat(), ping.lon(),

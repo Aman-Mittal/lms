@@ -23,7 +23,7 @@ ExceptionCategory:
     P2 -- ROUTE_DEVIATION, EXTENDED_STOPPAGE, TEMPERATURE_EXCURSION,
           MISSED_CONNECTION.
     P3 -- ETA_DELAY, DOCUMENT_MISMATCH, MILK_RUN_STOP_SKIPPED,
-          MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL.
+          MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL, STOP_LATE.
     MISSED_CONNECTION, the milk-run and the warehouse categories are raised
     automatically from those modules' events. EXTENDED_STOPPAGE is also raised
     automatically (source STOPPAGE_DETECTED) when a trip in transit sits still
@@ -31,10 +31,13 @@ ExceptionCategory:
     (source ETA_SLIP_DETECTED) and TEMPERATURE_EXCURSION (source
     TEMPERATURE_EXCURSION_DETECTED) are raised automatically for a trip that
     has a trip watch; see `/api/v1/exceptions/trip-watches/{tripId}`.
+    STOP_LATE (source STOP_LATE_DETECTED, subject TRIP_STOP) is raised when a
+    trip's vehicle reaches a stop later than its planned arrival by more than
+    `controltower.detector.stopLateTolerance`.
   enum: [ACCIDENT, THEFT, BREAKDOWN, ROUTE_DEVIATION, EXTENDED_STOPPAGE,
          TEMPERATURE_EXCURSION, ETA_DELAY, DOCUMENT_MISMATCH,
          MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED, MILK_RUN_STOP_LATE,
-         RECEIPT_VARIANCE, PICK_SHORTFALL]
+         RECEIPT_VARIANCE, PICK_SHORTFALL, STOP_LATE]
 
 Exception:
   type: object
@@ -51,7 +54,7 @@ Exception:
     registrationNo: { type: string }
     subjectType:
       type: string
-      enum: [ITINERARY, CIRCUIT_RUN, ASN, OUTBOUND_ORDER]
+      enum: [ITINERARY, CIRCUIT_RUN, ASN, OUTBOUND_ORDER, TRIP_STOP]
       description: What the ticket is about besides, or instead of, a trip.
         Always present when `tripId` is null.
     subjectId:
@@ -73,7 +76,7 @@ Exception:
       type: string
       enum: [MANUAL, ROUTE_DEVIATION, MISSED_CONNECTION, MILK_RUN_STOP_SKIPPED,
              MILK_RUN_STOP_LATE, RECEIPT_VARIANCE, PICK_SHORTFALL, STOPPAGE_DETECTED,
-             ETA_SLIP_DETECTED, TEMPERATURE_EXCURSION_DETECTED]
+             ETA_SLIP_DETECTED, TEMPERATURE_EXCURSION_DETECTED, STOP_LATE_DETECTED]
     lat: { type: number }
     lon: { type: number }
     positionSource:

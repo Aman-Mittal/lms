@@ -344,7 +344,9 @@ contract); `order.transit.kmPerDay` (unit, customer; default 400);
 `clientbilling.contract.requiredChecklist` (COMPLIANCE, dated, a JSON object of the
 contract completeness rules: unit, customer);
 `controltower.detector.etaSlipTolerance` and `.temperatureExcursionTolerance`
-(unit, vehicle, customer); `telematics.stoppage.threshold`,
+(unit, vehicle, customer); `controltower.detector.stopLateTolerance` (unit,
+customer, combination; default 30 minutes, V59); `yard.gate.passRequired`
+(boolean, unit scope only, default false, resolved for the site's unit); `telematics.stoppage.threshold`,
 `telematics.routeDeviation.corridorMetres` (unit, vehicle, customer) and
 `telematics.stoppage.radiusMetres` (unit, vehicle);
 `execution.dispatch.requiredDocuments` (COMPLIANCE, dated, a JSON object of
@@ -449,6 +451,44 @@ permission. Do not grant it to a tenant role.
 
 USER profiles are a person's own: `GET/PATCH /settings/me`, no permission, never
 another person's, and invisible to the administrative endpoints.
+
+### The yard: gate register, gate passes, trip stops, corridors (V59, issue #223)
+
+All in `execution` (and `telematics` for corridors). Decisions worth knowing:
+
+- **`gate_event` is untouched** (a trip's append-only evidence). The register is
+  a separate table, `gate_visit`: one mutable row per visit of any vehicle to a
+  site (an org unit, optionally a terminal), closed by its exit. A trip's
+  gate-in opens a visit for its vehicle and dispatch or cancellation closes it
+  (`GateRegister.tripGatedIn/tripLeft`); arrival at the destination does not,
+  because a trip has no gate-out there. A vehicle is inside once:
+  `gate_visit_one_open_idx` (per normalised registration) and the named refusal
+  `gate-entry-already-open`. Registration numbers compare upper case, no blanks.
+- **Gate passes** (`gate_pass`): numbered from the `GATE_PASS` series covering
+  the unit in the issuing transaction (the issuer types the number only where
+  none covers it); `yard.gate.passRequired` makes an entry without a valid pass
+  `gate-pass-required` / `-expired` / `-used` (also `-cancelled`,
+  `-trip-mismatch`); a presented pass is judged even when not required, and is
+  consumed by the entry in its transaction. Cancelling takes `If-Match`,
+  releases the number and is audited. `GatePassDesk` is the one rule, shared by
+  the entry and `GET /gate/passes/check`. Rights: `GATE_REGISTER`,
+  `GATE_PASS_MANAGE`, held to the site's unit through `@gateSites`.
+- **Trip stops** (`trip_stop`): derived at raise from
+  `LoadLifecyclePort.dropTerminalsOf`; `PUT /trips/{id}/stops` replaces the
+  whole plan under `If-Match` (the stops' own tag) until a stop has progressed.
+  `TripStop` is the state machine (PLANNED to ARRIVED, SKIPPED; ARRIVED to
+  DEPARTED, or COMPLETED for the last stop). Trip milestones mirror onto the
+  origin and destination stops; the geofence adapter arrives and departs
+  intermediate stops under `autoArrival` / `autoDeparture` and completion
+  under `autoCompleteOnExit`, resolved for the trip. Out-of-order arrival is
+  flagged, never refused. Published as `TripStopArrived/Departed/Skipped`; the
+  control tower raises `STOP_LATE` (subject `TRIP_STOP`, one per stop) past the
+  tolerance; webhooks carry gate entry/exit and stop arrival/departure.
+- **Route corridors** (`route_corridor`, import only): one polyline per lane,
+  a lane being origin and destination terminal, imported with
+  `PUT /telematics/corridors` (`TELEMATICS_INGEST`). Deviation is measured
+  against it (`route_deviation.reference = CORRIDOR`, its optional width
+  replacing the setting) and falls back to the straight line without one.
 
 ### Idempotency is required on every state-changing endpoint
 

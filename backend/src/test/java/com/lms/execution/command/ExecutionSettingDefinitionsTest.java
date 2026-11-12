@@ -101,4 +101,13 @@ class ExecutionSettingDefinitionsTest {
                 "North LTL", null, "Zone North + Mode LTL")))
                 .isEqualTo("combination profile \"North LTL\" (Zone North + Mode LTL)");
     }
+
+    @Test
+    @DisplayName("a gate pass is not required by default, and is a setting of the unit alone")
+    void gatePassRequired() {
+        SettingDefinition required = byKey.get(ExecutionSettingDefinitions.GATE_PASS_REQUIRED.name());
+
+        assertThat(required.defaultValue()).isEqualTo(false);
+        assertThat(required.scopes()).containsExactly(ScopeType.ORG_DEFAULT, ScopeType.ORG_UNIT);
+    }
 }

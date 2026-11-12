@@ -1266,6 +1266,117 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the gate register pages newest entry first from an index, whole or open only, without sorting")
+    void gateRegisterPages() {
+        String all = """
+                SELECT g.id FROM gate_visit g
+                 WHERE g.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (g.entered_at, g.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                               '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY g.entered_at DESC, g.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(all, "gate_visit");
+        assertNoSort(all);
+        String open = """
+                SELECT g.id FROM gate_visit g
+                 WHERE g.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND g.status = 'OPEN'
+                   AND (g.entered_at, g.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                               '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY g.entered_at DESC, g.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(open, "gate_visit");
+        assertNoSort(open);
+    }
+
+    @Test
+    @DisplayName("who is inside, a vehicle's open visit and a trip's visits are index-served")
+    void gateVisitLookups() {
+        assertIndexed("""
+                SELECT * FROM gate_visit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND registration_no = 'MH12AB1234' AND status = 'OPEN'
+                """, "gate_visit");
+        assertIndexed("""
+                SELECT * FROM gate_visit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status = 'OPEN'
+                 ORDER BY entered_at, id
+                 LIMIT 500
+                """, "gate_visit");
+        assertIndexed("""
+                SELECT * FROM gate_visit
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY entered_at DESC, id DESC
+                 LIMIT 51
+                """, "gate_visit");
+    }
+
+    @Test
+    @DisplayName("gate passes are found by number, by vehicle and unit, and listed newest first from an index")
+    void gatePassReads() {
+        assertIndexed("""
+                SELECT * FROM gate_pass
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND pass_no = 'GP-00001'
+                """, "gate_pass");
+        assertIndexed("""
+                SELECT * FROM gate_pass
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND registration_no = 'MH12AB1234'
+                   AND org_unit_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY valid_until DESC
+                 LIMIT 50
+                """, "gate_pass");
+        String page = """
+                SELECT p.id FROM gate_pass p
+                 WHERE p.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (p.created_at, p.id) < ('2026-11-04T00:00:00Z'::timestamptz,
+                                               '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY p.created_at DESC, p.id DESC
+                 LIMIT 51
+                """;
+        assertIndexed(page, "gate_pass");
+        assertNoSort(page);
+    }
+
+    @Test
+    @DisplayName("a trip's stops are read in order from an index")
+    void tripStopsInOrder() {
+        String sql = """
+                SELECT * FROM trip_stop
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND trip_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY seq
+                """;
+        assertIndexed(sql, "trip_stop");
+        assertNoSort(sql);
+    }
+
+    @Test
+    @DisplayName("a lane's corridor and the corridor list are index-served, the list without sorting")
+    void routeCorridorReads() {
+        assertIndexed("""
+                SELECT id FROM route_corridor
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND origin_terminal_id = '00000000-0000-0000-0000-000000000002'
+                   AND destination_terminal_id = '00000000-0000-0000-0000-000000000003'
+                """, "route_corridor");
+        String list = """
+                SELECT c.id FROM route_corridor c
+                 WHERE c.tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND (c.origin_terminal_id, c.destination_terminal_id)
+                       > ('00000000-0000-0000-0000-000000000002'::uuid, '00000000-0000-0000-0000-000000000003'::uuid)
+                 ORDER BY c.origin_terminal_id, c.destination_terminal_id
+                 LIMIT 51
+                """;
+        assertIndexed(list, "route_corridor");
+        assertNoSort(list);
+    }
+
+    @Test
     @DisplayName("every tenant-scoped table leads its primary lookup index with tenant_id")
     void indexesLeadWithTenantId() {
         // Row-level security adds `tenant_id = …` to every query, so an index

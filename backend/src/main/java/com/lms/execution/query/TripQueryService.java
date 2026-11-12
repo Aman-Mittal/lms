@@ -144,4 +144,41 @@ public class TripQueryService {
                 .query(GateEventView.class)
                 .list();
     }
+
+    /**
+     * A trip's stops in order with where each is, and the tag a replacement of
+     * them sends back in {@code If-Match}; empty for a trip raised before stops
+     * existed. A portal vendor reads only the stops of the trips it was awarded.
+     */
+    public TripStopsView findStops(UUID tripId) {
+        List<TripStopView> stops = jdbc.sql("""
+                        SELECT s.id, s.seq, s.kind, s.terminal_id, tm.code AS terminal_code, tm.name AS terminal_name,
+                               tm.centre_lat AS lat, tm.centre_lon AS lon, s.planned_arrival_at, s.status,
+                               s.arrived_at, s.departed_at, s.completed_at, s.skipped_at, s.skip_reason,
+                               s.out_of_order, s.arrival_source, s.departure_source,
+                               CASE WHEN s.arrived_at IS NOT NULL AND s.planned_arrival_at IS NOT NULL
+                                    THEN greatest(0, floor(extract(epoch FROM
+                                             (s.arrived_at - s.planned_arrival_at)) / 60)::bigint)
+                               END AS late_minutes,
+                               s.version
+                          FROM trip_stop s
+                          JOIN terminal tm ON tm.id = s.terminal_id
+                         WHERE s.trip_id = :tripId
+                           AND EXISTS (SELECT 1 FROM trip t
+                                        WHERE t.id = s.trip_id
+                        """ + PARTNER_SCOPE + """
+                                      )
+                         ORDER BY s.seq
+                        """)
+                .param("tripId", tripId)
+                .param("partner", AccessSubject.current().partnerScope())
+                .query(TripStopView.class)
+                .list();
+        List<Object> identity = new java.util.ArrayList<>();
+        stops.forEach(stop -> {
+            identity.add(stop.id());
+            identity.add(stop.version());
+        });
+        return new TripStopsView(stops, com.lms.shared.web.ConditionalGet.tag(identity));
+    }
 }

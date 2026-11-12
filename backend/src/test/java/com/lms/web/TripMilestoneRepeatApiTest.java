@@ -159,7 +159,7 @@ class TripMilestoneRepeatApiTest {
         assertThat(outcomes).extracting(Outcome::status).doesNotContain(500)
                 .containsOnlyOnce(204).isSubsetOf(204, 409);
         assertThat(outcomes).filteredOn(o -> o.status() == 409).extracting(Outcome::code)
-                .isSubsetOf("concurrent-modification", "trip-already-gated-in");
+                .isSubsetOf("concurrent-modification", "trip-already-gated-in", "gate-entry-already-open");
         assertThat(status()).isEqualTo("AT_ORIGIN");
         assertThat(gateEvents("GATE_IN")).isEqualTo(1);
         assertThat(auditCount("TRIP_GATE_IN")).isEqualTo(1);

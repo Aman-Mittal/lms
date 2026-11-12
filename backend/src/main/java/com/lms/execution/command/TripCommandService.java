@@ -27,6 +27,7 @@ import java.util.UUID;
 import com.lms.execution.command.domain.GateEvent;
 import com.lms.execution.command.domain.Trip;
 import com.lms.execution.command.domain.TripDocument;
+import com.lms.execution.command.domain.TripStop;
 import com.lms.execution.command.domain.WeighbridgeReading;
 import com.lms.execution.events.TripCancelled;
 import com.lms.execution.events.TripDispatched;
@@ -77,6 +78,8 @@ public class TripCommandService {
      */
     private final TripSettings tripSettings;
     private final TripCompletion completion;
+    private final GateRegister gateRegister;
+    private final TripStops tripStops;
 
     public TripCommandService(TripRepository trips, TripDocumentRepository documents,
                               GateEventRepository gateEvents,
@@ -84,7 +87,7 @@ public class TripCommandService {
                               LoadLifecyclePort loads, FleetCompliancePort compliance,
                               org.springframework.context.ApplicationEventPublisher events,
                               AuditTrail audit, TripSettings tripSettings,
-                              TripCompletion completion) {
+                              TripCompletion completion, GateRegister gateRegister, TripStops tripStops) {
         this.trips = trips;
         this.documents = documents;
         this.gateEvents = gateEvents;
@@ -95,6 +98,8 @@ public class TripCommandService {
         this.audit = audit;
         this.tripSettings = tripSettings;
         this.completion = completion;
+        this.gateRegister = gateRegister;
+        this.tripStops = tripStops;
     }
 
     /** Raises a trip against an awarded load. */
@@ -127,6 +132,8 @@ public class TripCommandService {
                 tripNo, load.awardedVendorPartnerId(), load.originTerminalId(),
                 load.destinationTerminalId(), plannedStartAt));
         auditTransition("TRIP_RAISED", null, raised);
+        // The plan of stops starts as the load's drops; a planner may replace it.
+        tripStops.deriveFor(raised);
         return raised.id();
     }
 
@@ -186,6 +193,17 @@ public class TripCommandService {
     @Transactional
     @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
     public void gateIn(UUID tripId, UUID terminalId, Instant at, String remarks) {
+        gateIn(tripId, terminalId, at, remarks, null);
+    }
+
+    /**
+     * Gate-in at the origin, also entered in the gate register when the trip's
+     * vehicle is known: the pass presented ({@code gatePassNo}) is checked
+     * there, and a unit that requires a pass refuses the gate-in without one.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('TRIP_EXECUTE')")
+    public void gateIn(UUID tripId, UUID terminalId, Instant at, String remarks, String gatePassNo) {
         UUID tenantId = TenantContext.requireTenantId();
         Trip trip = require(tripId);
         Instant when = at == null ? Instant.now() : at;
@@ -193,6 +211,8 @@ public class TripCommandService {
         // The trip is moved first: a repeat or the wrong terminal is refused
         // before anything is written to the append-only gate log.
         Trip gatedIn = trip.gateIn(terminalId, when);
+        gateRegister.tripGatedIn(trip, terminalId, when, remarks, gatePassNo);
+        tripStops.arrivedAt(trip, terminalId, when, TripStop.Source.TRIP);
         gateEvents.save(GateEvent.record(UUID.randomUUID(), tenantId, tripId, terminalId,
                 GateEvent.EventType.GATE_IN, when, remarks));
         Trip arrived = trips.save(gatedIn);
@@ -305,6 +325,8 @@ public class TripCommandService {
 
         Trip dispatched = trips.save(moved);
         loads.recordDispatched(trip.loadId());
+        gateRegister.tripLeft(trip, when, null);
+        tripStops.leftTerminal(trip, trip.originTerminalId(), when, TripStop.Source.TRIP);
         auditTransition("TRIP_DISPATCHED", trip, dispatched, "at", when.toString());
 
         events.publishEvent(new TripDispatched(tenantId, dispatched.id(), dispatched.tripNo(),
@@ -339,6 +361,9 @@ public class TripCommandService {
                     trip.destinationTerminalId(), GateEvent.EventType.GATE_IN, when, null));
         }
         Trip arrived = trips.save(moved);
+        if (trip.destinationTerminalId() != null) {
+            tripStops.arrivedAt(trip, trip.destinationTerminalId(), when, TripStop.Source.TRIP);
+        }
         auditTransition("TRIP_ARRIVED", trip, arrived, "at", when.toString());
     }
 
@@ -381,6 +406,7 @@ public class TripCommandService {
         Instant now = Instant.now();
 
         Trip cancelled = trips.save(trip.cancel(reason, now));
+        gateRegister.tripLeft(trip, now, "Trip cancelled");
         auditTransition("TRIP_CANCELLED", trip, cancelled, "reason", cancelled.cancellationReason());
 
         events.publishEvent(new TripCancelled(tenantId, cancelled.id(), cancelled.tripNo(),

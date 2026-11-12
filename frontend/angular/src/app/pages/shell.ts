@@ -45,6 +45,9 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Operations' && session.can('TERMINAL_READ')) {
                 <a routerLink="/map" routerLinkActive="active" data-testid="nav-map">Network map</a>
               }
+              @if (group === 'Operations' && (session.can('GATE_REGISTER') || session.can('GATE_PASS_MANAGE'))) {
+                <a routerLink="/gate" routerLinkActive="active" data-testid="nav-gate">Gate</a>
+              }
               @if (group === 'Operations' && session.can('TRIP_READ')) {
                 <a routerLink="/trip-route" routerLinkActive="active" data-testid="nav-trip-route">Trip route</a>
               }

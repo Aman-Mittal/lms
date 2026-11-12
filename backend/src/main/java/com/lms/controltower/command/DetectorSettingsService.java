@@ -80,6 +80,12 @@ public class DetectorSettingsService {
         return settings.effective(DetectorSettingDefinitions.ETA_SLIP, contextOf(tripId));
     }
 
+    /** How late a trip may reach a planned stop before it is an exception. */
+    @Transactional(readOnly = true)
+    public Duration stopLateFor(UUID tripId) {
+        return settings.effective(DetectorSettingDefinitions.STOP_LATE, contextOf(tripId));
+    }
+
     /** The temperature excursion the detector applies to a trip. */
     @Transactional(readOnly = true)
     public Duration temperatureExcursionFor(UUID tripId) {

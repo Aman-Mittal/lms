@@ -168,6 +168,18 @@ request after a quiet spell pays the start-up cost above.
   properties and resolved once per trip per ingested batch. Retention collapses a finished trip's raw points into a simplified
   polyline — what makes a 1 GB database survive a fleet.
 
+- **Yard gate and trip stops (issue #223, V59).** A gate register of every
+  vehicle entering and leaving a site (`/api/v1/gate/*`, `GATE_REGISTER`),
+  gate passes numbered from the `GATE_PASS` series and optionally required to
+  enter (`yard.gate.passRequired`, `GATE_PASS_MANAGE`), ordered trip stops
+  (`/api/v1/trips/{id}/stops`) derived from the load's drops and driven by
+  geofence crossings or by hand, a late-at-stop exception
+  (`controltower.detector.stopLateTolerance`), imported route corridors
+  (`/api/v1/telematics/corridors`) that route deviation is measured against,
+  four webhook events, and a Gate desk in both consoles. Not built: bulk gate
+  actions, a yard dashboard, unloading start/end, undo of a gate-in, MIS export,
+  a console for replacing the stops plan or importing corridors.
+
 **Rating and settlement (vision §3.9)**
 - Rate cards are **versions**, not rows to edit. A trip is priced against the
   card in force on the day it was *dispatched*, and the card used is recorded on

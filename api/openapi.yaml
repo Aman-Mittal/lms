@@ -100,6 +100,8 @@ tags:
     description: Offering a load to vendors in rank order.
   - name: Trips
     description: The trip state machine, gate operations and the weighbridge.
+  - name: Yard gate
+    description: The gate register of every vehicle entering and leaving a site, and the gate passes that admit them.
   - name: Milk runs
     description: Scheduled multi-stop pickup circuits -- routes, generated runs and their stops.
   - name: Telematics

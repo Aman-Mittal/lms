@@ -106,6 +106,16 @@ public interface LoadLifecyclePort {
     }
 
     /**
+     * The distinct places the load delivers to, in drop order (what
+     * {@code LoadSummary.dropCount} counts and {@code destinationTerminalId}
+     * ends), so a trip can be given its stops. Empty for a load with nothing
+     * aboard, or no such load.
+     */
+    default List<UUID> dropTerminalsOf(UUID loadId) {
+        return List.of();
+    }
+
+    /**
      * The name of the load's freight mode ({@code FTL}, {@code LTL}), or null
      * when there is no such load. What a combination setting profile naming a
      * freight mode is matched against for the load's trip.

@@ -102,6 +102,185 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "400": { $ref: "#/components/responses/BadRequest" }
 
+/api/v1/trips/{id}/stops:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+  get:
+    tags: [Trips]
+    operationId: getTripStops
+    summary: A trip's ordered stops
+    description: |
+      PICKUP, DROP and CHECKPOINT stops in order, each at a terminal with a
+      planned arrival (optional), a status (PLANNED, ARRIVED, DEPARTED,
+      COMPLETED or SKIPPED) and its timings. A new trip's stops are derived
+      from its load: the pickup at the origin, then a drop at each place the
+      load delivers to, the trip's destination last. A trip raised before stops
+      existed has none until `PUT` gives it some. `lateMinutes` is how long past
+      its planned arrival a reached stop was; `outOfOrder` marks an arrival
+      while an earlier stop was still waiting (recorded, never refused). The
+      `ETag` is what `PUT` sends back in `If-Match`.
+    responses:
+      "200":
+        description: The stops.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TripStops" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Trips]
+    operationId: replaceTripStops
+    summary: Replace the plan of stops
+    description: |
+      Requires `TRIP_EXECUTE`. The whole ordered list, 1 to 50 stops, none
+      following another at the same terminal (`trip-stops-invalid`).
+      `If-Match` carries the ETag of the list as read; a stale one is 409
+      `concurrent-modification`. Refused once any stop has been reached or
+      skipped (`trip-stops-in-progress`) or the trip is cancelled or completed
+      (`trip-stops-trip-closed`). Audited (`TRIP_STOPS_PLANNED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReplaceTripStopsRequest" }
+    responses:
+      "200":
+        description: The new stops.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TripStops" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/trips/{id}/stops/{stopId}/arrival:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+    - name: stopId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the stop.
+  post:
+    tags: [Trips]
+    operationId: arriveAtTripStop
+    summary: The vehicle reached a stop
+    description: |
+      Requires `TRIP_EXECUTE`. For a stop not yet reached; any other state is
+      409 `trip-stop-illegal-transition`. Arriving ahead of an earlier stop that
+      is still waiting is recorded and flagged `outOfOrder`. This is what a
+      geofence entry does by itself where `execution.tracking.autoArrival` is on
+      for the trip; with it off, a person records it here. Published as
+      `TRIP_STOP_ARRIVED`; the control tower raises a late-at-stop exception
+      when the arrival is past the planned one by more than
+      `controltower.detector.stopLateTolerance`. Send `{}` for now.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MilestoneRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/trips/{id}/stops/{stopId}/departure:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+    - name: stopId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the stop.
+  post:
+    tags: [Trips]
+    operationId: departFromTripStop
+    summary: The vehicle left a stop
+    description: |
+      Requires `TRIP_EXECUTE`. For a stop that has been reached: DEPARTED, or
+      COMPLETED for the trip's last stop. A departure earlier than the arrival
+      is `trip-stop-time-invalid`. A geofence exit does this where
+      `execution.tracking.autoDeparture` is on. Published as
+      `TRIP_STOP_DEPARTED`. Send `{}` for now.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MilestoneRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/trips/{id}/stops/{stopId}/skip:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+    - name: stopId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the stop.
+  post:
+    tags: [Trips]
+    operationId: skipTripStop
+    summary: Pass a stop by, with a reason
+    description: |
+      Requires `TRIP_EXECUTE`. Only a stop not yet reached can be skipped, and a
+      reason is mandatory.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SkipTripStopRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
 /api/v1/trips/{id}/assignment:
   parameters:
     - name: id

@@ -124,6 +124,16 @@ import type {
   CreditChangeStatus, CreditLimitChangeDraft, CreditLimitState, CreditOverrideDraft, CreditPositionView,
 } from './lmsGateway';
 
+// Yard gate and trip stops
+import {
+  YardGateApi, type GatePass as ApiGatePass, type GatePurpose as ApiGatePurpose, type GateVisit as ApiGateVisit,
+  type TripStop as ApiTripStop,
+} from '../api';
+import type {
+  GateEntryDraft, GateExitDraft, GatePassDraft, GatePassFilter, GatePassQuery, GatePassView, GateRegisterFilter,
+  GateVisitView, TripStopView,
+} from './lmsGateway';
+
 // Number series
 import {
   NumberSeriesApi, type NumberedDocumentType as ApiNumberedDocumentType, type NumberRelease,
@@ -1490,6 +1500,8 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...creditVerbs(config),
     // Number series
     ...numberingVerbs(config),
+    // Yard gate and trip stops
+    ...gateVerbs(config, trips),
     ...settingsVerbs(config),
     // Pickers
     ...pickerVerbs({
@@ -2325,6 +2337,128 @@ function creditVerbs(config: Configuration): CreditVerbs {
       guard(async () => { await credit.approveCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }); }),
     rejectCreditLimitChange: (id: string, note: string) =>
       guard(async () => { await credit.rejectCreditLimitChange({ id, creditLimitDecisionRequest: noteOf(note) ?? {} }); }),
+  };
+}
+
+// Yard gate and trip stops
+
+type GateVerbs = Pick<LmsGateway, 'openGateVisits' | 'gateVisits' | 'recordGateEntry' | 'recordGateExit' | 'gatePasses'
+  | 'issueGatePass' | 'cancelGatePass' | 'checkGatePass' | 'tripStops' | 'arriveAtStop' | 'departFromStop' | 'skipStop'>;
+
+/** Minutes inside as people say them: `45 min`, `2 h 5 min`. */
+function dwellOf(minutes: number | undefined): string {
+  if (minutes === undefined || minutes === null) {
+    return '';
+  }
+  return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
+}
+
+function gateVisitOf(v: ApiGateVisit): GateVisitView {
+  return {
+    id: text(v.id), terminalCode: text(v.terminalCode), registrationNo: text(v.registrationNo),
+    driverName: text(v.driverName), purpose: text(v.purpose), tripNo: text(v.tripNo), gatePassNo: text(v.gatePassNo),
+    status: text(v.status), enteredAt: text(v.enteredAt), exitedAt: text(v.exitedAt), dwell: dwellOf(v.dwellMinutes),
+    entrySeals: (v.entrySealNos ?? []).join(', '), exitSeals: (v.exitSealNos ?? []).join(', '),
+    weightRef: text(v.exitWeightRef || v.entryWeightRef), remarks: text(v.exitRemarks || v.entryRemarks),
+  };
+}
+
+function gatePassOf(p: ApiGatePass): GatePassView {
+  return {
+    id: text(p.id), passNo: text(p.passNo), terminalCode: text(p.terminalCode), registrationNo: text(p.registrationNo),
+    tripNo: text(p.tripNo), purpose: text(p.purpose), validFrom: text(p.validFrom), validUntil: text(p.validUntil),
+    status: text(p.status), expired: p.expired === true, cancelReason: text(p.cancelReason),
+  };
+}
+
+function tripStopOf(s: ApiTripStop): TripStopView {
+  return {
+    id: text(s.id), seq: s.seq ?? 0, kind: text(s.kind), terminalCode: text(s.terminalCode),
+    terminalName: text(s.terminalName), plannedArrivalAt: text(s.plannedArrivalAt), status: text(s.status),
+    arrivedAt: text(s.arrivedAt), departedAt: text(s.departedAt), skipReason: text(s.skipReason),
+    outOfOrder: s.outOfOrder === true, lateMinutes: s.lateMinutes ?? 0,
+  };
+}
+
+/** The yard gate and a trip's stops, over the same configuration as the rest of the gateway. */
+function gateVerbs(config: Configuration, trips: TripsApi): GateVerbs {
+  const gate = new YardGateApi(config);
+  return {
+    openGateVisits: () => guard(async () => (await gate.listOpenGateVisits({})).map(gateVisitOf)),
+    gateVisits: (filter: GateRegisterFilter, cursor?: string) =>
+      guard(async () => {
+        const s = await gate.listGateVisits({
+          status: filter.status || undefined, q: filter.q.trim() || undefined, cursor: cursor || undefined, limit: 25,
+        });
+        return { items: s.items.map(gateVisitOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null };
+      }),
+    recordGateEntry: (draft: GateEntryDraft) =>
+      guard(async () => text((await gate.recordGateEntry({
+        gateEntryRequest: {
+          terminalId: draft.terminalId || undefined, vehicleId: draft.vehicleId || undefined,
+          registrationNo: draft.vehicleId ? undefined : blankAsAbsent(draft.registrationNo),
+          driverId: draft.driverId || undefined, driverName: draft.driverId ? undefined : blankAsAbsent(draft.driverName),
+          purpose: draft.purpose as unknown as ApiGatePurpose, tripId: draft.tripId || undefined,
+          gatePassNo: blankAsAbsent(draft.gatePassNo), sealNos: draft.sealNos.length ? draft.sealNos : undefined,
+          weightRef: blankAsAbsent(draft.weightRef), remarks: blankAsAbsent(draft.remarks),
+        },
+      })).id)),
+    recordGateExit: (visitId: string, draft: GateExitDraft) =>
+      guard(async () => {
+        await gate.recordGateExit({
+          id: visitId,
+          gateExitRequest: {
+            sealNos: draft.sealNos.length ? draft.sealNos : undefined, weightRef: blankAsAbsent(draft.weightRef),
+            remarks: blankAsAbsent(draft.remarks),
+          },
+        });
+      }),
+    gatePasses: (filter: GatePassFilter, cursor?: string) =>
+      guard(async () => {
+        const s = await gate.listGatePasses({
+          status: filter.status || undefined, q: filter.q.trim() || undefined, cursor: cursor || undefined, limit: 25,
+        });
+        return { items: s.items.map(gatePassOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null };
+      }),
+    issueGatePass: (draft: GatePassDraft) =>
+      guard(async () => text((await gate.issueGatePass({
+        issueGatePassRequest: {
+          terminalId: draft.terminalId || undefined, vehicleId: draft.vehicleId || undefined,
+          registrationNo: draft.vehicleId ? undefined : blankAsAbsent(draft.registrationNo),
+          tripId: draft.tripId || undefined, purpose: draft.purpose as unknown as ApiGatePurpose,
+          validFrom: new Date(draft.validFrom), validUntil: new Date(draft.validUntil),
+          passNo: blankAsAbsent(draft.passNo),
+        },
+      })).id)),
+    cancelGatePass: (id: string, reason: string) =>
+      guard(async () => {
+        // The version is read fresh: a cancellation must not rest on what the list showed earlier.
+        const pass = await gate.getGatePass({ id });
+        await gate.cancelGatePass({
+          id, ifMatch: `"${pass.version ?? 0}"`, cancelGatePassRequest: { reason: reason.trim() },
+        });
+      }),
+    checkGatePass: (query: GatePassQuery) =>
+      guard(async () => {
+        const v = await gate.checkGatePass({
+          terminalId: query.terminalId || undefined, vehicleId: query.vehicleId || undefined,
+          registrationNo: query.vehicleId ? undefined : blankAsAbsent(query.registrationNo),
+          tripId: query.tripId || undefined, passNo: blankAsAbsent(query.passNo),
+        });
+        return {
+          admits: v.admits, passRequired: v.passRequired, passNo: text(v.passNo), code: text(v.code),
+          message: text(v.message),
+        };
+      }),
+    tripStops: (tripId: string) => guard(async () => (await trips.getTripStops({ id: tripId })).stops.map(tripStopOf)),
+    arriveAtStop: (tripId: string, stopId: string) =>
+      guard(async () => { await trips.arriveAtTripStop({ id: tripId, stopId, milestoneRequest: {} }); }),
+    departFromStop: (tripId: string, stopId: string) =>
+      guard(async () => { await trips.departFromTripStop({ id: tripId, stopId, milestoneRequest: {} }); }),
+    skipStop: (tripId: string, stopId: string, reason: string) =>
+      guard(async () => {
+        await trips.skipTripStop({ id: tripId, stopId, skipTripStopRequest: { reason: reason.trim() } });
+      }),
   };
 }
 

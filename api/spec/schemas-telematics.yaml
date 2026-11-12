@@ -125,4 +125,65 @@ Deviation:
     corridorM: { type: number }
     lat: { type: number }
     lon: { type: number }
+    reference:
+      type: string
+      enum: [STRAIGHT_LINE, CORRIDOR]
+      description: What the distance was measured against -- the straight line
+        between the trip's terminals, or the corridor imported for its lane.
 
+
+RouteCorridorRequest:
+  type: object
+  description: |
+    The road a lane is expected to take. A lane is an origin and a destination
+    terminal, which is what a trip has; importing for a lane that has a corridor
+    replaces it.
+  properties:
+    originTerminalId: { type: string, format: uuid }
+    destinationTerminalId: { type: string, format: uuid }
+    name: { type: string, maxLength: 120 }
+    points:
+      type: array
+      minItems: 2
+      maxItems: 5000
+      description: "`[lon, lat]` pairs in the order travelled (GeoJSON order)."
+      items:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items: { type: number }
+    widthMetres:
+      type: number
+      description: How far off the polyline a vehicle may be. Omit to use the
+        trip's `telematics.routeDeviation.corridorMetres`.
+  required: [originTerminalId, destinationTerminalId, name, points]
+
+RouteCorridor:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    originTerminalId: { type: string, format: uuid }
+    originTerminalCode: { type: string }
+    destinationTerminalId: { type: string, format: uuid }
+    destinationTerminalCode: { type: string }
+    name: { type: string }
+    pointCount: { type: integer }
+    widthMetres: { type: number }
+    points:
+      type: array
+      description: "`[lon, lat]` pairs. Present on a single read, absent from the list."
+      items:
+        type: array
+        items: { type: number }
+    version: { type: integer, format: int64 }
+    updatedAt: { type: string, format: date-time }
+
+RouteCorridorSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/RouteCorridor" }
+    nextCursor: { type: string }
+    hasMore: { type: boolean }
+  required: [items, hasMore]

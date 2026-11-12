@@ -27,9 +27,13 @@ import com.lms.approvals.events.ApprovalRequested;
 import com.lms.delivery.events.ClaimRaised;
 import com.lms.delivery.events.ClaimStatusChanged;
 import com.lms.delivery.events.DeliveryProofRecorded;
+import com.lms.execution.events.GateEntryRecorded;
+import com.lms.execution.events.GateExitRecorded;
 import com.lms.execution.events.TripCancelled;
 import com.lms.execution.events.TripCompleted;
 import com.lms.execution.events.TripDispatched;
+import com.lms.execution.events.TripStopArrived;
+import com.lms.execution.events.TripStopDeparted;
 import com.lms.order.events.OrderAmended;
 import com.lms.order.events.OrderCancelled;
 import com.lms.order.events.OrderClosed;
@@ -163,6 +167,39 @@ public class WebhookEventListener {
         record(e.tenantId(), WebhookEventType.TRIP_CANCELLED, e.tripId().toString(), e.occurredAt(),
                 fields("tripId", e.tripId(), "tripNo", e.tripNo(), "loadId", e.loadId(),
                         "reason", e.reason(), "cancelledAt", e.cancelledAt()));
+    }
+
+    @TransactionalEventListener
+    public void on(GateEntryRecorded e) {
+        record(e.tenantId(), WebhookEventType.GATE_ENTRY_RECORDED, e.visitId().toString(), e.occurredAt(),
+                fields("visitId", e.visitId(), "orgUnitId", e.orgUnitId(), "terminalId", e.terminalId(),
+                        "vehicleId", e.vehicleId(), "registrationNo", e.registrationNo(), "purpose", e.purpose(),
+                        "tripId", e.tripId(), "gatePassNo", e.gatePassNo(), "enteredAt", e.enteredAt()));
+    }
+
+    @TransactionalEventListener
+    public void on(GateExitRecorded e) {
+        record(e.tenantId(), WebhookEventType.GATE_EXIT_RECORDED, e.visitId().toString(), e.occurredAt(),
+                fields("visitId", e.visitId(), "orgUnitId", e.orgUnitId(), "terminalId", e.terminalId(),
+                        "vehicleId", e.vehicleId(), "registrationNo", e.registrationNo(), "purpose", e.purpose(),
+                        "tripId", e.tripId(), "enteredAt", e.enteredAt(), "exitedAt", e.exitedAt(),
+                        "dwellMinutes", e.dwellMinutes()));
+    }
+
+    @TransactionalEventListener
+    public void on(TripStopArrived e) {
+        record(e.tenantId(), WebhookEventType.TRIP_STOP_ARRIVED, e.stopId().toString(), e.occurredAt(),
+                fields("tripId", e.tripId(), "tripNo", e.tripNo(), "stopId", e.stopId(), "seq", e.seq(),
+                        "kind", e.kind(), "terminalId", e.terminalId(), "plannedArrivalAt", e.plannedArrivalAt(),
+                        "arrivedAt", e.arrivedAt(), "outOfOrder", e.outOfOrder(), "source", e.source()));
+    }
+
+    @TransactionalEventListener
+    public void on(TripStopDeparted e) {
+        record(e.tenantId(), WebhookEventType.TRIP_STOP_DEPARTED, e.stopId().toString(), e.occurredAt(),
+                fields("tripId", e.tripId(), "tripNo", e.tripNo(), "stopId", e.stopId(), "seq", e.seq(),
+                        "kind", e.kind(), "terminalId", e.terminalId(), "arrivedAt", e.arrivedAt(),
+                        "departedAt", e.departedAt(), "completed", e.completed(), "source", e.source()));
     }
 
     @TransactionalEventListener

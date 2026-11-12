@@ -50,6 +50,9 @@ export function Shell() {
               {group === 'Operations' && can('TERMINAL_READ') && (
                 <NavLink to="/map" data-testid="nav-map">Network map</NavLink>
               )}
+              {group === 'Operations' && (can('GATE_REGISTER') || can('GATE_PASS_MANAGE')) && (
+                <NavLink to="/gate" data-testid="nav-gate">Gate</NavLink>
+              )}
               {group === 'Operations' && can('TRIP_READ') && (
                 <NavLink to="/trip-route" data-testid="nav-trip-route">Trip route</NavLink>
               )}
