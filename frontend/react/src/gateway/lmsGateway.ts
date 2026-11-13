@@ -146,6 +146,59 @@ export interface ProofDraft {
   remark?: string;
 }
 
+/** What a proof of delivery says about one order line; the quantities are blank until it is fed. */
+export interface PodLine {
+  orderLineId: string;
+  lineNo: number;
+  materialDescription: string;
+  uom: string;
+  grossQty: string;
+  receivedQty: string;
+  shortQty: string;
+  damagedQty: string;
+  excessQty: string;
+}
+
+/** What is fed against one order line; a blank quantity is zero. */
+export interface PodLineDraft {
+  orderLineId: string;
+  receivedQty: string;
+  shortQty: string;
+  damagedQty: string;
+  excessQty: string;
+}
+
+export const POD_DOCUMENT_TYPES = ['FRONT', 'BACK', 'OTHER'] as const;
+export type PodDocumentType = (typeof POD_DOCUMENT_TYPES)[number];
+
+/** A document listed for a proof: a kind and a reference, never the file. */
+export interface PodDocument {
+  type: PodDocumentType;
+  reference: string;
+}
+
+/** Local date-times as an input holds them (`2026-11-13T09:30`); a blank one is cleared. */
+export interface PodTimings {
+  reportedAt: string;
+  unloadingStartedAt: string;
+  unloadingEndedAt: string;
+}
+
+/** Submitting the fed draft with the consignee's code. */
+export interface PodSubmitDraft {
+  otp: string;
+  recipientName: string;
+  goodsCondition?: GoodsCondition;
+  remark?: string;
+}
+
+/** Keying the proof from the signed paper copy. */
+export interface PodPaperDraft {
+  recipientName: string;
+  goodsCondition?: GoodsCondition;
+  remark?: string;
+}
+
 /** The state the goods were received in; anything but CLEAN holds the carrier's settlement. */
 export const GOODS_CONDITIONS = ['CLEAN', 'SHORTAGE', 'DAMAGE'] as const;
 export type GoodsCondition = (typeof GOODS_CONDITIONS)[number];
@@ -153,7 +206,7 @@ export type GoodsCondition = (typeof GOODS_CONDITIONS)[number];
 /** A consignment's proof of delivery, every cell already formatted for display. */
 export interface DeliveryProofView {
   consignmentId: string;
-  status: 'OTP_ISSUED' | 'CONFIRMED' | 'REVERSED';
+  status: PodStatus;
   recipientName: string;
   photoRef: string;
   deliveredAt: string;
@@ -162,6 +215,24 @@ export interface DeliveryProofView {
   goodsCondition: string;
   /** What was short or damaged; empty for a clean delivery. */
   remark: string;
+  /** Keyed from the signed paper copy, with no code. */
+  paper: boolean;
+  /** Who keyed a paper proof; blank otherwise. */
+  keyedBy: string;
+  reportedAt: string;
+  unloadingStartedAt: string;
+  unloadingEndedAt: string;
+  /** Every order line of the consignment, with what was fed to it. */
+  lines: PodLine[];
+  documents: PodDocument[];
+}
+
+/** CONFIRMED and SUBMITTED both prove the delivery; the rest are drafts or undone. */
+export type PodStatus = 'PENDING' | 'OTP_ISSUED' | 'CONFIRMED' | 'SUBMITTED' | 'NOT_RECEIVED' | 'REVERSED';
+
+/** Whether a proof status proves the delivery. */
+export function provesDelivery(status: string | undefined): boolean {
+  return status === 'CONFIRMED' || status === 'SUBMITTED';
 }
 
 // ---------------------------------------------------------------- consignments
@@ -798,6 +869,14 @@ export interface LmsGateway {
   recordDeliveryProof(consignmentId: string, draft: ProofDraft): Promise<void>;
   /** Null when no code has been issued for the consignment yet. */
   deliveryProof(consignmentId: string): Promise<DeliveryProofView | null>;
+  /** Starts the consignment's draft proof, or finds it; asking again changes nothing. */
+  ensureProof(consignmentId: string): Promise<void>;
+  feedProofLines(consignmentId: string, lines: PodLineDraft[]): Promise<void>;
+  setProofDocuments(consignmentId: string, documents: PodDocument[]): Promise<void>;
+  setProofTimings(consignmentId: string, timings: PodTimings): Promise<void>;
+  submitProof(consignmentId: string, draft: PodSubmitDraft): Promise<void>;
+  keyPaperProof(consignmentId: string, draft: PodPaperDraft): Promise<void>;
+  markProofNotReceived(consignmentId: string, remark: string): Promise<void>;
   /** A consignment by the reference a customer quotes. */
   consignmentByRef(trackingRef: string): Promise<ConsignmentCard>;
   consignment(id: string): Promise<ConsignmentCard>;
