@@ -27,7 +27,6 @@ import java.util.UUID;
 import com.lms.delivery.command.domain.Claim;
 import com.lms.delivery.command.domain.ClaimStatus;
 import com.lms.delivery.command.domain.ClaimType;
-import com.lms.delivery.command.domain.ProofStatus;
 import com.lms.delivery.events.ClaimRaised;
 import com.lms.delivery.events.ClaimStatusChanged;
 import com.lms.shared.audit.TransitionAudit;

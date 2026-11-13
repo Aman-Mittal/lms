@@ -29,7 +29,6 @@ import java.util.UUID;
 
 import com.lms.delivery.command.domain.DeliveryProof;
 import com.lms.delivery.command.domain.GoodsCondition;
-import com.lms.delivery.command.domain.ProofStatus;
 import com.lms.delivery.events.DeliveryProofRecorded;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
