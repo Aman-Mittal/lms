@@ -1533,6 +1533,22 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("a proof's lines and documents are read from indexes, in order")
+    void proofLineReads() {
+        assertIndexed("""
+                SELECT received_qty FROM delivery_proof_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND proof_id = '00000000-0000-0000-0000-000000000002'
+                """, "delivery_proof_line");
+        String documents = """
+                SELECT doc_type, reference FROM delivery_proof_document
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND proof_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY position
+                """;
+        assertIndexed(documents, "delivery_proof_document");
+        assertNoSort(documents);
+    }
+
+    @Test
     @DisplayName("every tenant-scoped table leads its primary lookup index with tenant_id")
     void indexesLeadWithTenantId() {
         // Row-level security adds `tenant_id = …` to every query, so an index
