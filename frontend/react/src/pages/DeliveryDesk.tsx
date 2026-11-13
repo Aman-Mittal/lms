@@ -15,7 +15,7 @@
  */
 
 import { useState, type FormEvent } from 'react';
-import { GOODS_CONDITIONS, type DeliveryProofView, type GoodsCondition, type OtpIssued } from '../gateway/lmsGateway';
+import { GOODS_CONDITIONS, provesDelivery, type DeliveryProofView, type GoodsCondition, type OtpIssued } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
@@ -89,7 +89,7 @@ function Desk({ consignmentId, proof, consignmentStatus, issued, onIssued, onCha
   const [condition, setCondition] = useState<GoodsCondition>('CLEAN');
   const [remark, setRemark] = useState('');
   const [slip, setSlip] = useState(false);
-  const confirmed = proof?.status === 'CONFIRMED';
+  const confirmed = provesDelivery(proof?.status);
   const [reversalReason, setReversalReason] = useState('');
   const [reversal, setReversal] = useState('');
 

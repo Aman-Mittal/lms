@@ -15,7 +15,7 @@
  */
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DeliveryProofView, GOODS_CONDITIONS, GoodsCondition, LmsGateway, OtpIssued } from '../gateway/lms-gateway';
+import { DeliveryProofView, GOODS_CONDITIONS, GoodsCondition, LmsGateway, OtpIssued, provesDelivery } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { Qr } from './qr';
 import { EntityPicker } from './entity-picker';
@@ -132,7 +132,7 @@ export class DeliveryDesk {
   readonly reverse = computed(() => this.session.can('POD_REVERSE'));
   readonly reversalReason = signal('');
   readonly reversal = signal('');
-  readonly confirmed = computed(() => this.proof()?.status === 'CONFIRMED');
+  readonly confirmed = computed(() => provesDelivery(this.proof()?.status));
   readonly conditions = GOODS_CONDITIONS;
   readonly condition = signal<GoodsCondition>('CLEAN');
   readonly remark = signal('');

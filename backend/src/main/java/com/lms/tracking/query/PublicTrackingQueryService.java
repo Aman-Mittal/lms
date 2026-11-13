@@ -92,7 +92,7 @@ public class PublicTrackingQueryService {
                                           AND t.status = 'COMPLETED') AS trip_completed_at,
                                (SELECT p.delivered_at FROM delivery_proof p
                                  WHERE p.consignment_id = c.id
-                                   AND p.status = 'CONFIRMED') AS proof_at
+                                   AND p.status IN ('CONFIRMED', 'SUBMITTED')) AS proof_at
                           FROM consignment c
                           JOIN sales_order o ON o.id = c.order_id
                           LEFT JOIN terminal ot ON ot.id = o.origin_terminal_id
@@ -169,7 +169,7 @@ public class PublicTrackingQueryService {
                                        CASE WHEN p.status = 'DELIVERED' THEN p.updated_at END AS recorded_at
                                   FROM consignment p
                                   LEFT JOIN delivery_proof pr
-                                         ON pr.consignment_id = p.id AND pr.status = 'CONFIRMED'
+                                         ON pr.consignment_id = p.id AND pr.status IN ('CONFIRMED', 'SUBMITTED')
                                   LEFT JOIN LATERAL (
                                         SELECT bool_or(t.status IN ('DISPATCHED', 'IN_TRANSIT',
                                                                     'AT_DESTINATION', 'COMPLETED')) AS departed,
