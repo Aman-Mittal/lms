@@ -92,6 +92,9 @@ import { GROUPS, RESOURCES } from './resources';
               @if (group === 'Delivery' && session.can('POD_READ')) {
                 <a routerLink="/delivery" routerLinkActive="active" data-testid="nav-delivery">Delivery desk</a>
               }
+              @if (group === 'Delivery' && session.can('POD_READ')) {
+                <a routerLink="/pod" routerLinkActive="active" data-testid="nav-pod">Proof of delivery</a>
+              }
               @if (group === 'Delivery' && session.can('TRACKING_LINK_MANAGE')) {
                 <a routerLink="/tracking" routerLinkActive="active" data-testid="nav-tracking">Tracking links</a>
               }

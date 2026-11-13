@@ -65,8 +65,13 @@ DeliveryProof:
     consignmentId: { type: string, format: uuid }
     status:
       type: string
-      enum: [OTP_ISSUED, CONFIRMED, REVERSED]
-      description: REVERSED once an approved reversal undid a confirmed proof; a fresh code may be issued.
+      enum: [PENDING, OTP_ISSUED, CONFIRMED, SUBMITTED, NOT_RECEIVED, REVERSED]
+      description: |
+        PENDING is a draft being fed; OTP_ISSUED a code waiting to be matched.
+        CONFIRMED (recorded in one step by code) and SUBMITTED (a fed draft
+        submitted, by code or from paper) both prove the delivery. NOT_RECEIVED:
+        the consignee took nothing; it may still be fed and submitted. REVERSED
+        once an approved reversal undid a proof; a fresh code may be issued.
     recipientName: { type: string }
     photoRef: { type: string }
     deliveredAt: { type: string, format: date-time }
@@ -77,6 +82,107 @@ DeliveryProof:
     remark:
       type: string
       description: What was short or damaged; absent for a clean delivery.
+    paper:
+      type: boolean
+      description: Keyed by staff from the signed paper copy, with no code.
+    keyedBy: { type: string, format: uuid, description: Who keyed a paper proof. }
+    reportedAt: { type: string, format: date-time }
+    unloadingStartedAt: { type: string, format: date-time }
+    unloadingEndedAt: { type: string, format: date-time }
+    lines:
+      type: array
+      description: Every order line of the consignment, with what was fed to it.
+      items: { $ref: "#/components/schemas/DeliveryProofLine" }
+    documents:
+      type: array
+      items: { $ref: "#/components/schemas/DeliveryProofDocument" }
+
+DeliveryProofLine:
+  type: object
+  properties:
+    orderLineId: { type: string, format: uuid }
+    lineNo: { type: integer }
+    materialDescription: { type: string }
+    uom: { type: string }
+    grossQty: { type: number, description: The order line's quantity. }
+    receivedQty: { type: number, description: Absent until the line has been fed. }
+    shortQty: { type: number }
+    damagedQty: { type: number }
+    excessQty: { type: number }
+  required: [orderLineId, lineNo, grossQty]
+
+ProofDocumentType:
+  type: string
+  enum: [FRONT, BACK, OTHER]
+
+DeliveryProofDocument:
+  type: object
+  properties:
+    type: { $ref: "#/components/schemas/ProofDocumentType" }
+    reference: { type: string, maxLength: 500 }
+  required: [type, reference]
+
+FeedProofLine:
+  type: object
+  properties:
+    orderLineId: { type: string, format: uuid }
+    receivedQty: { type: number, minimum: 0 }
+    shortQty: { type: number, minimum: 0 }
+    damagedQty: { type: number, minimum: 0 }
+    excessQty: { type: number, minimum: 0 }
+  required: [orderLineId]
+
+FeedProofLinesRequest:
+  type: object
+  properties:
+    lines:
+      type: array
+      maxItems: 500
+      items: { $ref: "#/components/schemas/FeedProofLine" }
+
+SetProofDocumentsRequest:
+  type: object
+  properties:
+    documents:
+      type: array
+      maxItems: 20
+      items: { $ref: "#/components/schemas/DeliveryProofDocument" }
+
+SetProofTimingsRequest:
+  type: object
+  properties:
+    reportedAt: { type: string, format: date-time }
+    unloadingStartedAt: { type: string, format: date-time }
+    unloadingEndedAt: { type: string, format: date-time }
+
+SubmitProofRequest:
+  type: object
+  properties:
+    otp: { type: string }
+    recipientName: { type: string, maxLength: 120 }
+    deliveredAt: { type: string, format: date-time, description: Now if omitted. Not in the future. }
+    lat: { type: number, minimum: -90, maximum: 90 }
+    lon: { type: number, minimum: -180, maximum: 180 }
+    goodsCondition: { $ref: "#/components/schemas/GoodsCondition" }
+    remark: { type: string, maxLength: 500 }
+  required: [otp, recipientName]
+
+KeyPaperProofRequest:
+  type: object
+  properties:
+    recipientName: { type: string, maxLength: 120 }
+    deliveredAt: { type: string, format: date-time, description: Now if omitted. Not in the future. }
+    lat: { type: number, minimum: -90, maximum: 90 }
+    lon: { type: number, minimum: -180, maximum: 180 }
+    goodsCondition: { $ref: "#/components/schemas/GoodsCondition" }
+    remark: { type: string, maxLength: 500 }
+  required: [recipientName]
+
+NotReceivedRequest:
+  type: object
+  properties:
+    remark: { type: string, maxLength: 500 }
+  required: [remark]
 
 ClaimType:
   type: string

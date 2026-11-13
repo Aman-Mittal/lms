@@ -25,13 +25,11 @@ import com.lms.approvals.api.ApprovalSubject;
 import com.lms.approvals.api.ApprovalSubjectTypes;
 import com.lms.approvals.api.ApprovalTicket;
 import com.lms.delivery.command.domain.DeliveryProof;
-import com.lms.delivery.command.domain.ProofStatus;
 import com.lms.delivery.events.DeliveryProofReversed;
 import com.lms.settings.api.SettingContext;
 import com.lms.shared.audit.TransitionAudit;
 import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
-import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -65,14 +63,16 @@ public class ProofReversalService {
     private final DeliveryProofRepository proofs;
     private final ApprovalRequests approvals;
     private final JdbcClient jdbc;
+    private final PodPolicy podPolicy;
     private final TransitionAudit audit;
     private final ApplicationEventPublisher events;
 
     public ProofReversalService(DeliveryProofRepository proofs, ApprovalRequests approvals, JdbcClient jdbc,
-                                TransitionAudit audit, ApplicationEventPublisher events) {
+                                PodPolicy podPolicy, TransitionAudit audit, ApplicationEventPublisher events) {
         this.proofs = proofs;
         this.approvals = approvals;
         this.jdbc = jdbc;
+        this.podPolicy = podPolicy;
         this.audit = audit;
         this.events = events;
     }
@@ -91,7 +91,7 @@ public class ProofReversalService {
             throw new BusinessRuleViolationException("reversal-reason-required",
                     "A reversal says why, in 1 to " + MAX_REASON + " characters");
         }
-        SettingContext scope = consignmentScope(consignmentId);
+        SettingContext scope = podPolicy.scopeOf(consignmentId);
         DeliveryProof proof = requireConfirmed(consignmentId);
         requireUnbilled(consignmentId);
 
@@ -143,34 +143,13 @@ public class ProofReversalService {
 
     private DeliveryProof requireConfirmed(UUID consignmentId) {
         DeliveryProof proof = proofs.forConsignment(TenantContext.requireTenantId(), consignmentId)
-                .filter(p -> p.status() == ProofStatus.CONFIRMED)
+                .filter(p -> p.status().proves())
                 .orElse(null);
         if (proof == null) {
             throw new BusinessRuleViolationException("proof-not-recorded",
                     "This consignment has no confirmed proof of delivery to reverse");
         }
         return proof;
-    }
-
-    /**
-     * What the consignment's order says about where the policy applies: its
-     * unit, customer and freight mode, read under row-level security (another
-     * tenant's consignment is absent). A consignment with no order (a
-     * warehouse hand-off) has none of them.
-     */
-    private SettingContext consignmentScope(UUID consignmentId) {
-        return jdbc.sql("""
-                        SELECT so.org_unit_id, so.customer_partner_id, so.freight_mode
-                          FROM consignment c
-                          LEFT JOIN sales_order so ON so.id = c.order_id
-                         WHERE c.id = :id
-                        """)
-                .param("id", consignmentId)
-                .query((rs, row) -> SettingContext.ofOrgUnit(rs.getObject("org_unit_id", UUID.class))
-                        .withCustomer(rs.getObject("customer_partner_id", UUID.class))
-                        .withFreightMode(rs.getString("freight_mode")))
-                .optional()
-                .orElseThrow(() -> new ResourceNotFoundException("Consignment", consignmentId));
     }
 
     /**

@@ -56,7 +56,7 @@ public record ConsignmentView(
         Integer partsCancelled,
         Instant createdAt,
         /**
-         * Where its proof of delivery stands: OTP_ISSUED or CONFIRMED, or null
+         * Where its proof of delivery stands: PENDING, OTP_ISSUED, CONFIRMED, SUBMITTED, NOT_RECEIVED or REVERSED, or null
          * before a code has been issued.
          */
         String proofStatus,

@@ -15,6 +15,8 @@
  */
 package com.lms.delivery.query;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -43,14 +45,61 @@ public class DeliveryQueryService {
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('POD_READ')")
     public Optional<DeliveryProofView> proofOf(UUID consignmentId) {
+        record Head(UUID id, DeliveryProofView view) {
+        }
         return jdbc.sql("""
-                        SELECT consignment_id, status, recipient_name, photo_ref, delivered_at,
-                               lat, lon, otp_expires_at, goods_condition, remark
+                        SELECT id, consignment_id, status, recipient_name, photo_ref, delivered_at,
+                               lat, lon, otp_expires_at, goods_condition, remark, paper, keyed_by,
+                               reported_at, unloading_started_at, unloading_ended_at
                           FROM delivery_proof
                          WHERE consignment_id = :consignmentId
                         """)
                 .param("consignmentId", consignmentId)
-                .query(DeliveryProofView.class).optional();
+                .query((rs, row) -> new Head(rs.getObject("id", UUID.class), new DeliveryProofView(
+                        rs.getObject("consignment_id", UUID.class), rs.getString("status"),
+                        rs.getString("recipient_name"), rs.getString("photo_ref"),
+                        instant(rs, "delivered_at"), rs.getBigDecimal("lat"), rs.getBigDecimal("lon"),
+                        instant(rs, "otp_expires_at"), rs.getString("goods_condition"), rs.getString("remark"),
+                        rs.getBoolean("paper"), rs.getObject("keyed_by", UUID.class),
+                        instant(rs, "reported_at"), instant(rs, "unloading_started_at"),
+                        instant(rs, "unloading_ended_at"), List.of(), List.of())))
+                .optional()
+                .map(head -> withLinesAndDocuments(head.id(), consignmentId, head.view()));
+    }
+
+    private DeliveryProofView withLinesAndDocuments(UUID proofId, UUID consignmentId, DeliveryProofView v) {
+        List<DeliveryProofView.Line> lines = jdbc.sql("""
+                        SELECT ol.id, ol.line_no, ol.material_description, ol.uom, ol.quantity,
+                               pl.received_qty, pl.short_qty, pl.damaged_qty, pl.excess_qty
+                          FROM consignment_line cl
+                          JOIN order_line ol ON ol.id = cl.order_line_id
+                          LEFT JOIN delivery_proof_line pl ON pl.proof_id = :proofId AND pl.order_line_id = ol.id
+                         WHERE cl.consignment_id = :consignmentId
+                         ORDER BY ol.line_no
+                        """)
+                .param("proofId", proofId).param("consignmentId", consignmentId)
+                .query((rs, row) -> new DeliveryProofView.Line(rs.getObject("id", UUID.class),
+                        rs.getInt("line_no"), rs.getString("material_description"), rs.getString("uom"),
+                        rs.getBigDecimal("quantity"), rs.getBigDecimal("received_qty"),
+                        rs.getBigDecimal("short_qty"), rs.getBigDecimal("damaged_qty"),
+                        rs.getBigDecimal("excess_qty")))
+                .list();
+        List<DeliveryProofView.Document> documents = jdbc.sql("""
+                        SELECT doc_type, reference FROM delivery_proof_document
+                         WHERE proof_id = :proofId ORDER BY position
+                        """)
+                .param("proofId", proofId)
+                .query((rs, row) -> new DeliveryProofView.Document(rs.getString("doc_type"),
+                        rs.getString("reference")))
+                .list();
+        return new DeliveryProofView(v.consignmentId(), v.status(), v.recipientName(), v.photoRef(),
+                v.deliveredAt(), v.lat(), v.lon(), v.otpExpiresAt(), v.goodsCondition(), v.remark(), v.paper(),
+                v.keyedBy(), v.reportedAt(), v.unloadingStartedAt(), v.unloadingEndedAt(), lines, documents);
+    }
+
+    private static Instant instant(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        java.sql.Timestamp at = rs.getTimestamp(column);
+        return at == null ? null : at.toInstant();
     }
 
     @Transactional(readOnly = true)

@@ -27,7 +27,6 @@ import java.util.UUID;
 import com.lms.delivery.command.domain.Claim;
 import com.lms.delivery.command.domain.ClaimStatus;
 import com.lms.delivery.command.domain.ClaimType;
-import com.lms.delivery.command.domain.ProofStatus;
 import com.lms.delivery.events.ClaimRaised;
 import com.lms.delivery.events.ClaimStatusChanged;
 import com.lms.shared.audit.TransitionAudit;
@@ -92,7 +91,7 @@ public class ClaimService {
         }
         if (type.needsProofOfDelivery()) {
             boolean proved = proofs.forConsignment(tenantId, consignmentId)
-                    .filter(p -> p.status() == ProofStatus.CONFIRMED).isPresent();
+                    .filter(p -> p.status().proves()).isPresent();
             if (!proved) {
                 throw new BusinessRuleViolationException("claim-needs-proof-of-delivery",
                         "A " + type + " claim needs a confirmed proof of delivery for the consignment");

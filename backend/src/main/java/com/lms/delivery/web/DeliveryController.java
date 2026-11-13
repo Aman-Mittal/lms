@@ -19,16 +19,19 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.lms.approvals.api.ApprovalTicket;
 import com.lms.delivery.command.ClaimService;
 import com.lms.delivery.command.DeliveryService;
+import com.lms.delivery.command.ProofFeedingService;
 import com.lms.delivery.command.ProofReversalService;
 import com.lms.delivery.command.domain.ClaimStatus;
 import com.lms.delivery.command.domain.ClaimType;
 import com.lms.delivery.command.domain.GoodsCondition;
+import com.lms.delivery.command.domain.ProofDocumentType;
 import com.lms.delivery.query.ClaimView;
 import com.lms.delivery.query.DeliveryProofView;
 import com.lms.delivery.query.DeliveryQueryService;
@@ -45,6 +48,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -61,13 +65,16 @@ public class DeliveryController {
     private final ClaimService claims;
     private final DeliveryQueryService queries;
     private final ProofReversalService reversals;
+    private final ProofFeedingService feeding;
 
     public DeliveryController(DeliveryService delivery, ClaimService claims,
-                              DeliveryQueryService queries, ProofReversalService reversals) {
+                              DeliveryQueryService queries, ProofReversalService reversals,
+                              ProofFeedingService feeding) {
         this.delivery = delivery;
         this.claims = claims;
         this.queries = queries;
         this.reversals = reversals;
+        this.feeding = feeding;
     }
 
     // ------------------------------------------------------ proof of delivery
@@ -84,6 +91,69 @@ public class DeliveryController {
         delivery.recordProof(consignmentId, request.otp(), request.recipientName(),
                 request.photoRef(), request.deliveredAt(), request.lat(), request.lon(),
                 request.goodsCondition(), request.remark());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Starts the consignment's draft proof, or finds it; asking again changes nothing. */
+    @PostMapping("/deliveries/{consignmentId}/pod")
+    public ResponseEntity<Void> ensurePod(@PathVariable UUID consignmentId) {
+        feeding.ensure(consignmentId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Replaces what was received against the consignment's order lines. */
+    @PutMapping("/deliveries/{consignmentId}/pod/lines")
+    public ResponseEntity<Void> feedLines(@PathVariable UUID consignmentId,
+                                          @Valid @RequestBody FeedLinesRequest request) {
+        feeding.feedLines(consignmentId, request.lines() == null ? List.of() : request.lines().stream()
+                .map(l -> new ProofFeedingService.LineInput(l.orderLineId(), l.receivedQty(), l.shortQty(),
+                        l.damagedQty(), l.excessQty())).toList());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Replaces the documents listed for the proof. */
+    @PutMapping("/deliveries/{consignmentId}/pod/documents")
+    public ResponseEntity<Void> setDocuments(@PathVariable UUID consignmentId,
+                                             @Valid @RequestBody SetDocumentsRequest request) {
+        feeding.setDocuments(consignmentId, request.documents() == null ? List.of() : request.documents().stream()
+                .map(d -> new ProofFeedingService.DocumentInput(d.type(), d.reference())).toList());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Sets the reporting and unloading times; one omitted is cleared. */
+    @PutMapping("/deliveries/{consignmentId}/pod/timings")
+    public ResponseEntity<Void> setTimings(@PathVariable UUID consignmentId,
+                                           @Valid @RequestBody SetTimingsRequest request) {
+        feeding.setTimings(consignmentId,
+                request.reportedAt() == null ? null : request.reportedAt().toInstant(),
+                request.unloadingStartedAt() == null ? null : request.unloadingStartedAt().toInstant(),
+                request.unloadingEndedAt() == null ? null : request.unloadingEndedAt().toInstant());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Submits the fed draft with the consignee's code. */
+    @PostMapping("/deliveries/{consignmentId}/pod/submit")
+    public ResponseEntity<Void> submitPod(@PathVariable UUID consignmentId,
+                                          @Valid @RequestBody SubmitPodRequest request) {
+        delivery.submit(consignmentId, request.otp(), request.recipientName(), request.deliveredAt(),
+                request.lat(), request.lon(), request.goodsCondition(), request.remark());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Keys the proof from the signed paper copy, with no code. */
+    @PostMapping("/deliveries/{consignmentId}/pod/paper")
+    public ResponseEntity<Void> keyPaperPod(@PathVariable UUID consignmentId,
+                                            @Valid @RequestBody PaperPodRequest request) {
+        delivery.keyFromPaper(consignmentId, request.recipientName(), request.deliveredAt(), request.lat(),
+                request.lon(), request.goodsCondition(), request.remark());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Records that the consignee took nothing. */
+    @PostMapping("/deliveries/{consignmentId}/pod/not-received")
+    public ResponseEntity<Void> notReceived(@PathVariable UUID consignmentId,
+                                            @Valid @RequestBody NotReceivedRequest request) {
+        feeding.markNotReceived(consignmentId, request.remark());
         return ResponseEntity.noContent().build();
     }
 
@@ -153,6 +223,49 @@ public class DeliveryController {
             /** Omitted is CLEAN. */
             GoodsCondition goodsCondition,
             String remark) {
+    }
+
+    public record PodLineRequest(
+            @NotNull UUID orderLineId,
+            @DecimalMin("0") BigDecimal receivedQty,
+            @DecimalMin("0") BigDecimal shortQty,
+            @DecimalMin("0") BigDecimal damagedQty,
+            @DecimalMin("0") BigDecimal excessQty) {
+    }
+
+    public record FeedLinesRequest(@Valid @Size(max = 500) List<PodLineRequest> lines) {
+    }
+
+    public record PodDocumentRequest(@NotNull ProofDocumentType type, @NotBlank @Size(max = 500) String reference) {
+    }
+
+    public record SetDocumentsRequest(@Valid @Size(max = 20) List<PodDocumentRequest> documents) {
+    }
+
+    public record SetTimingsRequest(OffsetDateTime reportedAt, OffsetDateTime unloadingStartedAt,
+                                    OffsetDateTime unloadingEndedAt) {
+    }
+
+    public record SubmitPodRequest(
+            @NotBlank String otp,
+            @NotBlank String recipientName,
+            OffsetDateTime deliveredAt,
+            @DecimalMin("-90") @DecimalMax("90") BigDecimal lat,
+            @DecimalMin("-180") @DecimalMax("180") BigDecimal lon,
+            GoodsCondition goodsCondition,
+            String remark) {
+    }
+
+    public record PaperPodRequest(
+            @NotBlank String recipientName,
+            OffsetDateTime deliveredAt,
+            @DecimalMin("-90") @DecimalMax("90") BigDecimal lat,
+            @DecimalMin("-180") @DecimalMax("180") BigDecimal lon,
+            GoodsCondition goodsCondition,
+            String remark) {
+    }
+
+    public record NotReceivedRequest(@NotBlank @Size(max = 500) String remark) {
     }
 
     public record ReversalRequest(@NotBlank @Size(max = 500) String reason) {

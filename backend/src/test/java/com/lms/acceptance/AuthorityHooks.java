@@ -90,7 +90,7 @@ public class AuthorityHooks {
             "APPROVAL_READ", "APPROVAL_POLICY_MANAGE", "ORDER_APPROVE", "POD_REVERSE", "POD_REVERSAL_APPROVE",
             "GATE_REGISTER", "GATE_PASS_MANAGE",
             "CHARGE_CATALOGUE_MANAGE", "MANUAL_CHARGE_RECORD", "MANUAL_CHARGE_APPROVE", "PAYABLES_MANAGE",
-            "ADVANCE_REQUEST", "ADVANCE_APPROVE");
+            "ADVANCE_REQUEST", "ADVANCE_APPROVE", "POD_PAPER_KEY");
 
     /**
      * Runs before the tenant-scope hooks, because a step that issues a command

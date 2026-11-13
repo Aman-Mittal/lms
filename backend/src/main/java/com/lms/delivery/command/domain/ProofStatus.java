@@ -17,14 +17,28 @@ package com.lms.delivery.command.domain;
 
 /** Where a consignment's proof of delivery stands. */
 public enum ProofStatus {
+    /** A draft, started and not yet fed or submitted; no code has been issued. */
+    PENDING,
     /** A one-time code was issued and has not been matched. */
     OTP_ISSUED,
-    /** The code matched and the proof was recorded. */
+    /** The code matched and the proof was recorded in one step (the original route). */
     CONFIRMED,
     /**
-     * A confirmed proof was reversed through an approved request (V53). The
+     * A draft fed with lines, documents and times was submitted, with a code
+     * or keyed from paper. Proves the delivery exactly as CONFIRMED does.
+     */
+    SUBMITTED,
+    /** The consignee took nothing. Proves nothing; the draft may still be fed and submitted. */
+    NOT_RECEIVED,
+    /**
+     * A proof was reversed through an approved request (V53). The
      * recipient and time stay on file; a fresh code may be issued and a new
      * proof recorded.
      */
-    REVERSED
+    REVERSED;
+
+    /** Whether this status proves the delivery: CONFIRMED or SUBMITTED. */
+    public boolean proves() {
+        return this == CONFIRMED || this == SUBMITTED;
+    }
 }

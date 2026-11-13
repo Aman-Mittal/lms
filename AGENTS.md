@@ -361,7 +361,9 @@ known document types), `execution.dispatch.weightTolerancePct` and
 (unit, vehicle, customer); `finance.match.tolerancePercent` and
 `.toleranceAbsolute` (unit, vendor); `finance.manualCharge.approvalThreshold` (decimal, default 10000.00;
 unit, customer, vendor, combination), `finance.payables.paymentTermsDays` (integer, default 30; unit, vendor,
-combination) and `finance.advance.maxPercentOfFreight` (decimal, default 70; unit, vendor, combination), V60; and the calendar, UI and notification
+combination) and `finance.advance.maxPercentOfFreight` (decimal, default 70; unit, vendor, combination), V60;
+`delivery.pod.quantityTolerancePercent` (decimal, default 100), `.feedingRequired`, `.frontDocumentRequired` and
+`.backDocumentRequired` (booleans, default false; unit, customer, combination), V61; and the calendar, UI and notification
 preferences; `approvals.policy.orderCancellation`, `.podReversal`, `.manualCharge` and
 `.vendorAdvance` (unit,
 customer, combination; a JSON policy, refused for an unknown permission through
@@ -1051,6 +1053,30 @@ Gaps the freight-mode, warehouse and billing work left open on purpose:
   the contract bills on dispatch. The completion's hold decision and a proof's
   re-evaluation take a per-trip advisory lock and re-read proofs under it, so a
   hold never outlives clean proofs whichever commits first.
+- Proof of delivery is a draft fed over time (V61). `POST /deliveries/{cid}/pod`
+  ensures a `PENDING` draft (one insert `ON CONFLICT DO NOTHING`, so racing callers
+  leave one row); `PUT .../pod/lines`, `.../documents` and `.../timings` replace what
+  was fed, only while the proof is not yet proving (`proof-already-recorded` after).
+  Lines are per order line of the consignment (received, short, damaged, excess; the
+  gross is the order line's quantity, read not copied); documents are `FRONT`, `BACK`
+  or `OTHER` plus a reference (no file); times must run reporting, unloading start,
+  unloading end, none after now (`pod-timing-order-invalid`, `pod-timing-in-future`).
+  `POST .../pod/submit` (code, `POD_RECORD`) and `POST .../pod/paper` (no code, own
+  right `POD_PAPER_KEY`, `paper` and `keyed_by` kept, audited
+  `DELIVERY_POD_PAPER_KEYED`) end in `SUBMITTED`; the one-step `POST .../proof` still
+  ends in `CONFIRMED`. Both prove the delivery (`ProofStatus.proves()`, and
+  `IN ('CONFIRMED','SUBMITTED')` in the hold, billability, tracking and claim
+  checks); `NOT_RECEIVED` and `PENDING` prove nothing. Every route submits through
+  `ProofChecks`: lines when `delivery.pod.feedingRequired`
+  (`pod-lines-required`), received+damaged+excess within
+  `delivery.pod.quantityTolerancePercent` of the gross (`pod-quantity-outside-tolerance`),
+  a front and a back document when asked (`pod-front-document-required`,
+  `pod-back-document-required`), and a goods condition at least as bad as the lines
+  show. Settings resolve for the consignment's order (`PodPolicy`, the same scope the
+  `POD_REVERSAL` approval uses). Reversal (V53) takes a `CONFIRMED` or `SUBMITTED`
+  proof only through the `POD_REVERSAL` approval and only before billing used it
+  (`pod-already-billed`); the reversed proof keeps its lines and documents and can be
+  fed and submitted again.
 - Credit limits (V46) live in `masterdata`; `order` and `clientbilling` reach
   them through `masterdata::api` (`CustomerCreditPort`), and masterdata reads
   open order demand and receivables through the SPIs it publishes there

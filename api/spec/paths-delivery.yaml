@@ -85,6 +85,222 @@
       "400": { $ref: "#/components/responses/BadRequest" }
       "409": { $ref: "#/components/responses/Conflict" }
 
+/api/v1/deliveries/{consignmentId}/pod:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Delivery and claims]
+    operationId: ensureProofOfDelivery
+    summary: Start a consignment's draft proof of delivery
+    description: |
+      Requires `POD_RECORD`. Creates the draft (status `PENDING`) the proof is fed
+      into over time, or finds the one already there: asking again changes nothing.
+      The consignment must have left, as for a code (`consignment-not-in-transit`).
+      Read the draft with `GET /deliveries/{consignmentId}`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}/pod/lines:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  put:
+    tags: [Delivery and claims]
+    operationId: feedProofLines
+    summary: Replace what was received against the order lines
+    description: |
+      Requires `POD_RECORD`. Each entry names an order line of the consignment and
+      its received, short, damaged and excess quantities (omitted is zero). Replaces
+      every line fed so far; an empty list clears them. Refused with 409 once the
+      proof proves the delivery (`proof-already-recorded`), with 400 and
+      `pod-line-unknown`, `pod-line-duplicate` or `pod-quantity-invalid`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/FeedProofLinesRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}/pod/documents:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  put:
+    tags: [Delivery and claims]
+    operationId: setProofDocuments
+    summary: Replace the documents listed for the proof
+    description: |
+      Requires `POD_RECORD`. A type (`FRONT`, `BACK` or `OTHER`) and a reference
+      each, at most 20; the platform stores no file. Replaces the list.
+      A 400 refuses a malformed list; `pod-document-invalid` and `pod-documents-too-many` a bad one.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SetProofDocumentsRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}/pod/timings:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  put:
+    tags: [Delivery and claims]
+    operationId: setProofTimings
+    summary: Set the reporting and unloading times
+    description: |
+      Requires `POD_RECORD`. Whatever is given must run in order -- reporting, then
+      unloading start, then unloading end, none after now -- or the answer is 400
+      with `pod-timing-order-invalid` or `pod-timing-in-future`. A time omitted is
+      cleared.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SetProofTimingsRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}/pod/submit:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Delivery and claims]
+    operationId: submitProofOfDelivery
+    summary: Submit the fed draft with the consignee's code
+    description: |
+      Requires `POD_RECORD`. Same code rules as `POST .../proof` (`otp-invalid`), and
+      the same effects: DELIVERED, the settlement hold lifted once every proof is
+      clean, the client billable. Before that the proof must meet its policy
+      (settings `delivery.pod.*`): lines fed when `feedingRequired`
+      (`pod-lines-required`); the quantity that arrived (received, damaged and
+      excess) within `quantityTolerancePercent` of the gross
+      (`pod-quantity-outside-tolerance`); a front and a back document when asked
+      (`pod-front-document-required`, `pod-back-document-required`). The condition
+      is the worse of the one given and the one the lines show; anything but CLEAN
+      needs a remark. Status becomes `SUBMITTED`.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SubmitProofRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}/pod/paper:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Delivery and claims]
+    operationId: keyPaperProof
+    summary: Key the proof from the signed paper copy
+    description: |
+      Requires `POD_PAPER_KEY`, its own right. No code: staff key the proof from
+      paper. Same checks and effects as submit; the proof is marked `paper` and
+      carries `keyedBy`, and the audit trail records `DELIVERY_POD_PAPER_KEYED`.
+      No draft need be started first.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/KeyPaperProofRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/deliveries/{consignmentId}/pod/not-received:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [Delivery and claims]
+    operationId: markProofNotReceived
+    summary: Record that the consignee took nothing
+    description: |
+      Requires `POD_RECORD`. Status becomes `NOT_RECEIVED` and the consignment is not
+      delivered; the draft may still be fed and submitted. A remark is required.
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/NotReceivedRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
 /api/v1/deliveries/{consignmentId}/proof/reversal:
   parameters:
     - name: consignmentId
@@ -97,7 +313,7 @@
     operationId: requestProofReversal
     summary: Ask for a confirmed proof of delivery to be reversed
     description: |
-      Requires `POD_REVERSE`. Always goes through an approval: the answer is
+      Requires `POD_REVERSE`. Applies to a CONFIRMED or SUBMITTED proof. Always goes through an approval: the answer is
       202 with the request (subject type `POD_REVERSAL`), decided by a holder
       of `POD_REVERSAL_APPROVE` other than the requester. Approving it marks
       the proof REVERSED, puts the consignment back in transit (out for
@@ -142,7 +358,9 @@
     tags: [Delivery and claims]
     operationId: getDeliveryProof
     summary: A consignment's proof of delivery
-    description: Requires `POD_READ`. 404 until a code has been issued.
+    description: |
+      Requires `POD_READ`. 404 until a code has been issued or a draft started. Carries every order line of
+      the consignment with what was fed to it, the documents listed and the unloading times.
     responses:
       "200":
         description: The proof, or the fact that a code is waiting to be matched.
