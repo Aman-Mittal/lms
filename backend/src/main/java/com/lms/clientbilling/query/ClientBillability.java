@@ -53,7 +53,7 @@ public final class ClientBillability {
                         AND NOT EXISTS (
                             SELECT 1 FROM delivery_proof dp
                              WHERE dp.tenant_id = c.tenant_id AND dp.consignment_id = c.id
-                               AND dp.status = 'CONFIRMED')
+                               AND dp.status IN ('CONFIRMED', 'SUBMITTED'))
                         AND NOT EXISTS (
                             SELECT 1 FROM consignment_billing_mark m
                              WHERE m.tenant_id = c.tenant_id AND m.consignment_id = c.id)))
