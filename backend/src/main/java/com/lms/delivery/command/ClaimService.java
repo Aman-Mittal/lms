@@ -92,7 +92,7 @@ public class ClaimService {
         }
         if (type.needsProofOfDelivery()) {
             boolean proved = proofs.forConsignment(tenantId, consignmentId)
-                    .filter(p -> p.status() == ProofStatus.CONFIRMED).isPresent();
+                    .filter(p -> p.status().proves()).isPresent();
             if (!proved) {
                 throw new BusinessRuleViolationException("claim-needs-proof-of-delivery",
                         "A " + type + " claim needs a confirmed proof of delivery for the consignment");

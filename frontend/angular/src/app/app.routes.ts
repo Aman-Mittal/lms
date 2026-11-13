@@ -20,16 +20,15 @@ import { LoginPage } from './pages/login';
 import { Shell } from './pages/shell';
 import { Track } from './pages/track';
 import { Dashboard } from './pages/dashboard';
-import { ConsignmentDesk } from './pages/consignment-desk';
-import { DeliveryDesk } from './pages/delivery-desk';
 import { ListPage } from './pages/list';
-import { OrderDeskPage } from './pages/order-desk';
 
 // Administration
 const adminDesk = () => import('./pages/admin-desk').then((m) => m.AdminDesk);
 
-// Desks most sessions do not open load on first visit, keeping the initial
-// bundle under its budget; the daily desks (orders, consignments, delivery) stay eager.
+// Desks load on first visit, keeping the initial bundle under its budget: only
+// the shell, the sign-in page, the control tower and the generic list screens
+// are eager. The daily desks (orders, consignments, delivery) are lazy too --
+// the QR library alone is the weight of the delivery and consignment desks.
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
   // Public: a customer follows a link with no account, so no sign-in is asked for.
@@ -44,12 +43,13 @@ export const routes: Routes = [
       { path: 'settings/demo', loadComponent: () => import('./pages/demo-settings').then((m) => m.DemoSettings) },
       { path: 'settings/webhooks', loadComponent: () => import('./pages/webhooks').then((m) => m.Webhooks) },
       { path: 'claims', loadComponent: () => import('./pages/claims').then((m) => m.ClaimsPage) },
-      { path: 'delivery', component: DeliveryDesk },
-      { path: 'consignments', component: ConsignmentDesk },
+      { path: 'delivery', loadComponent: () => import('./pages/delivery-desk').then((m) => m.DeliveryDesk) },
+      { path: 'pod', loadComponent: () => import('./pages/pod-desk').then((m) => m.PodDesk) },
+      { path: 'consignments', loadComponent: () => import('./pages/consignment-desk').then((m) => m.ConsignmentDesk) },
       { path: 'tracking', loadComponent: () => import('./pages/tracking-links').then((m) => m.TrackingLinks) },
       { path: 'allocation-rules', loadComponent: () => import('./pages/allocation-rules').then((m) => m.AllocationRules) },
       { path: 'load-building', loadComponent: () => import('./pages/load-building').then((m) => m.LoadBuilding) },
-      { path: 'order-desk', component: OrderDeskPage },
+      { path: 'order-desk', loadComponent: () => import('./pages/order-desk').then((m) => m.OrderDeskPage) },
       { path: 'client-billing', loadComponent: () => import('./pages/client-billing').then((m) => m.ClientBilling) },
       // Commercial: loaded on first visit, like the other desks.
       { path: 'commercial', loadComponent: () => import('./pages/commercial').then((m) => m.Commercial) },
