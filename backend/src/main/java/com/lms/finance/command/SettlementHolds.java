@@ -330,7 +330,7 @@ public class SettlementHolds {
                                AND NOT EXISTS (
                                    SELECT 1 FROM delivery_proof dp
                                     WHERE dp.tenant_id = c.tenant_id AND dp.consignment_id = c.id
-                                      AND dp.status = 'CONFIRMED' AND dp.goods_condition = 'CLEAN'))
+                                      AND dp.status IN ('CONFIRMED', 'SUBMITTED') AND dp.goods_condition = 'CLEAN'))
                         """)
                 .param("tenantId", TenantContext.requireTenantId())
                 .param("tripId", tripId)

@@ -85,7 +85,7 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
       <dl>
         <div><dt>Status</dt><dd data-testid="consignment-status">{c.status}</dd></div>
         <div><dt>Proof of delivery</dt><dd data-testid="consignment-proof">
-          {c.proofStatus === 'CONFIRMED' ? `Confirmed, ${c.proofCondition}` : c.proofStatus ? 'Code issued' : 'None yet'}
+          {c.proofStatus === 'CONFIRMED' || c.proofStatus === 'SUBMITTED' ? `Confirmed, ${c.proofCondition}` : c.proofStatus === 'PENDING' ? 'Draft started' : c.proofStatus ? 'Code issued' : 'None yet'}
         </dd></div>
         {c.parentId && (
           <div><dt>Part of</dt><dd>
