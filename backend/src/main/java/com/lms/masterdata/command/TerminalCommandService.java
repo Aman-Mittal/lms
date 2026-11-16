@@ -26,7 +26,6 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,14 +41,14 @@ public class TerminalCommandService {
 
     private final TerminalRepository terminals;
     private final ApplicationEventPublisher events;
-    private final TerminalReferenceCheck references;
+    private final TerminalOpenUseCheck openUses;
     private final AuditTrail audit;
 
     public TerminalCommandService(TerminalRepository terminals, ApplicationEventPublisher events,
-                                  TerminalReferenceCheck references, AuditTrail audit) {
+                                  TerminalOpenUseCheck openUses, AuditTrail audit) {
         this.terminals = terminals;
         this.events = events;
-        this.references = references;
+        this.openUses = openUses;
         this.audit = audit;
     }
 
@@ -92,8 +91,9 @@ public class TerminalCommandService {
         Terminal current = terminals.findById(command.id())
                 .orElseThrow(() -> new ResourceNotFoundException("Terminal", command.id()));
 
+        // Omitted keeps the present list; an empty list clears it.
         String[] vehicleTypes = command.permittedVehicleTypes() == null
-                ? null
+                ? current.permittedVehicleTypes()
                 : command.permittedVehicleTypes().toArray(String[]::new);
         Terminal revised = current.revised(command.name(), command.dockCount(), command.opensAt(),
                 command.closesAt(), command.avgDwellMinutes(), vehicleTypes, command.version());
@@ -113,56 +113,72 @@ public class TerminalCommandService {
     }
 
     /**
-     * Removes a terminal that nothing refers to.
+     * Switches a terminal off. Nothing is deleted: the row stays for the
+     * trips, loads, orders and rates that name it, and it can be switched back
+     * on.
      *
-     * <p>Refused with 409 {@code terminal-in-use} while any trip, load,
-     * consignment, itinerary, milk-run record, warehouse record, rate or other
-     * row still names it. The service checks first so the answer is a clear
-     * one; the database's RESTRICT foreign keys are the backstop, and a
-     * reference created between the check and the delete is turned into the
-     * same answer rather than a 500.
+     * <p>Refused with 409 {@code terminal-in-use} while an open order, load or
+     * trip still points at it, and with 409 {@code terminal-already-inactive}
+     * if it is already off. The reason is mandatory and is kept in the audit
+     * trail.
      */
     @Transactional
     @PreAuthorize("hasAuthority('TERMINAL_DELETE')"
             + " and @abac.permits('TERMINAL_CREATE', 'TERMINAL', #id)")
-    public void delete(UUID id) {
+    public void deactivate(UUID id, String reason) {
         UUID tenantId = TenantContext.requireTenantId();
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
         Terminal terminal = terminals.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Terminal", id));
-
-        List<String> usedBy = references.usedBy(tenantId, id);
+        if (!terminal.isActive()) {
+            throw new BusinessRuleViolationException("terminal-already-inactive",
+                    "Terminal " + terminal.code() + " is already inactive");
+        }
+        List<String> usedBy = openUses.openUses(tenantId, id);
         if (!usedBy.isEmpty()) {
             throw inUse(terminal, usedBy);
         }
+        Terminal saved = terminals.save(terminal.withStatus(Terminal.INACTIVE));
+        audit.recordAtomically("TERMINAL_DEACTIVATED", "TERMINAL", id, snapshot(terminal),
+                snapshot(saved, reason));
+    }
 
-        try {
-            terminals.delete(terminal);
-        } catch (DataIntegrityViolationException e) {
-            if (isForeignKeyViolation(e)) {
-                throw inUse(terminal, List.of("other records"));
-            }
-            throw e;
+    /** Switches an inactive terminal back on, with a reason. */
+    @Transactional
+    @PreAuthorize("hasAuthority('TERMINAL_UPDATE')"
+            + " and @abac.permits('TERMINAL_CREATE', 'TERMINAL', #id)")
+    public void reactivate(UUID id, String reason) {
+        TenantContext.requireTenantId();
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
         }
-        audit.recordAtomically("TERMINAL_DELETED", "TERMINAL", id, snapshot(terminal), null);
+        Terminal terminal = terminals.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Terminal", id));
+        if (terminal.isActive()) {
+            throw new BusinessRuleViolationException("terminal-not-inactive",
+                    "Terminal " + terminal.code() + " is already active");
+        }
+        // Its ground may have been taken while it was off.
+        rejectIfOverlapping(TenantContext.requireTenantId(), terminal, id);
+        Terminal saved = terminals.save(terminal.withStatus(Terminal.ACTIVE));
+        audit.recordAtomically("TERMINAL_REACTIVATED", "TERMINAL", id, snapshot(terminal),
+                snapshot(saved, reason));
     }
 
     private static BusinessRuleViolationException inUse(Terminal terminal, List<String> usedBy) {
         return new BusinessRuleViolationException("terminal-in-use",
-                "Terminal " + terminal.code() + " cannot be deleted: it is still used by "
+                "Terminal " + terminal.code() + " cannot be deactivated: it is still used by "
                         + String.join(", ", usedBy));
     }
 
-    private static boolean isForeignKeyViolation(Throwable e) {
-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause instanceof java.sql.SQLException sql && "23503".equals(sql.getSQLState())) {
-                return true;
-            }
-        }
-        return false;
+    private static Json snapshot(Terminal terminal) {
+        return snapshot(terminal, null);
     }
 
-    private static Json snapshot(Terminal terminal) {
-        return Json.object("code", terminal.code(), "name", terminal.name(),
+    private static Json snapshot(Terminal terminal, String reason) {
+        return Json.object("status", terminal.status(), "reason", reason, "code", terminal.code(), "name", terminal.name(),
                 "category", terminal.functionalCategory().name(),
                 "geofenceType", terminal.geofenceType().name(),
                 "dockCount", terminal.dockCount() == null ? null : terminal.dockCount().toString(),
