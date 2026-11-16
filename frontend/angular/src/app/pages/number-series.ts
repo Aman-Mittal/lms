@@ -21,6 +21,7 @@ import {
 } from '../gateway/lms-gateway';
 import { RowColumn, RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -58,7 +59,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-number-series',
-  imports: [RowTable, PageHeader],
+  imports: [RowTable, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Number series" />
     <p class="muted">
@@ -139,7 +140,7 @@ function valueOf(event: Event): string {
         <h2>{{ s.code }}</h2>
         <dl class="facts">
           <div><dt>Numbers</dt><dd>{{ s.documentType }} · {{ s.scope }}</dd></div>
-          <div><dt>State</dt><dd data-testid="series-state">{{ s.active ? 'Active' : 'Inactive' }}</dd></div>
+          <div><dt>State</dt><dd><app-status-badge data-testid="series-state" [value]="s.active ? 'ACTIVE' : 'INACTIVE'" /></dd></div>
           <div><dt>Financial year</dt><dd>{{ s.financialYear === '0' ? 'Never restarts' : s.financialYear }}</dd></div>
           <div><dt>Next number</dt><dd data-testid="series-next">{{ next() }}</dd></div>
           <div><dt>Reuses released numbers</dt><dd>{{ s.reuseReleased ? 'Yes' : 'No' }}</dd></div>
