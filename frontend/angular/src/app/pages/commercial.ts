@@ -24,6 +24,9 @@ import type { RailTariffDraft, TariffCardDetail, TariffFilter } from '../gateway
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Money } from './figures';
+import { When } from './when';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 export interface Refusal {
@@ -61,7 +64,7 @@ export class RefusalNote {
 @Component({
   selector: 'app-commercial-table',
   template: `
-    <table>
+    <div class="table-wrap"><table>
       <thead>
         <tr>@for (c of columns(); track c[0]) { <th>{{ c[1] }}</th> }</tr>
       </thead>
@@ -72,7 +75,7 @@ export class RefusalNote {
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
   `,
 })
 export class CommercialTable {
@@ -272,7 +275,7 @@ export class TariffsPanel {
 /** Routing guides: who is offered a lane's loads, in what order, and how long each has to answer. */
 @Component({
   selector: 'app-guides-panel',
-  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker],
+  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker, StatusBadge],
   template: `
     <section data-testid="guides">
       <h2>Routing guides</h2>
@@ -303,7 +306,7 @@ export class TariffsPanel {
         <section data-testid="guide-panel" aria-label="Routing guide">
           <h3>{{ d.guide['originTerminalCode'] }} → {{ d.guide['destinationTerminalCode'] }} · {{ d.guide['vehicleType'] }}</h3>
           <p>Strategy {{ d.guide['strategy'] }} ·
-            <span data-testid="guide-state">{{ d.guide['active'] ? 'Active' : 'Retired' }}</span></p>
+            <app-status-badge data-testid="guide-state" [value]="d.guide['active'] ? 'ACTIVE' : 'RETIRED'" /></p>
           @if (d.entries.length === 0) {
             <p class="muted" data-testid="no-vendors">No vendor on this guide yet.</p>
           } @else {
@@ -409,7 +412,7 @@ export class GuidesPanel {
 /** Allocations: a load offered to the vendors its guide names, one at a time, until one accepts. */
 @Component({
   selector: 'app-allocations-panel',
-  imports: [FormsModule, RefusalNote, EntityPicker],
+  imports: [FormsModule, RefusalNote, EntityPicker, StatusBadge, When],
   template: `
     <section data-testid="allocations">
       <h2>Allocations</h2>
@@ -435,38 +438,38 @@ export class GuidesPanel {
       @if (loaded() && rows().length === 0) {
         <p class="muted" data-testid="no-allocations">No allocation matches.</p>
       } @else {
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>Load</th><th>Status</th><th>Waiting on</th><th>Awarded to</th><th>Offers</th></tr></thead>
           <tbody>
             @for (a of rows(); track a['id']) {
               <tr data-testid="allocation-row" tabindex="0" [class.selected]="a['id'] === openId()"
                   (click)="open(a['id'])" (keydown.enter)="open(a['id'])">
-                <td>{{ a['loadNo'] }}</td><td>{{ a['status'] }}</td><td>{{ a['pendingVendorName'] }}</td>
+                <td>{{ a['loadNo'] }}</td><td><app-status-badge [value]="a['status']" /></td><td>{{ a['pendingVendorName'] }}</td>
                 <td>{{ a['awardedVendorName'] }}</td><td>{{ a['offersMade'] }}</td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
 
       @if (detail(); as d) {
         <section data-testid="allocation-panel" aria-label="Allocation">
           <h3>Load {{ d.allocation['loadNo'] }}</h3>
           <dl>
-            <div><dt>Status</dt><dd data-testid="allocation-status">{{ d.allocation['status'] }}</dd></div>
+            <div><dt>Status</dt><dd><app-status-badge data-testid="allocation-status" [value]="d.allocation['status']" /></dd></div>
             <div><dt>Strategy</dt><dd>{{ d.allocation['strategy'] }}</dd></div>
             <div><dt>Awarded to</dt><dd data-testid="allocation-awarded">{{ d.allocation['awardedVendorName'] }}</dd></div>
             @if (d.allocation['appliedRuleName']) {
               <div><dt>Rule</dt><dd>{{ d.allocation['appliedRuleName'] }}</dd></div>
             }
           </dl>
-          <table>
+          <div class="table-wrap"><table>
             <thead><tr><th>Rank</th><th>Vendor</th><th>Outcome</th><th>Answer by</th><th></th></tr></thead>
             <tbody>
               @for (o of d.offers; track o['id']) {
                 <tr data-testid="offer-row">
                   <td>{{ o['rankNo'] }}</td><td>{{ o['vendorName'] }}</td>
-                  <td data-testid="offer-outcome">{{ o['outcome'] }}</td><td>{{ o['respondsBy'] }}</td>
+                  <td><app-status-badge data-testid="offer-outcome" [value]="o['outcome']" /></td><td class="nowrap">{{ (o['respondsBy']) | when }}</td>
                   <td>
                     @if (act() && o['outcome'] === 'PENDING') {
                       <button data-testid="accept-offer" (click)="accept(o['vendorPartnerId'])">Accept</button>
@@ -476,7 +479,7 @@ export class GuidesPanel {
                 </tr>
               }
             </tbody>
-          </table>
+          </table></div>
           @if (act() && d.allocation['status'] !== 'CANCELLED' && d.allocation['status'] !== 'AWARDED') {
             <p><button class="link" data-testid="cancel-allocation" (click)="cancel()">Cancel allocation</button></p>
           }
@@ -573,7 +576,7 @@ export class AllocationsPanel implements OnInit {
 /** Freight bills: what the platform computed, what the vendor claimed, and how it settled. */
 @Component({
   selector: 'app-bills-panel',
-  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker],
+  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker, StatusBadge, Money, When],
   template: `
     <section data-testid="freight-bills">
       <h2>Freight bills</h2>
@@ -597,8 +600,8 @@ export class AllocationsPanel implements OnInit {
               @for (b of rows(); track b['id']) {
                 <tr data-testid="bill-row" tabindex="0" [class.selected]="b['id'] === openId()"
                     (click)="open(b['id'])" (keydown.enter)="open(b['id'])">
-                  <td>{{ b['billNo'] }}</td><td>{{ b['status'] }}</td><td>{{ b['vendorName'] }}</td>
-                  <td>{{ b['computedAmount'] }}</td><td>{{ b['claimedAmount'] }}</td><td>{{ b['varianceAmount'] }}</td>
+                  <td>{{ b['billNo'] }}</td><td><app-status-badge [value]="b['status']" /></td><td>{{ b['vendorName'] }}</td>
+                  <td class="num"><app-money [value]="b['computedAmount']" /></td><td class="num"><app-money [value]="b['claimedAmount']" /></td><td class="num"><app-money [value]="b['varianceAmount']" /></td>
                 </tr>
               }
             </tbody>
@@ -613,13 +616,13 @@ export class AllocationsPanel implements OnInit {
             <button class="link" (click)="close()" aria-label="Close bill">Close</button>
           </header>
           <dl>
-            <div><dt>Status</dt><dd data-testid="bill-status">{{ d.bill['status'] }}</dd></div>
+            <div><dt>Status</dt><dd><app-status-badge data-testid="bill-status" [value]="d.bill['status']" /></dd></div>
             <div><dt>Vendor</dt><dd>{{ d.bill['vendorName'] }}</dd></div>
             <div><dt>Trip</dt><dd>{{ d.bill['tripNo'] }}</dd></div>
             <div><dt>Rate card</dt><dd>{{ d.bill['tariffCode'] }}</dd></div>
-            <div><dt>Computed</dt><dd data-testid="bill-computed">{{ d.bill['computedAmount'] }} {{ d.bill['currency'] }}</dd></div>
-            <div><dt>Claimed</dt><dd data-testid="bill-claimed">{{ d.bill['claimedAmount'] }}</dd></div>
-            <div><dt>Variance</dt><dd data-testid="bill-variance">{{ d.bill['varianceAmount'] }}</dd></div>
+            <div><dt>Computed</dt><dd><app-money data-testid="bill-computed" [value]="d.bill['computedAmount']" [currency]="d.bill['currency']" /></dd></div>
+            <div><dt>Claimed</dt><dd><app-money data-testid="bill-claimed" [value]="d.bill['claimedAmount']" /></dd></div>
+            <div><dt>Variance</dt><dd><app-money data-testid="bill-variance" [value]="d.bill['varianceAmount']" /></dd></div>
             @if (d.bill['resolution']) {
               <div><dt>Resolution</dt><dd data-testid="bill-resolution">{{ d.bill['resolution'] }}</dd></div>
             }
@@ -638,7 +641,7 @@ export class AllocationsPanel implements OnInit {
           @if (slip()) {
             <section class="slip manifest" data-testid="bill-slip" aria-label="Freight bill to print">
               <h3>Freight bill {{ d.bill['billNo'] }}</h3>
-              <p>{{ d.bill['vendorName'] }} · trip {{ d.bill['tripNo'] }} · load {{ d.bill['loadNo'] }} · priced {{ d.bill['pricedOn'] }}</p>
+              <p>{{ d.bill['vendorName'] }} · trip {{ d.bill['tripNo'] }} · load {{ d.bill['loadNo'] }} · priced {{ (d.bill['pricedOn']) | when }}</p>
               <app-commercial-table [rows]="d.lines" [columns]="lineColumns" rowTestId="slip-line" />
               <p>Computed {{ d.bill['computedAmount'] }} {{ d.bill['currency'] }} · claimed {{ d.bill['claimedAmount'] }} · status {{ d.bill['status'] }}</p>
               <p class="actions no-print">
@@ -802,7 +805,7 @@ const RATE_CARD_STATES: Array<[TariffFilter['state'], string]> = [
 /** Every published rate card version, newest first, and one card opened with its weight bands. */
 @Component({
   selector: 'app-rate-cards-panel',
-  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker],
+  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker, Money, When],
   template: `
     <section data-testid="rate-cards">
       <h2>Published rate cards</h2>
@@ -831,7 +834,7 @@ const RATE_CARD_STATES: Array<[TariffFilter['state'], string]> = [
                     (click)="open(t['id'])" (keydown.enter)="open(t['id'])">
                   <td>{{ t['code'] }}</td><td>{{ t['vendorName'] }}</td>
                   <td>{{ t['originTerminalCode'] }} → {{ t['destinationTerminalCode'] }}</td>
-                  <td>{{ t['vehicleType'] }}</td><td>{{ t['effectiveFrom'] }}</td><td>{{ t['effectiveTo'] || '—' }}</td>
+                  <td>{{ t['vehicleType'] }}</td><td class="nowrap">{{ (t['effectiveFrom']) | when }}</td><td>{{ (t['effectiveTo'] || '—') | when }}</td>
                   <td>{{ t['slabCount'] }}</td>
                 </tr>
               }
@@ -851,9 +854,9 @@ const RATE_CARD_STATES: Array<[TariffFilter['state'], string]> = [
             <div><dt>Published under</dt><dd>{{ d.card['orgUnitName'] }}</dd></div>
             <div><dt>In force</dt><dd data-testid="rate-card-state">{{ d.card['superseded']
               ? d.card['effectiveFrom'] + ' to ' + d.card['effectiveTo'] : 'from ' + d.card['effectiveFrom'] }}</dd></div>
-            <div><dt>Minimum charge</dt><dd>{{ d.card['minimumCharge'] }} {{ d.card['currency'] }}</dd></div>
+            <div><dt>Minimum charge</dt><dd><app-money [value]="d.card['minimumCharge']" [currency]="d.card['currency']" /></dd></div>
             <div><dt>Free detention hours</dt><dd>{{ d.card['detentionFreeHours'] }}</dd></div>
-            <div><dt>Detention per hour</dt><dd>{{ d.card['detentionHourlyRate'] }}</dd></div>
+            <div><dt>Detention per hour</dt><dd><app-money [value]="d.card['detentionHourlyRate']" /></dd></div>
             <div><dt>Fee per additional drop</dt><dd>{{ d.card['additionalDropFee'] }}</dd></div>
           </dl>
           <h4>Weight bands</h4>
@@ -938,7 +941,7 @@ function blankRailTariff(): RailTariffDraft {
 /** Rail carriers' rate cards between railheads: every version, newest first. Publishing needs TARIFF_MANAGE. */
 @Component({
   selector: 'app-rail-tariffs-panel',
-  imports: [FormsModule, RefusalNote],
+  imports: [FormsModule, RefusalNote, Money, When],
   template: `
     <section data-testid="rail-tariffs">
       <h2>Rail rate cards</h2>
@@ -992,8 +995,8 @@ function blankRailTariff(): RailTariffDraft {
                     (click)="open(r['id'])" (keydown.enter)="open(r['id'])">
                   <td>{{ r['code'] }}</td><td>{{ r['carrierCode'] }}</td>
                   <td>{{ r['originTerminalCode'] }} → {{ r['destinationTerminalCode'] }}</td>
-                  <td>{{ r['perWagonRate'] || '—' }}</td><td>{{ r['perContainerRate'] || '—' }}</td>
-                  <td>{{ r['effectiveFrom'] }}</td><td>{{ r['effectiveTo'] || '—' }}</td>
+                  <td class="num"><app-money [value]="r['perWagonRate']" empty="—" /></td><td class="num"><app-money [value]="r['perContainerRate']" empty="—" /></td>
+                  <td class="nowrap">{{ (r['effectiveFrom']) | when }}</td><td>{{ (r['effectiveTo'] || '—') | when }}</td>
                 </tr>
               }
             </tbody>
@@ -1008,9 +1011,9 @@ function blankRailTariff(): RailTariffDraft {
           <dl class="facts">
             <div><dt>Carrier</dt><dd>{{ c['carrierCode'] }}</dd></div>
             <div><dt>Railheads</dt><dd>{{ c['originTerminalCode'] }} → {{ c['destinationTerminalCode'] }}</dd></div>
-            <div><dt>Per wagon</dt><dd data-testid="rail-per-wagon">{{ c['perWagonRate'] || '—' }}</dd></div>
-            <div><dt>Per container</dt><dd data-testid="rail-per-container">{{ c['perContainerRate'] || '—' }}</dd></div>
-            <div><dt>Minimum charge</dt><dd>{{ c['minimumCharge'] }} {{ c['currency'] }}</dd></div>
+            <div><dt>Per wagon</dt><dd><app-money data-testid="rail-per-wagon" [value]="c['perWagonRate']" empty="—" /></dd></div>
+            <div><dt>Per container</dt><dd><app-money data-testid="rail-per-container" [value]="c['perContainerRate']" empty="—" /></dd></div>
+            <div><dt>Minimum charge</dt><dd><app-money [value]="c['minimumCharge']" [currency]="c['currency']" /></dd></div>
             <div><dt>In force</dt><dd>{{ c['effectiveTo'] ? c['effectiveFrom'] + ' to ' + c['effectiveTo'] : 'from ' + c['effectiveFrom'] }}</dd></div>
           </dl>
         </section>
