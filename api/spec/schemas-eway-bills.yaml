@@ -1,0 +1,131 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+EwayBillStatus:
+  type: string
+  enum: [ACTIVE, EXTENDED, CANCELLED, EXPIRED]
+  description: |
+    ACTIVE as generated; EXTENDED once its validity was extended (still live);
+    CANCELLED within the unit's window; EXPIRED when the sweep found it past
+    its validity. Only ACTIVE and EXTENDED bills count as the consignment's
+    bill, and a consignment has at most one of them.
+
+EwayBill:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    billNo: { type: string, description: The bill's number at the statutory system. }
+    status: { $ref: "#/components/schemas/EwayBillStatus" }
+    consignmentId: { type: string, format: uuid }
+    trackingRef: { type: string, description: The consignment's reference. }
+    consignmentStatus: { type: string }
+    orgUnitId: { type: string, format: uuid }
+    generatedAt: { type: string, format: date-time }
+    validUntil: { type: string, format: date-time }
+    vehicleNo: { type: string, description: The vehicle on Part-B; absent until Part-B is updated. }
+    vehicleUpdatedAt: { type: string, format: date-time }
+    distanceKm: { type: integer }
+    source: { type: string, description: "The adapter that issued it (STUB, ...), or MANUAL for a bill keyed from the portal." }
+    extensionCount: { type: integer }
+    cancelledAt: { type: string, format: date-time }
+    cancelReason: { type: string }
+    expiringSoon: { type: boolean, description: True while the sweep has flagged the live bill as close to lapsing. }
+    expiringFlaggedAt: { type: string, format: date-time }
+    expiredAt: { type: string, format: date-time }
+    version: { type: integer, format: int64 }
+    createdAt: { type: string, format: date-time }
+  required: [id, billNo, status, consignmentId, trackingRef, orgUnitId, generatedAt, validUntil, source,
+             extensionCount, expiringSoon, version, createdAt]
+
+EwayBillSlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/EwayBill" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+GenerateEwayBillRequest:
+  type: object
+  properties:
+    documentRef: { type: string, maxLength: 120, description: The document the bill is raised against; the consignment's reference when omitted. }
+    distanceKm: { type: integer, minimum: 1, description: The journey's distance; the unit's default distance when omitted. }
+    vehicleNo: { type: string, maxLength: 20, description: A vehicle to put on Part-B at once. }
+    fetchOnly:
+      type: boolean
+      description: Record the bill the statutory system already holds for the document instead of raising one.
+
+RecordEwayBillRequest:
+  type: object
+  properties:
+    billNo: { type: string, maxLength: 40 }
+    generatedAt: { type: string, format: date-time, description: Now when omitted; never in the future. }
+    validUntil: { type: string, format: date-time, description: Must come after generation and after now. }
+    vehicleNo: { type: string, maxLength: 20 }
+    distanceKm: { type: integer, minimum: 1 }
+  required: [billNo, validUntil]
+
+EwayBillActionRequest:
+  type: object
+  properties:
+    action:
+      type: string
+      maxLength: 40
+      description: |
+        PART_B, EXTEND, CANCEL or CHANGE_VEHICLE (any case). It is text so that
+        a name outside the list is the problem `eway-action-unknown`, not a
+        parse error; GENERATE and FETCH are refused as `eway-action-not-applicable`.
+    reason: { type: string, maxLength: 500, description: Required for EXTEND, CANCEL and CHANGE_VEHICLE. }
+    vehicleNo: { type: string, maxLength: 20, description: Required for PART_B and CHANGE_VEHICLE. }
+  required: [action]
+
+TripPartBRequest:
+  type: object
+  properties:
+    vehicleNo:
+      type: string
+      maxLength: 20
+      description: The registration to put on Part-B; the trip's own vehicle when omitted.
+
+EwayBillItemOutcomeKind:
+  type: string
+  enum: [UPDATED, REFUSED, SKIPPED, ERROR]
+  description: |
+    UPDATED, REFUSED (the statutory system or a rule said no), SKIPPED (no live
+    bill, or the unit has no adapter) or ERROR (the call timed out or failed).
+
+EwayBillItemOutcome:
+  type: object
+  properties:
+    consignmentId: { type: string, format: uuid }
+    trackingRef: { type: string }
+    ewayBillId: { type: string, format: uuid }
+    billNo: { type: string }
+    outcome: { $ref: "#/components/schemas/EwayBillItemOutcomeKind" }
+    code: { type: string, description: A stable problem code for anything but UPDATED. }
+    message: { type: string }
+  required: [consignmentId, trackingRef, outcome]
+
+TripPartBResponse:
+  type: object
+  properties:
+    tripId: { type: string, format: uuid }
+    vehicleNo: { type: string }
+    updated: { type: integer, description: How many consignments were updated. }
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/EwayBillItemOutcome" }
+  required: [tripId, vehicleNo, updated, items]

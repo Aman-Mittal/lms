@@ -1919,6 +1919,64 @@ class QueryPlanTest {
                 """, "bulk_intake_key");
     }
 
+    @Test
+    @DisplayName("the e-way bill desk's list, a consignment's bills and the lookup by number are index-served")
+    void ewayBillReads() {
+        String keyset = " ORDER BY created_at DESC, id DESC LIMIT 51";
+        assertIndexed("SELECT id FROM eway_bill WHERE tenant_id = '00000000-0000-0000-0000-000000000001'" + keyset,
+                "eway_bill");
+        assertIndexed("""
+                SELECT id FROM eway_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND status = 'CANCELLED'
+                   AND (created_at, id) < (now(), '00000000-0000-0000-0000-000000000002')
+                """ + keyset, "eway_bill");
+        assertIndexed("""
+                SELECT id FROM eway_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND consignment_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY generated_at DESC, id DESC LIMIT 50
+                """, "eway_bill");
+        assertIndexed("""
+                SELECT id FROM eway_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND bill_no = '123456789012'
+                """, "eway_bill");
+        assertIndexed("""
+                SELECT id FROM eway_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND consignment_id IN ('00000000-0000-0000-0000-000000000002') AND status IN ('ACTIVE', 'EXTENDED')
+                """, "eway_bill");
+    }
+
+    @Test
+    @DisplayName("the expiring-soon list and the expiry sweep's reads of live bills are index-served")
+    void ewayBillExpiry() {
+        assertIndexed("""
+                SELECT id FROM eway_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status IN ('ACTIVE', 'EXTENDED') AND expiring_flagged_at IS NOT NULL
+                   AND (valid_until, id) > (now(), '00000000-0000-0000-0000-000000000002')
+                 ORDER BY valid_until, id
+                 LIMIT 51
+                """, "eway_bill");
+        assertIndexed("""
+                SELECT id FROM eway_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status IN ('ACTIVE', 'EXTENDED') AND valid_until <= now()
+                 ORDER BY valid_until, id
+                 LIMIT 200
+                 FOR UPDATE SKIP LOCKED
+                """, "eway_bill");
+        assertIndexed("""
+                SELECT id FROM eway_bill
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status IN ('ACTIVE', 'EXTENDED') AND expiring_flagged_at IS NULL
+                   AND valid_until > now() AND valid_until <= now() + interval '168 hours'
+                 ORDER BY valid_until, id
+                 LIMIT 200
+                 FOR UPDATE SKIP LOCKED
+                """, "eway_bill");
+    }
+
     private void assertIndexed(String sql, String table) {
         // Disabling seqscan is a probe, not a recommendation: on an empty table
         // the planner would otherwise always choose one, and the question here

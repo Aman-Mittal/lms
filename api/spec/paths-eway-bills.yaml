@@ -1,0 +1,280 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/eway-bills:
+  get:
+    tags: [E-way bills]
+    operationId: listEwayBills
+    summary: The e-way bills, newest first
+    description: |
+      Keyset-paged on creation time. `q` matches the bill number or the
+      consignment's reference. A customer or vendor portal caller is refused.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - $ref: "#/components/parameters/q"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EwayBillSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/eway-bills/expiring:
+  get:
+    tags: [E-way bills]
+    operationId: listExpiringEwayBills
+    summary: Live bills close to lapsing, soonest first
+    description: |
+      The live bills the expiry sweep has flagged: within the unit's
+      `statutory.ewayBill.expiringSoonHours` (default 8) of their validity.
+      An extension clears the flag. Keyset-paged on validity.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EwayBillSlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/eway-bills/by-number/{billNo}:
+  parameters:
+    - name: billNo
+      in: path
+      required: true
+      schema: { type: string, maxLength: 40 }
+      description: The bill's number.
+  get:
+    tags: [E-way bills]
+    operationId: getEwayBillByNumber
+    summary: Find the consignment of an e-way bill number
+    description: The bill with the consignment it covers (`consignmentId`, `trackingRef`).
+    responses:
+      "200":
+        description: The bill.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EwayBill" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/eway-bills/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [E-way bills]
+    operationId: getEwayBill
+    summary: One e-way bill
+    responses:
+      "200":
+        description: The bill.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EwayBill" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/eway-bills/{id}/history:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [E-way bills]
+    operationId: getEwayBillHistory
+    summary: What has happened to the bill, newest first
+    description: |
+      The bill's audit trail: generated or recorded, Part-B updates, extensions,
+      cancellation, vehicle changes, flagged as expiring, expired.
+    parameters:
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page of the history.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HistorySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/eway-bills/{id}/actions:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [E-way bills]
+    operationId: actOnEwayBill
+    summary: Part-B, extend, cancel or change the vehicle of a bill
+    description: |
+      Requires `EWAY_BILL_MANAGE`. The call goes to the unit's adapter with its
+      timeout and is audited whatever it answers; a refusal changes nothing.
+      Refusals are problem codes (409): `eway-action-unknown`,
+      `eway-action-not-applicable`, `eway-bill-disabled`, `eway-bill-not-live`,
+      `eway-bill-expired`, `eway-cancel-window-passed` (cancel only within
+      `statutory.ewayBill.cancelWindowHours` of generation, default 24),
+      `eway-reason-required`, `eway-vehicle-required`, `eway-vehicle-invalid`,
+      `eway-vehicle-unchanged`, `eway-part-b-missing`, `eway-bill-refused`,
+      `eway-adapter-timeout`, `eway-adapter-failed`. Two people acting at once:
+      the loser gets `concurrent-modification`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EwayBillActionRequest" }
+    responses:
+      "200":
+        description: The bill after the action.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EwayBill" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/{consignmentId}/eway-bills:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  get:
+    tags: [E-way bills]
+    operationId: listConsignmentEwayBills
+    summary: A consignment's e-way bills, newest first
+    description: Live and past bills, at most 50.
+    responses:
+      "200":
+        description: The bills.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/EwayBill" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+  post:
+    tags: [E-way bills]
+    operationId: generateEwayBill
+    summary: Generate (or fetch) the consignment's e-way bill
+    description: |
+      Requires `EWAY_BILL_MANAGE`. Raises the bill through the unit's adapter
+      (`statutory.ewayBill.adapter`; NONE, the default, refuses with
+      `eway-bill-disabled`), with the validity the distance and
+      `statutory.ewayBill.kmPerDay` give. A consignment has one live bill:
+      another is `eway-bill-already-live`. The adapter's refusal is
+      `eway-bill-refused`; a timeout `eway-adapter-timeout`. Every call is
+      audited (`EWAY_BILL_ADAPTER_CALL`: action, consignment, outcome).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/GenerateEwayBillRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/consignments/{consignmentId}/eway-bills/record:
+  parameters:
+    - name: consignmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the consignment.
+  post:
+    tags: [E-way bills]
+    operationId: recordEwayBill
+    summary: Record a bill raised on the statutory portal by hand
+    description: |
+      Requires `EWAY_BILL_MANAGE`. Needs no adapter, so a unit that requires a
+      bill at dispatch can satisfy the gate without one. Refusals:
+      `eway-bill-number-invalid`, `eway-bill-number-taken`,
+      `eway-validity-invalid`, `eway-bill-already-expired`,
+      `eway-bill-already-live`, `eway-consignment-closed`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RecordEwayBillRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/trips/{id}/eway-bills/part-b:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the trip.
+  post:
+    tags: [E-way bills]
+    operationId: updateTripEwayBillPartB
+    summary: Update Part-B of every e-way bill on the trip
+    description: |
+      Requires `EWAY_BILL_MANAGE`. Sets the vehicle (the trip's own unless the
+      request names another) on the live bill of each consignment on the trip's
+      load and answers per consignment: UPDATED, REFUSED, SKIPPED (no live bill,
+      or no adapter) or ERROR (timeout). One consignment's failure does not stop
+      the others. A trip with no vehicle and none in the request is
+      `trip-vehicle-missing`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TripPartBRequest" }
+    responses:
+      "200":
+        description: The outcome per consignment.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TripPartBResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
