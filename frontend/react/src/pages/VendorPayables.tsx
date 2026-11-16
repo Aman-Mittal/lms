@@ -21,6 +21,8 @@ import {
 import { useSession } from '../session';
 import { money, problemText, today } from './moneyProblem';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Money } from './Figures';
 
 type Tab = 'invoices' | 'payments' | 'overdue';
 
@@ -124,11 +126,11 @@ export function VendorPayables() {
     return list.map((i) => (
       <Fragment key={i.id}>
         <tr data-testid={rowTestId} onClick={() => toggle(i.id)} style={{ cursor: 'pointer' }}>
-          <td>{i.invoiceNo}</td><td>{i.vendorInvoiceNo}</td><td>{i.vendorName}</td><td>{i.invoiceDate}</td>
-          <td>{i.dueDate}</td><td>{money(i.totalAmount)}</td>
-          <td data-testid="inv-outstanding">{money(i.outstanding)}</td>
+          <td>{i.invoiceNo}</td><td>{i.vendorInvoiceNo}</td><td>{i.vendorName}</td><td className="nowrap">{i.invoiceDate}</td>
+          <td className="nowrap">{i.dueDate}</td><td className="num"><Money value={i.totalAmount} currency={i.currency} /></td>
+          <td className="num"><Money data-testid="inv-outstanding" value={i.outstanding} currency={i.currency} /></td>
           <td>
-            <span className="badge" data-testid="inv-status">{i.status}</span>
+            <StatusBadge data-testid="inv-status" value={i.status} />
             {i.overdue && <span className="badge" data-testid="inv-overdue">{`${i.daysOverdue} days overdue`}</span>}
           </td>
         </tr>
@@ -137,13 +139,13 @@ export function VendorPayables() {
             <td colSpan={8}>
               <section data-testid="inv-detail" aria-label={`Invoice ${i.invoiceNo}`}>
                 <dl className="facts">
-                  <div><dt>Approved</dt><dd>{money(i.approvedAmount)}</dd></div>
-                  <div><dt>Total</dt><dd>{money(i.totalAmount)}</dd></div>
-                  <div><dt>Advances deducted</dt><dd>{money(i.advancesDeducted)}</dd></div>
-                  <div><dt>Net payable</dt><dd>{money(i.netPayable)}</dd></div>
-                  <div><dt>Paid</dt><dd>{money(i.paidAmount)}</dd></div>
-                  <div><dt>Outstanding</dt><dd data-testid="detail-outstanding">{money(i.outstanding)}</dd></div>
-                  <div><dt>Status</dt><dd data-testid="detail-status">{i.status}</dd></div>
+                  <div><dt>Approved</dt><dd><Money value={i.approvedAmount} currency={i.currency} /></dd></div>
+                  <div><dt>Total</dt><dd><Money value={i.totalAmount} currency={i.currency} /></dd></div>
+                  <div><dt>Advances deducted</dt><dd><Money value={i.advancesDeducted} currency={i.currency} /></dd></div>
+                  <div><dt>Net payable</dt><dd><Money value={i.netPayable} currency={i.currency} /></dd></div>
+                  <div><dt>Paid</dt><dd><Money value={i.paidAmount} currency={i.currency} /></dd></div>
+                  <div><dt>Outstanding</dt><dd><Money data-testid="detail-outstanding" value={i.outstanding} currency={i.currency} /></dd></div>
+                  <div><dt>Status</dt><dd><StatusBadge data-testid="detail-status" value={i.status} /></dd></div>
                 </dl>
                 <h3>Bills covered</h3>
                 <ul>{coveredBills.map((b) => (
@@ -224,7 +226,7 @@ export function VendorPayables() {
           )}
           <h2>Invoices</h2>
           {invoices.length === 0 ? <p className="muted">No vendor invoices.</p> : (
-            <table data-testid="inv-list">{head}<tbody>{invoiceRows(invoices, 'inv-row')}</tbody></table>
+            <div className="table-wrap"><table data-testid="inv-list">{head}<tbody>{invoiceRows(invoices, 'inv-row')}</tbody></table></div>
           )}
         </section>
       )}
@@ -233,17 +235,17 @@ export function VendorPayables() {
         <section aria-label="Payments">
           <h2>Payments</h2>
           {payments.length === 0 ? <p className="muted">No payments yet.</p> : (
-            <table data-testid="payment-list">
+            <div className="table-wrap"><table data-testid="payment-list">
               <thead><tr><th>Paid</th><th>Invoice</th><th>Vendor</th><th>Amount</th><th>Mode</th><th>Reference</th></tr></thead>
               <tbody>
                 {payments.map((p) => (
                   <tr key={p.id} data-testid="payment-row">
-                    <td>{p.paidOn}</td><td>{p.invoiceNo}</td><td>{p.vendorName}</td><td>{money(p.amount)}</td>
+                    <td className="nowrap">{p.paidOn}</td><td>{p.invoiceNo}</td><td>{p.vendorName}</td><td className="num"><Money value={p.amount} currency={p.currency} /></td>
                     <td>{p.mode}</td><td>{p.reference}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </section>
       )}
@@ -252,7 +254,7 @@ export function VendorPayables() {
         <section aria-label="Overdue">
           <h2>Overdue</h2>
           {overdue.length === 0 ? <p className="muted">Nothing is overdue.</p> : (
-            <table data-testid="overdue-list">{head}<tbody>{invoiceRows(overdue, 'overdue-row')}</tbody></table>
+            <div className="table-wrap"><table data-testid="overdue-list">{head}<tbody>{invoiceRows(overdue, 'overdue-row')}</tbody></table></div>
           )}
         </section>
       )}

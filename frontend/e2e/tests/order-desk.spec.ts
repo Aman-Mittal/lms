@@ -45,7 +45,7 @@ test.describe('order desk', () => {
       await raise.getByLabel('New order origin terminal id').fill(order.originId);
       await raise.getByRole('button', { name: 'Raise order' }).click();
       await expect(page.getByTestId('order-panel').getByRole('heading', { name: order.orderNo })).toBeVisible();
-      await expect(page.getByTestId('order-status')).toHaveText('DRAFT');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'DRAFT');
       await expect(page.getByTestId('order-customer')).toHaveText(order.customers[0].name);
     });
 
@@ -65,12 +65,12 @@ test.describe('order desk', () => {
       await editor.getByTestId('save-lines').click();
       await expect(page.getByTestId('order-done')).toHaveText('Lines saved.');
       await expect(page.getByTestId('order-line')).toHaveCount(2);
-      await expect(page.getByTestId('order-weight')).toHaveText('500');
+      await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '500');
 
       await page.getByTestId('order-line').filter({ hasText: 'PALLET-2' }).getByTestId('remove-line').click();
       await expect(page.getByTestId('order-done')).toHaveText('Line 2 removed.');
       await expect(page.getByTestId('order-line')).toHaveCount(1);
-      await expect(page.getByTestId('order-weight')).toHaveText('300');
+      await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '300');
     });
 
     await test.step('move it to the other customer, then validate it', async () => {
@@ -78,7 +78,7 @@ test.describe('order desk', () => {
       await page.getByTestId('save-header').click();
       await expect(page.getByTestId('order-customer')).toHaveText(order.customers[1].name);
       await page.getByTestId('validate-order').click();
-      await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
       await expect(page.getByTestId('edit-draft')).toHaveCount(0);
       await expect(page.getByTestId('amend-order')).toBeVisible();
     });
@@ -88,21 +88,21 @@ test.describe('order desk', () => {
     const order = await newDeskOrder(request, await apiSession(request), tag(info), 'VALIDATED');
     await signIn(page);
     await openOrder(page, order.orderId);
-    await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
     const before = Number(await page.getByTestId('order-version').textContent());
 
     await page.getByTestId('amend-order').getByLabel('Line 1 weight kg').fill('650');
     await page.getByTestId('amend').click();
     await expect(page.getByTestId('order-done')).toHaveText('Order amended.');
-    await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
-    await expect(page.getByTestId('order-weight')).toHaveText('650');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
+    await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '650');
     expect(Number(await page.getByTestId('order-version').textContent())).toBeGreaterThan(before);
     // The line was restated whole, and its measurements went with it.
     await expect(page.getByTestId('order-line')).toContainText('1.2 × 0.8 × 1.5');
 
     await page.getByTestId('generate-consignments').click();
     await expect(page.getByTestId('order-done')).toHaveText('Consignments cut.');
-    await expect(page.getByTestId('order-status')).toHaveText('FULLY_PLANNED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'FULLY_PLANNED');
     // The lines now belong to consignments: nothing is offered to amend, and the rule is named.
     await expect(page.getByTestId('amend-order')).toHaveCount(0);
     await expect(page.getByTestId('not-amendable')).toContainText('order-has-consignments');
@@ -122,8 +122,8 @@ test.describe('order desk', () => {
     await page.getByTestId('amend').click();
     await expect(page.getByTestId('order-refusal')).toHaveText('concurrent-modification');
     await page.getByTestId('reload-order').click();
-    await expect(page.getByTestId('order-status')).toHaveText('FULLY_PLANNED');
-    await expect(page.getByTestId('order-weight')).toHaveText('500');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'FULLY_PLANNED');
+    await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '500');
     await expect(page.getByTestId('not-amendable')).toBeVisible();
   });
 
@@ -140,7 +140,7 @@ test.describe('order desk', () => {
     await page.getByTestId('edit-draft').getByLabel('Line 1 weight kg').fill('450');
     await page.getByTestId('save-lines').click();
     await expect(page.getByTestId('order-refusal')).toHaveText('concurrent-modification');
-    await expect(page.getByTestId('order-weight')).toHaveText('500');
+    await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '500');
 
     await page.getByTestId('reload-order').click();
     await expect(page.getByTestId('order-customer')).toHaveText(order.customers[1].name);
@@ -148,7 +148,7 @@ test.describe('order desk', () => {
     await page.getByTestId('edit-draft').getByLabel('Line 1 weight kg').fill('450');
     await page.getByTestId('save-lines').click();
     await expect(page.getByTestId('order-done')).toHaveText('Lines saved.');
-    await expect(page.getByTestId('order-weight')).toHaveText('450');
+    await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '450');
   });
 
   test('an order raised without a number takes the next in sequence, and its history reads newest first', async ({ page, request }, info) => {
@@ -163,21 +163,21 @@ test.describe('order desk', () => {
       await raise.getByLabel('New order origin terminal id').fill(order.originId);
       await raise.getByRole('button', { name: 'Raise order' }).click();
       await expect(page.getByTestId('order-panel').getByRole('heading', { name: /^ORD-\d{4}-\d{6,}$/ })).toBeVisible();
-      await expect(page.getByTestId('order-status')).toHaveText('DRAFT');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'DRAFT');
     });
 
     await test.step('cancel it and read what happened, newest first', async () => {
       await page.getByLabel('Cancellation reason').fill('raised by mistake');
       await page.getByTestId('cancel-order').getByRole('button', { name: 'Cancel order' }).click();
-      await expect(page.getByTestId('order-status')).toHaveText('CANCELLED');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CANCELLED');
 
       await page.getByTestId('tab-history').click();
       const entries = page.getByTestId('order-history').getByTestId('history-entry');
       await expect(entries).toHaveCount(2);
-      await expect(entries.nth(0).getByTestId('history-action')).toHaveText('ORDER_CANCELLED');
+      await expect(entries.nth(0).getByTestId('history-action')).toHaveAttribute('data-value', 'ORDER_CANCELLED');
       await expect(entries.nth(0)).toContainText('DRAFT → CANCELLED');
       await expect(entries.nth(0)).toContainText('raised by mistake');
-      await expect(entries.nth(1).getByTestId('history-action')).toHaveText('ORDER_RAISED');
+      await expect(entries.nth(1).getByTestId('history-action')).toHaveAttribute('data-value', 'ORDER_RAISED');
       await expect(page.getByTestId('order-lines')).toBeHidden();
 
       await page.getByTestId('tab-details').click();
@@ -193,7 +193,7 @@ test.describe('order desk', () => {
 
     await page.getByLabel('Cancellation reason').fill('customer withdrew');
     await page.getByTestId('cancel-order').getByRole('button', { name: 'Cancel order' }).click();
-    await expect(page.getByTestId('order-status')).toHaveText('CANCELLED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CANCELLED');
     await expect(page.getByTestId('edit-draft')).toHaveCount(0);
     await expect(page.getByTestId('amend-order')).toHaveCount(0);
     await expect(page.getByTestId('validate-order')).toHaveCount(0);

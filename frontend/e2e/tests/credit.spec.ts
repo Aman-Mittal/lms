@@ -16,8 +16,7 @@
 
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import {
-  apiSession, newBillingClient, newDeskOrder, openScreen, signIn, tag, withoutPermissions, type Session,
-} from './support';
+  apiSession, newBillingClient, newDeskOrder, openScreen, signIn, tag, withoutPermissions, type Session, withValue } from './support';
 
 const API = process.env.E2E_API_URL ?? 'http://localhost:8080';
 
@@ -103,7 +102,7 @@ test.describe('credit on the order desk', () => {
 
     const position = page.getByTestId('credit-position');
     await expect(position).toBeVisible();
-    await expect(position.getByTestId('credit-state')).toHaveText('NO_LIMIT');
+    await expect(position.getByTestId('credit-state')).toHaveAttribute('data-value', 'NO_LIMIT');
     await expect(position.getByTestId('credit-limit')).toHaveText('No limit');
     await expect(position.getByTestId('credit-not-trading')).toHaveCount(0);
   });
@@ -121,7 +120,7 @@ test.describe('credit on the order desk', () => {
       await expect(page.getByTestId('order-refusal')).toHaveText('credit-limit-exceeded');
       await expect(page.getByTestId('credit-refusal-figures')).toContainText('1500.00');
       await expect(page.getByTestId('credit-refusal-figures')).toContainText('1000.00');
-      await expect(page.getByTestId('order-status')).toHaveText('DRAFT');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'DRAFT');
     });
 
     await test.step('an override with a reason is asked for, and validation tried again', async () => {
@@ -129,7 +128,7 @@ test.describe('credit on the order desk', () => {
       await expect(form.getByLabel('Override up to')).toHaveValue('1500.00');
       await form.getByLabel('Override reason').fill('Payment promised this week');
       await page.getByTestId('credit-override-submit').click();
-      await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
       expect(overrides).toHaveLength(1);
       expect(overrides[0]).toMatchObject({
         subjectType: 'ORDER', orderId: order.orderId, upTo: 1500, reason: 'Payment promised this week',
@@ -161,7 +160,7 @@ test.describe('credit on the order desk', () => {
     await expect(page.getByTestId('credit-not-trading')).toBeVisible();
     await page.getByTestId('validate-order').click();
     await expect(page.getByTestId('order-refusal')).toHaveText('customer-not-trading');
-    await expect(page.getByTestId('order-status')).toHaveText('DRAFT');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'DRAFT');
   });
 });
 
@@ -174,7 +173,7 @@ test.describe('credit on the client billing desk', () => {
     await signIn(page);
     await openClient(page, client.id);
 
-    await expect(page.getByTestId('credit-position').getByTestId('credit-state')).toHaveText('NO_LIMIT');
+    await expect(page.getByTestId('credit-position').getByTestId('credit-state')).toHaveAttribute('data-value', 'NO_LIMIT');
 
     await page.getByTestId('run-billing').click();
     await expect(page.getByTestId('billing-refusal')).toHaveText('credit-limit-exceeded');
@@ -217,7 +216,7 @@ test.describe('credit limit changes', () => {
       await page.getByTestId('credit-change-submit').click();
       await expect(page.getByTestId('credit-admin-message')).toContainText('waits for approval');
       await expect(page.getByTestId('credit-history-row')).toHaveCount(1);
-      await expect(page.getByTestId('credit-history-row')).toContainText('PENDING');
+      await expect(withValue(page.getByTestId('credit-history-row'), 'PENDING')).toBeVisible();
       await expect(page.getByTestId('credit-change-pending')).toBeVisible();
       await expect(page.getByTestId('credit-position').getByTestId('credit-limit')).toHaveText('No limit');
     });
@@ -233,7 +232,7 @@ test.describe('credit limit changes', () => {
       await row.getByLabel(`Decision note for ${code}`).fill('Not this quarter');
       await row.getByTestId('credit-reject').click();
       await expect(page.getByTestId('credit-admin-message')).toContainText('Rejected');
-      await expect(page.getByTestId('credit-history-row')).toContainText('REJECTED');
+      await expect(withValue(page.getByTestId('credit-history-row'), 'REJECTED')).toBeVisible();
       await expect(page.getByTestId('credit-queue-row').filter({ hasText: code })).toHaveCount(0);
       await expect(page.getByTestId('credit-position').getByTestId('credit-limit')).toHaveText('No limit');
     });
