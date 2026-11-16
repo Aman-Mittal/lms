@@ -19,6 +19,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiProblem, LmsGateway, LoadBuild, MAX_BULK_ASSIGNMENT, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -226,9 +227,9 @@ export class AddConsignments {
  */
 @Component({
   selector: 'app-load-building',
-  imports: [FormsModule, ConsignmentTable, AddConsignments, EntityPicker],
+  imports: [FormsModule, ConsignmentTable, AddConsignments, EntityPicker, PageHeader],
   template: `
-    <h1>Load building</h1>
+    <app-page-header title="Load building" />
     <p class="muted">
       Open a load to see what is aboard, print its manifest, and put waiting consignments on it,
       up to {{ max }} at a time.
