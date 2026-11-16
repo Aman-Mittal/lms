@@ -19,13 +19,14 @@ import { DeliveryProofView, GOODS_CONDITIONS, GoodsCondition, LmsGateway, OtpIss
 import { Session } from '../session';
 import { Qr } from './qr';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** The delivery desk: issue a one-time code, record the proof, print the slip. */
 @Component({
   selector: 'app-delivery-desk',
-  imports: [FormsModule, Qr, EntityPicker],
+  imports: [FormsModule, Qr, EntityPicker, PageHeader],
   template: `
-    <h1>Delivery desk</h1>
+    <app-page-header title="Delivery desk" />
     <p class="muted">Issue the consignee's one-time code, then record the proof when they give it back.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="lookUp()" data-testid="lookup">

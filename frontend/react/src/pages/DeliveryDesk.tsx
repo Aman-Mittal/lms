@@ -20,6 +20,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
+import { PageHeader } from './PageHeader';
 
 /** The delivery desk: issue a one-time code, record the proof, print the slip. */
 export function DeliveryDesk() {
@@ -53,7 +54,7 @@ export function DeliveryDesk() {
 
   return (
     <>
-      <h1>Delivery desk</h1>
+      <PageHeader title="Delivery desk" />
       <p className="muted">Issue the consignee's one-time code, then record the proof when they give it back.</p>
       <form className="inline" onSubmit={lookUp} data-testid="lookup">
         <EntityPicker kind="consignment" placeholder="Consignment" ariaLabel="Consignment id" testId="consignment-id"
