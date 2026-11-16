@@ -1862,6 +1862,63 @@ class QueryPlanTest {
                 """, "org_unit");
     }
 
+    @Test
+    @DisplayName("the enquiry desk's list, by status and by customer, is index-served")
+    void enquiryList() {
+        String keyset = " ORDER BY created_at DESC, id DESC LIMIT 51";
+        assertIndexed("SELECT id FROM enquiry WHERE tenant_id = '00000000-0000-0000-0000-000000000001'" + keyset,
+                "enquiry");
+        assertIndexed("""
+                SELECT id FROM enquiry
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND status = 'OPEN'
+                   AND (created_at, id) < (now(), '00000000-0000-0000-0000-000000000002')
+                """ + keyset, "enquiry");
+        assertIndexed("""
+                SELECT id FROM enquiry
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND customer_partner_id = '00000000-0000-0000-0000-000000000003'
+                """ + keyset, "enquiry");
+    }
+
+    @Test
+    @DisplayName("the deadline sweep's read of open enquiries past their deadline is index-served")
+    void enquiryDeadlineSweep() {
+        assertIndexed("""
+                SELECT id FROM enquiry
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND status = 'OPEN'
+                   AND deadline_at <= now()
+                 ORDER BY deadline_at, id
+                 LIMIT 200
+                 FOR UPDATE SKIP LOCKED
+                """, "enquiry");
+    }
+
+    @Test
+    @DisplayName("an enquiry's lines and quotes, a line's live quote and a bulk key are index-served")
+    void enquiryDetail() {
+        assertIndexed("""
+                SELECT id FROM enquiry_line
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND enquiry_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY line_no
+                """, "enquiry_line");
+        assertIndexed("""
+                SELECT id FROM enquiry_quote
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND enquiry_id = '00000000-0000-0000-0000-000000000002'
+                 ORDER BY line_id, revision
+                """, "enquiry_quote");
+        assertIndexed("""
+                SELECT id, revision FROM enquiry_quote
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND line_id = '00000000-0000-0000-0000-000000000002' AND status = 'ISSUED'
+                """, "enquiry_quote");
+        assertIndexed("""
+                SELECT order_id, request_hash FROM bulk_intake_key
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001' AND idempotency_key = 'k'
+                """, "bulk_intake_key");
+    }
+
     private void assertIndexed(String sql, String table) {
         // Disabling seqscan is a probe, not a recommendation: on an empty table
         // the planner would otherwise always choose one, and the question here
