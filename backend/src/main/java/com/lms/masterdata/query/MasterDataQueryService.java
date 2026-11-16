@@ -49,14 +49,22 @@ public class MasterDataQueryService {
         this.jdbc = jdbc;
     }
 
+    /**
+     * The status to filter on, or null for no status filter: the {@code ALL}
+     * sentinel lists every record, and a missing status lists the active ones.
+     */
+    private static String exact(String status) {
+        return status == null || status.isBlank() || "ALL".equalsIgnoreCase(status) ? null : status.toUpperCase();
+    }
+
     // ------------------------------------------------------------- partners
 
     private static final String PARTNER_SELECT = """
             SELECT p.id, p.code, p.legal_name, p.partner_type, p.status, p.tax_id,
                    p.credit_limit, p.payment_terms, p.on_time_pct, p.claims_ratio,
-                   p.scorecard_at,
+                   p.scorecard_at, p.billing_address, p.org_unit_id,
                    coalesce(docs.expired_count, 0) AS expired_document_count,
-                   p.created_at
+                   p.version, p.created_at
               FROM business_partner p
               LEFT JOIN LATERAL (
                     SELECT count(*)::int AS expired_count
@@ -101,6 +109,7 @@ public class MasterDataQueryService {
                          WHERE (CAST(:partnerType AS text) IS NULL
                                 OR p.partner_type = CAST(:partnerType AS text))
                            AND (CAST(:status AS text) IS NULL OR p.status = CAST(:status AS text))
+                           AND (:includeOff OR p.status NOT IN ('SUSPENDED', 'BLACKLISTED'))
                            AND (CAST(:q AS text) IS NULL OR lower(p.code) LIKE CAST(:q AS text)
                                 OR lower(p.legal_name) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL OR p.code > CAST(:cursor AS text))
@@ -108,7 +117,8 @@ public class MasterDataQueryService {
                          LIMIT :limit
                         """)
                 .param("partnerType", partnerType)
-                .param("status", status)
+                .param("status", exact(status))
+                .param("includeOff", status != null && !status.isBlank())
                 .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
@@ -126,7 +136,7 @@ public class MasterDataQueryService {
                    -- What planning actually loads against: what the lorry can
                    -- carry once it has carried itself.
                    (v.gross_weight_kg - v.tare_weight_kg) AS payload_capacity_kg,
-                   v.max_volume_m3, v.hazmat_certified, v.reefer_capable,
+                   v.max_volume_m3, v.hazmat_certified, v.reefer_capable, v.org_unit_id, v.version,
                    v.owner_partner_id, op.legal_name AS owner_partner_name,
                    docs.earliest_expiry AS earliest_document_expiry,
                    coalesce(docs.expired_count, 0) AS expired_document_count,
@@ -162,13 +172,15 @@ public class MasterDataQueryService {
 
         List<VehicleView> rows = jdbc.sql(VEHICLE_SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR v.status = CAST(:status AS text))
+                           AND (:includeOff OR v.status NOT IN ('INACTIVE', 'RETIRED'))
                            AND (CAST(:q AS text) IS NULL OR lower(v.registration_no) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL
                                 OR v.registration_no > CAST(:cursor AS text))
                          ORDER BY v.registration_no
                          LIMIT :limit
                         """)
-                .param("status", status)
+                .param("status", exact(status))
+                .param("includeOff", status != null && !status.isBlank())
                 .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
@@ -186,7 +198,7 @@ public class MasterDataQueryService {
                    (d.licence_expires_on < current_date) AS licence_expired,
                    d.hazmat_endorsed, d.status, d.hos_minutes_today,
                    d.employer_partner_id, ep.legal_name AS employer_partner_name,
-                   d.created_at
+                   d.licence_authority, d.org_unit_id, d.version, d.created_at
               FROM driver d
               LEFT JOIN business_partner ep ON ep.id = d.employer_partner_id
             """;
@@ -218,13 +230,15 @@ public class MasterDataQueryService {
         // rows at every page boundary.
         List<DriverView> rows = jdbc.sql(DRIVER_SELECT + """
                          WHERE (CAST(:status AS text) IS NULL OR d.status = CAST(:status AS text))
+                           AND (:includeOff OR d.status <> 'INACTIVE')
                            AND (CAST(:q AS text) IS NULL OR lower(d.licence_no) LIKE CAST(:q AS text)
                                 OR lower(d.full_name) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL OR d.licence_no > CAST(:cursor AS text))
                          ORDER BY d.licence_no
                          LIMIT :limit
                         """)
-                .param("status", status)
+                .param("status", exact(status))
+                .param("includeOff", status != null && !status.isBlank())
                 .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
@@ -240,7 +254,7 @@ public class MasterDataQueryService {
             SELECT t.id, t.code, t.name, t.functional_category, t.geofence_type,
                    CAST(t.polygon AS text) AS polygon,
                    t.centre_lat, t.centre_lon, t.radius_m, t.dock_count,
-                   t.opens_at, t.closes_at, t.avg_dwell_minutes, t.version, t.created_at
+                   t.opens_at, t.closes_at, t.avg_dwell_minutes, t.status, t.org_unit_id, t.version, t.created_at
               FROM terminal t
             """;
 
@@ -263,11 +277,23 @@ public class MasterDataQueryService {
      */
     @PreAuthorize("hasAuthority('TERMINAL_READ')")
     public Slice<TerminalView> listTerminals(String category, String cursor, Integer limit, String q) {
+        return listTerminals(category, null, cursor, limit, q);
+    }
+
+    /**
+     * As above, and narrowed to one status. With no status the list is the
+     * active terminals; {@code ALL} lists every one.
+     */
+    @PreAuthorize("hasAuthority('TERMINAL_READ')")
+    public Slice<TerminalView> listTerminals(String category, String status, String cursor, Integer limit,
+                                             String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<TerminalView> rows = jdbc.sql(TERMINAL_SELECT + """
                          WHERE (CAST(:category AS text) IS NULL
                                 OR t.functional_category = CAST(:category AS text))
+                           AND (CAST(:status AS text) IS NULL OR t.status = CAST(:status AS text))
+                           AND (:includeOff OR t.status = 'ACTIVE')
                            AND (CAST(:q AS text) IS NULL OR lower(t.code) LIKE CAST(:q AS text)
                                 OR lower(t.name) LIKE CAST(:q AS text))
                            AND (CAST(:cursor AS text) IS NULL OR t.code > CAST(:cursor AS text))
@@ -275,6 +301,8 @@ public class MasterDataQueryService {
                          LIMIT :limit
                         """)
                 .param("category", category)
+                .param("status", exact(status))
+                .param("includeOff", status != null && !status.isBlank())
                 .param("q", Search.containsPattern(q))
                 .param("cursor", cursor)
                 .param("limit", pageSize + 1)
