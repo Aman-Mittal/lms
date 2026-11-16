@@ -26,6 +26,9 @@
  */
 
 import type {
+  EwayAction, EwayBillPage, EwayBillRow, EwayFilter, EwayGenerateDraft, EwayPartBResult,
+} from './ewayTypes';
+import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
 } from './enquiryTypes';
 
@@ -1051,6 +1054,23 @@ export interface LmsGateway {
   convertEnquiry(id: string): Promise<EnquiryConverted>;
   /** A CSV or XLSX of orders for one customer, read into row-level results. */
   uploadOrderFile(orgUnitId: string, customerPartnerId: string, file: File): Promise<UploadOutcome>;
+
+  // E-way bills (statutory, per consignment)
+  /** A page of e-way bills, newest first, narrowed by status and by bill number or consignment reference. */
+  ewayBills(filter: EwayFilter, cursor?: string): Promise<EwayBillPage>;
+  /** The live bills the expiry sweep has flagged as close to lapsing, soonest first. */
+  expiringEwayBills(): Promise<EwayBillPage>;
+  ewayBill(id: string): Promise<EwayBillRow>;
+  /** Rejects with a 404 problem for a number no bill carries. */
+  ewayBillByNumber(billNo: string): Promise<EwayBillRow>;
+  /** A consignment's bills, newest first. */
+  consignmentEwayBills(consignmentId: string): Promise<EwayBillRow[]>;
+  /** Raises the consignment's bill through the unit's adapter; resolves to the bill's id. */
+  generateEwayBill(draft: EwayGenerateDraft): Promise<string>;
+  /** Part-B, extension, cancellation or change of vehicle; resolves to the bill afterwards. */
+  actOnEwayBill(id: string, action: EwayAction, reason: string, vehicleNo: string): Promise<EwayBillRow>;
+  /** Part-B for every live bill on the trip's consignments, with one outcome per consignment. */
+  tripEwayPartB(tripId: string, vehicleNo: string): Promise<EwayPartBResult>;
 
   /** Resolves to the new order's id. */
   raiseOrder(orgUnitId: string, draft: OrderRaiseDraft): Promise<string>;
