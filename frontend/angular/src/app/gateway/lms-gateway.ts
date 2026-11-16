@@ -25,6 +25,10 @@
  * break; swap in a fake gateway and every screen can be tested without a server.
  */
 
+import type {
+  EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
+} from './enquiry-types';
+
 export interface Credentials {
   tenantCode: string;
   email: string;
@@ -1029,6 +1033,24 @@ export abstract class LmsGateway {
 
   /** Rejects with a 404 problem for an order that does not exist. */
   abstract orderDesk(orderId: string): Promise<OrderDesk>;
+  // ---------------------------------------------------------------- enquiries and order upload (enquiry-types.ts)
+
+  /** A page of enquiries, newest first, narrowed by status and by number or reference. */
+  abstract enquiries(filter: EnquiryFilter, cursor?: string): Promise<EnquiryPage>;
+  /** One enquiry with its lines, suggested rates and quotes; its `version` is the `If-Match` of every change. */
+  abstract enquiry(id: string): Promise<EnquiryDesk>;
+  abstract createEnquiry(orgUnitId: string, draft: EnquiryDraft): Promise<string>;
+  abstract discoverEnquiryRates(id: string, version: string): Promise<void>;
+  abstract issueEnquiryQuote(id: string, version: string, lineId: string, draft: QuoteDraft): Promise<void>;
+  abstract reviseEnquiryQuote(id: string, version: string, lineId: string, draft: QuoteDraft): Promise<void>;
+  abstract revokeEnquiryQuote(id: string, version: string, lineId: string, reason: string): Promise<void>;
+  abstract recordEnquiryOutcome(id: string, version: string, lineId: string, draft: OutcomeDraft): Promise<void>;
+  abstract cancelEnquiry(id: string, version: string, reason: string): Promise<void>;
+  /** Idempotent: converting again answers with the order the first call made. */
+  abstract convertEnquiry(id: string): Promise<EnquiryConverted>;
+  /** A CSV or XLSX of orders for one customer, read into row-level results. */
+  abstract uploadOrderFile(orgUnitId: string, customerPartnerId: string, file: File): Promise<UploadOutcome>;
+
   /** Resolves to the new order's id. */
   abstract raiseOrder(orgUnitId: string, draft: OrderRaiseDraft): Promise<string>;
   /**
