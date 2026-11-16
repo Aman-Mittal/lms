@@ -22,6 +22,7 @@ import {
 } from '../gateway/enquiryTypes';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
+import { PageHeader } from './PageHeader';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -165,7 +166,7 @@ export function EnquiryDeskPage() {
 
   return (
     <>
-      <h1>Enquiry desk</h1>
+      <PageHeader title="Enquiry desk" />
       <p className="muted">Quote each line, record who won it, and convert what was won into a draft order.</p>
 
       <form className="inline" onSubmit={(ev) => { ev.preventDefault(); void load(); }} data-testid="enquiry-filter">

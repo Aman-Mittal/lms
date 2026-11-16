@@ -19,6 +19,7 @@ import { ApiProblem, ConsignmentCard, ConsignmentParticularsDraft, LmsGateway } 
 import { Session } from '../session';
 import { Qr } from './qr';
 import { compareWithWhole, PlannedPart, splitByCapacity } from './split-plan';
+import { PageHeader } from './page-header';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -31,9 +32,9 @@ import { compareWithWhole, PlannedPart, splitByCapacity } from './split-plan';
  */
 @Component({
   selector: 'app-consignment-desk',
-  imports: [FormsModule, Qr],
+  imports: [FormsModule, Qr, PageHeader],
   template: `
-    <h1>Consignments</h1>
+    <app-page-header title="Consignments" />
     <p class="muted">Look a consignment up by its lorry receipt or docket number.</p>
     <form class="inline" (ngSubmit)="lookUp()" data-testid="consignment-lookup">
       <input name="reference" placeholder="Reference" aria-label="Reference" data-testid="consignment-ref"

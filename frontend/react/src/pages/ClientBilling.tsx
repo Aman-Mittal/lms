@@ -21,6 +21,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { ContractLifecycle } from './ContractLifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
+import { PageHeader } from './PageHeader';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -51,7 +52,7 @@ export function ClientBilling() {
 
   return (
     <>
-      <h1>Client billing</h1>
+      <PageHeader title="Client billing" />
       <p className="muted">
         Open a client to see what it has been charged, bill a month that has ended, and follow
         what it owes.
