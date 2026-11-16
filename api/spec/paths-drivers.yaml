@@ -73,10 +73,92 @@
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Driver" }
+        headers:
+          ETag:
+            description: The driver's version; send it back as `If-Match` when editing.
+            schema: { type: string }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Drivers]
+    operationId: updateDriver
+    summary: Change a driver's name, phone, licence class, expiry and endorsement
+    description: |
+      The licence number never changes. A stale `If-Match` is refused with 409
+      `concurrent-modification`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateDriverRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/drivers/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Drivers]
+    operationId: deactivateDriver
+    summary: Switch a driver off, with a reason
+    description: |
+      There is no delete. An inactive driver is refused at trip assignment and
+      dispatch with 409 `driver-inactive`. Refused with 409 `driver-on-trip`
+      while on a trip and `driver-already-inactive` if already off.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/drivers/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Drivers]
+    operationId: reactivateDriver
+    summary: Switch an inactive driver back on, with a reason
+    description: Refused with 409 `driver-not-inactive` when not inactive.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/drivers/{id}/documents:
   parameters:

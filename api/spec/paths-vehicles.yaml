@@ -69,10 +69,93 @@
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Vehicle" }
+        headers:
+          ETag:
+            description: The vehicle's version; send it back as `If-Match` when editing.
+            schema: { type: string }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Vehicles]
+    operationId: updateVehicle
+    summary: Change a vehicle's owner, type, capacities and flags
+    description: |
+      The registration number never changes. A stale `If-Match` is refused
+      with 409 `concurrent-modification`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateVehicleRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/vehicles/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Vehicles]
+    operationId: deactivateVehicle
+    summary: Switch a vehicle off, with a reason
+    description: |
+      There is no delete. An inactive vehicle is refused at trip assignment,
+      load planning and dispatch with 409 `vehicle-inactive`. Refused with 409
+      `vehicle-on-trip` while it is on a trip and `vehicle-already-inactive`
+      if it is already off.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/vehicles/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Vehicles]
+    operationId: reactivateVehicle
+    summary: Switch an inactive vehicle back on, with a reason
+    description: Refused with 409 `vehicle-not-inactive` when it is not inactive.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/vehicles/{id}/documents:
   parameters:
