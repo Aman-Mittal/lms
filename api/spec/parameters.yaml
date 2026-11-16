@@ -57,6 +57,16 @@ idempotencyKey:
     defect, and answering it with the earlier response would hide the defect
     while returning an answer to a question nobody asked.
 
+ifMatchOptional:
+  name: If-Match
+  in: header
+  required: false
+  schema: { type: string }
+  description: |
+    Optional on the switch-off and switch-on transitions. When sent it is the
+    version last read, and a stale one is refused with 409
+    `concurrent-modification`; a console always sends it.
+
 ifMatch:
   name: If-Match
   in: header

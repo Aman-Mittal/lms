@@ -39,5 +39,8 @@ public record DriverView(
         int hosMinutesToday,
         UUID employerPartnerId,
         String employerPartnerName,
+        String licenceAuthority,
+        UUID orgUnitId,
+        Long version,
         Instant createdAt) {
 }
