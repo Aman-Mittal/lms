@@ -38,6 +38,7 @@ import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
+import com.lms.statutory.api.EwayBillDispatchGate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,6 +81,7 @@ public class TripCommandService {
     private final TripCompletion completion;
     private final GateRegister gateRegister;
     private final TripStops tripStops;
+    private final EwayBillDispatchGate ewayBills;
 
     public TripCommandService(TripRepository trips, TripDocumentRepository documents,
                               GateEventRepository gateEvents,
@@ -87,7 +89,8 @@ public class TripCommandService {
                               LoadLifecyclePort loads, FleetCompliancePort compliance,
                               org.springframework.context.ApplicationEventPublisher events,
                               AuditTrail audit, TripSettings tripSettings,
-                              TripCompletion completion, GateRegister gateRegister, TripStops tripStops) {
+                              TripCompletion completion, GateRegister gateRegister, TripStops tripStops,
+                              EwayBillDispatchGate ewayBills) {
         this.trips = trips;
         this.documents = documents;
         this.gateEvents = gateEvents;
@@ -100,6 +103,7 @@ public class TripCommandService {
         this.completion = completion;
         this.gateRegister = gateRegister;
         this.tripStops = tripStops;
+        this.ewayBills = ewayBills;
     }
 
     /** Raises a trip against an awarded load. */
@@ -312,9 +316,15 @@ public class TripCommandService {
         blockers.addAll(fleetBlockers(trip, when));
         blockers.addAll(hazmatBlockers(trip, load));
         blockers.addAll(weightBlockers(trip, load, checklist));
+        // A statutory e-way bill per consignment, only where the unit requires one.
+        List<String> ewayBlockers = ewayBills.blockers(trip.orgUnitId(), trip.loadId(), when);
 
-        if (!blockers.isEmpty()) {
-            throw new BusinessRuleViolationException("dispatch-blocked",
+        if (!blockers.isEmpty() || !ewayBlockers.isEmpty()) {
+            // Reported together with the rest, but under its own code when it is the only reason, so a
+            // console can send the dispatcher to the e-way bill desk.
+            String code = blockers.isEmpty() ? "eway-bill-required" : "dispatch-blocked";
+            blockers.addAll(ewayBlockers);
+            throw new BusinessRuleViolationException(code,
                     "Trip " + trip.tripNo() + " cannot be dispatched: "
                             + String.join("; ", blockers));
         }
