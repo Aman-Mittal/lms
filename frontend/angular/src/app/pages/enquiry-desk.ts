@@ -23,6 +23,8 @@ import {
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -49,7 +51,7 @@ interface LineInputs {
  */
 @Component({
   selector: 'app-enquiry-desk',
-  imports: [FormsModule, EntityPicker, PageHeader],
+  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Enquiry desk" />
     <p class="muted">Quote each line, record who won it, and convert what was won into a draft order.</p>
@@ -66,21 +68,21 @@ interface LineInputs {
     </form>
     @if (error()) { <p class="error" role="alert" data-testid="enquiry-error">{{ error() }}</p> }
 
-    <table data-testid="enquiry-list">
+    <div class="table-wrap"><table data-testid="enquiry-list">
       <thead><tr><th>Enquiry</th><th>Customer</th><th>Status</th><th>Respond by</th><th>Lines won</th><th></th></tr></thead>
       <tbody>
         @for (r of rows(); track r.id) {
           <tr data-testid="enquiry-row" [attr.data-id]="r.id">
             <td data-testid="enquiry-row-no">{{ r.enquiryNo }}</td>
             <td>{{ r.customerName }}</td>
-            <td data-testid="enquiry-row-status">{{ r.status }}</td>
-            <td>{{ r.deadlineAt }}</td>
+            <td><app-status-badge data-testid="enquiry-row-status" [value]="r.status" /></td>
+            <td class="nowrap">{{ (r.deadlineAt) | when }}</td>
             <td>{{ r.wonLineCount }} of {{ r.lineCount }}</td>
             <td><button class="link" data-testid="enquiry-row-open" (click)="open(r.id)">Open</button></td>
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
     @if (rows().length === 0 && loaded()) { <p class="muted" data-testid="enquiry-none">No enquiries.</p> }
 
     @if (session.can('ORDER_CREATE') && session.orgUnitId()) {
@@ -125,8 +127,8 @@ interface LineInputs {
       <section data-testid="enquiry-detail" [attr.data-id]="e.id">
         <h2>Enquiry <span data-testid="enquiry-no">{{ e.enquiryNo }}</span></h2>
         <dl>
-          <div><dt>Status</dt><dd data-testid="enquiry-status">{{ e.status }}</dd></div>
-          <div><dt>Respond by</dt><dd data-testid="enquiry-deadline">{{ e.deadlineAt }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="enquiry-status" [value]="e.status" /></dd></div>
+          <div><dt>Respond by</dt><dd data-testid="enquiry-deadline">{{ (e.deadlineAt) | when }}</dd></div>
           @if (e.reference) { <div><dt>Reference</dt><dd>{{ e.reference }}</dd></div> }
           @if (e.cancelReason) { <div><dt>Cancelled because</dt><dd data-testid="enquiry-cancel-shown">{{ e.cancelReason }}</dd></div> }
           @if (e.orderId) {
@@ -135,7 +137,7 @@ interface LineInputs {
         </dl>
         @if (note()) { <p class="ok" role="status" data-testid="enquiry-note">{{ note() }}</p> }
 
-        <table data-testid="enquiry-lines">
+        <div class="table-wrap"><table data-testid="enquiry-lines">
           <thead><tr><th>Line</th><th>Route</th><th>Quantity</th><th>Suggested</th><th>Quotes</th><th>Status</th><th></th></tr></thead>
           <tbody>
             @for (l of e.lines; track l.id) {
@@ -154,7 +156,7 @@ interface LineInputs {
                     }
                   </ul>
                 </td>
-                <td data-testid="enquiry-line-status">{{ l.status }}@if (l.wonQuantity) { ({{ l.wonQuantity }}) }@if (l.lostReason) { — {{ l.lostReason }} }</td>
+                <td data-testid="enquiry-line-status"><app-status-badge [value]="l.status" />@if (l.wonQuantity) { ({{ l.wonQuantity }}) }@if (l.lostReason) { — {{ l.lostReason }} }</td>
                 <td>
                   @if (canDecide(e, l)) {
                     <div class="inline">
@@ -182,7 +184,7 @@ interface LineInputs {
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
 
         @if (session.can('ORDER_UPDATE')) {
           @if (e.status === 'OPEN') {

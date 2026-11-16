@@ -23,6 +23,7 @@ import {
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -181,21 +182,21 @@ export function EnquiryDeskPage() {
       </form>
       {error && <p className="error" role="alert" data-testid="enquiry-error">{error}</p>}
 
-      <table data-testid="enquiry-list">
+      <div className="table-wrap"><table data-testid="enquiry-list">
         <thead><tr><th>Enquiry</th><th>Customer</th><th>Status</th><th>Respond by</th><th>Lines won</th><th /></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} data-testid="enquiry-row" data-id={r.id}>
               <td data-testid="enquiry-row-no">{r.enquiryNo}</td>
               <td>{r.customerName}</td>
-              <td data-testid="enquiry-row-status">{r.status}</td>
-              <td>{r.deadlineAt}</td>
+              <td><StatusBadge data-testid="enquiry-row-status" value={r.status} /></td>
+              <td className="nowrap">{r.deadlineAt}</td>
               <td>{r.wonLineCount} of {r.lineCount}</td>
               <td><button className="link" data-testid="enquiry-row-open" onClick={() => void open(r.id)}>Open</button></td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
       {rows.length === 0 && loaded && <p className="muted" data-testid="enquiry-none">No enquiries.</p>}
 
       {can('ORDER_CREATE') && orgUnitId && (
@@ -243,7 +244,7 @@ export function EnquiryDeskPage() {
         <section data-testid="enquiry-detail" data-id={selected.id}>
           <h2>Enquiry <span data-testid="enquiry-no">{selected.enquiryNo}</span></h2>
           <dl>
-            <div><dt>Status</dt><dd data-testid="enquiry-status">{selected.status}</dd></div>
+            <div><dt>Status</dt><dd><StatusBadge data-testid="enquiry-status" value={selected.status} /></dd></div>
             <div><dt>Respond by</dt><dd data-testid="enquiry-deadline">{selected.deadlineAt}</dd></div>
             {selected.reference && <div><dt>Reference</dt><dd>{selected.reference}</dd></div>}
             {selected.cancelReason && (
@@ -255,7 +256,7 @@ export function EnquiryDeskPage() {
           </dl>
           {note && <p className="ok" role="status" data-testid="enquiry-note">{note}</p>}
 
-          <table data-testid="enquiry-lines">
+          <div className="table-wrap"><table data-testid="enquiry-lines">
             <thead><tr><th>Line</th><th>Route</th><th>Quantity</th><th>Suggested</th><th>Quotes</th><th>Status</th><th /></tr></thead>
             <tbody>
               {selected.lines.map((l) => (
@@ -274,7 +275,7 @@ export function EnquiryDeskPage() {
                     </ul>
                   </td>
                   <td data-testid="enquiry-line-status">
-                    {l.status}{l.wonQuantity ? ` (${l.wonQuantity})` : ''}{l.lostReason ? ` — ${l.lostReason}` : ''}
+                    <StatusBadge value={l.status} />{l.wonQuantity ? ` (${l.wonQuantity})` : ''}{l.lostReason ? ` — ${l.lostReason}` : ''}
                   </td>
                   <td>
                     {canDecide(selected, l) && (
@@ -308,7 +309,7 @@ export function EnquiryDeskPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
 
           {can('ORDER_UPDATE') && (
             <>
