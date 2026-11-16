@@ -23,6 +23,7 @@ import type { RailTariffDraft, TariffCardDetail, TariffFilter } from '../gateway
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { PageHeader } from './PageHeader';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 interface Refusal {
@@ -101,7 +102,7 @@ export function Commercial() {
 
   return (
     <>
-      <h1>Commercial</h1>
+      <PageHeader title="Commercial" />
       <p className="muted">
         Publish rate cards, decide which vendors are offered a lane, follow loads out to vendors,
         and settle what each vendor bills.
