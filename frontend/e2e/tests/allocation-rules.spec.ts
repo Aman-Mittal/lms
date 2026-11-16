@@ -68,7 +68,7 @@ test.describe('allocation rules', () => {
         await writeRule(page, lane, name, 'PREFER', [c.id, a.id]);
         await expect(row(page, name)).toBeVisible();
         await expect(row(page, name).getByTestId('rule-status')).toHaveText('Active');
-        await expect(row(page, name).getByTestId('rule-action')).toHaveText('PREFER');
+        await expect(row(page, name).getByTestId('rule-action')).toHaveAttribute('data-value', 'PREFER');
         // The order the vendors are asked in is the order they were added.
         await expect(row(page, name).getByTestId('rule-vendors')).toHaveText(new RegExp(`${c.code}.*→.*${a.code}`));
 

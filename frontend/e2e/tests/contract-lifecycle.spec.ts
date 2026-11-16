@@ -17,8 +17,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import {
   API, apiSession, newBillingPartner, openScreen, publishContract, resetApprovalPolicy, setApprovalPolicy, signIn, tag,
-  type Session,
-} from './support';
+  type Session, withValue } from './support';
 
 /*
  * A client contract's lifecycle in both consoles: draft, checklist, verification through the
@@ -60,11 +59,11 @@ async function decide(page: Page, text: string, how: 'approve' | 'reject'): Prom
   await expect(page.getByTestId('approval-detail')).toBeVisible();
   if (how === 'approve') {
     await page.getByTestId('approve').click();
-    await expect(page.getByTestId('approval-status')).toHaveText('APPROVED');
+    await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'APPROVED');
   } else {
     await page.getByTestId('reject-reason').fill('rate sheet missing');
     await page.getByTestId('reject').click();
-    await expect(page.getByTestId('approval-status')).toHaveText('REJECTED');
+    await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'REJECTED');
   }
 }
 
@@ -110,7 +109,7 @@ test.describe('client contract lifecycle', () => {
       await page.getByTestId('new-contract-code').fill(code);
       await page.getByTestId('new-contract-effectiveFrom').fill(inDays(-10));
       await page.getByTestId('create-draft').click();
-      await expect(page.getByTestId('contract-status')).toHaveText('DRAFT');
+      await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'DRAFT');
       await expect(page.getByTestId('check-TRANSPORT_RATE')).toContainText('Price transport');
     });
 
@@ -130,7 +129,7 @@ test.describe('client contract lifecycle', () => {
     await test.step('verification is requested and the draft waits, frozen', async () => {
       await page.getByTestId('request-verification').click();
       await expect(page.getByTestId('contract-message')).toHaveText('Verification requested: awaiting approval.');
-      await expect(page.getByTestId('contract-status')).toHaveText('PENDING_VERIFICATION');
+      await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'PENDING_VERIFICATION');
       await expect(page.getByTestId('save-draft')).toHaveCount(0);
     });
 
@@ -138,7 +137,7 @@ test.describe('client contract lifecycle', () => {
 
     await test.step('the contract is in force', async () => {
       await openClient(page, client.id);
-      await expect(page.getByTestId('version-row').filter({ hasText: code })).toContainText('ACTIVE');
+      await expect(withValue(page.getByTestId('version-row').filter({ hasText: code }), 'ACTIVE')).toBeVisible();
     });
   });
 
@@ -152,15 +151,15 @@ test.describe('client contract lifecycle', () => {
     await page.getByTestId('new-contract-effectiveFrom').fill(inDays(-10));
     await page.getByTestId('new-contract-transportRatePerKg').fill('5');
     await page.getByTestId('create-draft').click();
-    await expect(page.getByTestId('contract-status')).toHaveText('DRAFT');
+    await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'DRAFT');
     await page.getByTestId('request-verification').click();
-    await expect(page.getByTestId('contract-status')).toHaveText('PENDING_VERIFICATION');
+    await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'PENDING_VERIFICATION');
 
     await decide(page, code, 'reject');
 
     await openClient(page, client.id);
     await openVersion(page, code);
-    await expect(page.getByTestId('contract-status')).toHaveText('DRAFT');
+    await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'DRAFT');
     await expect(page.getByTestId('contract-rejection')).toContainText('rate sheet missing');
 
     await page.getByTestId('delete-draft').click();
