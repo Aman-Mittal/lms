@@ -21,6 +21,7 @@ import {
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -52,7 +53,7 @@ export function ApprovalsPage() {
 
   return (
     <>
-      <h1>Approvals</h1>
+      <PageHeader title="Approvals" />
       <p className="muted">Requests waiting for somebody to agree before anything happens.</p>
       <form className="inline" onSubmit={apply} data-testid="approvals-filter">
         <select aria-label="Scope" data-testid="approvals-scope" value={scope}

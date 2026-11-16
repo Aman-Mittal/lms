@@ -21,13 +21,14 @@ import { Session } from '../session';
 import { Qr } from './qr';
 import { trackingUrl } from './tracking-url';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 @Component({
   selector: 'app-tracking-links',
-  imports: [FormsModule, Qr, EntityPicker],
+  imports: [FormsModule, Qr, EntityPicker, PageHeader],
   template: `
-    <h1>Tracking links</h1>
+    <app-page-header title="Tracking links" />
     <p class="muted">
       Give a customer a link to follow a consignment without signing in. A link's secret is shown once, when it is issued.
     </p>

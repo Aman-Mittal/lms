@@ -14,164 +14,67 @@
  * limitations under the License.
  */
 
-import { Component, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Component, ElementRef, HostListener, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet, NavigationEnd } from '@angular/router';
 import { Session } from '../session';
 import { resetDisplay } from '../display';
-import { GROUPS, RESOURCES } from './resources';
+import {
+  DRAWER_QUERY, activeGroupId, groupOpen, isNarrow, loadGroupState, saveGroupState, visibleNav,
+} from '../../../../shared/nav';
 
+/** The sidebar: its groups come from shared/nav.ts, so both consoles offer the same links in the same order. */
 @Component({
   selector: 'app-shell',
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="app">
-      <aside class="sidebar" data-testid="sidebar">
-        <div class="brand">LMS</div>
+      <aside id="sidebar" class="sidebar" [class.open]="drawerOpen()" data-testid="sidebar">
+        <div class="sidebar-head">
+          <div class="brand">LMS</div>
+          <button type="button" class="icon-button nav-close" aria-label="Close navigation" data-testid="nav-close"
+                  (click)="closeDrawer(true)">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+        <input #filter type="search" class="nav-filter" placeholder="Filter menu" aria-label="Filter menu"
+               data-testid="nav-filter" autocomplete="off" [value]="query()"
+               (input)="query.set($any($event.target).value)" />
         <nav aria-label="Main">
-          <div class="group">
-            <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
-               data-testid="nav-overview">Control tower</a>
-          </div>
-          @for (group of groups; track group) {
-            <div class="group">
-              <h6>{{ group }}</h6>
-              @for (r of inGroup(group); track r.key) {
-                <a [routerLink]="['/', r.key]" routerLinkActive="active"
-                   [attr.data-testid]="'nav-' + r.key">{{ r.title }}</a>
-              }
-              @if (group === 'Operations' && session.can('LOAD_READ')) {
-                <a routerLink="/consignments" routerLinkActive="active" data-testid="nav-consignments">Consignments</a>
-              }
-              @if (group === 'Operations' && session.can('TERMINAL_READ')) {
-                <a routerLink="/map" routerLinkActive="active" data-testid="nav-map">Network map</a>
-              }
-              @if (group === 'Operations' && (session.can('GATE_REGISTER') || session.can('GATE_PASS_MANAGE'))) {
-                <a routerLink="/gate" routerLinkActive="active" data-testid="nav-gate">Gate</a>
-              }
-              @if (group === 'Operations' && session.can('TRIP_READ')) {
-                <a routerLink="/trip-route" routerLinkActive="active" data-testid="nav-trip-route">Trip route</a>
-              }
-              @if (group === 'Multimodal' && session.can('MULTIMODAL_READ')) {
-                <a routerLink="/itineraries" routerLinkActive="active" data-testid="nav-itineraries">Itineraries</a>
-              }
-              @if (group === 'Multimodal' && session.can('MILKRUN_READ')) {
-                <a routerLink="/milk-runs" routerLinkActive="active" data-testid="nav-milk-runs">Milk runs</a>
-              }
-              @if (group === 'Operations' && session.can('ORDER_READ')) {
-                <a routerLink="/order-desk" routerLinkActive="active" data-testid="nav-order-desk">Order desk</a>
-              }
-              @if (group === 'Operations' && session.can('ORDER_READ')) {
-                <a routerLink="/enquiries" routerLinkActive="active" data-testid="nav-enquiries">Enquiry desk</a>
-              }
-              @if (group === 'Operations' && session.can('ORDER_READ')) {
-                <a routerLink="/eway-bills" routerLinkActive="active" data-testid="nav-eway-bills">E-way bills</a>
-              }
-              @if (group === 'Operations' && session.can('ORDER_CREATE')) {
-                <a routerLink="/order-upload" routerLinkActive="active" data-testid="nav-order-upload">Bulk order upload</a>
-              }
-              @if (group === 'Operations' && session.can('APPROVAL_READ')) {
-                <a routerLink="/approvals" routerLinkActive="active" data-testid="nav-approvals">Approvals</a>
-              }
-              @if (group === 'Operations' && session.can('LOAD_READ')) {
-                <a routerLink="/load-building" routerLinkActive="active" data-testid="nav-load-building">Load building</a>
-              }
-              @if (group === 'Operations' && session.can('ALLOCATION_RULE_READ')) {
-                <a routerLink="/allocation-rules" routerLinkActive="active" data-testid="nav-allocation-rules">Allocation rules</a>
-              }
-              @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE'))) {
-                <a routerLink="/ltl" routerLinkActive="active" data-testid="nav-ltl">LTL rating</a>
-              }
-              @if (group === 'Finance' && session.can('CLIENT_BILLING_READ')) {
-                <a routerLink="/client-billing" routerLinkActive="active" data-testid="nav-client-billing">Client billing</a>
-              }
-              @if (group === 'Finance' && session.can('MANUAL_CHARGE_RECORD')) {
-                <a routerLink="/manual-charges" routerLinkActive="active" data-testid="nav-manual-charges">Manual charges</a>
-              }
-              @if (group === 'Finance' && session.can('PAYABLES_MANAGE')) {
-                <a routerLink="/payables" routerLinkActive="active" data-testid="nav-payables">Vendor payables</a>
-              }
-              <!-- Commercial -->
-              @if (group === 'Finance' && (session.can('INVOICE_READ') || session.can('TARIFF_MANAGE')
-                  || session.can('ROUTING_GUIDE_MANAGE') || session.can('LOAD_ALLOCATE'))) {
-                <a routerLink="/commercial" routerLinkActive="active" data-testid="nav-commercial">Commercial</a>
-              }
-              @if (group === 'Control tower' && session.can('EVENT_DEAD_LETTER_READ')) {
-                <a routerLink="/parked-events" routerLinkActive="active" data-testid="nav-parked-events">Parked events</a>
-              }
-              @if (group === 'Delivery' && session.can('POD_READ')) {
-                <a routerLink="/delivery" routerLinkActive="active" data-testid="nav-delivery">Delivery desk</a>
-              }
-              @if (group === 'Delivery' && session.can('POD_READ')) {
-                <a routerLink="/pod" routerLinkActive="active" data-testid="nav-pod">Proof of delivery</a>
-              }
-              @if (group === 'Delivery' && session.can('TRACKING_LINK_MANAGE')) {
-                <a routerLink="/tracking" routerLinkActive="active" data-testid="nav-tracking">Tracking links</a>
-              }
-              <!-- Warehouse operations -->
-              @if (group === 'Operations' && session.can('WAREHOUSE_READ')) {
-                <a routerLink="/warehouse" routerLinkActive="active" data-testid="nav-warehouse">Warehouse operations</a>
-              }
-              <!-- Control tower -->
-              @if (group === 'Control tower' && session.can('EXCEPTION_READ')) {
-                <a routerLink="/exception-desk" routerLinkActive="active" data-testid="nav-exception-desk">Exception desk</a>
-              }
+          @for (g of groups(); track g.id) {
+            <div class="group" [attr.data-testid]="'nav-group-' + g.id">
+              <button type="button" class="group-toggle" [attr.aria-expanded]="isOpen(g.id)"
+                      [attr.aria-controls]="'nav-items-' + g.id" [attr.data-testid]="'nav-toggle-' + g.id"
+                      (click)="toggle(g.id)">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                <span class="label">{{ g.label }}</span>
+              </button>
+              <div class="group-items" [id]="'nav-items-' + g.id" [hidden]="!isOpen(g.id)">
+                @for (s of g.sections; track $index) {
+                  <div [attr.data-testid]="s.testid ?? null">
+                    @if (s.label && g.sections.length > 1) { <div class="section-label">{{ s.label }}</div> }
+                    @for (i of s.items; track i.key) {
+                      <a [routerLink]="i.route" routerLinkActive="active"
+                         [routerLinkActiveOptions]="{ exact: i.route === '/' }"
+                         [attr.data-testid]="'nav-' + i.key">{{ i.label }}</a>
+                    }
+                  </div>
+                }
+              </div>
             </div>
-          }
-          @if (session.can('CUSTOM_FIELD_READ') || session.can('DEMO_RESET') || session.can('WEBHOOK_READ')) {
-            <div class="group">
-              <h6>Settings</h6>
-              @if (session.can('CUSTOM_FIELD_READ')) {
-                <a routerLink="/settings/custom-fields" routerLinkActive="active"
-                   data-testid="nav-custom-fields">Custom fields</a>
-              }
-              @if (session.can('DEMO_RESET')) {
-                <a routerLink="/settings/demo" routerLinkActive="active" data-testid="nav-demo">Demo data</a>
-              }
-              @if (session.can('WEBHOOK_READ')) {
-                <a routerLink="/settings/webhooks" routerLinkActive="active" data-testid="nav-webhooks">Webhooks</a>
-              }
-            </div>
-          }
-          <!-- Administration -->
-          @if (session.can('ACCESS_POLICY_MANAGE') || session.can('VEHICLE_READ') || session.can('CREDIT_LIMIT_REQUEST')
-               || session.can('CREDIT_LIMIT_APPROVE') || session.can('NUMBER_SERIES_MANAGE')
-               || session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE') || session.can('ORG_UNIT_MANAGE')
-               || session.can('CHARGE_CATALOGUE_MANAGE')) {
-            <div class="group" data-testid="nav-admin">
-              <h6>Administration</h6>
-              @if (session.can('ACCESS_POLICY_MANAGE')) {
-                <a routerLink="/admin/users" routerLinkActive="active" data-testid="nav-admin-users">Users</a>
-                <a routerLink="/admin/access-policies" routerLinkActive="active"
-                   data-testid="nav-admin-policies">Access policies</a>
-              }
-              @if (session.can('VEHICLE_READ')) {
-                <a routerLink="/admin/compliance" routerLinkActive="active" data-testid="nav-admin-compliance">Compliance</a>
-              }
-              @if (session.can('CREDIT_LIMIT_REQUEST') || session.can('CREDIT_LIMIT_APPROVE')) {
-                <a routerLink="/admin/credit-limits" routerLinkActive="active" data-testid="nav-admin-credit">Credit limits</a>
-              }
-              @if (session.can('NUMBER_SERIES_MANAGE')) {
-                <a routerLink="/admin/number-series" routerLinkActive="active"
-                   data-testid="nav-admin-number-series">Number series</a>
-              }
-              @if (session.can('ORG_UNIT_MANAGE')) {
-                <a routerLink="/admin/org-units" routerLinkActive="active"
-                   data-testid="nav-admin-org-units">Organisation units</a>
-              }
-              @if (session.can('CHARGE_CATALOGUE_MANAGE')) {
-                <a routerLink="/charge-catalogue" routerLinkActive="active"
-                   data-testid="nav-charge-catalogue">Charge catalogue</a>
-              }
-              @if (session.can('SETTINGS_READ') || session.can('SETTINGS_MANAGE')) {
-                <a routerLink="/admin/settings" routerLinkActive="active"
-                   data-testid="nav-admin-settings">Profile settings</a>
-              }
-            </div>
+          } @empty {
+            <p class="nav-empty" role="status">No menu entry matches.</p>
           }
         </nav>
       </aside>
+      <div class="nav-backdrop" [class.open]="drawerOpen()" data-testid="nav-backdrop" aria-hidden="true"
+           (click)="closeDrawer(true)"></div>
       <div class="main">
         <header class="topbar">
+          <button #menuButton type="button" class="icon-button nav-toggle" aria-label="Open navigation"
+                  aria-controls="sidebar" [attr.aria-expanded]="drawerOpen()" data-testid="nav-toggle"
+                  (click)="openDrawer()">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
           <a routerLink="/me" routerLinkActive="active" data-testid="nav-me">My profile</a>
           <span class="muted" data-testid="who">{{ session.permissionCount() }} permissions</span>
           <button class="link" (click)="signOut()" data-testid="sign-out">Sign out</button>
@@ -184,10 +87,76 @@ import { GROUPS, RESOURCES } from './resources';
 export class Shell {
   protected readonly session = inject(Session);
   private readonly router = inject(Router);
-  readonly groups = GROUPS;
+  private readonly filter = viewChild<ElementRef<HTMLInputElement>>('filter');
+  private readonly toggleButton = viewChild<ElementRef<HTMLButtonElement>>('menuButton');
 
-  inGroup(group: string) {
-    return RESOURCES.filter((r) => r.group === group && (!r.permission || this.session.can(r.permission)));
+  protected readonly query = signal('');
+  protected readonly drawerOpen = signal(false);
+  private readonly narrow = signal(isNarrow());
+  private readonly state = signal(loadGroupState());
+  private readonly path = signal(this.router.url);
+  private readonly active = computed(() => activeGroupId(this.path()));
+  protected readonly groups = computed(() => visibleNav((p) => this.session.can(p), this.query()));
+
+  constructor() {
+    this.router.events.subscribe((e) => {
+      if (e instanceof NavigationEnd) {
+        this.path.set(e.urlAfterRedirects);
+        this.closeDrawer(false);
+      }
+    });
+    // The group holding the page being shown is opened, whatever was remembered.
+    effect(() => {
+      const id = this.active();
+      if (id && !groupOpen(this.state(), id, id, this.narrow(), false)) {
+        this.setOpen(id, true);
+      }
+    });
+    try {
+      const media = matchMedia(DRAWER_QUERY);
+      media.addEventListener('change', (e) => {
+        this.narrow.set(e.matches);
+        if (!e.matches) {
+          this.drawerOpen.set(false);
+        }
+      });
+    } catch {
+      // no matchMedia: the layout simply stays as it was
+    }
+  }
+
+  protected isOpen(id: string): boolean {
+    return groupOpen(this.state(), id, this.active(), this.narrow(), this.query().trim() !== '');
+  }
+
+  protected toggle(id: string): void {
+    this.setOpen(id, !this.isOpen(id));
+  }
+
+  private setOpen(id: string, open: boolean): void {
+    const next = { ...this.state(), [id]: open };
+    this.state.set(next);
+    saveGroupState(next);
+  }
+
+  protected openDrawer(): void {
+    this.drawerOpen.set(true);
+    setTimeout(() => this.filter()?.nativeElement.focus());
+  }
+
+  /** `refocus`: put the focus back on the menu button, where the person opened it from. */
+  protected closeDrawer(refocus: boolean): void {
+    if (this.drawerOpen()) {
+      this.drawerOpen.set(false);
+      if (refocus) {
+        this.toggleButton()?.nativeElement.focus();
+      }
+    }
+  }
+
+  @HostListener('document:keydown.escape')
+  protected onEscape(): void {
+    this.closeDrawer(true);
   }
 
   signOut(): void {

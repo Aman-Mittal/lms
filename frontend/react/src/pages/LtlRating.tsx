@@ -19,6 +19,7 @@ import { RATE_BASES, type RateBasis } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 /**
  * Part-load rating: the receivable each docket earned, and the two things a
@@ -30,7 +31,7 @@ export function LtlRating() {
   const { can } = useSession();
   return (
     <>
-      <h1>LTL rating</h1>
+      <PageHeader title="LTL rating" />
       <p className="muted">Part-load dockets are priced from the zones of their sites and the rate card between them.</p>
       {can('INVOICE_READ') && <Receivables />}
       {can('TARIFF_MANAGE') ? (

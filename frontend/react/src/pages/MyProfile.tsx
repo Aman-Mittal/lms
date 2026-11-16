@@ -21,6 +21,7 @@ import type {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { choicesOf, controlOf, fromInput, toInput } from '../settingsForm';
+import { PageHeader } from './PageHeader';
 
 /** One notification event and its two channels. */
 interface NotifyRow {
@@ -135,7 +136,7 @@ export function MyProfile() {
 
   return (
     <>
-      <h1>My profile &amp; preferences</h1>
+      <PageHeader title="My profile &amp; preferences" />
       {error && <p className="error" role="alert">{error}</p>}
       {me && (
         <section className="panel" data-testid="me-identity">
