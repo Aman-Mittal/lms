@@ -1,0 +1,84 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/order-intake/batches:
+  post:
+    tags: [Order intake]
+    operationId: submitBulkOrders
+    summary: Raise a batch of orders, each with its own idempotency key
+    description: |
+      Requires `ORDER_CREATE` and `ORDER_UPDATE`, in the unit. Every item is
+      raised, given its lines and validated by the same commands an order typed
+      in goes through (source `BULK_UPLOAD`), in a transaction of its own: one bad
+      item never fails or rolls back the others. The answer is 200 with a result
+      for every item, in the order sent. More than 500 items is refused whole
+      (`bulk-batch-too-large`).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/BulkOrdersRequest" }
+    responses:
+      "200":
+        description: A result per item.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkOrdersResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/order-intake/files:
+  post:
+    tags: [Order intake]
+    operationId: uploadOrderFile
+    summary: Raise orders from a CSV or XLSX file
+    description: |
+      Requires `ORDER_CREATE` and `ORDER_UPDATE`, in the unit. The file's first
+      worksheet (or the CSV) has a header row. Which header holds which field is
+      the customer's `order.intake.columnMapping` setting over a default
+      (`order_ref, origin, destination, pickup_date, delivery_date, load_type,
+      material_code, material, quantity, uom, weight_kg, consignee`; headers match
+      ignoring case, blanks and punctuation). Terminals and the consignee are
+      named by code (a blank consignee is the customer). One row is one line; rows with the same order reference make
+      one order, raised through the bulk path above. A row that cannot be read
+      fails with its number and reasons, and so does the rest of its order; other
+      orders are unaffected. Uploading the same file again answers DUPLICATE row by
+      row (the key is `batchKey`, else a digest of the file, with the customer
+      and the reference). At most 2 MB (`intake-file-too-large`) and 2000 rows
+      (`intake-too-many-rows`); missing required columns are
+      `intake-columns-missing`.
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            properties:
+              file: { type: string, format: binary }
+              orgUnitId: { type: string, format: uuid }
+              customerPartnerId: { type: string, format: uuid }
+              batchKey: { type: string, description: Names the upload; omitted, a digest of the file does. }
+            required: [file, orgUnitId, customerPartnerId]
+    responses:
+      "200":
+        description: A result per row.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderFileResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }

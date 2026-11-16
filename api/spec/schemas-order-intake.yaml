@@ -1,0 +1,113 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+IntakeStatus:
+  type: string
+  enum: [CREATED, DUPLICATE, FAILED]
+  description: |
+    CREATED: a new order, validated. DUPLICATE: the key was already used for this
+    very content, so the earlier order is named and nothing is made. FAILED: the
+    reasons say why; nothing was made.
+
+BulkOrderLine:
+  type: object
+  properties:
+    materialCode: { type: string, minLength: 1, maxLength: 60 }
+    materialDescription: { type: string, minLength: 1, maxLength: 200 }
+    materialClass: { type: string, description: "A material class such as GENERAL (the default) or a dangerous goods class." }
+    hazmatUnCode: { type: string, maxLength: 20 }
+    quantity: { type: number }
+    uom: { type: string, minLength: 1, maxLength: 20 }
+    deadWeightKg: { type: number }
+    consigneePartnerId: { type: string, format: uuid, description: Who receives the line; the customer when omitted. }
+    destinationTerminalId: { type: string, format: uuid }
+  required: [materialCode, materialDescription, quantity, uom, deadWeightKg, destinationTerminalId]
+
+BulkOrderItem:
+  type: object
+  properties:
+    idempotencyKey:
+      type: string
+      maxLength: 255
+      description: Required (an item without one fails). The same key with the same content is a DUPLICATE; with other content the item fails (`idempotency-key-reused`).
+    customerPartnerId: { type: string, format: uuid }
+    orderNo: { type: string, description: Assigned from the tenant's series when omitted. }
+    originTerminalId: { type: string, format: uuid }
+    requestedPickupAt: { type: string, format: date-time }
+    requestedDeliveryAt: { type: string, format: date-time }
+    loadType: { type: string, maxLength: 60 }
+    lines:
+      type: array
+      items: { $ref: "#/components/schemas/BulkOrderLine" }
+  required: [customerPartnerId, originTerminalId]
+
+BulkOrdersRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    items:
+      type: array
+      description: At most 500; more is refused whole with `bulk-batch-too-large`.
+      items: { $ref: "#/components/schemas/BulkOrderItem" }
+  required: [orgUnitId, items]
+
+BulkItemResult:
+  type: object
+  properties:
+    index: { type: integer, description: The item's position in the request, from 0. }
+    status: { $ref: "#/components/schemas/IntakeStatus" }
+    orderId: { type: string, format: uuid, description: The order made, or the earlier one for a DUPLICATE. }
+    reasons:
+      type: array
+      description: "Every reason an item failed, each as `code: message`."
+      items: { type: string }
+  required: [index, status, reasons]
+
+BulkOrdersResponse:
+  type: object
+  properties:
+    created: { type: integer }
+    duplicates: { type: integer }
+    failed: { type: integer }
+    results:
+      type: array
+      items: { $ref: "#/components/schemas/BulkItemResult" }
+  required: [created, duplicates, failed, results]
+
+OrderFileRowResult:
+  type: object
+  properties:
+    row: { type: integer, description: The row's number in the file, the header being row 1. }
+    orderRef: { type: string, description: The order reference the row carries; rows sharing one make one order. }
+    status: { $ref: "#/components/schemas/IntakeStatus" }
+    orderId: { type: string, format: uuid }
+    reasons:
+      type: array
+      items: { type: string }
+  required: [row, status, reasons]
+
+OrderFileResponse:
+  type: object
+  description: The counts are of orders (an order of several rows counts once); `rows` has every data row read.
+  properties:
+    created: { type: integer }
+    duplicates: { type: integer }
+    failed: { type: integer }
+    rows:
+      type: array
+      items: { $ref: "#/components/schemas/OrderFileRowResult" }
+  required: [created, duplicates, failed, rows]

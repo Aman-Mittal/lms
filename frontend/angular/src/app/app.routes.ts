@@ -44,6 +44,8 @@ export const routes: Routes = [
       { path: 'settings/webhooks', loadComponent: () => import('./pages/webhooks').then((m) => m.Webhooks) },
       { path: 'claims', loadComponent: () => import('./pages/claims').then((m) => m.ClaimsPage) },
       { path: 'delivery', loadComponent: () => import('./pages/delivery-desk').then((m) => m.DeliveryDesk) },
+      { path: 'enquiries', loadComponent: () => import('./pages/enquiry-desk').then((m) => m.EnquiryDeskPage) },
+      { path: 'order-upload', loadComponent: () => import('./pages/order-upload').then((m) => m.OrderUpload) },
       { path: 'pod', loadComponent: () => import('./pages/pod-desk').then((m) => m.PodDesk) },
       { path: 'consignments', loadComponent: () => import('./pages/consignment-desk').then((m) => m.ConsignmentDesk) },
       { path: 'tracking', loadComponent: () => import('./pages/tracking-links').then((m) => m.TrackingLinks) },

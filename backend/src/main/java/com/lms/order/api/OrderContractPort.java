@@ -15,6 +15,7 @@
  */
 package com.lms.order.api;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +47,41 @@ public interface OrderContractPort {
      *         and {@code order-consignee-not-allowed}
      */
     Optional<Resolution> resolve(Request request);
+
+    /**
+     * The rate a customer's contract lanes would give for freight between two
+     * terminals, for the enquiry desk's cost discovery. Never refuses: a
+     * customer with no contract in force, a load type the contract does not
+     * cover, or no lane that serves the journey is simply an empty answer, so
+     * the person quoting prices it by hand.
+     *
+     * <p>Defaults to empty, so a slice of the application with no client
+     * billing quotes without suggestions.
+     */
+    default Optional<RateSuggestion> suggestRate(RateQuery query) {
+        return Optional.empty();
+    }
+
+    /**
+     * What is known of an enquiry line when a rate is wanted.
+     *
+     * @param onDate   the day the contract is read for: the wanted pickup day, else today
+     * @param loadType the load or vehicle type, or null
+     * @param weightKg the weight, or null when unknown (then only a flat lane rate can answer)
+     */
+    record RateQuery(UUID customerPartnerId, LocalDate onDate, UUID originTerminalId, UUID destinationTerminalId,
+                     String loadType, BigDecimal weightKg) {
+    }
+
+    /**
+     * The lane's price.
+     *
+     * @param rateBasis PER_KG, PER_TONNE or PER_TRIP
+     * @param amount    the price for the weight asked about; null when no weight was given
+     */
+    record RateSuggestion(UUID contractId, String contractCode, String laneCode, String rateBasis,
+                          BigDecimal rate, BigDecimal amount) {
+    }
 
     /**
      * What is known of the order when its contract is wanted.
