@@ -23,6 +23,7 @@ import {
 import { Session } from '../session';
 import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settings-form';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
@@ -46,9 +47,9 @@ const PICKER: Record<string, PickKind> = {
  */
 @Component({
   selector: 'app-profile-settings',
-  imports: [FormsModule, EntityPicker],
+  imports: [FormsModule, EntityPicker, PageHeader],
   template: `
-    <h1>Profile settings</h1>
+    <app-page-header title="Profile settings" />
     <p class="muted">The most specific profile that sets a value wins: organisation, then unit (country, zone,
       branch: deeper first), then vehicle, customer or vendor, then a combination of those (more conditions first,
       then the deeper unit, then the higher priority). A person's own preferences sit on top, under My profile.</p>

@@ -21,6 +21,7 @@ import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { ContractLifecycle } from './contract-lifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
+import { PageHeader } from './page-header';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -433,9 +434,9 @@ export class ClientDesk implements OnInit {
 /** Opens a 3PL client's billing desk by its partner id. */
 @Component({
   selector: 'app-client-billing',
-  imports: [FormsModule, ClientDesk, EntityPicker],
+  imports: [FormsModule, ClientDesk, EntityPicker, PageHeader],
   template: `
-    <h1>Client billing</h1>
+    <app-page-header title="Client billing" />
     <p class="muted">
       Open a client to see what it has been charged, bill a month that has ended, and follow
       what it owes.
