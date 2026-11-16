@@ -22,6 +22,8 @@ import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { RESOURCES } from './resources';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Money } from './Figures';
 
 const resource = RESOURCES.find((r) => r.key === 'claims')!;
 
@@ -60,7 +62,7 @@ export function ClaimsPage() {
           <p className="muted">{consignmentId ? 'No claims against that consignment.' : 'Nothing here yet.'}</p>
         ) : (
           rows.length > 0 && (
-            <table>
+            <div className="table-wrap"><table>
               <thead>
                 <tr>{resource.columns.map((c) => <th key={c.field}>{c.header}</th>)}</tr>
               </thead>
@@ -76,7 +78,7 @@ export function ClaimsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )
         )}
         {can('CLAIM_RAISE') && <RaiseClaim onDone={() => setReload((n) => n + 1)} />}
@@ -169,10 +171,10 @@ function ClaimPanel({ row, onClose, onChanged }: PanelProps) {
         <button className="link" onClick={onClose} aria-label="Close panel">Close</button>
       </header>
       <dl>
-        <div><dt>Status</dt><dd data-testid="claim-status">{row.status}</dd></div>
+        <div><dt>Status</dt><dd><StatusBadge data-testid="claim-status" value={row.status} /></dd></div>
         <div><dt>Type</dt><dd>{row.claimType}</dd></div>
-        <div><dt>Claimed</dt><dd>{row.amount}</dd></div>
-        <div><dt>Approved</dt><dd data-testid="claim-approved">{row.approvedAmount || '—'}</dd></div>
+        <div><dt>Claimed</dt><dd><Money value={row.amount} /></dd></div>
+        <div><dt>Approved</dt><dd><Money data-testid="claim-approved" value={row.approvedAmount} empty="—" /></dd></div>
         <div><dt>Note</dt><dd>{row.resolutionNote || '—'}</dd></div>
       </dl>
       {error && <p className="error" role="alert">{error}</p>}
@@ -205,8 +207,8 @@ function ClaimPanel({ row, onClose, onChanged }: PanelProps) {
             <dl>
               <div><dt>Claim</dt><dd>{row.claimNo}</dd></div>
               <div><dt>Type</dt><dd>{row.claimType}</dd></div>
-              <div><dt>Claimed</dt><dd>{row.amount}</dd></div>
-              <div><dt>Status</dt><dd>{row.status}</dd></div>
+              <div><dt>Claimed</dt><dd><Money value={row.amount} /></dd></div>
+              <div><dt>Status</dt><dd><StatusBadge value={row.status} /></dd></div>
               <div><dt>Consignment</dt><dd>{row.consignmentId}</dd></div>
               <div><dt>Description</dt><dd>{row.description}</dd></div>
             </dl>

@@ -45,7 +45,7 @@ test.describe('proof of delivery and money', () => {
     const trip = await deliveredTrip(request, await apiSession(request), salt, 'none');
     await signIn(page);
     const panel = await openBill(page, trip.billId);
-    await expect(panel.getByTestId('bill-status')).toHaveText('DRAFT');
+    await expect(panel.getByTestId('bill-status')).toHaveAttribute('data-value', 'DRAFT');
     await expect(panel.getByTestId('bill-awaiting-proof')).toContainText('Waiting for clean proofs of delivery');
 
     await test.step('matching is refused while the proof is outstanding', async () => {
@@ -53,7 +53,7 @@ test.describe('proof of delivery and money', () => {
       await match.getByLabel('Vendor\'s claimed amount').fill('20000');
       await match.getByRole('button', { name: 'Match claim' }).click();
       await expect(page.getByTestId('bill-refusal')).toContainText('settlement-awaiting-proof');
-      await expect(panel.getByTestId('bill-status')).toHaveText('DRAFT');
+      await expect(panel.getByTestId('bill-status')).toHaveAttribute('data-value', 'DRAFT');
     });
 
     await test.step('released by hand, with the reason on the bill', async () => {
@@ -69,7 +69,7 @@ test.describe('proof of delivery and money', () => {
       const match = panel.getByTestId('match-bill');
       await match.getByLabel('Vendor\'s claimed amount').fill('20000');
       await match.getByRole('button', { name: 'Match claim' }).click();
-      await expect(panel.getByTestId('bill-status')).toHaveText('APPROVED_FOR_PAYMENT');
+      await expect(panel.getByTestId('bill-status')).toHaveAttribute('data-value', 'APPROVED_FOR_PAYMENT');
     });
   });
 
@@ -150,8 +150,8 @@ test.describe('proof of delivery and money', () => {
     await page.getByTestId('nav-delivery').click();
     await page.getByTestId('consignment-id').fill(consignment);
     await page.getByRole('button', { name: 'Look up' }).click();
-    await expect(page.getByTestId('proof-status')).toHaveText('OTP_ISSUED');
-    await expect(page.getByTestId('delivery-consignment-status')).toContainText('IN_TRANSIT');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'OTP_ISSUED');
+    await expect(page.getByTestId('delivery-consignment-status')).toHaveAttribute('data-value', 'IN_TRANSIT');
 
     const form = page.getByTestId('record-proof');
     await form.getByLabel('Code').fill('123456');
@@ -160,10 +160,10 @@ test.describe('proof of delivery and money', () => {
     await form.getByLabel('Remark').fill('Two cartons crushed');
     await form.getByRole('button', { name: 'Record proof' }).click();
 
-    await expect(page.getByTestId('proof-status')).toHaveText('CONFIRMED');
-    await expect(page.getByTestId('proof-condition')).toHaveText('DAMAGE');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'CONFIRMED');
+    await expect(page.getByTestId('proof-condition')).toHaveAttribute('data-value', 'DAMAGE');
     await expect(page.getByTestId('proof-remark')).toHaveText('Two cartons crushed');
-    await expect(page.getByTestId('delivery-consignment-status')).toContainText('DELIVERED');
+    await expect(page.getByTestId('delivery-consignment-status')).toHaveAttribute('data-value', 'DELIVERED');
     expect(sent).toMatchObject({ otp: '123456', recipientName: 'Asha Rao', goodsCondition: 'DAMAGE', remark: 'Two cartons crushed' });
   });
 });

@@ -23,11 +23,13 @@ import { MapView } from './map-view';
 import { EntityPicker } from './entity-picker';
 import { TripMoney } from './trip-money';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /** A trip's track so far and where it is now. */
 @Component({
   selector: 'app-trip-route',
-  imports: [FormsModule, MapView, EntityPicker, TripMoney, PageHeader],
+  imports: [FormsModule, MapView, EntityPicker, TripMoney, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Trip route" />
     <p class="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
@@ -43,10 +45,10 @@ import { PageHeader } from './page-header';
       <section data-testid="trip-route">
         <dl class="facts">
           <div><dt>Trip</dt><dd data-testid="route-trip-no">{{ r.tripNo }}</dd></div>
-          <div><dt>Status</dt><dd>{{ r.status }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge [value]="r.status" /></dd></div>
           <div><dt>From</dt><dd>{{ r.originCode }}</dd></div>
           <div><dt>To</dt><dd>{{ r.destinationCode }}</dd></div>
-          <div><dt>Last fix</dt><dd>{{ r.lastFixAt || '—' }}</dd></div>
+          <div><dt>Last fix</dt><dd>{{ (r.lastFixAt || '—') | when }}</dd></div>
           <div><dt>Done</dt><dd>{{ r.completionPct ? r.completionPct + ' %' : '—' }}</dd></div>
         </dl>
         @if (r.features.length === 0) {
@@ -62,7 +64,7 @@ import { PageHeader } from './page-header';
         @if (stops().length === 0) {
           <p class="muted" data-testid="stops-empty">This trip has no planned stops.</p>
         } @else {
-          <table data-testid="stops">
+          <div class="table-wrap"><table data-testid="stops">
             <thead>
               <tr><th>#</th><th>Kind</th><th>Terminal</th><th>Planned arrival</th><th>Status</th><th>Arrived</th>
                 <th>Departed</th><th></th><th></th></tr>
@@ -71,9 +73,9 @@ import { PageHeader } from './page-header';
               @for (s of stops(); track s.id) {
                 <tr data-testid="stop-row" [attr.data-seq]="s.seq">
                   <td>{{ s.seq }}</td><td>{{ s.kind }}</td><td>{{ s.terminalCode }}</td>
-                  <td>{{ s.plannedArrivalAt || '—' }}</td>
-                  <td><span class="badge" data-testid="stop-status">{{ s.status }}</span></td>
-                  <td>{{ s.arrivedAt || '—' }}</td><td>{{ s.departedAt || '—' }}</td>
+                  <td>{{ (s.plannedArrivalAt || '—') | when }}</td>
+                  <td><app-status-badge data-testid="stop-status" [value]="s.status" /></td>
+                  <td>{{ (s.arrivedAt || '—') | when }}</td><td>{{ (s.departedAt || '—') | when }}</td>
                   <td>
                     @if (s.outOfOrder) { <span class="badge" data-testid="stop-out-of-order">Out of order</span> }
                     @if (s.lateMinutes > 0) { <span class="badge" data-testid="stop-late">{{ s.lateMinutes }} min late</span> }
@@ -108,7 +110,7 @@ import { PageHeader } from './page-header';
                 }
               }
             </tbody>
-          </table>
+          </table></div>
         }
       </section>
       <app-trip-money [tripId]="shownTripId()" />

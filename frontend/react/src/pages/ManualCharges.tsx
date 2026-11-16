@@ -22,6 +22,8 @@ import {
 import { useSession } from '../session';
 import { money, problemText } from './moneyProblem';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Money } from './Figures';
 
 const STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CANCELLED'];
 
@@ -143,7 +145,7 @@ export function ManualCharges() {
       {rows.length === 0 ? (
         <p className="muted">No charges.</p>
       ) : (
-        <table data-testid="mc-list">
+        <div className="table-wrap"><table data-testid="mc-list">
           <thead>
             <tr><th>No.</th><th>Charge</th><th>Against</th><th>Direction</th><th>Amount</th><th>Status</th><th>Billed</th><th /></tr>
           </thead>
@@ -152,8 +154,8 @@ export function ManualCharges() {
               <tr key={m.id} data-testid="mc-row" data-id={m.id}>
                 <td>{m.chargeNo}</td><td>{m.chargeCode}</td><td>{`${m.subjectType} ${m.subjectRef}`}</td>
                 <td data-testid="mc-direction-cell">{m.direction}</td>
-                <td data-testid="mc-amount">{money(m.amount)}</td>
-                <td><span className="badge" data-testid="mc-status">{m.status}</span></td>
+                <td className="num"><Money data-testid="mc-amount" value={m.amount} currency={m.currency} /></td>
+                <td><StatusBadge data-testid="mc-status" value={m.status} /></td>
                 <td>{m.billed ? 'Yes' : 'No'}</td>
                 <td>
                   {can('MANUAL_CHARGE_RECORD') && !m.billed && (m.status === 'PENDING_APPROVAL' || m.status === 'APPROVED') && (
@@ -173,7 +175,7 @@ export function ManualCharges() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </>
   );

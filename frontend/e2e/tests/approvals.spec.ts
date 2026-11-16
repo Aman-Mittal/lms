@@ -61,7 +61,7 @@ async function askToCancel(page: Page, orderId: string, reason: string): Promise
   await cancel.getByLabel('Cancellation reason').fill(reason);
   await cancel.getByRole('button', { name: 'Cancel order' }).click();
   await expect(page.getByTestId('order-done')).toHaveText('Cancellation requested: awaiting approval.');
-  await expect(page.getByTestId('order-status')).toHaveText('DRAFT');
+  await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'DRAFT');
 }
 
 /** Opens the inbox and the request for this order. */
@@ -71,7 +71,7 @@ async function openRequest(page: Page, orderNo: string): Promise<void> {
   await expect(row).toHaveCount(1);
   await row.getByRole('button').first().click();
   await expect(page.getByTestId('approval-detail')).toBeVisible();
-  await expect(page.getByTestId('approval-status')).toHaveText('REQUESTED');
+  await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'REQUESTED');
 }
 
 test.describe('approvals inbox', () => {
@@ -98,11 +98,11 @@ test.describe('approvals inbox', () => {
 
     await page.getByTestId('approve-note').fill('checked with the customer');
     await page.getByTestId('approve').click();
-    await expect(page.getByTestId('approval-status')).toHaveText('APPROVED');
+    await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'APPROVED');
     await expect(page.getByTestId('approval-trail')).toContainText('checked with the customer');
 
     await openOrder(page, order.orderId);
-    await expect(page.getByTestId('order-status')).toHaveText('CANCELLED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CANCELLED');
   });
 
   test('a rejection needs a reason and leaves the order as it was', async ({ page, request }, info) => {
@@ -113,12 +113,12 @@ test.describe('approvals inbox', () => {
     await openRequest(page, order.orderNo);
     await page.getByTestId('reject-reason').fill('not a duplicate');
     await page.getByTestId('reject').click();
-    await expect(page.getByTestId('approval-status')).toHaveText('REJECTED');
+    await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'REJECTED');
     await expect(page.getByTestId('approval-reason')).toHaveText('not a duplicate');
     await expect(page.getByTestId('approve')).toHaveCount(0);
 
     await openOrder(page, order.orderId);
-    await expect(page.getByTestId('order-status')).toHaveText('DRAFT');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'DRAFT');
   });
 
   test('the requester sees their own request and can withdraw it', async ({ page, request }, info) => {
@@ -132,7 +132,7 @@ test.describe('approvals inbox', () => {
     const row = page.getByTestId('approvals').getByRole('row').filter({ hasText: order.orderNo });
     await row.getByRole('button').first().click();
     await page.getByTestId('cancel-approval').click();
-    await expect(page.getByTestId('approval-status')).toHaveText('CANCELLED');
+    await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'CANCELLED');
   });
 
   test('a proof of delivery is reversed only through the inbox', async ({ page, request }, info) => {
@@ -142,12 +142,12 @@ test.describe('approvals inbox', () => {
     await openScreen(page, 'nav-delivery', 'Delivery desk');
     await page.getByTestId('consignment-id').fill(trip.consignmentId);
     await page.getByTestId('lookup').getByRole('button', { name: 'Look up' }).click();
-    await expect(page.getByTestId('proof-status')).toHaveText('CONFIRMED');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'CONFIRMED');
 
     await page.getByTestId('reversal-reason').fill('signed by the wrong person');
     await page.getByTestId('reverse-proof').getByRole('button', { name: 'Reverse proof' }).click();
     await expect(page.getByTestId('reversal-requested')).toHaveText('Reversal requested: awaiting approval.');
-    await expect(page.getByTestId('proof-status')).toHaveText('CONFIRMED');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'CONFIRMED');
 
     await openScreen(page, 'nav-approvals', 'Approvals');
     await page.getByTestId('approvals-subject-type').fill('POD_REVERSAL');
@@ -155,11 +155,11 @@ test.describe('approvals inbox', () => {
     const row = page.getByTestId('approvals').getByRole('row').filter({ hasText: 'signed by the wrong person' });
     await row.first().getByRole('button').first().click();
     await page.getByTestId('approve').click();
-    await expect(page.getByTestId('approval-status')).toHaveText('APPROVED');
+    await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'APPROVED');
 
     await openScreen(page, 'nav-delivery', 'Delivery desk');
     await page.getByTestId('consignment-id').fill(trip.consignmentId);
     await page.getByTestId('lookup').getByRole('button', { name: 'Look up' }).click();
-    await expect(page.getByTestId('proof-status')).toHaveText('REVERSED');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'REVERSED');
   });
 });

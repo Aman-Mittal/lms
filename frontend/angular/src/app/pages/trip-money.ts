@@ -19,6 +19,8 @@ import {
   ADVANCE_MODES, ApiProblem, LmsGateway, ManualChargeView, VendorAdvanceView,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { StatusBadge } from './status-badge';
+import { Money } from './figures';
 
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -36,6 +38,7 @@ function today(): string {
  */
 @Component({
   selector: 'app-trip-money',
+  imports: [StatusBadge, Money],
   template: `
     <section data-testid="trip-money" aria-label="Trip money">
       <h2>Advances and charges</h2>
@@ -61,14 +64,14 @@ function today(): string {
       @if (advances().length === 0) {
         <p class="muted" data-testid="adv-empty">No advances on this trip.</p>
       } @else {
-        <table data-testid="advances">
+        <div class="table-wrap"><table data-testid="advances">
           <thead><tr><th>Advance</th><th>Mode</th><th>Amount</th><th>Status</th><th>Reference</th><th></th></tr></thead>
           <tbody>
             @for (a of advances(); track a.id) {
               <tr data-testid="adv-row" [attr.data-id]="a.id">
                 <td>{{ a.advanceNo }}</td><td>{{ a.mode }}</td>
-                <td data-testid="adv-amount-cell">{{ a.amount }} {{ a.currency }}</td>
-                <td><span class="badge" data-testid="adv-status">{{ a.status }}</span></td>
+                <td class="num"><app-money data-testid="adv-amount-cell" [value]="a.amount" [currency]="a.currency" /></td>
+                <td><app-status-badge data-testid="adv-status" [value]="a.status" /></td>
                 <td>{{ a.paidReference }}</td>
                 <td>
                   @if (a.status === 'APPROVED' && session.can('PAYABLES_MANAGE')) {
@@ -103,23 +106,23 @@ function today(): string {
               }
             }
           </tbody>
-        </table>
+        </table></div>
       }
       <h3>Manual charges</h3>
       @if (charges().length === 0) {
         <p class="muted" data-testid="trip-charges-empty">No manual charges on this trip.</p>
       } @else {
-        <table data-testid="trip-charges">
+        <div class="table-wrap"><table data-testid="trip-charges">
           <thead><tr><th>Charge</th><th>Code</th><th>Direction</th><th>Amount</th><th>Status</th></tr></thead>
           <tbody>
             @for (c of charges(); track c.id) {
               <tr data-testid="trip-charge-row">
                 <td>{{ c.chargeNo }}</td><td>{{ c.chargeCode }}</td><td>{{ c.direction }}</td>
-                <td>{{ c.amount }} {{ c.currency }}</td><td>{{ c.status }}</td>
+                <td class="num"><app-money [value]="c.amount" [currency]="c.currency" /></td><td><app-status-badge [value]="c.status" /></td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
     </section>
   `,
