@@ -55,6 +55,9 @@ public interface FleetCapacityPort {
      */
     boolean isRegistered(UUID vehicleId);
 
+    /** Whether the vehicle exists and has been switched off (INACTIVE). */
+    boolean isInactive(UUID vehicleId);
+
     /**
      * The registration number of a vehicle on this tenant's register, in any
      * status, or empty when there is no such vehicle. What the gate register

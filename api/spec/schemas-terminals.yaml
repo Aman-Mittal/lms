@@ -42,6 +42,8 @@ Terminal:
     opensAt: { type: string }
     closesAt: { type: string }
     avgDwellMinutes: { type: integer }
+    status: { type: string, enum: [ACTIVE, INACTIVE] }
+    orgUnitId: { type: string, format: uuid }
     version:
       type: integer
       format: int64

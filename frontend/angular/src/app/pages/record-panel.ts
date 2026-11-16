@@ -14,27 +14,46 @@
  * limitations under the License.
  */
 
-import { Component, computed, inject, input, output } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { Session } from '../session';
 import { CustomFieldsForm } from './custom-fields-form';
 import { Resource } from './resources';
 import { Cell } from './cell';
+import { MasterDataActions } from './master-data-actions';
+import { MasterDataForm } from './master-data-form';
+import type { MasterKind } from '../gateway/master-data-types';
 
 /** One record's details, with its custom fields beneath them. */
 @Component({
   selector: 'app-record-panel',
-  imports: [CustomFieldsForm, Cell],
+  imports: [CustomFieldsForm, Cell, MasterDataActions, MasterDataForm],
   template: `
     <aside class="panel" data-testid="record-panel" aria-label="Record details">
       <header>
         <h2>{{ title() }}</h2>
         <button class="link" (click)="closed.emit()" aria-label="Close panel">Close</button>
       </header>
-      <dl>
-        @for (c of rest(); track c.field) {
-          <div><dt>{{ c.header }}</dt><dd>@if (row()[c.field]) { <app-cell [field]="c.field" [value]="row()[c.field]" /> } @else { — }</dd></div>
+      @if (maintained(); as kind) {
+        @if (editing() && session.orgUnitId(); as unit) {
+          @defer (on immediate) {
+            <app-master-data-form [kind]="kind" [orgUnitId]="unit" [recordId]="row()['id']"
+                                  (saved)="editing.set(false); changed.emit()" (closed)="editing.set(false)" />
+          }
         }
-      </dl>
+      }
+      @if (!editing()) {
+        <dl>
+          @for (c of rest(); track c.field) {
+            <div><dt>{{ c.header }}</dt><dd>@if (row()[c.field]) { <app-cell [field]="c.field" [value]="row()[c.field]" /> } @else { — }</dd></div>
+          }
+        </dl>
+        @if (maintained(); as kind) {
+          @defer (on immediate) {
+            <app-master-data-actions [kind]="kind" [recordId]="row()['id']" [status]="row()['status'] ?? ''"
+                                     [label]="title()" (edit)="editing.set(true)" (changed)="changed.emit()" />
+          }
+        }
+      }
       @if (resource().customKind; as kind) {
         @if (session.can('CUSTOM_FIELD_READ')) {
           <app-custom-fields-form [kind]="kind" [recordId]="row()['id']" />
@@ -48,6 +67,20 @@ export class RecordPanel {
   readonly resource = input.required<Resource>();
   readonly row = input.required<Record<string, string>>();
   readonly closed = output<void>();
+  /** A record was edited or switched off or on, so the list behind it is stale. */
+  readonly changed = output<void>();
+  protected readonly editing = signal(false);
+
+  /** The register this is, when it can be edited here. */
+  readonly maintained = computed<MasterKind | null>(() => {
+    const key = this.resource().key;
+    return key === 'partners' || key === 'vehicles' || key === 'drivers' || key === 'terminals' ? key : null;
+  });
+
+  constructor() {
+    // Another record opens in the same panel: leave any edit of the last one.
+    effect(() => { this.row()['id']; this.editing.set(false); }, { allowSignalWrites: true });
+  }
 
   readonly title = computed(() => this.row()[this.resource().columns[0].field]);
   readonly rest = computed(() => this.resource().columns.slice(1));

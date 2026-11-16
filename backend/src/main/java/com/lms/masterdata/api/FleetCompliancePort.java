@@ -55,6 +55,17 @@ public interface FleetCompliancePort {
     ComplianceVerdict checkHazmatReadiness(UUID vehicleId, UUID driverId);
 
     /**
+     * Refuses a vehicle or driver that has been switched off.
+     *
+     * <p>Asked before the dispatch checks so the answer is a specific code a console can act on:
+     * 409 {@code vehicle-inactive} or {@code driver-inactive}. Unknown ids are left to the other
+     * checks, which already say they do not exist.
+     *
+     * @param driverId may be null
+     */
+    void requireActive(UUID vehicleId, UUID driverId);
+
+    /**
      * The outcome, as data rather than an exception.
      *
      * <p>Callers differ in what they want: execution refuses the dispatch,
