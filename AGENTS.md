@@ -305,8 +305,17 @@ Rules that make the split worth having:
   (`PATCH /consignments/{id}`) follow the same pattern, and load changes after
   building (taking a consignment off, un-planning, cancelling) take the load's
   `ETag` the same way; all of them parse the header with `shared.web.IfMatch`.
-  Other update endpoints (terminals) still take the version in the body; the
-  header form is the one to copy.
+  Partner, vehicle and driver edits (`PUT /partners|vehicles|drivers/{id}`, V64,
+  issue #238) take it the same way, and a terminal's `PUT` accepts the header as
+  well as the older `version` in the body (the header wins). Nothing in master
+  data is deleted: partners move along `/transitions` (a reason is required for
+  SUSPENDED, BLACKLISTED and reactivation), vehicles, drivers and terminals take
+  `POST /{id}/deactivate` and `/reactivate` with a reason (audited), and
+  `DELETE /terminals/{id}` is kept only as a deprecated soft deactivate. An
+  inactive vehicle or driver is refused at trip assignment, dispatch and load
+  planning (`vehicle-inactive`, `driver-inactive`); a terminal with an open
+  order, load or trip refuses to switch off (`terminal-in-use`). The default
+  list of each register is its active records, `status=ALL` lists every one.
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
