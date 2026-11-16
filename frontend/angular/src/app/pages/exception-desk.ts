@@ -24,6 +24,8 @@ import { Session } from '../session';
 import { MapView } from './map-view';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /** A refusal's message, and its problem code when it had one. */
 interface Refusal {
@@ -58,7 +60,7 @@ const HISTORY_COLUMNS: Array<[string, string]> = [
 /** One ticket, its history, and the step its status and the caller's rights allow next. */
 @Component({
   selector: 'app-ticket-panel',
-  imports: [FormsModule, RouterLink, RefusalNote],
+  imports: [FormsModule, RouterLink, RefusalNote, StatusBadge],
   template: `
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (ticket(); as t) {
@@ -68,8 +70,8 @@ const HISTORY_COLUMNS: Array<[string, string]> = [
           <button class="link" (click)="closed.emit()" aria-label="Close ticket">Close</button>
         </header>
         <dl class="facts">
-          <div><dt>Status</dt><dd data-testid="ticket-status">{{ t['status'] }}</dd></div>
-          <div><dt>Severity</dt><dd data-testid="ticket-severity">{{ t['severity'] }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="ticket-status" [value]="t['status']" /></dd></div>
+          <div><dt>Severity</dt><dd><app-status-badge data-testid="ticket-severity" [value]="t['severity']" /></dd></div>
           <div><dt>Category</dt><dd>{{ t['category'] }}</dd></div>
           <div><dt>Source</dt><dd>{{ t['source'] }}</dd></div>
           <div><dt>About</dt><dd>{{ t['tripNo'] || t['subjectLabel'] }}</dd></div>
@@ -128,14 +130,14 @@ const HISTORY_COLUMNS: Array<[string, string]> = [
         }
 
         <h4>History</h4>
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr>@for (c of historyColumns; track c[0]) { <th>{{ c[1] }}</th> }</tr></thead>
           <tbody>
             @for (row of history(); track $index) {
               <tr data-testid="history-row">@for (c of historyColumns; track c[0]) { <td>{{ row[c[0]] }}</td> }</tr>
             }
           </tbody>
-        </table>
+        </table></div>
       </section>
     }
   `,
@@ -227,7 +229,7 @@ export class TicketPanel {
 /** One trip: how far it has got, the geofences it crossed, and the watch it is held to. */
 @Component({
   selector: 'app-trip-panel',
-  imports: [FormsModule, RouterLink, RefusalNote],
+  imports: [FormsModule, RouterLink, RefusalNote, StatusBadge, When],
   template: `
     <section data-testid="trip-panel" aria-label="Trip">
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -235,8 +237,8 @@ export class TicketPanel {
         @if (a.progress; as p) {
           <dl class="facts">
             <div><dt>Trip</dt><dd data-testid="trip-no">{{ p['tripNo'] }}</dd></div>
-            <div><dt>Status</dt><dd>{{ p['status'] }}</dd></div>
-            <div><dt>Last fix</dt><dd>{{ p['lastFixAt'] || '—' }}</dd></div>
+            <div><dt>Status</dt><dd><app-status-badge [value]="p['status']" /></dd></div>
+            <div><dt>Last fix</dt><dd>{{ (p['lastFixAt'] || '—') | when }}</dd></div>
             <div><dt>Done</dt><dd>{{ p['completionPct'] ? p['completionPct'] + ' %' : '—' }}</dd></div>
             <div><dt>Minutes left</dt><dd>{{ p['estimatedMinutesRemaining'] || '—' }}</dd></div>
             <div><dt>Off route</dt><dd>{{ p['offRoute'] || 'No' }}</dd></div>
@@ -248,24 +250,24 @@ export class TicketPanel {
       }
       <p><a [routerLink]="['/trip-route']" [queryParams]="{ trip: tripId() }" data-testid="trip-route-link">Show the route</a></p>
       @if (activity()?.crossings?.length) {
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>When</th><th>Crossing</th><th>Site</th></tr></thead>
           <tbody>
             @for (c of activity()!.crossings; track c['id']) {
-              <tr data-testid="crossing-row"><td>{{ c['occurredAt'] }}</td><td>{{ c['eventType'] }}</td><td>{{ c['terminalCode'] }}</td></tr>
+              <tr data-testid="crossing-row"><td class="nowrap">{{ (c['occurredAt']) | when }}</td><td>{{ c['eventType'] }}</td><td>{{ c['terminalCode'] }}</td></tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
 
       <h3>Watch</h3>
       @if (watchRead()) {
         @if (watch(); as w) {
           <dl class="facts" data-testid="watch">
-            <div><dt>Committed arrival</dt><dd data-testid="watch-arrival">{{ w.committedArrivalAt || '—' }}</dd></div>
+            <div><dt>Committed arrival</dt><dd data-testid="watch-arrival">{{ (w.committedArrivalAt || '—') | when }}</dd></div>
             <div><dt>Band</dt><dd data-testid="watch-band">{{ w.tempMinC ? w.tempMinC + ' – ' + w.tempMaxC + ' °C' : '—' }}</dd></div>
             <div><dt>Outside since</dt><dd>{{ w.outsideRangeSince || '—' }}</dd></div>
-            <div><dt>Last reading</dt><dd>{{ w.lastReadingAt || '—' }}</dd></div>
+            <div><dt>Last reading</dt><dd>{{ (w.lastReadingAt || '—') | when }}</dd></div>
           </dl>
         } @else {
           <p class="muted" data-testid="no-watch">This trip is not watched.</p>
@@ -357,7 +359,7 @@ export class TripPanel {
  */
 @Component({
   selector: 'app-exception-desk',
-  imports: [FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker, PageHeader],
+  imports: [FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Exception desk" />
     <p class="muted">
@@ -403,7 +405,7 @@ export class TripPanel {
             <tbody>
               @for (t of tickets(); track t['id']) {
                 <tr data-testid="ticket-row" tabindex="0" (click)="openTicket(t['id'])" (keydown.enter)="openTicket(t['id'])">
-                  <td>{{ t['ticketNo'] }}</td><td>{{ t['severity'] }}</td><td>{{ t['status'] }}</td><td>{{ t['category'] }}</td>
+                  <td>{{ t['ticketNo'] }}</td><td><app-status-badge [value]="t['severity']" /></td><td><app-status-badge [value]="t['status']" /></td><td>{{ t['category'] }}</td>
                   <td>{{ t['tripNo'] || t['subjectLabel'] }}</td><td>{{ t['assigneeName'] }}</td>
                 </tr>
               }
@@ -475,17 +477,17 @@ export class TripPanel {
       @if (deviationsRead() && deviations().length === 0) {
         <p class="muted" data-testid="no-deviations">No trip is off its route.</p>
       } @else {
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>Trip</th><th>Since</th><th>Off by (m)</th><th>Corridor (m)</th><th></th></tr></thead>
           <tbody>
             @for (d of deviations(); track d['id']) {
               <tr data-testid="deviation-row">
-                <td>{{ d['tripNo'] }}</td><td>{{ d['detectedAt'] }}</td><td>{{ d['distanceM'] }}</td><td>{{ d['corridorM'] }}</td>
+                <td>{{ d['tripNo'] }}</td><td class="nowrap">{{ (d['detectedAt']) | when }}</td><td>{{ d['distanceM'] }}</td><td>{{ d['corridorM'] }}</td>
                 <td><button class="link" (click)="tripId.set(d['tripId'])">Open trip</button></td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
       <h3>Positions</h3>
       @if (positions(); as p) {
