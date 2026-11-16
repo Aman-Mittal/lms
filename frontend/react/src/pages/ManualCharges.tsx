@@ -21,6 +21,7 @@ import {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { money, problemText } from './moneyProblem';
+import { PageHeader } from './PageHeader';
 
 const STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CANCELLED'];
 
@@ -94,7 +95,7 @@ export function ManualCharges() {
 
   return (
     <>
-      <h1>Manual charges</h1>
+      <PageHeader title="Manual charges" />
       <p className="muted">Charges raised by hand against a trip, consignment or order, billed to the customer or paid to the vendor.</p>
       {error && <p className="error" role="alert" data-testid="mc-error">{error}</p>}
 

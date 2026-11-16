@@ -14,14 +14,89 @@
  * limitations under the License.
  */
 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { resetDisplay } from '../display';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
-import { GROUPS, RESOURCES } from './resources';
+import {
+  DRAWER_QUERY, activeGroupId, groupOpen, isNarrow, loadGroupState, saveGroupState, visibleNav,
+} from '../../../shared/nav';
 
+/** The sidebar: its groups come from shared/nav.ts, so both consoles offer the same links in the same order. */
 export function Shell() {
   const { auth, can, end } = useSession();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  const [query, setQuery] = useState('');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [narrow, setNarrow] = useState(isNarrow);
+  const [state, setState] = useState(loadGroupState);
+  const filterRef = useRef<HTMLInputElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+
+  const active = activeGroupId(pathname);
+  const groups = useMemo(() => visibleNav(can, query), [can, query]);
+  const searching = query.trim() !== '';
+
+  const setOpen = useCallback((id: string, open: boolean) => {
+    setState((prev) => {
+      const next = { ...prev, [id]: open };
+      saveGroupState(next);
+      return next;
+    });
+  }, []);
+
+  const closeDrawer = useCallback((refocus: boolean) => {
+    setDrawerOpen(false);
+    if (refocus) {
+      toggleRef.current?.focus();
+    }
+  }, []);
+
+  // Moving to another page closes the drawer, and opens the group that page sits in, whatever was remembered.
+  useEffect(() => {
+    setDrawerOpen(false);
+    if (active && !groupOpen(state, active, active, narrow, false)) {
+      setOpen(active, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  useEffect(() => {
+    let media: MediaQueryList;
+    try {
+      media = matchMedia(DRAWER_QUERY);
+    } catch {
+      return undefined;
+    }
+    const onChange = (e: MediaQueryListEvent) => {
+      setNarrow(e.matches);
+      if (!e.matches) {
+        setDrawerOpen(false);
+      }
+    };
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!drawerOpen) {
+      return undefined;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeDrawer(true);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [drawerOpen, closeDrawer]);
+
+  function openDrawer() {
+    setDrawerOpen(true);
+    setTimeout(() => filterRef.current?.focus());
+  }
 
   function signOut() {
     end();
@@ -31,142 +106,51 @@ export function Shell() {
 
   return (
     <div className="app">
-      <aside className="sidebar" data-testid="sidebar">
-        <div className="brand">LMS</div>
+      <aside id="sidebar" className={drawerOpen ? 'sidebar open' : 'sidebar'} data-testid="sidebar">
+        <div className="sidebar-head">
+          <div className="brand">LMS</div>
+          <button type="button" className="icon-button nav-close" aria-label="Close navigation" data-testid="nav-close"
+                  onClick={() => closeDrawer(true)}>
+            <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+        <input ref={filterRef} type="search" className="nav-filter" placeholder="Filter menu" aria-label="Filter menu"
+               data-testid="nav-filter" autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
         <nav aria-label="Main">
-          <div className="group">
-            <NavLink to="/" end data-testid="nav-overview">Control tower</NavLink>
-          </div>
           {/* Rendering a list: map over data and give each item a stable key. */}
-          {GROUPS.map((group) => (
-            <div className="group" key={group}>
-              <h6>{group}</h6>
-              {RESOURCES.filter((r) => r.group === group && (!r.permission || can(r.permission))).map((r) => (
-                <NavLink key={r.key} to={`/${r.key}`} data-testid={`nav-${r.key}`}>{r.title}</NavLink>
-              ))}
-              {group === 'Operations' && can('LOAD_READ') && (
-                <NavLink to="/consignments" data-testid="nav-consignments">Consignments</NavLink>
-              )}
-              {group === 'Operations' && can('TERMINAL_READ') && (
-                <NavLink to="/map" data-testid="nav-map">Network map</NavLink>
-              )}
-              {group === 'Operations' && (can('GATE_REGISTER') || can('GATE_PASS_MANAGE')) && (
-                <NavLink to="/gate" data-testid="nav-gate">Gate</NavLink>
-              )}
-              {group === 'Operations' && can('TRIP_READ') && (
-                <NavLink to="/trip-route" data-testid="nav-trip-route">Trip route</NavLink>
-              )}
-              {group === 'Multimodal' && can('MULTIMODAL_READ') && (
-                <NavLink to="/itineraries" data-testid="nav-itineraries">Itineraries</NavLink>
-              )}
-              {group === 'Multimodal' && can('MILKRUN_READ') && (
-                <NavLink to="/milk-runs" data-testid="nav-milk-runs">Milk runs</NavLink>
-              )}
-              {group === 'Operations' && can('ORDER_READ') && (
-                <NavLink to="/order-desk" data-testid="nav-order-desk">Order desk</NavLink>
-              )}
-              {group === 'Operations' && can('ORDER_READ') && (
-                <NavLink to="/enquiries" data-testid="nav-enquiries">Enquiry desk</NavLink>
-              )}
-              {group === 'Operations' && can('ORDER_READ') && (
-                <NavLink to="/eway-bills" data-testid="nav-eway-bills">E-way bills</NavLink>
-              )}
-              {group === 'Operations' && can('ORDER_CREATE') && (
-                <NavLink to="/order-upload" data-testid="nav-order-upload">Bulk order upload</NavLink>
-              )}
-              {group === 'Operations' && can('APPROVAL_READ') && (
-                <NavLink to="/approvals" data-testid="nav-approvals">Approvals</NavLink>
-              )}
-              {group === 'Operations' && can('LOAD_READ') && (
-                <NavLink to="/load-building" data-testid="nav-load-building">Load building</NavLink>
-              )}
-              {group === 'Operations' && can('ALLOCATION_RULE_READ') && (
-                <NavLink to="/allocation-rules" data-testid="nav-allocation-rules">Allocation rules</NavLink>
-              )}
-              {group === 'Finance' && (can('INVOICE_READ') || can('TARIFF_MANAGE')) && (
-                <NavLink to="/ltl" data-testid="nav-ltl">LTL rating</NavLink>
-              )}
-              {group === 'Finance' && can('MANUAL_CHARGE_RECORD') && (
-                <NavLink to="/manual-charges" data-testid="nav-manual-charges">Manual charges</NavLink>
-              )}
-              {group === 'Finance' && can('PAYABLES_MANAGE') && (
-                <NavLink to="/payables" data-testid="nav-payables">Vendor payables</NavLink>
-              )}
-              {group === 'Finance' && can('CLIENT_BILLING_READ') && (
-                <NavLink to="/client-billing" data-testid="nav-client-billing">Client billing</NavLink>
-              )}
-              {/* Commercial */}
-              {group === 'Finance' && (can('INVOICE_READ') || can('TARIFF_MANAGE') || can('ROUTING_GUIDE_MANAGE')
-                || can('LOAD_ALLOCATE')) && (
-                <NavLink to="/commercial" data-testid="nav-commercial">Commercial</NavLink>
-              )}
-              {group === 'Control tower' && can('EVENT_DEAD_LETTER_READ') && (
-                <NavLink to="/parked-events" data-testid="nav-parked-events">Parked events</NavLink>
-              )}
-              {group === 'Delivery' && can('POD_READ') && (
-                <NavLink to="/delivery" data-testid="nav-delivery">Delivery desk</NavLink>
-              )}
-              {group === 'Delivery' && can('POD_READ') && (
-                <NavLink to="/pod" data-testid="nav-pod">Proof of delivery</NavLink>
-              )}
-              {group === 'Delivery' && can('TRACKING_LINK_MANAGE') && (
-                <NavLink to="/tracking" data-testid="nav-tracking">Tracking links</NavLink>
-              )}
-              {/* Warehouse operations */}
-              {group === 'Operations' && can('WAREHOUSE_READ') && (
-                <NavLink to="/warehouse" data-testid="nav-warehouse">Warehouse operations</NavLink>
-              )}
-              {/* Control tower */}
-              {group === 'Control tower' && can('EXCEPTION_READ') && (
-                <NavLink to="/exception-desk" data-testid="nav-exception-desk">Exception desk</NavLink>
-              )}
-            </div>
-          ))}
-          {(can('CUSTOM_FIELD_READ') || can('DEMO_RESET') || can('WEBHOOK_READ')) && (
-            <div className="group">
-              <h6>Settings</h6>
-              {can('CUSTOM_FIELD_READ') && (
-                <NavLink to="/settings/custom-fields" data-testid="nav-custom-fields">Custom fields</NavLink>
-              )}
-              {can('DEMO_RESET') && <NavLink to="/settings/demo" data-testid="nav-demo">Demo data</NavLink>}
-              {can('WEBHOOK_READ') && <NavLink to="/settings/webhooks" data-testid="nav-webhooks">Webhooks</NavLink>}
-            </div>
-          )}
-          {/* Administration */}
-          {(can('ACCESS_POLICY_MANAGE') || can('VEHICLE_READ') || can('CREDIT_LIMIT_REQUEST')
-            || can('CREDIT_LIMIT_APPROVE') || can('NUMBER_SERIES_MANAGE')
-            || can('SETTINGS_READ') || can('SETTINGS_MANAGE') || can('ORG_UNIT_MANAGE')
-            || can('CHARGE_CATALOGUE_MANAGE')) && (
-            <div className="group" data-testid="nav-admin">
-              <h6>Administration</h6>
-              {can('ACCESS_POLICY_MANAGE') && (
-                <>
-                  <NavLink to="/admin/users" data-testid="nav-admin-users">Users</NavLink>
-                  <NavLink to="/admin/access-policies" data-testid="nav-admin-policies">Access policies</NavLink>
-                </>
-              )}
-              {can('VEHICLE_READ') && <NavLink to="/admin/compliance" data-testid="nav-admin-compliance">Compliance</NavLink>}
-              {(can('CREDIT_LIMIT_REQUEST') || can('CREDIT_LIMIT_APPROVE')) && (
-                <NavLink to="/admin/credit-limits" data-testid="nav-admin-credit">Credit limits</NavLink>
-              )}
-              {can('NUMBER_SERIES_MANAGE') && (
-                <NavLink to="/admin/number-series" data-testid="nav-admin-number-series">Number series</NavLink>
-              )}
-              {can('CHARGE_CATALOGUE_MANAGE') && (
-                <NavLink to="/charge-catalogue" data-testid="nav-charge-catalogue">Charge catalogue</NavLink>
-              )}
-              {can('ORG_UNIT_MANAGE') && (
-                <NavLink to="/admin/org-units" data-testid="nav-admin-org-units">Organisation units</NavLink>
-              )}
-              {(can('SETTINGS_READ') || can('SETTINGS_MANAGE')) && (
-                <NavLink to="/admin/settings" data-testid="nav-admin-settings">Profile settings</NavLink>
-              )}
-            </div>
-          )}
+          {groups.map((g) => {
+            const open = groupOpen(state, g.id, active, narrow, searching);
+            return (
+              <div className="group" key={g.id} data-testid={`nav-group-${g.id}`}>
+                <button type="button" className="group-toggle" aria-expanded={open} aria-controls={`nav-items-${g.id}`}
+                        data-testid={`nav-toggle-${g.id}`} onClick={() => setOpen(g.id, !open)}>
+                  <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                  <span className="label">{g.label}</span>
+                </button>
+                <div className="group-items" id={`nav-items-${g.id}`} hidden={!open}>
+                  {g.sections.map((s, n) => (
+                    <div key={n} data-testid={s.testid}>
+                      {s.label && g.sections.length > 1 && <div className="section-label">{s.label}</div>}
+                      {s.items.map((i) => (
+                        <NavLink key={i.key} to={i.route} end={i.route === '/'} data-testid={`nav-${i.key}`}>{i.label}</NavLink>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {groups.length === 0 && <p className="nav-empty" role="status">No menu entry matches.</p>}
         </nav>
       </aside>
+      <div className={drawerOpen ? 'nav-backdrop open' : 'nav-backdrop'} data-testid="nav-backdrop" aria-hidden="true"
+           onClick={() => closeDrawer(true)} />
       <div className="main">
         <header className="topbar">
+          <button ref={toggleRef} type="button" className="icon-button nav-toggle" aria-label="Open navigation"
+                  aria-controls="sidebar" aria-expanded={drawerOpen} data-testid="nav-toggle" onClick={openDrawer}>
+            <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
           <NavLink to="/me" data-testid="nav-me">My profile</NavLink>
           <span className="muted" data-testid="who">{auth?.permissions.length ?? 0} permissions</span>
           <button className="link" onClick={signOut} data-testid="sign-out">Sign out</button>

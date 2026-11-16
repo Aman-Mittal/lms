@@ -21,6 +21,7 @@ import {
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -44,9 +45,9 @@ function listOf(text: string): string[] {
  */
 @Component({
   selector: 'app-gate-desk',
-  imports: [EntityPicker],
+  imports: [EntityPicker, PageHeader],
   template: `
-    <h1>Gate desk</h1>
+    <app-page-header title="Gate desk" />
     <p class="muted">Vehicles at the gate: who is inside, entries and exits, the register and gate passes.</p>
     @if (refusal(); as r) {
       <p class="error" role="alert" data-testid="gate-error">

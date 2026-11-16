@@ -22,6 +22,7 @@ import {
 } from '../gateway/enquiry-types';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -48,9 +49,9 @@ interface LineInputs {
  */
 @Component({
   selector: 'app-enquiry-desk',
-  imports: [FormsModule, EntityPicker],
+  imports: [FormsModule, EntityPicker, PageHeader],
   template: `
-    <h1>Enquiry desk</h1>
+    <app-page-header title="Enquiry desk" />
     <p class="muted">Quote each line, record who won it, and convert what was won into a draft order.</p>
 
     <form class="inline" (ngSubmit)="load()" data-testid="enquiry-filter">

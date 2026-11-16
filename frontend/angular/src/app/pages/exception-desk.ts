@@ -23,6 +23,7 @@ import {
 import { Session } from '../session';
 import { MapView } from './map-view';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** A refusal's message, and its problem code when it had one. */
 interface Refusal {
@@ -356,9 +357,9 @@ export class TripPanel {
  */
 @Component({
   selector: 'app-exception-desk',
-  imports: [FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker],
+  imports: [FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker, PageHeader],
   template: `
-    <h1>Exception desk</h1>
+    <app-page-header title="Exception desk" />
     <p class="muted">
       Take a ticket from raised to closed, tune the detectors, hold a trip to an arrival time or a
       temperature band, and see which vehicles are where.

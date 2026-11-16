@@ -19,6 +19,7 @@ import { ApiProblem, MAX_BULK_ASSIGNMENT, type Row } from '../gateway/lmsGateway
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { PageHeader } from './PageHeader';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -54,7 +55,7 @@ export function LoadBuilding() {
 
   return (
     <>
-      <h1>Load building</h1>
+      <PageHeader title="Load building" />
       <p className="muted">
         Open a load to see what is aboard, print its manifest, and put waiting consignments on it,
         up to {MAX_BULK_ASSIGNMENT} at a time.

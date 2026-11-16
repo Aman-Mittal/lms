@@ -22,6 +22,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
 import { TripMoney } from './TripMoney';
+import { PageHeader } from './PageHeader';
 
 /** A trip's track so far and where it is now. */
 export function TripRoute() {
@@ -65,7 +66,7 @@ export function TripRoute() {
 
   return (
     <>
-      <h1>Trip route</h1>
+      <PageHeader title="Trip route" />
       <p className="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
       <form className="inline" onSubmit={lookUp} data-testid="trip-lookup">
         <EntityPicker kind="trip" placeholder="Trip" ariaLabel="Trip id" testId="trip-id"

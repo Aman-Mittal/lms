@@ -21,6 +21,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { trackingUrl } from './trackingUrl';
+import { PageHeader } from './PageHeader';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 export function TrackingLinks() {
@@ -46,7 +47,7 @@ export function TrackingLinks() {
 
   return (
     <>
-      <h1>Tracking links</h1>
+      <PageHeader title="Tracking links" />
       <p className="muted">
         Give a customer a link to follow a consignment without signing in. A link's secret is shown once, when it is issued.
       </p>

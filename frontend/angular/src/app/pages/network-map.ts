@@ -18,13 +18,14 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { LmsGateway, Mapped } from '../gateway/lms-gateway';
 import { MapView } from './map-view';
 import { RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 /** Every site with its geofence, and every vehicle where it last reported. */
 @Component({
   selector: 'app-network-map',
-  imports: [MapView, RowTable],
+  imports: [MapView, RowTable, PageHeader],
   template: `
-    <h1>Network map</h1>
+    <app-page-header title="Network map" />
     <p class="muted">Sites with their geofences, and each vehicle at its last reported position.</p>
     @if (loading()) { <p class="muted">Loading…</p> }
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }

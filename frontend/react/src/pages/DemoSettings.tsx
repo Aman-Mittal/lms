@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { DemoResetOutcome } from '../gateway/lmsGateway';
 import { useSession } from '../session';
+import { PageHeader } from './PageHeader';
 
 /**
  * Puts the demo back to its seeded state.
@@ -57,7 +58,7 @@ export function DemoSettings() {
 
   return (
     <>
-      <h1>Demo data</h1>
+      <PageHeader title="Demo data" />
       <p className="muted">
         Deletes everything in the demo -- orders, trips, partners, custom fields, users -- and seeds it
         again: one administrator with the same password. Anything you built here is lost.

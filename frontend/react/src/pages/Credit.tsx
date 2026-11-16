@@ -22,6 +22,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable, type RowColumn } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 /** The problem a hard credit limit refuses an action with. */
 export const CREDIT_LIMIT_EXCEEDED = 'credit-limit-exceeded';
@@ -220,7 +221,7 @@ export function CreditLimits() {
 
   return (
     <>
-      <h1>Credit limits</h1>
+      <PageHeader title="Credit limits" />
       <p className="muted">
         A new credit limit applies only once someone other than the person who asked for it approves it.
       </p>

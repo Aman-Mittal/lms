@@ -19,6 +19,7 @@ import { FormsModule } from '@angular/forms';
 import { Choice, LmsGateway, RATE_BASES, RateBasis, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 /**
  * Part-load rating: the receivable each docket earned, and the two things a
@@ -28,9 +29,9 @@ import { RowTable } from './row-table';
  */
 @Component({
   selector: 'app-ltl-rating',
-  imports: [FormsModule, RowTable],
+  imports: [FormsModule, RowTable, PageHeader],
   template: `
-    <h1>LTL rating</h1>
+    <app-page-header title="LTL rating" />
     <p class="muted">Part-load dockets are priced from the zones of their sites and the rate card between them.</p>
     @if (readReceivables()) {
       <section>

@@ -20,6 +20,7 @@ import {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { money, problemText, today } from './moneyProblem';
+import { PageHeader } from './PageHeader';
 
 type Tab = 'invoices' | 'payments' | 'overdue';
 
@@ -186,7 +187,7 @@ export function VendorPayables() {
 
   return (
     <>
-      <h1>Vendor payables</h1>
+      <PageHeader title="Vendor payables" />
       <p className="muted">What vendors have invoiced against approved freight bills, what has been paid and what is overdue.</p>
       {error && <p className="error" role="alert" data-testid="pay-desk-error">{error}</p>}
 

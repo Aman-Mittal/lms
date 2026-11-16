@@ -23,6 +23,7 @@ import {
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable, type RowColumn } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -158,7 +159,7 @@ export function NumberSeries() {
 
   return (
     <>
-      <h1>Number series</h1>
+      <PageHeader title="Number series" />
       <p className="muted">
         The most specific active series numbers a document: one for its unit or a unit above it, else the
         tenant-wide one. Without a series, a document keeps its built-in numbering.

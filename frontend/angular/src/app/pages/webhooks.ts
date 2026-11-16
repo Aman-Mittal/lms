@@ -20,6 +20,7 @@ import {
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 /** A subscription as a table row. */
 function rowOf(w: WebhookView): Row {
@@ -43,9 +44,9 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-webhooks',
-  imports: [RowTable],
+  imports: [RowTable, PageHeader],
   template: `
-    <h1>Webhooks</h1>
+    <app-page-header title="Webhooks" />
     <p class="muted">Addresses your systems listen on, told about orders, trips, deliveries and claims as they happen.</p>
     @if (secret(); as s) {
       <section class="notice" data-testid="webhook-secret">

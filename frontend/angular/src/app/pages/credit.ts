@@ -21,6 +21,7 @@ import {
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { RowColumn, RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 /** The problem a hard credit limit refuses an action with. */
 export const CREDIT_LIMIT_EXCEEDED = 'credit-limit-exceeded';
@@ -195,9 +196,9 @@ const CHANGE_COLUMNS: RowColumn[] = [
  */
 @Component({
   selector: 'app-credit-limits',
-  imports: [EntityPicker, RowTable, CreditPositionPanel],
+  imports: [EntityPicker, RowTable, CreditPositionPanel, PageHeader],
   template: `
-    <h1>Credit limits</h1>
+    <app-page-header title="Credit limits" />
     <p class="muted">
       A new credit limit applies only once someone other than the person who asked for it approves it.
     </p>

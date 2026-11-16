@@ -22,6 +22,7 @@ import {
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { PageHeader } from './PageHeader';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 export function AllocationRules() {
@@ -56,7 +57,7 @@ export function AllocationRules() {
   if (!can('ALLOCATION_RULE_READ')) {
     return (
       <>
-        <h1>Allocation rules</h1>
+        <PageHeader title="Allocation rules" />
         <p className="muted" data-testid="no-rights">You do not have the right to read allocation rules.</p>
       </>
     );
@@ -64,7 +65,7 @@ export function AllocationRules() {
 
   return (
     <>
-      <h1>Allocation rules</h1>
+      <PageHeader title="Allocation rules" />
       <p className="muted">
         When a load is offered, the first active rule that matches it decides who is asked: PREFER asks its vendors
         first, in order; EXCLUDE never asks them. A rule is retired, never deleted.

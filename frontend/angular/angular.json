@@ -53,7 +53,8 @@
             ],
             "styles": [
               "node_modules/leaflet/dist/leaflet.css",
-              "src/styles.css",
+              "../shared/tokens.css",
+              "../shared/styles.css",
               "src/print.css",
               "src/map.css"
             ]

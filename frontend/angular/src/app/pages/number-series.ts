@@ -20,6 +20,7 @@ import {
   NumberSeriesScope, NumberSeriesView, NumberVerdict, NumberYearCode, Row,
 } from '../gateway/lms-gateway';
 import { RowColumn, RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -57,9 +58,9 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-number-series',
-  imports: [RowTable],
+  imports: [RowTable, PageHeader],
   template: `
-    <h1>Number series</h1>
+    <app-page-header title="Number series" />
     <p class="muted">
       The most specific active series numbers a document: one for its unit or a unit above it, else the
       tenant-wide one. Without a series, a document keeps its built-in numbering.

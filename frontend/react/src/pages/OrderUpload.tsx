@@ -19,6 +19,7 @@ import { ApiProblem } from '../gateway/lmsGateway';
 import type { UploadOutcome } from '../gateway/enquiryTypes';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
+import { PageHeader } from './PageHeader';
 
 /**
  * Orders from a spreadsheet: choose a customer and a CSV or XLSX file, and see what became of every row.
@@ -55,7 +56,7 @@ export function OrderUpload() {
 
   return (
     <>
-      <h1>Bulk order upload</h1>
+      <PageHeader title="Bulk order upload" />
       <p className="muted">
         One row is one order line. Columns are the customer&apos;s own where a column mapping is set, else
         order_ref, origin, destination, pickup_date, delivery_date, load_type, material_code, material, quantity,

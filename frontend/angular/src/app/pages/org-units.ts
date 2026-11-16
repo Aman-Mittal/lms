@@ -18,6 +18,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { LmsGateway, ORG_UNIT_RANK, ORG_UNIT_TYPES, ORG_UNIT_WORDS, OrgUnitView } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { PageHeader } from './page-header';
 
 /** What the form beneath the tree is doing: adding a child, editing a unit, or nothing. */
 type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 'edit'; unit: OrgUnitView };
@@ -32,9 +33,9 @@ type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 
  */
 @Component({
   selector: 'app-org-units',
-  imports: [FormsModule],
+  imports: [FormsModule, PageHeader],
   template: `
-    <h1>Organisation units</h1>
+    <app-page-header title="Organisation units" />
     <p class="muted">Levels run head office, line of business, country, zone (or region), branch, hub; a unit sits
       below its parent's level. A country carries its ISO code and a zone, branch or hub may carry a state code:
       platform rules for that country and state then apply to everything beneath.</p>

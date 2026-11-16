@@ -1,0 +1,81 @@
+/*
+ * Design tokens shared by the Angular and React consoles. Every colour, space, type size, radius, shadow and
+ * the focus ring is a custom property here; styles.css only reads them. Theme: data-theme on <html> is
+ * "light", "dark" or "system" (display.ts); with none set the light values apply.
+ *
+ * Contrast (WCAG 2.x, computed from the hex values below; text needs 4.5:1):
+ *   light  : ink on bg 15.3, muted on card 5.9, muted on head 5.2, primary-ink on primary 5.1, accent on accent-soft 5.8
+ *   dark   : ink on bg 15.3, muted on card 6.8, primary-ink on primary 5.3, accent on card 7.1, nav text on side 13.1,
+ *            active nav (nav-active-ink on nav-active) 5.3
+ */
+:root {
+  /* Space: a 4px scale. */
+  --space-0: 0;
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem; --space-5: 1.25rem;
+  --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem;
+
+  /* Type */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-xs: 0.75rem; --text-sm: 0.8125rem; --text-base: 0.9375rem; --text-md: 1.0625rem;
+  --text-lg: 1.25rem; --text-xl: 1.5rem; --text-2xl: 1.875rem;
+  --leading-tight: 1.25; --leading-base: 1.5;
+  --weight-regular: 400; --weight-medium: 500; --weight-semibold: 600; --weight-bold: 700;
+
+  /* Shape and depth */
+  --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-full: 999px;
+  --shadow-sm: 0 1px 2px rgb(16 26 43 / 8%);
+  --shadow-md: 0 6px 18px rgb(16 26 43 / 12%);
+  --shadow-lg: 0 16px 40px rgb(16 26 43 / 22%);
+
+  /* Focus ring: an outline, so it follows the element's shape and survives forced-colours mode. */
+  --focus-width: 2px; --focus-offset: 2px;
+
+  /* Layout */
+  --sidebar-width: 15rem; --content-max: 80rem;
+  --z-drawer: 40; --z-backdrop: 30;
+
+  /* Colour, light */
+  --ink: #16202c; --muted: #5b6578; --line: #dfe4ec;
+  --bg: #f5f7fb; --card: #ffffff; --field: #ffffff; --head: #eef1f7;
+  --primary: #1f5eff; --primary-hover: #1749d1; --primary-ink: #ffffff;
+  --accent: #1a50d6; --accent-soft: #e8efff;
+  --err: #b42318; --ok: #067647; --warn: #93560a;
+  --side: #101a2b; --side-ink: #cdd6e4; --side-muted: #9aa8c0; --side-hover: #1b2940; --side-line: #24324b;
+  --nav-active: #1f5eff; --nav-active-ink: #ffffff;
+  --focus-color: #1f5eff; --backdrop: rgb(10 16 28 / 55%);
+}
+
+:root[data-theme=light] { color-scheme: light; }
+
+:root[data-theme=dark] {
+  color-scheme: dark;
+  --ink: #e6ebf2; --muted: #9aa6b8; --line: #2b3546;
+  --bg: #0f1520; --card: #161e2b; --field: #0f1622; --head: #1b2433;
+  --primary: #3b63d9; --primary-hover: #2f55c4; --primary-ink: #ffffff;
+  --accent: #7fa8ff; --accent-soft: #1d2a44;
+  --err: #ff8a80; --ok: #5fd39a; --warn: #f2b45a;
+  --side: #0a0f17; --side-ink: #cdd6e4; --side-muted: #94a1b8; --side-hover: #151e2d; --side-line: #1e2838;
+  --nav-active: #3b63d9; --nav-active-ink: #ffffff;
+  --focus-color: #9dbcff; --backdrop: rgb(0 0 0 / 65%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-md: 0 6px 18px rgb(0 0 0 / 45%);
+  --shadow-lg: 0 16px 40px rgb(0 0 0 / 60%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme=system] {
+    color-scheme: dark;
+    --ink: #e6ebf2; --muted: #9aa6b8; --line: #2b3546;
+    --bg: #0f1520; --card: #161e2b; --field: #0f1622; --head: #1b2433;
+    --primary: #3b63d9; --primary-hover: #2f55c4; --primary-ink: #ffffff;
+    --accent: #7fa8ff; --accent-soft: #1d2a44;
+    --err: #ff8a80; --ok: #5fd39a; --warn: #f2b45a;
+    --side: #0a0f17; --side-ink: #cdd6e4; --side-muted: #94a1b8; --side-hover: #151e2d; --side-line: #1e2838;
+    --nav-active: #3b63d9; --nav-active-ink: #ffffff;
+    --focus-color: #9dbcff; --backdrop: rgb(0 0 0 / 65%);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-md: 0 6px 18px rgb(0 0 0 / 45%);
+    --shadow-lg: 0 16px 40px rgb(0 0 0 / 60%);
+  }
+}

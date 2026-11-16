@@ -22,13 +22,14 @@ import {
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 @Component({
   selector: 'app-allocation-rules',
-  imports: [FormsModule, EntityPicker],
+  imports: [FormsModule, EntityPicker, PageHeader],
   template: `
-    <h1>Allocation rules</h1>
+    <app-page-header title="Allocation rules" />
     @if (!read()) {
       <p class="muted" data-testid="no-rights">You do not have the right to read allocation rules.</p>
     } @else {

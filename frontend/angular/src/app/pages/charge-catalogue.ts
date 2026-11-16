@@ -18,6 +18,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import {
   ApiProblem, CHARGE_BASES, CHARGE_DIRECTIONS, ChargeEntryView, LmsGateway,
 } from '../gateway/lms-gateway';
+import { PageHeader } from './page-header';
 
 /** What an `(input)` or `(change)` event carries, read without a cast in the template. */
 function valueOf(event: Event): string {
@@ -33,8 +34,9 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-charge-catalogue',
+  imports: [PageHeader],
   template: `
-    <h1>Charge catalogue</h1>
+    <app-page-header title="Charge catalogue" />
     <p class="muted">The charges raised by hand against a trip, consignment or order, and their default rates.</p>
     @if (refusal(); as r) {
       <p class="error" role="alert" data-testid="cc-error">

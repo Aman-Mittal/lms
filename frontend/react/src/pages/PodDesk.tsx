@@ -19,6 +19,7 @@ import {
   ApiProblem, POD_DOCUMENT_TYPES, provesDelivery, type DeliveryProofView, type PodDocumentType, type PodLineDraft,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
+import { PageHeader } from './PageHeader';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -187,7 +188,7 @@ export function PodDesk() {
 
   return (
     <>
-      <h1>Proof of delivery desk</h1>
+      <PageHeader title="Proof of delivery desk" />
       <p className="muted">Start the proof, feed it line by line, list the documents and times, then submit it.</p>
       <form className="inline" onSubmit={lookUp} data-testid="pod-lookup">
         <input name="consignment" placeholder="Consignment id" aria-label="Consignment id" data-testid="pod-consignment-id"

@@ -22,13 +22,14 @@ import { Session } from '../session';
 import { MapView } from './map-view';
 import { EntityPicker } from './entity-picker';
 import { TripMoney } from './trip-money';
+import { PageHeader } from './page-header';
 
 /** A trip's track so far and where it is now. */
 @Component({
   selector: 'app-trip-route',
-  imports: [FormsModule, MapView, EntityPicker, TripMoney],
+  imports: [FormsModule, MapView, EntityPicker, TripMoney, PageHeader],
   template: `
-    <h1>Trip route</h1>
+    <app-page-header title="Trip route" />
     <p class="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="lookUp()" data-testid="trip-lookup">

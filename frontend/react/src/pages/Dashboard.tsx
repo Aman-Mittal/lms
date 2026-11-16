@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RESOURCES } from './resources';
+import { PageHeader } from './PageHeader';
 
 export function Dashboard() {
   const { gateway } = useSession();
@@ -25,7 +26,7 @@ export function Dashboard() {
 
   return (
     <>
-      <h1>Control tower</h1>
+      <PageHeader title="Control tower" description="What needs attention across your network right now." />
       {error && <p className="error" role="alert">{error}</p>}
       {s ? (
         <div className="tiles" data-testid="tiles">

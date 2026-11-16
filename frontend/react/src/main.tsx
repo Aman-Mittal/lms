@@ -19,7 +19,8 @@ import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import { App } from './App';
 import { SessionProvider } from './session';
-import './styles.css';
+import '../../shared/tokens.css';
+import '../../shared/styles.css';
 import './print.css';
 import './map.css';
 

@@ -20,6 +20,7 @@ import { Session } from '../session';
 import { Qr } from './qr';
 import { RESOURCES } from './resources';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** The panel beside the list: one claim, what may be done to it, and its slip. */
 @Component({
@@ -118,11 +119,11 @@ export class ClaimPanel {
 /** Claims: the list, a form to raise one, and a panel to decide and print it. */
 @Component({
   selector: 'app-claims',
-  imports: [FormsModule, ClaimPanel, EntityPicker],
+  imports: [FormsModule, ClaimPanel, EntityPicker, PageHeader],
   template: `
     <div [class.with-panel]="selected()">
       <div class="list">
-        <h1>Claims</h1>
+        <app-page-header title="Claims" />
         <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
         <form class="inline" (ngSubmit)="filter()" data-testid="claims-filter">
           <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Filter by consignment" testId="claims-filter-consignment"

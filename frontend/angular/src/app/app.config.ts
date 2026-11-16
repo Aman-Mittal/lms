@@ -18,7 +18,7 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, withHashLocation } from '@angular/router';
 import { provideApi } from './api';
-import { GeneratedLmsGateway } from './gateway/generated-lms-gateway';
+import { lazyGateway } from './gateway/lazy-gateway';
 import { LmsGateway } from './gateway/lms-gateway';
 import { bearerToken } from './auth';
 import { API_URL } from './config';
@@ -31,7 +31,7 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withHashLocation()),
     provideHttpClient(withInterceptors([bearerToken])),
     provideApi(API_URL),
-    // The one place the generated client is wired to the screens' interface.
-    { provide: LmsGateway, useClass: GeneratedLmsGateway },
+    // The one place the generated client is wired to the screens' interface, loaded on first call (see lazy-gateway.ts).
+    { provide: LmsGateway, useFactory: lazyGateway },
   ],
 };

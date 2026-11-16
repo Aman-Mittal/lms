@@ -23,15 +23,16 @@ import { LmsGateway, PARTNER_TYPES, PartnerType, ResourceKey, Row } from '../gat
 import { Session } from '../session';
 import { RecordPanel } from './record-panel';
 import { RESOURCES } from './resources';
+import { PageHeader } from './page-header';
 
 @Component({
   selector: 'app-list',
-  imports: [FormsModule, RecordPanel],
+  imports: [FormsModule, RecordPanel, PageHeader],
   template: `
     @if (resource(); as r) {
       <div [class.with-panel]="selected()">
         <div class="list">
-          <h1>{{ r.title }}</h1>
+          <app-page-header [title]="r.title" />
           <input type="search" aria-label="Search" placeholder="Search" data-testid="search"
                  name="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
           @if (error()) { <p class="error" role="alert">{{ error() }}</p> }

@@ -20,6 +20,7 @@ import {
   CUSTOM_FIELD_KINDS, CustomFieldKind, FIELD_TYPES, FieldDefinition, FieldType, LmsGateway,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { PageHeader } from './page-header';
 
 const KIND_LABEL: Record<CustomFieldKind, string> = {
   PARTNER: 'Partners', VEHICLE: 'Vehicles', DRIVER: 'Drivers', TERMINAL: 'Terminals',
@@ -29,9 +30,9 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
 /** Settings: which custom fields exist on each kind of record. */
 @Component({
   selector: 'app-fields-settings',
-  imports: [FormsModule],
+  imports: [FormsModule, PageHeader],
   template: `
-    <h1>Custom fields</h1>
+    <app-page-header title="Custom fields" />
     <p class="muted">Fields your company tracks on its own records. Retiring a field keeps what was recorded under it.</p>
     <label>
       Record kind

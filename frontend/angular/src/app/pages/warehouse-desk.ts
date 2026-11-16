@@ -22,6 +22,7 @@ import {
 import { Session } from '../session';
 import { Qr } from './qr';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 type Columns = Array<[string, string]>;
@@ -780,9 +781,9 @@ export class WarehouseFloor implements OnInit {
 /** Opens a warehouse's floor by its terminal id. */
 @Component({
   selector: 'app-warehouse-desk',
-  imports: [FormsModule, WarehouseFloor, EntityPicker],
+  imports: [FormsModule, WarehouseFloor, EntityPicker, PageHeader],
   template: `
-    <h1>Warehouse operations</h1>
+    <app-page-header title="Warehouse operations" />
     <p class="muted">Open a warehouse to receive, store, pick, pack and dispatch its goods.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form class="inline" (ngSubmit)="open()" data-testid="open-warehouse">

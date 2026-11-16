@@ -19,6 +19,7 @@ import { FormsModule } from '@angular/forms';
 import { LmsGateway, PARKED_STATUSES, ParkedEventDetail, ParkedStatus, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 /**
  * Events whose listener failed on every retry and were parked. An operator
@@ -27,9 +28,9 @@ import { RowTable } from './row-table';
  */
 @Component({
   selector: 'app-parked-events',
-  imports: [FormsModule, RowTable],
+  imports: [FormsModule, RowTable, PageHeader],
   template: `
-    <h1>Parked events</h1>
+    <app-page-header title="Parked events" />
     <p class="muted">Events whose listener kept failing after every retry. Replay one once its cause is fixed.</p>
     <form class="inline" (ngSubmit)="load()" data-testid="parked-filter">
       <select name="status" aria-label="Status" data-testid="parked-status" [(ngModel)]="filter.status">

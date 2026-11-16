@@ -18,6 +18,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import {
   ApiProblem, InvoiceBillView, LmsGateway, PAYMENT_MODES, VendorInvoiceView, VendorPaymentView,
 } from '../gateway/lms-gateway';
+import { PageHeader } from './page-header';
 
 type Tab = 'invoices' | 'payments' | 'overdue';
 
@@ -36,8 +37,9 @@ function today(): string {
  */
 @Component({
   selector: 'app-payables',
+  imports: [PageHeader],
   template: `
-    <h1>Vendor payables</h1>
+    <app-page-header title="Vendor payables" />
     <p class="muted">Vendor invoices, payments made and what is overdue.</p>
     <p class="actions" role="tablist" aria-label="Payables views">
       <button type="button" role="tab" [class.link]="tab() !== 'invoices'" data-testid="pay-tab-invoices"

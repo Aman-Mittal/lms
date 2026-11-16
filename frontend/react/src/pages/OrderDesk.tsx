@@ -23,6 +23,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
+import { PageHeader } from './PageHeader';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -99,7 +100,7 @@ export function OrderDesk() {
 
   return (
     <>
-      <h1>Order desk</h1>
+      <PageHeader title="Order desk" />
       <p className="muted">
         Raise an order, edit it while it is a draft, and amend it once validated, until consignments
         are cut from it.

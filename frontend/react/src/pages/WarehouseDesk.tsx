@@ -22,6 +22,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
+import { PageHeader } from './PageHeader';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 const TABS: Array<[Tab, string]> = [
@@ -75,7 +76,7 @@ export function WarehouseDesk() {
 
   return (
     <>
-      <h1>Warehouse operations</h1>
+      <PageHeader title="Warehouse operations" />
       <p className="muted">Open a warehouse to receive, store, pick, pack and dispatch its goods.</p>
       <form className="inline" onSubmit={open} data-testid="open-warehouse">
         <EntityPicker kind="warehouse" placeholder="Warehouse" ariaLabel="Warehouse id" testId="warehouse-id"

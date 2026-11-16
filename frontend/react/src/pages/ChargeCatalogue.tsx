@@ -20,6 +20,7 @@ import {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { money, problemText } from './moneyProblem';
+import { PageHeader } from './PageHeader';
 
 /**
  * The tenant's catalogue of manual charges. Keeping it needs CHARGE_CATALOGUE_MANAGE; an entry is
@@ -92,7 +93,7 @@ export function ChargeCatalogue() {
 
   return (
     <>
-      <h1>Charge catalogue</h1>
+      <PageHeader title="Charge catalogue" />
       <p className="muted">The charges raised by hand against a trip, consignment or order, with their basis and default rate.</p>
       {error && <p className="error" role="alert" data-testid="cc-error">{error}</p>}
       {saved && <p className="ok" role="status" data-testid="cc-saved">{saved}</p>}

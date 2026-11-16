@@ -20,6 +20,7 @@ import {
   EWAY_STATUSES, EwayAction, EwayBillRow, EwayFilter, EwayGenerateDraft, EwayPartBResult,
 } from '../gateway/eway-types';
 import { Session } from '../session';
+import { PageHeader } from './page-header';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -41,9 +42,9 @@ const ACTION_DONE: Record<EwayAction, string> = {
  */
 @Component({
   selector: 'app-eway-bill-desk',
-  imports: [FormsModule],
+  imports: [FormsModule, PageHeader],
   template: `
-    <h1>E-way bills</h1>
+    <app-page-header title="E-way bills" />
     <p class="muted">Generate a consignment's bill, put a vehicle on Part-B, extend or cancel it, and watch what is about to lapse.</p>
 
     <form class="inline" (ngSubmit)="load()" data-testid="eway-filter">

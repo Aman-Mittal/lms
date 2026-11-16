@@ -18,6 +18,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import {
   ApiProblem, CHARGE_SUBJECT_TYPES, ChargeEntryView, LmsGateway, ManualChargeView,
 } from '../gateway/lms-gateway';
+import { PageHeader } from './page-header';
 
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -30,8 +31,9 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-manual-charges',
+  imports: [PageHeader],
   template: `
-    <h1>Manual charges</h1>
+    <app-page-header title="Manual charges" />
     <p class="muted">Detention, loading, tolls and penalties raised by hand against a trip, consignment or order.</p>
     @if (refusal(); as r) {
       <p class="error" role="alert" data-testid="mc-error">

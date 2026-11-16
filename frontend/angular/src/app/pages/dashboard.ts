@@ -18,12 +18,13 @@ import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ControlTowerSummary, LmsGateway } from '../gateway/lms-gateway';
 import { RESOURCES } from './resources';
+import { PageHeader } from './page-header';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [RouterLink],
+  imports: [RouterLink, PageHeader],
   template: `
-    <h1>Control tower</h1>
+    <app-page-header title="Control tower" description="What needs attention across your network right now." />
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (summary(); as s) {
       <div class="tiles" data-testid="tiles">

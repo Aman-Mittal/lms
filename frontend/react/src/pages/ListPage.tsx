@@ -21,6 +21,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RecordPanel } from './RecordPanel';
 import { RESOURCES } from './resources';
+import { PageHeader } from './PageHeader';
 
 export function ListPage() {
   const { resource: key } = useParams(); // the :resource part of the URL
@@ -58,7 +59,7 @@ export function ListPage() {
   return (
     <div className={selected ? 'with-panel' : undefined}>
       <div className="list">
-        <h1>{resource.title}</h1>
+        <PageHeader title={resource.title} />
         <input
           type="search" aria-label="Search" placeholder="Search" data-testid="search"
           value={query} onChange={(e) => setQuery(e.target.value)}

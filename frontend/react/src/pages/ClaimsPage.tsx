@@ -21,6 +21,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { RESOURCES } from './resources';
+import { PageHeader } from './PageHeader';
 
 const resource = RESOURCES.find((r) => r.key === 'claims')!;
 
@@ -46,7 +47,7 @@ export function ClaimsPage() {
   return (
     <div className={selected ? 'with-panel' : undefined}>
       <div className="list">
-        <h1>Claims</h1>
+        <PageHeader title="Claims" />
         <form className="inline" onSubmit={filter} data-testid="claims-filter">
           <EntityPicker kind="consignment" placeholder="Consignment" ariaLabel="Filter by consignment" testId="claims-filter-consignment"
           value={typed} onChange={setTyped} />
