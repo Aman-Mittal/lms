@@ -20,6 +20,7 @@ import {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -205,7 +206,7 @@ export function PodDesk() {
       {consignmentId && loaded && proof !== null && (
         <section data-testid="pod-proof">
           <dl>
-            <div><dt>Proof</dt><dd data-testid="pod-status">{proof.status}</dd></div>
+            <div><dt>Proof</dt><dd><StatusBadge data-testid="pod-status" value={proof.status} /></dd></div>
             {proof.paper && <div><dt>Keyed from paper</dt><dd data-testid="pod-paper">Yes</dd></div>}
             {proof.keyedBy && <div><dt>Keyed by</dt><dd data-testid="pod-keyed-by">{proof.keyedBy}</dd></div>}
             {proves && <div><dt>Received by</dt><dd data-testid="pod-recipient-shown">{proof.recipientName}</dd></div>}
@@ -213,7 +214,7 @@ export function PodDesk() {
           </dl>
 
           <h2>Lines</h2>
-          <table data-testid="pod-lines">
+          <div className="table-wrap"><table data-testid="pod-lines">
             <thead><tr><th>Line</th><th>Material</th><th>Gross</th><th>Received</th><th>Short</th><th>Damaged</th><th>Excess</th></tr></thead>
             <tbody>
               {proof.lines.map((l) => (
@@ -231,7 +232,7 @@ export function PodDesk() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           {editable && <p><button data-testid="pod-save-lines" onClick={saveLines}>Save lines</button></p>}
 
           <h2>Documents</h2>

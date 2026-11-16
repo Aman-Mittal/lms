@@ -23,11 +23,12 @@ import {
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 @Component({
   selector: 'app-allocation-rules',
-  imports: [FormsModule, EntityPicker, PageHeader],
+  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Allocation rules" />
     @if (!read()) {
@@ -44,7 +45,7 @@ import { PageHeader } from './page-header';
       } @else if (rules().length === 0) {
         <p class="muted" data-testid="no-rules">No rules yet: loads are offered by the routing guide alone.</p>
       } @else {
-        <table data-testid="rules-table">
+        <div class="table-wrap"><table data-testid="rules-table">
           <thead>
             <tr><th>Priority</th><th>Name</th><th>When</th><th>Action</th><th>Vendors</th><th>Status</th><th></th></tr>
           </thead>
@@ -54,9 +55,9 @@ import { PageHeader } from './page-header';
                 <td>{{ r.priority }}</td>
                 <td data-testid="rule-name">{{ r.name }}</td>
                 <td>{{ conditions(r) }}</td>
-                <td data-testid="rule-action">{{ r.action }}</td>
+                <td><app-status-badge data-testid="rule-action" [value]="r.action" /></td>
                 <td data-testid="rule-vendors">{{ vendorList(r) }}</td>
-                <td data-testid="rule-status">{{ r.active ? 'Active' : 'Retired' }}</td>
+                <td><app-status-badge data-testid="rule-status" [value]="r.active ? 'ACTIVE' : 'RETIRED'" /></td>
                 <td>
                   @if (manage()) {
                     <button class="link" data-testid="rule-edit" (click)="edit(r)">Edit</button>
@@ -67,7 +68,7 @@ import { PageHeader } from './page-header';
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
 
       @if (manage()) {
@@ -167,7 +168,7 @@ import { PageHeader } from './page-header';
         @if (found(); as a) {
           <dl data-testid="allocation-result">
             <div><dt>Load</dt><dd>{{ a.loadNo }}</dd></div>
-            <div><dt>Status</dt><dd data-testid="allocation-status">{{ a.status }}</dd></div>
+            <div><dt>Status</dt><dd><app-status-badge data-testid="allocation-status" [value]="a.status" /></dd></div>
             <div><dt>Rule</dt><dd data-testid="allocation-rule">
               {{ a.appliedRuleName ? a.appliedRuleName + ' (' + a.appliedRuleAction + ')' : 'No rule fired' }}
             </dd></div>
