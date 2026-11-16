@@ -22,6 +22,7 @@ import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { trackingUrl } from './trackingUrl';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 export function TrackingLinks() {
@@ -162,16 +163,16 @@ function Panel({ consignmentId, links, issued, onIssued, onChanged }: PanelProps
       {links.length === 0 ? (
         <p className="muted" data-testid="no-links">This consignment has no tracking links.</p>
       ) : (
-        <table data-testid="links-table">
+        <div className="table-wrap"><table data-testid="links-table">
           <thead>
             <tr><th>Status</th><th>Created</th><th>Expires</th><th>Revoked</th><th /></tr>
           </thead>
           <tbody>
             {links.map((l) => (
               <tr key={l.id} data-testid="link-row">
-                <td data-testid="link-status">{l.status}</td>
-                <td>{l.createdAt}</td>
-                <td>{l.expiresAt}</td>
+                <td><StatusBadge data-testid="link-status" value={l.status} /></td>
+                <td className="nowrap">{l.createdAt}</td>
+                <td className="nowrap">{l.expiresAt}</td>
                 <td>{l.revokedAt || '—'}</td>
                 <td>
                   {l.status === 'ACTIVE' && (
@@ -181,7 +182,7 @@ function Panel({ consignmentId, links, issued, onIssued, onChanged }: PanelProps
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </section>
   );

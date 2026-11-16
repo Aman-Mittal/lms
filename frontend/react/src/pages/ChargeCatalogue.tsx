@@ -21,6 +21,7 @@ import {
 import { useSession } from '../session';
 import { money, problemText } from './moneyProblem';
 import { PageHeader } from './PageHeader';
+import { Money } from './Figures';
 
 /**
  * The tenant's catalogue of manual charges. Keeping it needs CHARGE_CATALOGUE_MANAGE; an entry is
@@ -130,12 +131,12 @@ export function ChargeCatalogue() {
       {entries.length === 0 ? (
         <p className="muted">No charge matches.</p>
       ) : (
-        <table data-testid="cc-list">
+        <div className="table-wrap"><table data-testid="cc-list">
           <thead><tr><th>Code</th><th>Name</th><th>Basis</th><th>Default rate</th><th>Direction</th><th>Active</th><th /></tr></thead>
           <tbody>
             {entries.map((e) => (
               <tr key={e.id} data-testid="cc-row">
-                <td>{e.code}</td><td>{e.name}</td><td>{e.basis}</td><td>{money(e.defaultRate)}</td>
+                <td>{e.code}</td><td>{e.name}</td><td>{e.basis}</td><td className="num"><Money value={e.defaultRate} currency={e.currency} /></td>
                 <td>{e.direction}</td><td>{e.active ? 'Yes' : 'No'}</td>
                 <td>
                   {can('CHARGE_CATALOGUE_MANAGE') && (
@@ -146,7 +147,7 @@ export function ChargeCatalogue() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </>
   );

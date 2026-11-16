@@ -22,6 +22,8 @@ import { useLoad } from '../useLoad';
 import { RecordPanel } from './RecordPanel';
 import { RESOURCES } from './resources';
 import { PageHeader } from './PageHeader';
+import { Cell } from './Cell';
+import { isDateColumn, isNumericColumn } from '../../../shared/format';
 
 export function ListPage() {
   const { resource: key } = useParams(); // the :resource part of the URL
@@ -65,31 +67,35 @@ export function ListPage() {
           value={query} onChange={(e) => setQuery(e.target.value)}
         />
         {error && <p className="error" role="alert">{error}</p>}
-        {loading ? (
-          <p>Loading…</p>
-        ) : visible.length === 0 && !error ? (
-          <p className="muted">{rows.length === 0 ? 'Nothing here yet.' : 'No match.'}</p>
-        ) : (
-          visible.length > 0 && (
-            <table>
-              <thead>
-                <tr>{resource.columns.map((c) => <th key={c.field}>{c.header}</th>)}</tr>
-              </thead>
-              <tbody>
-                {visible.map((row) => (
-                  <tr
-                    key={row.id} data-testid="row" tabIndex={0}
-                    className={row.id === selectedId ? 'selected' : undefined}
-                    onClick={() => setSelectedId(row.id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { setSelectedId(row.id); } }}
-                  >
-                    {resource.columns.map((c) => <td key={c.field}>{row[c.field]}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )
-        )}
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>{resource.columns.map((c) => <th key={c.field} className={isNumericColumn(c.field) ? 'num' : undefined}>{c.header}</th>)}</tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr className="loading-row"><td className="table-state" colSpan={resource.columns.length}>Loading…</td></tr>
+              ) : visible.length === 0 && !error ? (
+                <tr className="empty-row">
+                  <td className="table-state" colSpan={resource.columns.length}>{rows.length === 0 ? 'Nothing here yet.' : 'No match.'}</td>
+                </tr>
+              ) : visible.map((row) => (
+                <tr
+                  key={row.id} data-testid="row" tabIndex={0}
+                  className={row.id === selectedId ? 'selected' : undefined}
+                  onClick={() => setSelectedId(row.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { setSelectedId(row.id); } }}
+                >
+                  {resource.columns.map((c) => (
+                    <td key={c.field} className={isNumericColumn(c.field) ? 'num' : isDateColumn(c.field) ? 'nowrap' : undefined}>
+                      <Cell field={c.field} value={row[c.field]} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {resource.key === 'partners' && auth?.orgUnitId && (
           <RegisterPartner orgUnitId={auth.orgUnitId} onDone={() => setReload((n) => n + 1)} />
         )}
