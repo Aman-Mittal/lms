@@ -34,11 +34,15 @@
  * Passes are numbered from the {@code GATE_PASS} series through
  * {@code identity::numbering}.
  *
+ * <p>At dispatch it asks {@code statutory::api} whether every consignment aboard has the
+ * e-way bill the unit requires (off by default), and it forwards a trip-level Part-B vehicle
+ * update to the same module.
+ *
  * <p>Reads its dispatch checklist and tracking switches through
  * {@code settings::api}, resolved for the trip's unit, vehicle and customers.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Trip Execution",
         allowedDependencies = {"planning::api", "masterdata::api", "identity::access",
-                "identity::numbering", "settings::api"})
+                "identity::numbering", "settings::api", "statutory::api"})
 package com.lms.execution;
