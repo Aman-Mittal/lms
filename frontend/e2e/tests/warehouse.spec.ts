@@ -30,7 +30,7 @@ test.describe('warehouse operations', () => {
       await form.getByLabel('Line 1 SKU').fill(floor.skuId);
       await form.getByLabel('Line 1 quantity').fill('20');
       await form.getByRole('button', { name: 'Create ASN' }).click();
-      await expect(page.getByTestId('asn-status')).toHaveText('EXPECTED');
+      await expect(page.getByTestId('asn-status')).toHaveAttribute('data-value', 'EXPECTED');
       await expect(page.getByTestId('asn-row')).toHaveCount(1);
     });
 
@@ -38,7 +38,7 @@ test.describe('warehouse operations', () => {
       const form = page.getByTestId('receive-asn');
       await expect(form.getByLabel('Line 1 received')).toHaveValue('20');
       await form.getByRole('button', { name: 'Receive' }).click();
-      await expect(page.getByTestId('asn-status')).toHaveText('RECEIVED');
+      await expect(page.getByTestId('asn-status')).toHaveAttribute('data-value', 'RECEIVED');
       await expect(page.getByTestId('receive-asn')).toHaveCount(0);
     });
 
@@ -86,7 +86,7 @@ test.describe('warehouse operations', () => {
       await form.getByLabel('Line 1 SKU').fill(floor.skuId);
       await form.getByLabel('Line 1 quantity').fill('12');
       await form.getByRole('button', { name: 'Create order' }).click();
-      await expect(status).toHaveText('OPEN');
+      await expect(status).toHaveAttribute('data-value', 'OPEN');
     });
 
     await test.step('the pick list says where to pick from, and prints', async () => {
@@ -100,10 +100,10 @@ test.describe('warehouse operations', () => {
 
     await test.step('pick, then pack into a handling unit', async () => {
       await page.getByTestId('pick-order').click();
-      await expect(status).toHaveText('PICKED');
+      await expect(status).toHaveAttribute('data-value', 'PICKED');
       await page.getByTestId('pack-order').click();
-      await expect(status).toHaveText('PACKED');
-      await expect(page.getByTestId('unit-status')).toHaveText('PACKED');
+      await expect(status).toHaveAttribute('data-value', 'PACKED');
+      await expect(page.getByTestId('unit-status')).toHaveAttribute('data-value', 'PACKED');
       await expect(page.getByTestId('unit-content')).toContainText('12');
     });
 
@@ -120,7 +120,7 @@ test.describe('warehouse operations', () => {
       const form = page.getByTestId('dispatch-unit');
       await form.getByLabel('Dispatch reference').fill(reference);
       await form.getByRole('button', { name: 'Dispatch' }).click();
-      await expect(page.getByTestId('unit-status')).toHaveText('DISPATCHED');
+      await expect(page.getByTestId('unit-status')).toHaveAttribute('data-value', 'DISPATCHED');
       await expect(page.getByTestId('unit-row')).toContainText(reference);
       await expect(page.getByTestId('dispatch-unit')).toHaveCount(0);
     });
@@ -140,11 +140,11 @@ test.describe('warehouse operations', () => {
     await form.getByLabel(`Wave ${first}`).check();
     await form.getByLabel(`Wave ${second}`).check();
     await form.getByRole('button', { name: 'Release wave' }).click();
-    await expect(page.getByTestId('wave-status')).toHaveText('RELEASED');
+    await expect(page.getByTestId('wave-status')).toHaveAttribute('data-value', 'RELEASED');
     await expect(page.getByTestId('wave-order')).toHaveCount(2);
 
     await page.getByTestId('pick-wave').click();
-    await expect(page.getByTestId('wave-status')).toHaveText('PICKED');
+    await expect(page.getByTestId('wave-status')).toHaveAttribute('data-value', 'PICKED');
     await expect(page.getByTestId('pick-wave')).toHaveCount(0);
   });
 

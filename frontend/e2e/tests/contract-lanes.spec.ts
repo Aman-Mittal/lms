@@ -55,7 +55,7 @@ async function approve(page: Page, text: string): Promise<void> {
   await row.getByRole('button').first().click();
   await expect(page.getByTestId('approval-detail')).toBeVisible();
   await page.getByTestId('approve').click();
-  await expect(page.getByTestId('approval-status')).toHaveText('APPROVED');
+  await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'APPROVED');
 }
 
 test.describe('contract lanes', () => {
@@ -83,7 +83,7 @@ test.describe('contract lanes', () => {
       await page.getByTestId('new-contract-effectiveFrom').fill(inDays(-10));
       await page.getByTestId('new-contract-transportRatePerKg').fill('5');
       await page.getByTestId('create-draft').click();
-      await expect(page.getByTestId('contract-status')).toHaveText('DRAFT');
+      await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'DRAFT');
       await expect(page.getByTestId('no-lanes')).toBeVisible();
       await expect(page.getByTestId('check-LANES')).toContainText('Define at least one lane');
     });
@@ -139,11 +139,11 @@ test.describe('contract lanes', () => {
 
     await test.step('once verified the lanes can no longer be changed', async () => {
       await page.getByTestId('request-verification').click();
-      await expect(page.getByTestId('contract-status')).toHaveText('PENDING_VERIFICATION');
+      await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'PENDING_VERIFICATION');
       await approve(page, code);
       await openClient(page, client.id);
       await openVersion(page, code);
-      await expect(page.getByTestId('contract-status')).toHaveText('ACTIVE');
+      await expect(page.getByTestId('contract-status')).toHaveAttribute('data-value', 'ACTIVE');
       await expect(page.getByTestId('lane-row')).toHaveCount(1);
       await expect(page.getByTestId('remove-lane')).toHaveCount(0);
       await expect(page.getByTestId('add-lane')).toHaveCount(0);
@@ -195,7 +195,7 @@ test.describe('contract lanes', () => {
       await editor.getByTestId('save-lines').click();
       await expect(page.getByTestId('order-done')).toHaveText('Lines saved.');
       await page.getByTestId('validate-order').click();
-      await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
       await expect(page.getByTestId('order-lane')).toHaveText('E2E-DESK');
       await expect(page.getByTestId('order-expected')).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
     });
