@@ -18,11 +18,12 @@ import { Component, computed, inject, input, output } from '@angular/core';
 import { Session } from '../session';
 import { CustomFieldsForm } from './custom-fields-form';
 import { Resource } from './resources';
+import { Cell } from './cell';
 
 /** One record's details, with its custom fields beneath them. */
 @Component({
   selector: 'app-record-panel',
-  imports: [CustomFieldsForm],
+  imports: [CustomFieldsForm, Cell],
   template: `
     <aside class="panel" data-testid="record-panel" aria-label="Record details">
       <header>
@@ -31,7 +32,7 @@ import { Resource } from './resources';
       </header>
       <dl>
         @for (c of rest(); track c.field) {
-          <div><dt>{{ c.header }}</dt><dd>{{ row()[c.field] || '—' }}</dd></div>
+          <div><dt>{{ c.header }}</dt><dd>@if (row()[c.field]) { <app-cell [field]="c.field" [value]="row()[c.field]" /> } @else { — }</dd></div>
         }
       </dl>
       @if (resource().customKind; as kind) {

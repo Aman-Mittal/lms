@@ -21,6 +21,7 @@ import { UploadOutcome } from '../gateway/enquiry-types';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
 
 /**
  * Orders from a spreadsheet: choose a customer and a CSV or XLSX file, and see what became of every row.
@@ -29,7 +30,7 @@ import { PageHeader } from './page-header';
  */
 @Component({
   selector: 'app-order-upload',
-  imports: [FormsModule, EntityPicker, PageHeader],
+  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Bulk order upload" />
     <p class="muted">
@@ -51,20 +52,20 @@ import { PageHeader } from './page-header';
         <span data-testid="upload-duplicates">{{ o.duplicates }}</span> already there,
         <span data-testid="upload-failed">{{ o.failed }}</span> failed.
       </p>
-      <table data-testid="upload-rows">
+      <div class="table-wrap"><table data-testid="upload-rows">
         <thead><tr><th>Row</th><th>Order reference</th><th>Result</th><th>Order</th><th>Reasons</th></tr></thead>
         <tbody>
           @for (r of o.rows; track r.row) {
             <tr data-testid="upload-row" [attr.data-id]="r.row">
               <td data-testid="upload-row-number">{{ r.row }}</td>
               <td data-testid="upload-row-ref">{{ r.orderRef }}</td>
-              <td data-testid="upload-row-status">{{ r.status }}</td>
+              <td><app-status-badge data-testid="upload-row-status" [value]="r.status" /></td>
               <td data-testid="upload-row-order" [attr.data-id]="r.orderId">{{ r.orderId ? 'Made' : '' }}</td>
               <td data-testid="upload-row-reasons">{{ r.reasons.join('; ') }}</td>
             </tr>
           }
         </tbody>
-      </table>
+      </table></div>
     }
   `,
 })

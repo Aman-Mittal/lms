@@ -17,6 +17,7 @@
 import { useSession } from '../session';
 import { CustomFieldsForm } from './CustomFieldsForm';
 import type { Resource } from './resources';
+import { Cell } from './Cell';
 
 interface Props {
   resource: Resource;
@@ -39,7 +40,7 @@ export function RecordPanel({ resource, row, onClose }: Props) {
         {rest.map((c) => (
           <div key={c.field}>
             <dt>{c.header}</dt>
-            <dd>{row[c.field] || '—'}</dd>
+            <dd>{row[c.field] ? <Cell field={c.field} value={row[c.field]} /> : '—'}</dd>
           </div>
         ))}
       </dl>

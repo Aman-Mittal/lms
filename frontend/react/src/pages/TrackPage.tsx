@@ -17,6 +17,7 @@
 import { useParams } from 'react-router-dom';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { StatusBadge } from './StatusBadge';
 
 /**
  * Where a customer lands from a tracking link. It needs no sign-in, shows the
@@ -42,7 +43,7 @@ export function TrackPage() {
         <section data-testid="track-view">
           <dl>
             <div><dt>Reference</dt><dd data-testid="track-reference">{view.data.reference}</dd></div>
-            <div><dt>Status</dt><dd data-testid="track-status">{view.data.status}</dd></div>
+            <div><dt>Status</dt><dd><StatusBadge data-testid="track-status" value={view.data.status} /></dd></div>
             {view.data.partsTotal !== null && (
               <div>
                 <dt>Vehicles</dt>

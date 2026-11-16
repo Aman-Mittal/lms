@@ -45,7 +45,7 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
     @else if (definitions().length === 0) {
       <p class="muted">No custom fields yet for {{ label(kind()).toLowerCase() }}.</p>
     } @else {
-      <table data-testid="definitions">
+      <div class="table-wrap"><table data-testid="definitions">
         <thead>
           <tr><th>Key</th><th>Label</th><th>Type</th><th>Required</th><th>Options</th><th>Status</th><th></th></tr>
         </thead>
@@ -68,7 +68,7 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
             </tr>
           }
         </tbody>
-      </table>
+      </table></div>
     }
 
     @if (manage) {

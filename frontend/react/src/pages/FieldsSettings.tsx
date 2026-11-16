@@ -64,7 +64,7 @@ export function FieldsSettings() {
       ) : (data ?? []).length === 0 ? (
         <p className="muted">No custom fields yet for {KIND_LABEL[kind].toLowerCase()}.</p>
       ) : (
-        <table data-testid="definitions">
+        <div className="table-wrap"><table data-testid="definitions">
           <thead>
             <tr><th>Key</th><th>Label</th><th>Type</th><th>Required</th><th>Options</th><th>Status</th><th /></tr>
           </thead>
@@ -87,7 +87,7 @@ export function FieldsSettings() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
       {manage && <AddField kind={kind} onDone={() => setReload((n) => n + 1)} />}
     </>

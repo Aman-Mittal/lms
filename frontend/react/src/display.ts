@@ -23,6 +23,12 @@
  * existed, so a person who sets nothing sees no change.
  */
 
+import { bindFormatPreferences } from '../../shared/format';
+
+// The shared formatters (shared/format.ts) read the date preferences from here; consoles import formatDay and
+// formatInstant from this module as before.
+export { formatDay, formatInstant } from '../../shared/format';
+
 export interface DisplayPreferences {
   theme: string;
   dateFormat: string;
@@ -39,9 +45,9 @@ export const DEFAULT_DISPLAY: DisplayPreferences = {
   landingPage: 'dashboard', clientCache: true,
 };
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 let current: DisplayPreferences = { ...DEFAULT_DISPLAY };
+
+bindFormatPreferences(() => current);
 
 export function displayPreferences(): DisplayPreferences {
   return current;
@@ -78,39 +84,6 @@ export function resetDisplay(): void {
 /** The route the landing-page preference names. */
 export function landingRoute(): string {
   return current.landingPage === 'dashboard' ? '/' : `/${current.landingPage}`;
-}
-
-/** A calendar day (a value at midnight UTC), in the preferred date format; never shifted by a time zone. */
-export function formatDay(d: Date): string {
-  return day(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
-}
-
-/** An instant, in the preferred time zone and date format, to the minute. */
-export function formatInstant(d: Date): string {
-  if (current.timeZone === 'UTC' && current.dateFormat === DEFAULT_DISPLAY.dateFormat) {
-    return d.toISOString().slice(0, 16).replace('T', ' ');
-  }
-  let parts: Record<string, string>;
-  try {
-    parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-      timeZone: current.timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit',
-      minute: '2-digit', hourCycle: 'h23',
-    }).formatToParts(d).map((p) => [p.type, p.value]));
-  } catch {
-    return d.toISOString().slice(0, 16).replace('T', ' ');
-  }
-  return `${day(Number(parts['year']), Number(parts['month']), Number(parts['day']))} ${parts['hour']}:${parts['minute']}`;
-}
-
-function day(year: number, month: number, date: number): string {
-  const dd = String(date).padStart(2, '0');
-  const mm = String(month).padStart(2, '0');
-  switch (current.dateFormat) {
-    case 'DD/MM/YYYY': return `${dd}/${mm}/${year}`;
-    case 'MM/DD/YYYY': return `${mm}/${dd}/${year}`;
-    case 'DD MMM YYYY': return `${dd} ${MONTHS[month - 1]} ${year}`;
-    default: return `${year}-${mm}-${dd}`;
-  }
 }
 
 function paint(): void {

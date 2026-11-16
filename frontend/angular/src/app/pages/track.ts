@@ -17,6 +17,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { LmsGateway, PublicTrackingView } from '../gateway/lms-gateway';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /**
  * Where a customer lands from a tracking link. It needs no sign-in, shows the
@@ -25,6 +27,7 @@ import { LmsGateway, PublicTrackingView } from '../gateway/lms-gateway';
  */
 @Component({
   selector: 'app-track',
+  imports: [StatusBadge, When],
   template: `
     <main class="public">
       <h1>Track your shipment</h1>
@@ -39,14 +42,14 @@ import { LmsGateway, PublicTrackingView } from '../gateway/lms-gateway';
         <section data-testid="track-view">
           <dl>
             <div><dt>Reference</dt><dd data-testid="track-reference">{{ v.reference }}</dd></div>
-            <div><dt>Status</dt><dd data-testid="track-status">{{ v.status }}</dd></div>
+            <div><dt>Status</dt><dd><app-status-badge data-testid="track-status" [value]="v.status" /></dd></div>
             @if (v.partsTotal !== null) {
               <div><dt>Vehicles</dt><dd data-testid="track-parts">{{ v.partsDelivered }} of {{ v.partsTotal }} delivered</dd></div>
             }
             <div><dt>From</dt><dd data-testid="track-origin">{{ v.originName || '—' }}</dd></div>
             <div><dt>To</dt><dd data-testid="track-destination">{{ v.destinationName || '—' }}</dd></div>
-            <div><dt>Requested delivery</dt><dd>{{ v.requestedDeliveryAt || '—' }}</dd></div>
-            <div><dt>Delivered</dt><dd>{{ v.deliveredAt || '—' }}</dd></div>
+            <div><dt>Requested delivery</dt><dd>{{ (v.requestedDeliveryAt || '—') | when }}</dd></div>
+            <div><dt>Delivered</dt><dd>{{ (v.deliveredAt || '—') | when }}</dd></div>
             <div>
               <dt>Receipt confirmed</dt>
               <dd data-testid="track-proof">{{ v.proofRecorded ? 'Yes' : 'No' }}</dd>
@@ -54,7 +57,7 @@ import { LmsGateway, PublicTrackingView } from '../gateway/lms-gateway';
             @if (v.position; as p) {
               <div>
                 <dt>Last seen</dt>
-                <dd data-testid="track-position">{{ p.lat }}, {{ p.lon }} ({{ p.recordedAt }})</dd>
+                <dd data-testid="track-position">{{ p.lat }}, {{ p.lon }} ({{ (p.recordedAt) | when }})</dd>
               </div>
             }
           </dl>

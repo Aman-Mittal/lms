@@ -20,6 +20,7 @@ import type { UploadOutcome } from '../gateway/enquiryTypes';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /**
  * Orders from a spreadsheet: choose a customer and a CSV or XLSX file, and see what became of every row.
@@ -77,20 +78,20 @@ export function OrderUpload() {
             <span data-testid="upload-duplicates">{outcome.duplicates}</span> already there,{' '}
             <span data-testid="upload-failed">{outcome.failed}</span> failed.
           </p>
-          <table data-testid="upload-rows">
+          <div className="table-wrap"><table data-testid="upload-rows">
             <thead><tr><th>Row</th><th>Order reference</th><th>Result</th><th>Order</th><th>Reasons</th></tr></thead>
             <tbody>
               {outcome.rows.map((r) => (
                 <tr key={r.row} data-testid="upload-row" data-id={r.row}>
                   <td data-testid="upload-row-number">{r.row}</td>
                   <td data-testid="upload-row-ref">{r.orderRef}</td>
-                  <td data-testid="upload-row-status">{r.status}</td>
+                  <td><StatusBadge data-testid="upload-row-status" value={r.status} /></td>
                   <td data-testid="upload-row-order" data-id={r.orderId}>{r.orderId ? 'Made' : ''}</td>
                   <td data-testid="upload-row-reasons">{r.reasons.join('; ')}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </>
       )}
     </>
