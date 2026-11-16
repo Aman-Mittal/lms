@@ -22,6 +22,7 @@ import {
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { PageHeader } from './PageHeader';
 
 // The map is Leaflet, the console's largest dependency: loaded only when the fleet is shown.
 const MapView = lazy(() => import('./MapView').then((m) => ({ default: m.MapView })));
@@ -76,7 +77,7 @@ export function ExceptionDesk() {
 
   return (
     <>
-      <h1>Exception desk</h1>
+      <PageHeader title="Exception desk" />
       <p className="muted">
         Take a ticket from raised to closed, tune the detectors, hold a trip to an arrival time or a
         temperature band, and see which vehicles are where.

@@ -23,6 +23,7 @@ import {
 import { Session } from '../session';
 import { RowTable } from './row-table';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
 
@@ -62,9 +63,9 @@ function inDays(days: number): string {
  */
 @Component({
   selector: 'app-admin-desk',
-  imports: [RowTable, EntityPicker],
+  imports: [RowTable, EntityPicker, PageHeader],
   template: `
-    <h1>{{ title }}</h1>
+    <app-page-header [title]="title" />
     @if (refusal(); as r) {
       <p class="error" role="alert" data-testid="admin-error">
         @if (r.code) { <code data-testid="admin-refusal">{{ r.code }}</code> }

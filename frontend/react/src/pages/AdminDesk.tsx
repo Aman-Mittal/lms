@@ -23,6 +23,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 /** The picker each kind of document owner is chosen with. */
 const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
@@ -94,7 +95,7 @@ function Outcome({ refusal, message }: { refusal: Refusal | null; message: strin
 export function AdminDesk({ section }: { section: AdminSection }) {
   return (
     <>
-      <h1>{TITLES[section]}</h1>
+      <PageHeader title={TITLES[section]} />
       {/* A key per section: moving between them starts the next one fresh. */}
       {section === 'users' && <UsersSection key="users" />}
       {section === 'policies' && <PoliciesSection key="policies" />}
