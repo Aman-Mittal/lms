@@ -20,6 +20,8 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Quantity } from './Figures';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -113,7 +115,7 @@ function LoadPanel({ load, aboard, onChanged }: LoadPanelProps) {
     <section data-testid="load-panel">
       <h2>{load.loadNo}</h2>
       <dl>
-        <div><dt>Status</dt><dd data-testid="load-status">{load.status}</dd></div>
+        <div><dt>Status</dt><dd><StatusBadge data-testid="load-status" value={load.status} /></dd></div>
         <div><dt>Vehicle</dt><dd>{load.vehicleRegistrationNo || '—'}</dd></div>
         <div>
           <dt>Weight</dt>
@@ -194,7 +196,7 @@ interface ConsignmentTableProps {
 
 function ConsignmentTable({ rows, testId, rowTestId, onRemove }: ConsignmentTableProps) {
   return (
-    <table data-testid={testId}>
+    <div className="table-wrap"><table data-testid={testId}>
       <thead>
         <tr>
           <th>#</th><th>Tracking ref</th><th>Consignee</th><th>Destination</th><th>Weight kg</th><th>Classes</th><th>Hazmat</th>
@@ -208,7 +210,7 @@ function ConsignmentTable({ rows, testId, rowTestId, onRemove }: ConsignmentTabl
             <td>{c.trackingRef}</td>
             <td>{c.consigneeName}</td>
             <td>{c.destinationTerminalCode}</td>
-            <td>{c.totalDeadWeightKg}</td>
+            <td className="num"><Quantity value={c.totalDeadWeightKg} /></td>
             <td>{c.materialClasses}</td>
             <td>{c.containsHazmat}</td>
             {onRemove && (
@@ -220,7 +222,7 @@ function ConsignmentTable({ rows, testId, rowTestId, onRemove }: ConsignmentTabl
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -343,7 +345,7 @@ function AddPanel({ loadId, onAdded }: { loadId: string; onAdded: () => void }) 
                     <td>{c.trackingRef}</td>
                     <td>{c.consigneeName}</td>
                     <td>{c.destinationTerminalCode}</td>
-                    <td>{c.totalDeadWeightKg}</td>
+                    <td className="num"><Quantity value={c.totalDeadWeightKg} /></td>
                     <td>{c.materialClasses}</td>
                     <td>{c.containsHazmat}</td>
                   </tr>

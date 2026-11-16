@@ -17,8 +17,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   apiSession, filterClaims, newClaim, newConsignment, openClaims, printed, signIn, stubPrint, tag,
-  withoutPermissions,
-} from './support';
+  withoutPermissions, withValue } from './support';
 
 /** Opens a claim's panel by its number, found among its consignment's claims. */
 async function openClaim(page: Page, { claimNo, consignmentId }: { claimNo: string; consignmentId: string }) {
@@ -49,14 +48,14 @@ test.describe('claims', () => {
 
       await filterClaims(page, consignment);
       const row = page.getByTestId('row').filter({ hasText: consignment });
-      await expect(row).toContainText('OPEN');
+      await expect(withValue(row, 'OPEN')).toBeVisible();
       await expect(row).toContainText('CLM-');
       await row.click();
     });
 
     const panel = page.getByTestId('claim-panel');
     await test.step('only the step that is next is offered', async () => {
-      await expect(panel.getByTestId('claim-status')).toHaveText('OPEN');
+      await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'OPEN');
       await expect(panel.getByTestId('act-review')).toBeVisible();
       await expect(panel.getByTestId('act-approve')).toHaveCount(0);
       await expect(panel.getByTestId('act-settle')).toHaveCount(0);
@@ -64,22 +63,22 @@ test.describe('claims', () => {
 
     await test.step('review, then try to approve more than was claimed', async () => {
       await panel.getByTestId('act-review').click();
-      await expect(panel.getByTestId('claim-status')).toHaveText('UNDER_REVIEW');
+      await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'UNDER_REVIEW');
 
       await panel.getByTestId('approved-amount').fill('2000');
       await panel.getByTestId('act-approve').click();
       await expect(panel.getByRole('alert')).toContainText('more than');
-      await expect(panel.getByTestId('claim-status')).toHaveText('UNDER_REVIEW');
+      await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'UNDER_REVIEW');
     });
 
     await test.step('approve for less, then settle', async () => {
       await panel.getByTestId('approved-amount').fill('900.25');
       await panel.getByTestId('act-approve').click();
-      await expect(panel.getByTestId('claim-status')).toHaveText('APPROVED');
-      await expect(panel.getByTestId('claim-approved')).toHaveText('900.25');
+      await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'APPROVED');
+      await expect(panel.getByTestId('claim-approved')).toHaveAttribute('data-value', '900.25');
 
       await panel.getByTestId('act-settle').click();
-      await expect(panel.getByTestId('claim-status')).toHaveText('SETTLED');
+      await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'SETTLED');
       await expect(panel.getByTestId('act-settle')).toHaveCount(0);
       await expect(panel.getByTestId('act-review')).toHaveCount(0);
     });
@@ -93,15 +92,15 @@ test.describe('claims', () => {
 
     const panel = await openClaim(page, claim);
     await panel.getByTestId('act-review').click();
-    await expect(panel.getByTestId('claim-status')).toHaveText('UNDER_REVIEW');
+    await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'UNDER_REVIEW');
 
     await panel.getByTestId('act-reject').click();
     await expect(panel.getByRole('alert')).toContainText('needs a reason');
-    await expect(panel.getByTestId('claim-status')).toHaveText('UNDER_REVIEW');
+    await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'UNDER_REVIEW');
 
     await panel.getByTestId('reject-note').fill('Inside the agreed window');
     await panel.getByTestId('act-reject').click();
-    await expect(panel.getByTestId('claim-status')).toHaveText('REJECTED');
+    await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'REJECTED');
     await expect(panel).toContainText('Inside the agreed window');
     await expect(panel.getByTestId('act-settle')).toHaveCount(0);
   });
@@ -135,7 +134,7 @@ test.describe('what each person is offered', () => {
 
     await expect(page.getByTestId('raise-claim')).toHaveCount(0);
     const panel = await openClaim(page, claim);
-    await expect(panel.getByTestId('claim-status')).toHaveText('OPEN');
+    await expect(panel.getByTestId('claim-status')).toHaveAttribute('data-value', 'OPEN');
     await expect(panel.getByTestId('act-review')).toHaveCount(0);
     await expect(panel.getByTestId('print-claim')).toBeVisible();
   });
@@ -264,19 +263,19 @@ test.describe('delivery desk', () => {
 
     await page.getByTestId('issue-otp').click();
     await expect(page.getByTestId('otp-code')).toHaveText('123456');
-    await expect(page.getByTestId('proof-status')).toHaveText('OTP_ISSUED');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'OTP_ISSUED');
 
     const form = page.getByTestId('record-proof');
     await form.getByLabel('Recipient name').fill('Asha Rao');
     await form.getByLabel('Code').fill('000000');
     await form.getByRole('button', { name: 'Record proof' }).click();
     await expect(page.getByRole('alert')).toContainText('not valid');
-    await expect(page.getByTestId('proof-status')).toHaveText('OTP_ISSUED');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'OTP_ISSUED');
 
     await form.getByLabel('Code').fill('123456');
     await form.getByLabel('Photo reference').fill('s3://pod/asha.jpg');
     await form.getByRole('button', { name: 'Record proof' }).click();
-    await expect(page.getByTestId('proof-status')).toHaveText('CONFIRMED');
+    await expect(page.getByTestId('proof-status')).toHaveAttribute('data-value', 'CONFIRMED');
     await expect(page.getByTestId('proof-recipient')).toHaveText('Asha Rao');
     await expect(page.getByTestId('issue-otp')).toHaveCount(0);
 
