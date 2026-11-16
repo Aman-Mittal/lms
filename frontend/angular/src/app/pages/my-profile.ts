@@ -74,7 +74,7 @@ interface NotifyRow {
 
       <h2>Notifications</h2>
       <p class="muted">Recorded for when the platform sends notifications; nothing is sent from these yet.</p>
-      <table data-testid="notifications">
+      <div class="table-wrap"><table data-testid="notifications">
         <thead><tr><th>Event</th><th>In the console</th><th>By e-mail</th></tr></thead>
         <tbody>
           @for (n of notify(); track n.event) {
@@ -87,7 +87,7 @@ interface NotifyRow {
             </tr>
           }
         </tbody>
-      </table>
+      </table></div>
       <p>
         <button type="submit" data-testid="save-preferences" [disabled]="busy()">Save preferences</button>
         <button type="button" class="link" data-testid="reset-preferences" [disabled]="busy()" (click)="reset()">Use the defaults</button>

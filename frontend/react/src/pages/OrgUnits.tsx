@@ -125,7 +125,7 @@ export function OrgUnits() {
         code: platform rules for that country and state then apply to everything beneath.</p>
       {error && <p className="error" role="alert">{error}</p>}
 
-      <table data-testid="org-units">
+      <div className="table-wrap"><table data-testid="org-units">
         <thead><tr><th>Unit</th><th>Level</th><th>Codes</th><th>Jurisdiction</th><th /></tr></thead>
         <tbody>
           {units.length === 0 && <tr><td colSpan={5} className="muted">No units.</td></tr>}
@@ -148,7 +148,7 @@ export function OrgUnits() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
 
       {mode.kind !== 'none' && (
         <section className="panel in-flow" data-testid="unit-panel">

@@ -19,6 +19,7 @@ import {
   ApiProblem, CHARGE_BASES, CHARGE_DIRECTIONS, ChargeEntryView, LmsGateway,
 } from '../gateway/lms-gateway';
 import { PageHeader } from './page-header';
+import { Money } from './figures';
 
 /** What an `(input)` or `(change)` event carries, read without a cast in the template. */
 function valueOf(event: Event): string {
@@ -34,7 +35,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-charge-catalogue',
-  imports: [PageHeader],
+  imports: [PageHeader, Money],
   template: `
     <app-page-header title="Charge catalogue" />
     <p class="muted">The charges raised by hand against a trip, consignment or order, and their default rates.</p>
@@ -74,19 +75,19 @@ function valueOf(event: Event): string {
     @if (entries().length === 0) {
       <p class="muted" data-testid="cc-empty">No charges.</p>
     } @else {
-      <table data-testid="cc-list">
+      <div class="table-wrap"><table data-testid="cc-list">
         <thead><tr><th>Code</th><th>Name</th><th>Basis</th><th>Default rate</th><th>Direction</th><th>Active</th><th></th></tr></thead>
         <tbody>
           @for (e of entries(); track e.id) {
             <tr data-testid="cc-row" [attr.data-code]="e.code">
-              <td>{{ e.code }}</td><td>{{ e.name }}</td><td>{{ e.basis }}</td><td>{{ e.defaultRate }}</td>
+              <td>{{ e.code }}</td><td>{{ e.name }}</td><td>{{ e.basis }}</td><td class="num"><app-money [value]="e.defaultRate" /></td>
               <td>{{ e.direction }}</td><td>{{ e.active ? 'Yes' : 'No' }}</td>
               <td><button type="button" class="link" data-testid="cc-edit" [attr.aria-label]="'Edit ' + e.code"
                           (click)="edit(e.id)">Edit</button></td>
             </tr>
           }
         </tbody>
-      </table>
+      </table></div>
       @if (next()) { <button type="button" class="link" (click)="more()">More</button> }
     }
   `,

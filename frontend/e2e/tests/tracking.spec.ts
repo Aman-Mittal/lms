@@ -43,7 +43,7 @@ test.describe('tracking links', () => {
     const url = await issueLink(page);
     expect(url).toContain('#/track/');
     await expect(page.getByTestId('links-table').getByTestId('link-row')).toHaveCount(1);
-    await expect(page.getByTestId('link-status')).toHaveText('ACTIVE');
+    await expect(page.getByTestId('link-status')).toHaveAttribute('data-value', 'ACTIVE');
 
     await test.step('the secret is shown this once and not again', async () => {
       await page.getByTestId('consignment-id').fill(consignment);
@@ -69,7 +69,7 @@ test.describe('tracking links', () => {
       await expect(visitor.getByRole('heading', { name: 'Track your shipment', level: 1 })).toBeVisible();
       await expect(visitor.getByTestId('track-view')).toBeVisible();
       await expect(visitor.getByTestId('track-reference')).not.toBeEmpty();
-      await expect(visitor.getByTestId('track-status')).toHaveText(/^(PLANNED|IN_TRANSIT|DELIVERED|CANCELLED)$/);
+      await expect(visitor.getByTestId('track-status')).toHaveAttribute('data-value', /^(PLANNED|IN_TRANSIT|DELIVERED|CANCELLED)$/);
       await expect(visitor.getByTestId('track-origin')).toContainText('E2E ORIG');
       await expect(visitor.getByTestId('track-destination')).toContainText('E2E DEST');
       await expect(visitor.getByTestId('track-proof')).toHaveText('No');
@@ -90,7 +90,7 @@ test.describe('tracking links', () => {
     const url = await issueLink(page);
 
     await page.getByTestId('revoke-link').click();
-    await expect(page.getByTestId('link-status')).toHaveText('REVOKED');
+    await expect(page.getByTestId('link-status')).toHaveAttribute('data-value', 'REVOKED');
     await expect(page.getByTestId('revoke-link')).toHaveCount(0);
 
     const customer = await browser.newContext();
