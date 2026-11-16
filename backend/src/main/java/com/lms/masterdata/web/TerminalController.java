@@ -75,14 +75,16 @@ public class TerminalController {
                                                     @RequestParam(required = false) String cursor,
                                                     @RequestParam(required = false) Integer limit,
                                                     @RequestParam(required = false) String q,
+                                                    @RequestParam(required = false) String status,
                                                     @RequestHeader(value = "If-None-Match", required = false)
                                                     String ifNoneMatch) {
-        Slice<TerminalView> page = masterData.listTerminals(category, cursor, limit, q);
+        Slice<TerminalView> page = masterData.listTerminals(category, status, cursor, limit, q);
         // The tag a console revalidates its cached geometry with: each terminal's id and version.
         List<Object> identity = new ArrayList<>();
         page.items().forEach(t -> {
             identity.add(t.id());
             identity.add(t.version());
+            identity.add(t.status());
         });
         identity.add(page.nextCursor());
         return ConditionalGet.respond(ifNoneMatch, ConditionalGet.tag(identity), page);
@@ -133,18 +135,42 @@ public class TerminalController {
      */
     @PutMapping("/{id}")
     public ResponseEntity<Void> update(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
                                        @Valid @RequestBody UpdateTerminalRequest request) {
-        terminals.update(new UpdateTerminalCommand(id, request.name(), request.version(),
+        // An If-Match header, where sent, is the version; the body's is the older way of saying the same.
+        long version = ifMatch == null || ifMatch.isBlank()
+                ? request.version() : IfMatch.version(ifMatch, "the terminal's version");
+        terminals.update(new UpdateTerminalCommand(id, request.name(), version,
                 request.geofence(), request.dockCount(), request.opensAt(), request.closesAt(),
-                request.avgDwellMinutes(), request.permittedVehicleTypes() == null
-                        ? List.of() : request.permittedVehicleTypes()));
+                request.avgDwellMinutes(), request.permittedVehicleTypes()));
         return ResponseEntity.noContent().build();
     }
 
-    /** Removes a terminal nothing refers to; 409 {@code terminal-in-use} otherwise. */
+    /**
+     * Switches a terminal off, with a reason; 409 {@code terminal-in-use} while an open order, load
+     * or trip names it. Nothing is deleted.
+     */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id, @Valid @RequestBody ReasonRequest request) {
+        terminals.deactivate(id, request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id, @Valid @RequestBody ReasonRequest request) {
+        terminals.reactivate(id, request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The original removal endpoint, kept so existing clients keep working and now a soft
+     * deactivate: the terminal is switched off, never deleted. The optional {@code reason} query
+     * parameter goes to the audit trail. New callers should use {@code POST /{id}/deactivate}.
+     */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        terminals.delete(id);
+    public ResponseEntity<Void> delete(@PathVariable UUID id,
+                                       @RequestParam(required = false) String reason) {
+        terminals.deactivate(id, reason == null || reason.isBlank() ? "Removed through the delete endpoint" : reason);
         return ResponseEntity.noContent().build();
     }
 
