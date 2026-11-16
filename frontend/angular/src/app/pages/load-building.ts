@@ -20,6 +20,8 @@ import { ApiProblem, LmsGateway, LoadBuild, MAX_BULK_ASSIGNMENT, Row } from '../
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Quantity } from './figures';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -35,8 +37,9 @@ interface Refusal {
 /** What is aboard, in drop order; on screen and in the printed manifest alike. */
 @Component({
   selector: 'app-consignment-table',
+  imports: [Quantity],
   template: `
-    <table [attr.data-testid]="testId()">
+    <div class="table-wrap"><table [attr.data-testid]="testId()">
       <thead>
         <tr>
           <th>#</th><th>Tracking ref</th><th>Consignee</th><th>Destination</th><th>Weight kg</th><th>Classes</th><th>Hazmat</th>
@@ -50,7 +53,7 @@ interface Refusal {
             <td>{{ c['trackingRef'] }}</td>
             <td>{{ c['consigneeName'] }}</td>
             <td>{{ c['destinationTerminalCode'] }}</td>
-            <td>{{ c['totalDeadWeightKg'] }}</td>
+            <td class="num"><app-quantity [value]="c['totalDeadWeightKg']" /></td>
             <td>{{ c['materialClasses'] }}</td>
             <td>{{ c['containsHazmat'] }}</td>
             @if (removable()) {
@@ -62,7 +65,7 @@ interface Refusal {
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
   `,
 })
 export class ConsignmentTable {
@@ -77,7 +80,7 @@ export class ConsignmentTable {
 /** Finds waiting consignments, picks them, and puts them on the load together. */
 @Component({
   selector: 'app-add-consignments',
-  imports: [FormsModule, EntityPicker],
+  imports: [FormsModule, EntityPicker, Quantity],
   template: `
     <section data-testid="add-panel">
       <h3>Add consignments</h3>
@@ -128,7 +131,7 @@ export class ConsignmentTable {
                   <td>{{ c['trackingRef'] }}</td>
                   <td>{{ c['consigneeName'] }}</td>
                   <td>{{ c['destinationTerminalCode'] }}</td>
-                  <td>{{ c['totalDeadWeightKg'] }}</td>
+                  <td class="num"><app-quantity [value]="c['totalDeadWeightKg']" /></td>
                   <td>{{ c['materialClasses'] }}</td>
                   <td>{{ c['containsHazmat'] }}</td>
                 </tr>
@@ -227,7 +230,7 @@ export class AddConsignments {
  */
 @Component({
   selector: 'app-load-building',
-  imports: [FormsModule, ConsignmentTable, AddConsignments, EntityPicker, PageHeader],
+  imports: [FormsModule, ConsignmentTable, AddConsignments, EntityPicker, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Load building" />
     <p class="muted">
@@ -245,7 +248,7 @@ export class AddConsignments {
       <section data-testid="load-panel">
         <h2>{{ b.load['loadNo'] }}</h2>
         <dl>
-          <div><dt>Status</dt><dd data-testid="load-status">{{ b.load['status'] }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="load-status" [value]="b.load['status']" /></dd></div>
           <div><dt>Vehicle</dt><dd>{{ b.load['vehicleRegistrationNo'] || '—' }}</dd></div>
           <div>
             <dt>Weight</dt>

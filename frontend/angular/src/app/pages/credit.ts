@@ -22,6 +22,8 @@ import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { RowColumn, RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Money } from './figures';
 
 /** The problem a hard credit limit refuses an action with. */
 export const CREDIT_LIMIT_EXCEEDED = 'credit-limit-exceeded';
@@ -39,6 +41,7 @@ function amountOrAbsent(value: string): number | undefined {
  */
 @Component({
   selector: 'app-credit-position',
+  imports: [StatusBadge, Money],
   template: `
     <section class="credit" data-testid="credit-position" aria-label="Credit position">
       <h3>Credit position</h3>
@@ -46,12 +49,12 @@ function amountOrAbsent(value: string): number | undefined {
       @if (position(); as p) {
         <dl>
           <div><dt>Customer</dt><dd data-testid="credit-partner">{{ p.partnerCode }} · {{ p.partnerStatus }}</dd></div>
-          <div><dt>State</dt><dd data-testid="credit-state">{{ p.limitState }}</dd></div>
-          <div><dt>Credit limit</dt><dd data-testid="credit-limit">{{ p.creditLimit || 'No limit' }}</dd></div>
-          <div><dt>Soft limit</dt><dd data-testid="credit-soft-limit">{{ p.softLimit || '—' }}</dd></div>
+          <div><dt>State</dt><dd><app-status-badge data-testid="credit-state" [value]="p.limitState" /></dd></div>
+          <div><dt>Credit limit</dt><dd><app-money data-testid="credit-limit" [value]="p.creditLimit" empty="No limit" /></dd></div>
+          <div><dt>Soft limit</dt><dd><app-money data-testid="credit-soft-limit" [value]="p.softLimit" empty="—" /></dd></div>
           <div><dt>Open orders</dt><dd data-testid="credit-open-orders">{{ p.openOrders }} ({{ p.openOrderCount }})</dd></div>
-          <div><dt>Not yet invoiced</dt><dd data-testid="credit-unbilled">{{ p.unbilledCharges }}</dd></div>
-          <div><dt>Unpaid invoices</dt><dd data-testid="credit-outstanding">{{ p.outstandingInvoices }}</dd></div>
+          <div><dt>Not yet invoiced</dt><dd><app-money data-testid="credit-unbilled" [value]="p.unbilledCharges" /></dd></div>
+          <div><dt>Unpaid invoices</dt><dd><app-money data-testid="credit-outstanding" [value]="p.outstandingInvoices" /></dd></div>
           <div><dt>Exposure</dt><dd data-testid="credit-exposure">{{ p.exposure }} {{ p.currency }}</dd></div>
           <div><dt>Headroom</dt><dd data-testid="credit-headroom">{{ p.headroom || '—' }}</dd></div>
         </dl>
@@ -196,7 +199,7 @@ const CHANGE_COLUMNS: RowColumn[] = [
  */
 @Component({
   selector: 'app-credit-limits',
-  imports: [EntityPicker, RowTable, CreditPositionPanel, PageHeader],
+  imports: [EntityPicker, RowTable, CreditPositionPanel, PageHeader, Money, StatusBadge],
   template: `
     <app-page-header title="Credit limits" />
     <p class="muted">
@@ -248,16 +251,16 @@ const CHANGE_COLUMNS: RowColumn[] = [
     @if (queue().length === 0) {
       <p class="muted" data-testid="credit-queue-empty">Nothing here.</p>
     } @else {
-      <table data-testid="credit-queue">
+      <div class="table-wrap"><table data-testid="credit-queue">
         <thead>
           <tr><th>Partner</th><th>From</th><th>To</th><th>Soft limit</th><th>Reason</th><th>Asked by</th><th>Status</th><th></th></tr>
         </thead>
         <tbody>
           @for (c of queue(); track c['id']) {
             <tr data-testid="credit-queue-row" [attr.data-id]="c['id']">
-              <td>{{ c['partnerCode'] }}</td><td>{{ c['previousLimit'] || '—' }}</td><td>{{ c['requestedLimit'] }}</td>
-              <td>{{ c['requestedSoftLimit'] || '—' }}</td><td>{{ c['reason'] }}</td><td>{{ c['requestedBy'] }}</td>
-              <td>{{ c['status'] }}</td>
+              <td>{{ c['partnerCode'] }}</td><td class="num"><app-money [value]="c['previousLimit']" empty="—" /></td><td class="num"><app-money [value]="c['requestedLimit']" /></td>
+              <td class="num"><app-money [value]="c['requestedSoftLimit']" empty="—" /></td><td>{{ c['reason'] }}</td><td class="nowrap">{{ c['requestedBy'] }}</td>
+              <td><app-status-badge [value]="c['status']" /></td>
               <td>
                 @if (c['status'] === 'PENDING' && session.can('CREDIT_LIMIT_APPROVE')) {
                   <input [attr.aria-label]="'Decision note for ' + c['partnerCode']" placeholder="Note"
@@ -269,7 +272,7 @@ const CHANGE_COLUMNS: RowColumn[] = [
             </tr>
           }
         </tbody>
-      </table>
+      </table></div>
     }
   `,
 })
