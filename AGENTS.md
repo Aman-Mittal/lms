@@ -166,7 +166,7 @@ Each bounded context is a top-level package under `com.lms`:
 
 ```
 identity  masterdata  order  planning  sourcing  execution  telematics  finance
-controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
+controltower  milkrun  multimodal  warehouse  clientbilling  approvals  statutory  shared
 ```
 
 | Module | Role |
@@ -186,6 +186,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  shared
 | `clientbilling` | Third-party logistics: versioned client contracts (with transport and warehouse tax rates; a version is a draft, then verified through approvals, with an optional end date, an approved extension and approved charge additions; lanes -- origin and destination as a terminal or an LTL zone, mode, load type, a rate basis with weight slabs, transit days, allowed consignees -- and allowances (direct orders, load types) that an order resolves against), service usage, storage computed from the warehouse ledger, client charges (including manual ones raised by finance), monthly invoicing with per-line tax, credit notes against issued invoices, a client statement, client portal isolation, margins. |
 | `settings` | Typed settings registered in code by their owning modules, grouped into profiles per scope (platform, organisation default, org unit, vehicle, customer, vendor, combination, contract, user), effective-dated versions, resolution with provenance, and each person's own preferences. Depends on nothing; peers use `settings::api`. |
 | `approvals` | One approvals module for every flow: requests with a frozen payload, a policy per subject type (copied onto each request), decisions applied in-process by the owning module's handler, the inbox, expiry. Depends on `identity::access` only. |
+| `statutory` | E-way bills per consignment (V63, issue #231): the adapter SPI (`statutory::api`, `EwayBillAdapter`), a deterministic STUB, the bill with its status and Part-B vehicle, actions, lookup by number, the dispatch gate, the expiry sweep. Depends on `planning::api`, `settings::api` and `identity::access`; execution depends on `statutory::api`, never the reverse. |
 | `shared` | Kernel (open module): geometry, tenant context, errors, idempotency, audit, query `Slice`. No domain logic. |
 
 - A context **must not** call another context's classes directly. Cross-context
@@ -362,7 +363,7 @@ known document types), `execution.dispatch.weightTolerancePct` and
 `.toleranceAbsolute` (unit, vendor); `finance.manualCharge.approvalThreshold` (decimal, default 10000.00;
 unit, customer, vendor, combination), `finance.payables.paymentTermsDays` (integer, default 30; unit, vendor,
 combination) and `finance.advance.maxPercentOfFreight` (decimal, default 70; unit, vendor, combination), V60;
-`order.enquiry.responseDeadlineHours` (integer, default 72; unit, customer) and `.quoteValidityHours` (default 168), and `order.intake.columnMapping` (JSON, field to header; unit, customer), V62; `delivery.pod.quantityTolerancePercent` (decimal, default 100), `.feedingRequired`, `.frontDocumentRequired` and
+`statutory.ewayBill.adapter` (NONE or STUB, default NONE), `.requiredAtDispatch` (false), `.cancelWindowHours` (24), `.expiringSoonHours` (8), `.adapterTimeoutSeconds` (10), `.kmPerDay` (200), `.defaultDistanceKm` (100), `.extensionHours` (24) and `.profile` (JSON: `gstin`, `credentialRef`), all unit scope, V63; `order.enquiry.responseDeadlineHours` (integer, default 72; unit, customer) and `.quoteValidityHours` (default 168), and `order.intake.columnMapping` (JSON, field to header; unit, customer), V62; `delivery.pod.quantityTolerancePercent` (decimal, default 100), `.feedingRequired`, `.frontDocumentRequired` and
 `.backDocumentRequired` (booleans, default false; unit, customer, combination), V61; and the calendar, UI and notification
 preferences; `approvals.policy.orderCancellation`, `.podReversal`, `.manualCharge` and
 `.vendorAdvance` (unit,
@@ -617,6 +618,20 @@ All in `order`; `OrderContractPort.suggestRate` (client billing answers) is the 
   stored value and a date as Excel's serial number). Columns come from `order.intake.columnMapping` over a default; terminals
   and consignees are named by code; rows with one order reference make one order and a bad row fails its whole order only.
   Keys are not pruned.
+
+### Statutory e-way bills (V63, issue #231)
+
+New module `statutory`; `planning::api` gained `ConsignmentLookupPort` (read-only: a consignment's reference, unit and load, and a load's consignments). Decisions worth knowing:
+
+- **An adapter per unit.** `EwayBillAdapter` (`statutory::api`) has one method, `execute(EwayBillRequest)`, over the actions GENERATE, FETCH, PART_B, EXTEND, CANCEL and CHANGE_VEHICLE, and answers accepted or refused; a transport failure is an exception. `statutory.ewayBill.adapter` (NONE by default, or STUB; unit scope) selects it, and NONE switches the feature off: no bill can be generated or acted on (`eway-bill-disabled`) and dispatch is unchanged. The STUB holds nothing: the bill number is twelve digits from the document and the bill's sequence, the validity is the distance over `statutory.ewayBill.kmPerDay` rounded up to whole days, and a document reference containing `REFUSE` is refused for every action (`NOTFOUND` is not found by FETCH).
+- **A call holds no connection.** `EwayBillService` reads and checks in a short transaction, calls the adapter on a virtual thread with `statutory.ewayBill.adapterTimeoutSeconds` (default 10; a timeout is `eway-adapter-timeout`, a failure `eway-adapter-failed`), audits the call whatever it answers (`EWAY_BILL_ADAPTER_CALL` on the consignment: action, adapter, outcome, code, bill number; never a reference or registration), then applies the answer in a second short transaction conditional on the bill's version (the loser of a race is 409 `concurrent-modification`) with its own audit entry (`EWAY_BILL_GENERATED`, `_RECORDED`, `_FETCHED`, `_PART_B_UPDATED`, `_EXTENDED`, `_CANCELLED`, `_VEHICLE_CHANGED`, `_EXPIRING_SOON`, `_EXPIRED`; `GET /eway-bills/{id}/history` reads them).
+- **Credentials are a reference.** `statutory.ewayBill.profile` (JSON, unit scope) holds `gstin` and `credentialRef`; a reference that does not start with `secret-ref:` is refused (`eway-credential-not-a-reference`). The adapter's deployment resolves the reference; the platform never stores the secret.
+- **One live bill per consignment** (a partial unique index over ACTIVE and EXTENDED); a cancelled or expired bill stays as history and the next one gets the next sequence. `POST /consignments/{id}/eway-bills` generates (or, with `fetchOnly`, records what the statutory system holds); `.../record` keys a bill raised on the portal by hand and needs no adapter, so a unit that requires a bill at dispatch can satisfy the gate without one. `POST /eway-bills/{id}/actions` takes the action as text, so an unknown name is the problem `eway-action-unknown` (409, like every refusal) rather than a parse error and GENERATE/FETCH are `eway-action-not-applicable`. EXTEND, CANCEL and CHANGE_VEHICLE need a reason; CANCEL only within `statutory.ewayBill.cancelWindowHours` (24) of generation; CHANGE_VEHICLE only after Part-B named a vehicle.
+- **Trip-level Part-B** is `POST /trips/{id}/eway-bills/part-b` (in `execution`, forwarding to `EwayBillTripPartB`): the trip's own vehicle unless the body names another, one outcome per consignment on the load (UPDATED, REFUSED, SKIPPED, ERROR), one consignment's failure never stopping the rest.
+- **The dispatch gate** is `EwayBillDispatchGate`, asked inside `TripCommandService.dispatch`: with `statutory.ewayBill.requiredAtDispatch` on for the trip's unit, every open consignment on the load needs a live (active or extended) bill valid after the departure time. The reasons join the other blockers; when they are the only ones the code is `eway-bill-required`, otherwise `dispatch-blocked`. Off (the default) it reads nothing. The `EWAY_BILL` trip document of the checklist is a separate rule.
+- **Expiry.** `EwayBillSweep` (TenantSweep, shortly after start-up and every five minutes) marks live bills past their validity EXPIRED and flags the ones within `statutory.ewayBill.expiringSoonHours` (8) of it once (`expiring_flagged_at`, cleared by an extension), publishing `EwayBillExpired` and `EwayBillExpiringSoon` (`statutory::events`; nothing listens yet). `GET /eway-bills/expiring` lists the flagged bills soonest first. Statuses are exact: ACTIVE, EXTENDED, CANCELLED, EXPIRED.
+- **Consoles.** Both carry the e-way bill desk at `/eway-bills` (`nav-eway-bills`, `eway-*` test ids, rows addressed by `data-id`), lazy-loaded, with one shared spec (`frontend/e2e/tests/eway-bill-desk.spec.ts` over stubbed routes): the list and its filter, the expiring-soon list, lookup by number, generate, Part-B, extend, cancel, change vehicle, and the trip-level Part-B with its per-consignment results.
+- **Rights.** `EWAY_BILL_MANAGE` for every change; reads need a token, and a portal caller is refused (403). Lookup by number is `GET /eway-bills/by-number/{billNo}`.
 
 ### Idempotency is required on every state-changing endpoint
 
