@@ -21,6 +21,7 @@ import {
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 /** A subscription as a table row. */
 function rowOf(w: WebhookView): Row {
@@ -50,7 +51,7 @@ export function Webhooks() {
 
   return (
     <>
-      <h1>Webhooks</h1>
+      <PageHeader title="Webhooks" />
       <p className="muted">Addresses your systems listen on, told about orders, trips, deliveries and claims as they happen.</p>
       {secret && <SecretOnce secret={secret.secret} onDone={() => setSecret(null)} />}
       {list.loading && <p className="muted">Loading…</p>}
