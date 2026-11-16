@@ -99,6 +99,11 @@ tags:
       fixed response deadline, and conversion of the won lines to a draft order.
   - name: Order intake
     description: Orders in bulk, each item with its own idempotency key, and from CSV or XLSX files.
+  - name: E-way bills
+    description: |
+      Statutory e-way bills per consignment: generated or recorded, Part-B vehicle,
+      extension, cancellation, change of vehicle, lookup by number, the expiring-soon
+      list, and a trip-level Part-B update with per-consignment results.
   - name: Planning
     description: Consignment generation and load building.
   - name: LTL rating

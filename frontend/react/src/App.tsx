@@ -52,6 +52,7 @@ import { ExceptionDesk } from './pages/ExceptionDesk';
  * dependency and most sessions never open a map. `lazy` turns a dynamic import
  * into a component; `Suspense` shows something while its code arrives.
  */
+const EwayBillDesk = lazy(() => import('./pages/EwayBillDesk').then((m) => ({ default: m.EwayBillDesk })));
 const NetworkMap = lazy(() => import('./pages/NetworkMap').then((m) => ({ default: m.NetworkMap })));
 const TripRoute = lazy(() => import('./pages/TripRoute').then((m) => ({ default: m.TripRoute })));
 const GateDesk = lazy(() => import('./pages/GateDesk').then((m) => ({ default: m.GateDesk })));
@@ -93,6 +94,7 @@ export function App() {
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="delivery" element={<DeliveryDesk />} />
           <Route path="enquiries" element={<EnquiryDeskPage />} />
+          <Route path="eway-bills" element={<Deferred><EwayBillDesk /></Deferred>} />
           <Route path="order-upload" element={<OrderUpload />} />
           <Route path="pod" element={<PodDesk />} />
           <Route path="consignments" element={<ConsignmentDesk />} />
