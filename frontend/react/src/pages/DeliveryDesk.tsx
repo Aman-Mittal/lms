@@ -21,6 +21,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /** The delivery desk: issue a one-time code, record the proof, print the slip. */
 export function DeliveryDesk() {
@@ -133,19 +134,19 @@ function Desk({ consignmentId, proof, consignmentStatus, issued, onIssued, onCha
   return (
     <section data-testid="proof">
       {consignmentStatus && (
-        <p data-testid="delivery-consignment-status">Consignment: <strong>{consignmentStatus}</strong></p>
+        <p>Consignment: <StatusBadge data-testid="delivery-consignment-status" value={consignmentStatus} /></p>
       )}
       {proof === null ? (
         <p className="muted" data-testid="no-proof">No code has been issued for this consignment yet.</p>
       ) : (
         <dl>
-          <div><dt>Proof</dt><dd data-testid="proof-status">{proof.status}</dd></div>
+          <div><dt>Proof</dt><dd><StatusBadge data-testid="proof-status" value={proof.status} /></dd></div>
           {confirmed ? (
             <>
               <div><dt>Received by</dt><dd data-testid="proof-recipient">{proof.recipientName}</dd></div>
               <div><dt>Photo</dt><dd>{proof.photoRef || '—'}</dd></div>
               <div><dt>Delivered</dt><dd>{proof.deliveredAt}</dd></div>
-              <div><dt>Goods</dt><dd data-testid="proof-condition">{proof.goodsCondition}</dd></div>
+              <div><dt>Goods</dt><dd><StatusBadge data-testid="proof-condition" value={proof.goodsCondition} /></dd></div>
               {proof.remark && <div><dt>Remark</dt><dd data-testid="proof-remark">{proof.remark}</dd></div>}
             </>
           ) : (

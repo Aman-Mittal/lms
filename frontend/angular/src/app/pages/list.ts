@@ -24,10 +24,12 @@ import { Session } from '../session';
 import { RecordPanel } from './record-panel';
 import { RESOURCES } from './resources';
 import { PageHeader } from './page-header';
+import { Cell } from './cell';
+import { isDateColumn, isNumericColumn } from '../../../../shared/format';
 
 @Component({
   selector: 'app-list',
-  imports: [FormsModule, RecordPanel, PageHeader],
+  imports: [FormsModule, RecordPanel, PageHeader, Cell],
   template: `
     @if (resource(); as r) {
       <div [class.with-panel]="selected()">
@@ -36,22 +38,29 @@ import { PageHeader } from './page-header';
           <input type="search" aria-label="Search" placeholder="Search" data-testid="search"
                  name="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
           @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-          @if (loading()) { <p>Loading…</p> }
-          @else if (visible().length === 0 && !error()) {
-            <p class="muted">{{ rows().length === 0 ? 'Nothing here yet.' : 'No match.' }}</p>
-          } @else if (visible().length > 0) {
+          <div class="table-wrap">
             <table>
-              <thead><tr>@for (c of r.columns; track c.field) { <th>{{ c.header }}</th> }</tr></thead>
+              <thead><tr>@for (c of r.columns; track c.field) { <th [class.num]="numeric(c.field)">{{ c.header }}</th> }</tr></thead>
               <tbody>
-                @for (row of visible(); track row['id']) {
-                  <tr data-testid="row" tabindex="0" [class.selected]="row['id'] === selectedId()"
-                      (click)="selectedId.set(row['id'])" (keydown.enter)="selectedId.set(row['id'])">
-                    @for (c of r.columns; track c.field) { <td>{{ row[c.field] }}</td> }
+                @if (loading()) {
+                  <tr class="loading-row"><td class="table-state" [attr.colspan]="r.columns.length">Loading…</td></tr>
+                } @else if (visible().length === 0 && !error()) {
+                  <tr class="empty-row">
+                    <td class="table-state" [attr.colspan]="r.columns.length">{{ rows().length === 0 ? 'Nothing here yet.' : 'No match.' }}</td>
                   </tr>
+                } @else {
+                  @for (row of visible(); track row['id']) {
+                    <tr data-testid="row" tabindex="0" [class.selected]="row['id'] === selectedId()"
+                        (click)="selectedId.set(row['id'])" (keydown.enter)="selectedId.set(row['id'])">
+                      @for (c of r.columns; track c.field) {
+                        <td [class.num]="numeric(c.field)" [class.nowrap]="date(c.field)"><app-cell [field]="c.field" [value]="row[c.field]" /></td>
+                      }
+                    </tr>
+                  }
                 }
               </tbody>
             </table>
-          }
+          </div>
 
           @if (r.key === 'partners' && session.orgUnitId()) {
             <h2>Register a partner</h2>
@@ -94,6 +103,8 @@ export class ListPage {
   });
   readonly selected = computed(() => this.rows().find((row) => row['id'] === this.selectedId()) ?? null);
 
+  protected readonly numeric = isNumericColumn;
+  protected readonly date = isDateColumn;
   readonly partnerTypes = PARTNER_TYPES;
   code = '';
   legalName = '';

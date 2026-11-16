@@ -24,6 +24,7 @@ import {
 import { useSession } from '../session';
 import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settingsForm';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
@@ -219,7 +220,7 @@ export function ProfileSettings() {
           {SETTING_SCOPES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
         </select>
       </label>
-      <table data-testid="profiles">
+      <div className="table-wrap"><table data-testid="profiles">
         <thead><tr><th>Name</th><th>Scope</th><th>For</th><th>Settings</th></tr></thead>
         <tbody>
           {profiles.length === 0 && <tr><td colSpan={4} className="muted">No profiles yet.</td></tr>}
@@ -232,7 +233,7 @@ export function ProfileSettings() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
 
       {manage && (
         <>
@@ -265,7 +266,7 @@ export function ProfileSettings() {
             </form>
           )}
           <form onSubmit={saveProfile} data-testid="profile-values">
-            <table>
+            <div className="table-wrap"><table>
               <thead><tr><th>Setting</th><th>Value</th>{dated && <th>From</th>}<th /></tr></thead>
               <tbody>
                 {allowed.map((d) => {
@@ -306,7 +307,7 @@ export function ProfileSettings() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
             {manage && (
               <p>
                 <button type="submit" data-testid="save-profile">Save</button>
@@ -320,30 +321,30 @@ export function ProfileSettings() {
           {picked.versions.length > 0 && (
             <>
               <h3>Versions</h3>
-              <table data-testid="versions">
+              <div className="table-wrap"><table data-testid="versions">
                 <thead><tr><th>Setting</th><th>From</th><th>Value</th><th>Status</th></tr></thead>
                 <tbody>
                   {picked.versions.map((v) => (
                     <tr key={v.key + v.effectiveFrom}>
-                      <td>{v.key}</td><td>{v.effectiveFrom || 'always'}</td><td>{toInput(v.value)}</td><td>{v.status}</td>
+                      <td>{v.key}</td><td>{v.effectiveFrom || 'always'}</td><td>{toInput(v.value)}</td><td><StatusBadge value={v.status} /></td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </>
           )}
           <h3>History</h3>
-          <table data-testid="history">
+          <div className="table-wrap"><table data-testid="history">
             <thead><tr><th>When</th><th>Who</th><th>What</th><th>Setting</th><th>Before</th><th>After</th></tr></thead>
             <tbody>
               {history.map((h) => (
                 <tr key={h.id} data-testid="history-row">
-                  <td>{h.occurredAt}</td><td>{h.actor}</td><td>{h.action}</td>
+                  <td className="nowrap">{h.occurredAt}</td><td>{h.actor}</td><td>{h.action}</td>
                   <td>{h.setting}</td><td>{h.before}</td><td>{h.after}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </section>
       )}
 
@@ -367,7 +368,7 @@ export function ProfileSettings() {
         <button type="submit" data-testid="show-effective">Show</button>
       </form>
       {effective.length > 0 && (
-        <table data-testid="effective">
+        <div className="table-wrap"><table data-testid="effective">
           <thead><tr><th>Setting</th><th>Value</th><th>From</th></tr></thead>
           <tbody>
             {effective.map((e) => (
@@ -376,7 +377,7 @@ export function ProfileSettings() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </>
   );

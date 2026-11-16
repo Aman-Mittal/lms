@@ -22,11 +22,13 @@ import { Qr } from './qr';
 import { trackingUrl } from './tracking-url';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 @Component({
   selector: 'app-tracking-links',
-  imports: [FormsModule, Qr, EntityPicker, PageHeader],
+  imports: [FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Tracking links" />
     <p class="muted">
@@ -55,7 +57,7 @@ import { PageHeader } from './page-header';
           @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
           @if (issued(); as i) {
             <section data-testid="issued-link">
-              <p>Link issued, valid until {{ i.expiresAt }}. Copy it now: the secret is not shown again.</p>
+              <p>Link issued, valid until {{ (i.expiresAt) | when }}. Copy it now: the secret is not shown again.</p>
               <p>
                 <input readonly aria-label="Tracking link" data-testid="link-url" [value]="url()" size="60" />
                 <button type="button" data-testid="copy-link" (click)="copy()">{{ copied() ? 'Copied' : 'Copy' }}</button>
@@ -67,7 +69,7 @@ import { PageHeader } from './page-header';
                   <div class="slip-body">
                     <dl>
                       <div><dt>Open</dt><dd>{{ url() }}</dd></div>
-                      <div><dt>Valid until</dt><dd>{{ i.expiresAt }}</dd></div>
+                      <div><dt>Valid until</dt><dd>{{ (i.expiresAt) | when }}</dd></div>
                     </dl>
                     <app-qr [payload]="url()" />
                   </div>
@@ -81,17 +83,17 @@ import { PageHeader } from './page-header';
           @if (links().length === 0) {
             <p class="muted" data-testid="no-links">This consignment has no tracking links.</p>
           } @else {
-            <table data-testid="links-table">
+            <div class="table-wrap"><table data-testid="links-table">
               <thead>
                 <tr><th>Status</th><th>Created</th><th>Expires</th><th>Revoked</th><th></th></tr>
               </thead>
               <tbody>
                 @for (l of links(); track l.id) {
                   <tr data-testid="link-row">
-                    <td data-testid="link-status">{{ l.status }}</td>
-                    <td>{{ l.createdAt }}</td>
-                    <td>{{ l.expiresAt }}</td>
-                    <td>{{ l.revokedAt || '—' }}</td>
+                    <td><app-status-badge data-testid="link-status" [value]="l.status" /></td>
+                    <td class="nowrap">{{ (l.createdAt) | when }}</td>
+                    <td class="nowrap">{{ (l.expiresAt) | when }}</td>
+                    <td>{{ (l.revokedAt || '—') | when }}</td>
                     <td>
                       @if (l.status === 'ACTIVE') {
                         <button class="link" data-testid="revoke-link" (click)="revoke(l.id)">Revoke</button>
@@ -100,7 +102,7 @@ import { PageHeader } from './page-header';
                   </tr>
                 }
               </tbody>
-            </table>
+            </table></div>
           }
         </section>
       }

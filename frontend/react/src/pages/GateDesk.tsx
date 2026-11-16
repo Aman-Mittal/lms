@@ -22,6 +22,7 @@ import {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -249,7 +250,7 @@ export function GateDesk() {
           {inside.length === 0 ? (
             <p className="muted" data-testid="inside-empty">No vehicle is inside.</p>
           ) : (
-            <table data-testid="inside">
+            <div className="table-wrap"><table data-testid="inside">
               <thead>
                 <tr><th>Vehicle</th><th>Site</th><th>Purpose</th><th>Driver</th><th>Trip</th><th>Pass</th><th>Entered</th>
                   <th>Inside for</th><th /></tr>
@@ -262,7 +263,7 @@ export function GateDesk() {
                     remarks={exitRemarks} setRemarks={setExitRemarks} />
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
 
           {can('GATE_REGISTER') && (
@@ -341,7 +342,7 @@ export function GateDesk() {
           {visits.length === 0 ? (
             <p className="muted" data-testid="register-empty">No visit matches.</p>
           ) : (
-            <table data-testid="register">
+            <div className="table-wrap"><table data-testid="register">
               <thead>
                 <tr><th>Vehicle</th><th>Site</th><th>Purpose</th><th>Driver</th><th>Trip</th><th>Pass</th><th>Status</th>
                   <th>Entered</th><th>Left</th><th>Inside for</th><th>Seals in</th><th>Seals out</th></tr>
@@ -350,12 +351,12 @@ export function GateDesk() {
                 {visits.map((v) => (
                   <tr key={v.id} data-testid="register-row" data-id={v.id}>
                     <td>{v.registrationNo}</td><td>{v.terminalCode}</td><td>{v.purpose}</td><td>{v.driverName}</td>
-                    <td>{v.tripNo}</td><td>{v.gatePassNo}</td><td>{v.status}</td><td>{v.enteredAt}</td>
-                    <td>{v.exitedAt}</td><td>{v.dwell}</td><td>{v.entrySeals}</td><td>{v.exitSeals}</td>
+                    <td>{v.tripNo}</td><td>{v.gatePassNo}</td><td><StatusBadge value={v.status} /></td><td className="nowrap">{v.enteredAt}</td>
+                    <td className="nowrap">{v.exitedAt}</td><td>{v.dwell}</td><td>{v.entrySeals}</td><td>{v.exitSeals}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
           {visitsNext && (
             <button type="button" data-testid="register-more"
@@ -412,7 +413,7 @@ export function GateDesk() {
           {passes.length === 0 ? (
             <p className="muted" data-testid="passes-empty">No pass matches.</p>
           ) : (
-            <table data-testid="passes">
+            <div className="table-wrap"><table data-testid="passes">
               <thead>
                 <tr><th>Pass</th><th>Site</th><th>Vehicle</th><th>Trip</th><th>Purpose</th><th>Valid from</th>
                   <th>Valid until</th><th>Status</th><th /></tr>
@@ -424,7 +425,7 @@ export function GateDesk() {
                     onSubmit={(e) => cancel(e, p.id)} reason={cancelReason} setReason={setCancelReason} />
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
           {passesNext && (
             <button type="button" data-testid="passes-more"
@@ -458,7 +459,7 @@ function InsideRow(p: InsideRowProps) {
     <>
       <tr data-testid="inside-row" data-id={v.id}>
         <td>{v.registrationNo}</td><td>{v.terminalCode}</td><td>{v.purpose}</td><td>{v.driverName}</td>
-        <td>{v.tripNo}</td><td>{v.gatePassNo}</td><td>{v.enteredAt}</td><td>{v.dwell}</td>
+        <td>{v.tripNo}</td><td>{v.gatePassNo}</td><td className="nowrap">{v.enteredAt}</td><td>{v.dwell}</td>
         <td>
           {p.canExit && (
             <button type="button" className="link" data-testid="visit-exit" aria-label={`Exit ${v.registrationNo}`}
@@ -504,9 +505,9 @@ function PassRow(props: PassRowProps) {
     <>
       <tr data-testid="pass-row" data-id={p.id}>
         <td>{p.passNo}</td><td>{p.terminalCode}</td><td>{p.registrationNo}</td><td>{p.tripNo}</td>
-        <td>{p.purpose}</td><td>{p.validFrom}</td><td>{p.validUntil}</td>
+        <td>{p.purpose}</td><td className="nowrap">{p.validFrom}</td><td className="nowrap">{p.validUntil}</td>
         <td>
-          <span className="badge" data-testid="pass-status">{p.status}</span>
+          <StatusBadge data-testid="pass-status" value={p.status} />
           {p.expired && <span className="badge" data-testid="pass-expired">Expired</span>}
           {p.cancelReason && <span className="muted">{p.cancelReason}</span>}
         </td>

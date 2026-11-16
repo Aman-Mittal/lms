@@ -20,6 +20,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /**
  * Events whose listener failed on every retry and were parked. An operator
@@ -121,7 +122,7 @@ function Detail({ id, manage, onChanged }: { id: string; manage: boolean; onChan
       <dl className="facts">
         <div><dt>Event</dt><dd>{s.eventType}</dd></div>
         <div><dt>Listener</dt><dd>{s.listenerId}</dd></div>
-        <div><dt>Status</dt><dd data-testid="parked-detail-status">{s.status}</dd></div>
+        <div><dt>Status</dt><dd><StatusBadge data-testid="parked-detail-status" value={s.status} /></dd></div>
         <div><dt>Attempts</dt><dd>{s.attempts}</dd></div>
         <div><dt>Last failed</dt><dd>{s.lastFailedAt}</dd></div>
       </dl>

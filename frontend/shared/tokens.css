@@ -7,6 +7,8 @@
  *   light  : ink on bg 15.3, muted on card 5.9, muted on head 5.2, primary-ink on primary 5.1, accent on accent-soft 5.8
  *   dark   : ink on bg 15.3, muted on card 6.8, primary-ink on primary 5.3, accent on card 7.1, nav text on side 13.1,
  *            active nav (nav-active-ink on nav-active) 5.3
+ * Status tones (--tone-*-ink on --tone-*-bg, the StatusBadge), light / dark: neutral 7.8 / 8.4, info 5.8 / 8.2,
+ *   success 6.7 / 8.9, warning 7.0 / 8.7, danger 6.7 / 8.2.
  */
 :root {
   /* Space: a 4px scale. */
@@ -44,6 +46,12 @@
   --side: #101a2b; --side-ink: #cdd6e4; --side-muted: #9aa8c0; --side-hover: #1b2940; --side-line: #24324b;
   --nav-active: #1f5eff; --nav-active-ink: #ffffff;
   --focus-color: #1f5eff; --backdrop: rgb(10 16 28 / 55%);
+  --tone-neutral-ink: #3f4a5c; --tone-neutral-bg: #eceff5; --tone-neutral-line: #d3d9e4;
+  --tone-info-ink: #1a50d6; --tone-info-bg: #e8efff; --tone-info-line: #c4d4fb;
+  --tone-success-ink: #06603c; --tone-success-bg: #e0f5ea; --tone-success-line: #b4e3c9;
+  --tone-warning-ink: #7a4506; --tone-warning-bg: #fdf0d9; --tone-warning-line: #f1d5a1;
+  --tone-danger-ink: #a11a10; --tone-danger-bg: #fde8e6; --tone-danger-line: #f4bfba;
+  --row-hover: #f3f6fc; --edge-shadow: rgb(16 26 43 / 22%);
 }
 
 :root[data-theme=light] { color-scheme: light; }
@@ -58,6 +66,12 @@
   --side: #0a0f17; --side-ink: #cdd6e4; --side-muted: #94a1b8; --side-hover: #151e2d; --side-line: #1e2838;
   --nav-active: #3b63d9; --nav-active-ink: #ffffff;
   --focus-color: #9dbcff; --backdrop: rgb(0 0 0 / 65%);
+  --tone-neutral-ink: #c4cddb; --tone-neutral-bg: #262f40; --tone-neutral-line: #38445a;
+  --tone-info-ink: #a9c4ff; --tone-info-bg: #1d2a44; --tone-info-line: #2f4573;
+  --tone-success-ink: #7fe0b0; --tone-success-bg: #10311f; --tone-success-line: #1f5a3a;
+  --tone-warning-ink: #f5c577; --tone-warning-bg: #3a2a0e; --tone-warning-line: #62481a;
+  --tone-danger-ink: #ffa59c; --tone-danger-bg: #3d1a17; --tone-danger-line: #6b2f2a;
+  --row-hover: #1b2535; --edge-shadow: rgb(157 188 255 / 30%);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
   --shadow-md: 0 6px 18px rgb(0 0 0 / 45%);
   --shadow-lg: 0 16px 40px rgb(0 0 0 / 60%);
@@ -74,6 +88,12 @@
     --side: #0a0f17; --side-ink: #cdd6e4; --side-muted: #94a1b8; --side-hover: #151e2d; --side-line: #1e2838;
     --nav-active: #3b63d9; --nav-active-ink: #ffffff;
     --focus-color: #9dbcff; --backdrop: rgb(0 0 0 / 65%);
+    --tone-neutral-ink: #c4cddb; --tone-neutral-bg: #262f40; --tone-neutral-line: #38445a;
+    --tone-info-ink: #a9c4ff; --tone-info-bg: #1d2a44; --tone-info-line: #2f4573;
+    --tone-success-ink: #7fe0b0; --tone-success-bg: #10311f; --tone-success-line: #1f5a3a;
+    --tone-warning-ink: #f5c577; --tone-warning-bg: #3a2a0e; --tone-warning-line: #62481a;
+    --tone-danger-ink: #ffa59c; --tone-danger-bg: #3d1a17; --tone-danger-line: #6b2f2a;
+    --row-hover: #1b2535; --edge-shadow: rgb(157 188 255 / 30%);
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
     --shadow-md: 0 6px 18px rgb(0 0 0 / 45%);
     --shadow-lg: 0 16px 40px rgb(0 0 0 / 60%);

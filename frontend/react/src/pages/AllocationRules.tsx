@@ -23,6 +23,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 export function AllocationRules() {
@@ -75,7 +76,7 @@ export function AllocationRules() {
       {rules.loading ? <p className="muted">Loading…</p> : (rules.data ?? []).length === 0 ? (
         <p className="muted" data-testid="no-rules">No rules yet: loads are offered by the routing guide alone.</p>
       ) : (
-        <table data-testid="rules-table">
+        <div className="table-wrap"><table data-testid="rules-table">
           <thead>
             <tr><th>Priority</th><th>Name</th><th>When</th><th>Action</th><th>Vendors</th><th>Status</th><th /></tr>
           </thead>
@@ -85,9 +86,9 @@ export function AllocationRules() {
                 <td>{r.priority}</td>
                 <td data-testid="rule-name">{r.name}</td>
                 <td>{conditions(r, terminals)}</td>
-                <td data-testid="rule-action">{r.action}</td>
+                <td><StatusBadge data-testid="rule-action" value={r.action} /></td>
                 <td data-testid="rule-vendors">{r.vendors.map((v) => v.label).join(r.action === 'PREFER' ? ' → ' : ', ')}</td>
-                <td data-testid="rule-status">{r.active ? 'Active' : 'Retired'}</td>
+                <td><StatusBadge data-testid="rule-status" value={r.active ? 'ACTIVE' : 'RETIRED'} /></td>
                 <td>
                   {can('ALLOCATION_RULE_MANAGE') && (
                     <>
@@ -100,7 +101,7 @@ export function AllocationRules() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
       {can('ALLOCATION_RULE_MANAGE') && (
         // A key per rule being edited: a fresh form, with its own state, each time.
@@ -329,7 +330,7 @@ function AllocationLookUp() {
       {found && (
         <dl data-testid="allocation-result">
           <div><dt>Load</dt><dd>{found.loadNo}</dd></div>
-          <div><dt>Status</dt><dd data-testid="allocation-status">{found.status}</dd></div>
+          <div><dt>Status</dt><dd><StatusBadge data-testid="allocation-status" value={found.status} /></dd></div>
           <div><dt>Rule</dt><dd data-testid="allocation-rule">
             {found.appliedRuleName ? `${found.appliedRuleName} (${found.appliedRuleAction})` : 'No rule fired'}
           </dd></div>

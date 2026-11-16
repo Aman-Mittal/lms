@@ -36,8 +36,8 @@ test.describe('splitting a consignment across vehicles', () => {
     await stubPrint(page);
     await signIn(page);
     await lookUp(page, reference);
-    await expect(page.getByTestId('consignment-status')).toHaveText('PLANNED');
-    await expect(page.getByTestId('consignment-weight')).toHaveText('2000000');
+    await expect(page.getByTestId('consignment-status')).toHaveAttribute('data-value', 'PLANNED');
+    await expect(page.getByTestId('consignment-weight')).toHaveAttribute('data-value', '2000000');
 
     const form = page.getByTestId('split-form');
     await test.step('plan equal parts from a 20-tonne lorry', async () => {
@@ -63,14 +63,14 @@ test.describe('splitting a consignment across vehicles', () => {
 
     await test.step('split, and the consignment reads as a hundred parts, none delivered yet', async () => {
       await form.getByTestId('split-submit').click();
-      await expect(page.getByTestId('consignment-status')).toHaveText('SPLIT');
+      await expect(page.getByTestId('consignment-status')).toHaveAttribute('data-value', 'SPLIT');
       await expect(page.getByTestId('part-count')).toHaveText('100');
       await expect(page.getByTestId('parts-delivered')).toHaveText('0');
       await expect(page.getByTestId('parts').getByTestId('part-row')).toHaveCount(100);
       await expect(page.getByTestId('parts').getByTestId('part-row').first()).toContainText(`${reference}-001`);
-      await expect(page.getByTestId('parts').getByTestId('part-row').first()).toContainText('19999.5');
+      await expect(page.getByTestId('parts').getByTestId('part-row').first().locator('[data-value^="19999.5"]')).toBeVisible();
       await expect(page.getByTestId('parts').getByTestId('part-row').last()).toContainText(`${reference}-100`);
-      await expect(page.getByTestId('parts').getByTestId('part-row').last()).toContainText('20000.5');
+      await expect(page.getByTestId('parts').getByTestId('part-row').last().locator('[data-value^="20000.5"]')).toBeVisible();
       await expect(page.getByTestId('split-form')).toHaveCount(0);
       await expect(page.getByTestId('print-lr')).toHaveCount(0);
     });
@@ -78,7 +78,7 @@ test.describe('splitting a consignment across vehicles', () => {
     await test.step('a part prints its own lorry receipt with a QR code, and leads back to the whole', async () => {
       await page.getByRole('button', { name: `${reference}-002` }).click();
       await expect(page.getByRole('heading', { name: `${reference}-002`, level: 2 })).toBeVisible();
-      await expect(page.getByTestId('consignment-status')).toHaveText('PLANNED');
+      await expect(page.getByTestId('consignment-status')).toHaveAttribute('data-value', 'PLANNED');
       await expect(page.getByTestId('consignment-parent')).toHaveText(reference);
       await expect(page.getByTestId('split-form')).toHaveCount(0);
 
@@ -92,7 +92,7 @@ test.describe('splitting a consignment across vehicles', () => {
 
       await page.getByTestId('consignment-parent').click();
       await expect(page.getByRole('heading', { name: reference, level: 2 })).toBeVisible();
-      await expect(page.getByTestId('consignment-status')).toHaveText('SPLIT');
+      await expect(page.getByTestId('consignment-status')).toHaveAttribute('data-value', 'SPLIT');
     });
   });
 
@@ -126,7 +126,7 @@ test.describe('splitting a consignment across vehicles', () => {
     try {
       const visitor = await customer.newPage();
       await visitor.goto(url);
-      await expect(visitor.getByTestId('track-status')).toHaveText('PLANNED');
+      await expect(visitor.getByTestId('track-status')).toHaveAttribute('data-value', 'PLANNED');
       await expect(visitor.getByTestId('track-parts')).toHaveText('0 of 3 delivered');
     } finally {
       await customer.close();
@@ -153,7 +153,7 @@ test.describe('correcting and cancelling a consignment', () => {
     await expect(page.getByTestId('consignment-contact')).toHaveText('Meera, stores, +91 22 4000 1234');
     await expect(page.getByTestId('consignment-remarks')).toHaveText('Tail-lift needed');
     await expect(page.getByTestId('consignment-window')).toContainText('2026-12-01T04:00:00Z');
-    await expect(page.getByTestId('consignment-weight')).toHaveText('900');
+    await expect(page.getByTestId('consignment-weight')).toHaveAttribute('data-value', '900');
 
     await form.getByTestId('particular-clientReference').fill(taken);
     await form.getByTestId('save-particulars').click();
@@ -176,7 +176,7 @@ test.describe('correcting and cancelling a consignment', () => {
     const cancel = page.getByTestId('cancel-form');
     await cancel.getByTestId('cancel-reason').fill('Consignee closed for stocktake');
     await cancel.getByTestId('cancel-consignment').click();
-    await expect(page.getByTestId('consignment-status')).toHaveText('CANCELLED');
+    await expect(page.getByTestId('consignment-status')).toHaveAttribute('data-value', 'CANCELLED');
     await expect(page.getByTestId('cancel-form')).toHaveCount(0);
     await expect(page.getByTestId('particulars-form')).toHaveCount(0);
     await expect(page.getByTestId('print-lr')).toBeVisible();
@@ -191,7 +191,7 @@ test.describe('what each person is offered', () => {
     await signIn(page);
     await lookUp(page, reference);
 
-    await expect(page.getByTestId('consignment-status')).toHaveText('PLANNED');
+    await expect(page.getByTestId('consignment-status')).toHaveAttribute('data-value', 'PLANNED');
     await expect(page.getByTestId('split-form')).toHaveCount(0);
     await expect(page.getByTestId('particulars-form')).toHaveCount(0);
     await expect(page.getByTestId('cancel-form')).toHaveCount(0);

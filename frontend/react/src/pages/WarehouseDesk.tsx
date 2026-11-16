@@ -23,6 +23,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 const TABS: Array<[Tab, string]> = [
@@ -293,7 +294,7 @@ function AsnPanel({ asnId, version, onChanged }: { asnId: string; version: numbe
 
   return (
     <section data-testid="asn-panel" aria-label="ASN">
-      <h3>{header.asnNo} <span className="muted" data-testid="asn-status">{header.status}</span></h3>
+      <h3>{header.asnNo} <StatusBadge data-testid="asn-status" value={header.status} /></h3>
       <Table rows={lines} rowTestId="asn-line" columns={[
         ['lineNo', '#'], ['skuCode', 'SKU'], ['lotNo', 'Lot'], ['expectedQty', 'Expected'], ['receivedQty', 'Received'],
         ['damagedQty', 'Damaged'], ['shortQty', 'Short'], ['excessQty', 'Excess'],
@@ -566,7 +567,7 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
 
   return (
     <section data-testid="outbound-panel" aria-label="Outbound order">
-      <h3>{header.orderNo} <span className="muted" data-testid="outbound-status">{status}</span></h3>
+      <h3>{header.orderNo} <StatusBadge data-testid="outbound-status" value={status} /></h3>
       <Table rows={lines} rowTestId="outbound-line" columns={[
         ['lineNo', '#'], ['skuCode', 'SKU'], ['orderedQty', 'Ordered'], ['pickedQty', 'Picked'], ['shortQty', 'Short'],
       ]} />
@@ -593,7 +594,7 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
         <section className="slip manifest" data-testid="pick-list" aria-label="Pick list to print">
           <h3>Pick list {header.orderNo}</h3>
           <p>{header.shipTo ? `Ship to ${header.shipTo} · ` : ''}raised {header.createdAt}</p>
-          <table>
+          <div className="table-wrap"><table>
             <thead><tr><th>#</th><th>SKU</th><th>Quantity</th><th>From bins</th><th>Picked</th></tr></thead>
             <tbody>
               {lines.map((l) => (
@@ -603,7 +604,7 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <p className="actions no-print">
             <button data-testid="print-now" onClick={() => window.print()}>Print</button>{' '}
             <button className="link" onClick={() => setSlip(false)}>Close</button>
@@ -643,7 +644,7 @@ function UnitPanel({ unitId, version, onChanged }: { unitId: string; version: nu
 
   return (
     <section data-testid="unit-panel" aria-label="Handling unit">
-      <h3>{header.huNo} <span className="muted" data-testid="unit-status">{header.status}</span></h3>
+      <h3>{header.huNo} <StatusBadge data-testid="unit-status" value={header.status} /></h3>
       <Table rows={lines} rowTestId="unit-content" columns={[['skuCode', 'SKU'], ['lotNo', 'Lot'], ['quantity', 'Quantity']]} />
       <p><button className="link" data-testid="print-unit-label" onClick={() => setLabel(true)}>Print label</button></p>
       {label && (
@@ -756,7 +757,7 @@ function WavePanel({ waveId, version, onChanged }: { waveId: string; version: nu
   const { header, lines } = detail.data;
   return (
     <section data-testid="wave-panel" aria-label="Pick wave">
-      <h3>{header.waveNo} <span className="muted" data-testid="wave-status">{header.status}</span></h3>
+      <h3>{header.waveNo} <StatusBadge data-testid="wave-status" value={header.status} /></h3>
       <Table rows={lines} rowTestId="wave-order" columns={[
         ['seq', '#'], ['orderNo', 'Order'], ['status', 'Status'], ['orderedUnits', 'Ordered'], ['pickedUnits', 'Picked'],
         ['shortUnits', 'Short'],

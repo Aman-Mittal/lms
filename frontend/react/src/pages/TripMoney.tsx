@@ -20,6 +20,8 @@ import {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { money, problemText } from './moneyProblem';
+import { StatusBadge } from './StatusBadge';
+import { Money } from './Figures';
 
 /**
  * A trip's money: the advances paid to its vendor (requested, paid, cancelled before payment) and the
@@ -96,13 +98,13 @@ export function TripMoney({ tripId }: { tripId: string }) {
             </form>
           )}
           {advances.length === 0 ? <p className="muted">No advances on this trip.</p> : (
-            <table data-testid="advances">
+            <div className="table-wrap"><table data-testid="advances">
               <thead><tr><th>No.</th><th>Mode</th><th>Amount</th><th>Status</th><th>Reference</th><th /></tr></thead>
               <tbody>
                 {advances.map((a) => (
                   <tr key={a.id} data-testid="adv-row" data-id={a.id}>
-                    <td>{a.advanceNo}</td><td>{a.mode}</td><td data-testid="adv-amount-cell">{money(a.amount)}</td>
-                    <td><span className="badge" data-testid="adv-status">{a.status}</span></td>
+                    <td>{a.advanceNo}</td><td>{a.mode}</td><td className="num"><Money data-testid="adv-amount-cell" value={a.amount} currency={a.currency} /></td>
+                    <td><StatusBadge data-testid="adv-status" value={a.status} /></td>
                     <td>{a.paidReference}</td>
                     <td>
                       {can('PAYABLES_MANAGE') && a.status === 'APPROVED' && (paying === a.id ? (
@@ -136,7 +138,7 @@ export function TripMoney({ tripId }: { tripId: string }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </>
       )}
@@ -144,17 +146,17 @@ export function TripMoney({ tripId }: { tripId: string }) {
         <>
           <h3>Manual charges</h3>
           {charges.length === 0 ? <p className="muted">No manual charges on this trip.</p> : (
-            <table data-testid="trip-charges">
+            <div className="table-wrap"><table data-testid="trip-charges">
               <thead><tr><th>No.</th><th>Charge</th><th>Direction</th><th>Amount</th><th>Status</th></tr></thead>
               <tbody>
                 {charges.map((c) => (
                   <tr key={c.id} data-testid="trip-charge-row">
-                    <td>{c.chargeNo}</td><td>{c.chargeCode}</td><td>{c.direction}</td><td>{money(c.amount)}</td>
-                    <td>{c.status}</td>
+                    <td>{c.chargeNo}</td><td>{c.chargeCode}</td><td>{c.direction}</td><td className="num"><Money value={c.amount} currency={c.currency} /></td>
+                    <td><StatusBadge value={c.status} /></td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </>
       )}

@@ -22,6 +22,9 @@ import {
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { StatusBadge } from './status-badge';
+import { Money } from './figures';
+import { When } from './when';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -74,22 +77,22 @@ function draftOf(d: ContractDetail): ContractDraft {
  */
 @Component({
   selector: 'app-contract-lifecycle',
-  imports: [FormsModule, EntityPicker],
+  imports: [FormsModule, EntityPicker, StatusBadge, Money, When],
   template: `
     <section data-testid="contract-lifecycle" aria-label="Contract lifecycle">
       <h3>Contract versions</h3>
-      <table>
+      <div class="table-wrap"><table>
         <thead><tr><th>Contract</th><th>State</th><th>From</th><th>To</th><th>Ends</th><th></th></tr></thead>
         <tbody>
           @for (c of contracts(); track c['id']) {
             <tr data-testid="version-row">
-              <td>{{ c['code'] }}</td><td data-testid="version-state">{{ c['state'] }}</td>
-              <td>{{ c['effectiveFrom'] }}</td><td>{{ c['effectiveTo'] }}</td><td>{{ c['validTill'] }}</td>
+              <td>{{ c['code'] }}</td><td><app-status-badge data-testid="version-state" [value]="c['state']" /></td>
+              <td class="nowrap">{{ (c['effectiveFrom']) | when }}</td><td class="nowrap">{{ (c['effectiveTo']) | when }}</td><td>{{ (c['validTill']) | when }}</td>
               <td><button class="link" data-testid="open-version" (click)="open(c['id'])">Open</button></td>
             </tr>
           }
         </tbody>
-      </table>
+      </table></div>
 
       @if (session.can('CLIENT_CONTRACT_MANAGE')) {
         <h3>Draft a contract</h3>
@@ -123,9 +126,9 @@ function draftOf(d: ContractDetail): ContractDraft {
             <button class="link" (click)="close()" aria-label="Close contract">Close</button>
           </header>
           <dl>
-            <div><dt>State</dt><dd data-testid="contract-status">{{ d.state }}</dd></div>
-            <div><dt>Starts</dt><dd>{{ d.effectiveFrom }}</dd></div>
-            <div><dt>Ends</dt><dd data-testid="contract-valid-till">{{ d.validTill }}</dd></div>
+            <div><dt>State</dt><dd><app-status-badge data-testid="contract-status" [value]="d.state" /></dd></div>
+            <div><dt>Starts</dt><dd>{{ (d.effectiveFrom) | when }}</dd></div>
+            <div><dt>Ends</dt><dd data-testid="contract-valid-till">{{ (d.validTill) | when }}</dd></div>
             <div><dt>Services</dt><dd>@for (s of d.services; track s.serviceCode) { {{ s.serviceCode }} {{ s.rate }}/{{ s.unit }}; }</dd></div>
             <div><dt>Direct orders</dt><dd data-testid="contract-direct">{{ d.directOrdersAllowed ? 'Allowed' : 'Not allowed' }}</dd></div>
             <div><dt>Load types</dt><dd data-testid="contract-load-types">{{ d.allowedLoadTypes.length ? d.allowedLoadTypes.join(', ') : 'Any' }}</dd></div>
@@ -133,7 +136,7 @@ function draftOf(d: ContractDetail): ContractDraft {
           <h4>Lanes</h4>
           @if (d.lanes.length === 0) { <p class="muted" data-testid="no-lanes">No lanes: orders are priced by the per-kilo rate.</p> }
           @if (d.lanes.length > 0) {
-            <table data-testid="contract-lanes">
+            <div class="table-wrap"><table data-testid="contract-lanes">
               <thead><tr><th>Lane</th><th>From</th><th>To</th><th>Mode</th><th>Load</th><th>Basis</th><th>Rate</th><th>Days</th><th>Slabs</th><th></th></tr></thead>
               <tbody>
                 @for (l of d.lanes; track l.laneCode) {
@@ -141,7 +144,7 @@ function draftOf(d: ContractDetail): ContractDraft {
                     <td data-testid="lane-code">{{ l.laneCode }}</td>
                     <td>{{ end(l.originTerminalId, l.originZone) }}</td><td>{{ end(l.destinationTerminalId, l.destinationZone) }}</td>
                     <td>{{ l.freightMode || 'Any' }}</td><td>{{ l.loadType || 'Any' }}</td>
-                    <td>{{ l.rateBasis }}</td><td>{{ l.rate || '—' }}</td><td>{{ l.transitDays || '—' }}</td>
+                    <td>{{ l.rateBasis }}</td><td class="num"><app-money [value]="l.rate" empty="—" /></td><td>{{ l.transitDays || '—' }}</td>
                     <td>{{ l.slabs || '—' }}</td>
                     <td>
                       @if (d.status === 'DRAFT' && session.can('CLIENT_CONTRACT_MANAGE')) {
@@ -151,7 +154,7 @@ function draftOf(d: ContractDetail): ContractDraft {
                   </tr>
                 }
               </tbody>
-            </table>
+            </table></div>
           }
           @if (d.rejectionReason) {
             <p class="error" data-testid="contract-rejection">Verification refused: {{ d.rejectionReason }}</p>

@@ -15,7 +15,9 @@
  */
 
 import { Component, input, output } from '@angular/core';
+import { isDateColumn, isNumericColumn } from '../../../../shared/format';
 import { Row } from '../gateway/lms-gateway';
+import { Cell } from './cell';
 
 export interface RowColumn {
   header: string;
@@ -25,27 +27,32 @@ export interface RowColumn {
 /** A plain table of display rows; with `pickable`, each row's first cell is a button that selects it. */
 @Component({
   selector: 'app-row-table',
+  imports: [Cell],
   template: `
+    <div class="table-wrap">
     <table [attr.data-testid]="testId()">
       <thead>
-        <tr>@for (c of columns(); track c.field) { <th>{{ c.header }}</th> }</tr>
+        <tr>@for (c of columns(); track c.field) { <th [class.num]="numeric(c.field)">{{ c.header }}</th> }</tr>
       </thead>
       <tbody>
         @for (row of rows(); track row['id']) {
           <tr [attr.data-testid]="testId() + '-row'" [attr.data-id]="row['id']" [class.picked]="picked() === row['id']">
             @for (c of columns(); track c.field; let first = $first) {
-              <td>
+              <td [class.num]="numeric(c.field)" [class.nowrap]="date(c.field)">
                 @if (first && pickable()) {
                   <button type="button" class="link" (click)="pick.emit(row)">{{ row[c.field] }}</button>
                 } @else {
-                  {{ row[c.field] }}
+                  <app-cell [field]="c.field" [value]="row[c.field]" />
                 }
               </td>
             }
           </tr>
+        } @empty {
+          <tr class="empty-row"><td class="table-state" [attr.colspan]="columns().length">Nothing here yet.</td></tr>
         }
       </tbody>
     </table>
+    </div>
   `,
 })
 export class RowTable {
@@ -55,4 +62,6 @@ export class RowTable {
   readonly pickable = input(false);
   readonly picked = input('');
   readonly pick = output<Row>();
+  protected readonly numeric = isNumericColumn;
+  protected readonly date = isDateColumn;
 }

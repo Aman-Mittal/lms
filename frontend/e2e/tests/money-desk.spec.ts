@@ -105,8 +105,8 @@ test.describe('manual charges', () => {
       await raise(page, label, tripId, '2');
       await expect(page.getByTestId('mc-result')).toContainText('Raised');
       const row = page.getByTestId('mc-row').first();
-      await expect(row.getByTestId('mc-status')).toHaveText('APPROVED');
-      await expect(row.getByTestId('mc-amount')).toContainText('200');
+      await expect(row.getByTestId('mc-status')).toHaveAttribute('data-value', 'APPROVED');
+      await expect(row.getByTestId('mc-amount')).toHaveAttribute('data-value', /^200(\.0+)?$/);
     });
 
     let pendingId = '';
@@ -114,7 +114,7 @@ test.describe('manual charges', () => {
       await raise(page, label, tripId, '20');
       await expect(page.getByTestId('mc-result')).toContainText('Awaiting approval');
       const row = page.getByTestId('mc-row').first();
-      await expect(row.getByTestId('mc-status')).toHaveText('PENDING_APPROVAL');
+      await expect(row.getByTestId('mc-status')).toHaveAttribute('data-value', 'PENDING_APPROVAL');
       pendingId = (await row.getAttribute('data-id')) ?? '';
       expect(pendingId).not.toBe('');
     });
@@ -123,7 +123,7 @@ test.describe('manual charges', () => {
       await approveSubject(request, session, 'MANUAL_CHARGE', pendingId);
       await page.getByTestId('mc-filter-status').selectOption('APPROVED');
       await expect(page.locator(`[data-testid="mc-row"][data-id="${pendingId}"]`).getByTestId('mc-status'))
-        .toHaveText('APPROVED');
+        .toHaveAttribute('data-value', 'APPROVED');
     });
 
     await test.step('an approved charge that has not been billed is cancelled with a reason', async () => {
@@ -133,7 +133,7 @@ test.describe('manual charges', () => {
       await page.getByTestId('mc-cancel-confirm').click();
       await page.getByTestId('mc-filter-status').selectOption('CANCELLED');
       await expect(page.locator(`[data-testid="mc-row"][data-id="${pendingId}"]`).getByTestId('mc-status'))
-        .toHaveText('CANCELLED');
+        .toHaveAttribute('data-value', 'CANCELLED');
     });
   });
 });
@@ -165,9 +165,9 @@ test.describe('vendor payables', () => {
       await expect(page.getByTestId('inv-result')).toBeVisible();
       const row = page.getByTestId('inv-row').filter({ hasText: vendorNo });
       await expect(row).toHaveCount(1);
-      await expect(row.getByTestId('inv-status')).toHaveText('OPEN');
+      await expect(row.getByTestId('inv-status')).toHaveAttribute('data-value', 'OPEN');
       // One console shows two decimals, the other the plain amount.
-      await expect(row.getByTestId('inv-outstanding')).toHaveText(/^20000(\.00)?$/);
+      await expect(row.getByTestId('inv-outstanding')).toHaveAttribute('data-value', /^20000(\.00)?$/);
     });
 
     await test.step('a part payment leaves the rest outstanding', async () => {
@@ -176,8 +176,8 @@ test.describe('vendor payables', () => {
       await detail.getByTestId('pay-amount').fill('5000');
       await detail.getByTestId('pay-reference').fill(`PAY-${salt}-1`);
       await detail.getByTestId('pay-submit').click();
-      await expect(detail.getByTestId('detail-status')).toHaveText('PARTIALLY_PAID');
-      await expect(detail.getByTestId('detail-outstanding')).toHaveText(/^15000(\.00)?$/);
+      await expect(detail.getByTestId('detail-status')).toHaveAttribute('data-value', 'PARTIALLY_PAID');
+      await expect(detail.getByTestId('detail-outstanding')).toHaveAttribute('data-value', /^15000(\.00)?$/);
     });
 
     await test.step('the payment is listed', async () => {
@@ -216,7 +216,7 @@ test.describe('advances on a trip', () => {
       await money.getByTestId('adv-submit').click();
       await expect(money.getByTestId('adv-result')).toContainText('Awaiting approval');
       const row = money.getByTestId('adv-row').first();
-      await expect(row.getByTestId('adv-status')).toHaveText('PENDING_APPROVAL');
+      await expect(row.getByTestId('adv-status')).toHaveAttribute('data-value', 'PENDING_APPROVAL');
       advanceId = (await row.getAttribute('data-id')) ?? '';
       expect(advanceId).not.toBe('');
     });
@@ -225,12 +225,12 @@ test.describe('advances on a trip', () => {
       await approveSubject(request, session, 'VENDOR_ADVANCE', advanceId);
       await page.getByRole('button', { name: 'Show route' }).click();
       const row = page.getByTestId('trip-money').locator(`[data-testid="adv-row"][data-id="${advanceId}"]`);
-      await expect(row.getByTestId('adv-status')).toHaveText('APPROVED');
+      await expect(row.getByTestId('adv-status')).toHaveAttribute('data-value', 'APPROVED');
       await row.getByTestId('adv-pay').click();
       await page.getByTestId('adv-pay-reference').fill(`UTR-${salt}`);
       await page.getByTestId('adv-pay-confirm').click();
       await expect(page.getByTestId('trip-money').locator(`[data-testid="adv-row"][data-id="${advanceId}"]`)
-        .getByTestId('adv-status')).toHaveText('PAID');
+        .getByTestId('adv-status')).toHaveAttribute('data-value', 'PAID');
     });
   });
 });

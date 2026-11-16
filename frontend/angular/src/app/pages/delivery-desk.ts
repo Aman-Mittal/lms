@@ -20,11 +20,13 @@ import { Session } from '../session';
 import { Qr } from './qr';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /** The delivery desk: issue a one-time code, record the proof, print the slip. */
 @Component({
   selector: 'app-delivery-desk',
-  imports: [FormsModule, Qr, EntityPicker, PageHeader],
+  imports: [FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Delivery desk" />
     <p class="muted">Issue the consignee's one-time code, then record the proof when they give it back.</p>
@@ -38,21 +40,21 @@ import { PageHeader } from './page-header';
     @if (consignmentId() && loaded()) {
       <section data-testid="proof">
         @if (consignmentStatus()) {
-          <p data-testid="delivery-consignment-status">Consignment: <strong>{{ consignmentStatus() }}</strong></p>
+          <p>Consignment: <app-status-badge data-testid="delivery-consignment-status" [value]="consignmentStatus()" /></p>
         }
         @if (proof() === null) {
           <p class="muted" data-testid="no-proof">No code has been issued for this consignment yet.</p>
         } @else if (proof(); as p) {
           <dl>
-            <div><dt>Proof</dt><dd data-testid="proof-status">{{ p.status }}</dd></div>
+            <div><dt>Proof</dt><dd><app-status-badge data-testid="proof-status" [value]="p.status" /></dd></div>
             @if (confirmed()) {
               <div><dt>Received by</dt><dd data-testid="proof-recipient">{{ p.recipientName }}</dd></div>
               <div><dt>Photo</dt><dd>{{ p.photoRef || '—' }}</dd></div>
-              <div><dt>Delivered</dt><dd>{{ p.deliveredAt }}</dd></div>
-              <div><dt>Goods</dt><dd data-testid="proof-condition">{{ p.goodsCondition }}</dd></div>
+              <div><dt>Delivered</dt><dd>{{ (p.deliveredAt) | when }}</dd></div>
+              <div><dt>Goods</dt><dd><app-status-badge data-testid="proof-condition" [value]="p.goodsCondition" /></dd></div>
               @if (p.remark) { <div><dt>Remark</dt><dd data-testid="proof-remark">{{ p.remark }}</dd></div> }
             } @else {
-              <div><dt>Code valid until</dt><dd>{{ p.otpExpiresAt }}</dd></div>
+              <div><dt>Code valid until</dt><dd>{{ (p.otpExpiresAt) | when }}</dd></div>
             }
           </dl>
         }
@@ -61,7 +63,7 @@ import { PageHeader } from './page-header';
           <p><button data-testid="issue-otp" (click)="issue()">Issue a code</button></p>
           @if (issued(); as i) {
             <p data-testid="otp-issued">
-              Code issued, valid until {{ i.expiresAt }}.
+              Code issued, valid until {{ (i.expiresAt) | when }}.
               @if (i.otp) { Demo code: <strong data-testid="otp-code">{{ i.otp }}</strong> }
             </p>
           }
@@ -101,7 +103,7 @@ import { PageHeader } from './page-header';
                 <dl>
                   <div><dt>Consignment</dt><dd>{{ p.consignmentId }}</dd></div>
                   <div><dt>Received by</dt><dd>{{ p.recipientName }}</dd></div>
-                  <div><dt>Delivered</dt><dd>{{ p.deliveredAt }}</dd></div>
+                  <div><dt>Delivered</dt><dd>{{ (p.deliveredAt) | when }}</dd></div>
                   <div><dt>Photo</dt><dd>{{ p.photoRef || '—' }}</dd></div>
                   <div><dt>Goods</dt><dd>{{ p.goodsCondition }}@if (p.remark) { — {{ p.remark }}}</dd></div>
                 </dl>

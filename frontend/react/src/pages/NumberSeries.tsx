@@ -24,6 +24,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable, type RowColumn } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -241,7 +242,7 @@ export function NumberSeries() {
           <h2>{current.code}</h2>
           <dl className="facts">
             <div><dt>Numbers</dt><dd>{current.documentType} · {current.scope}</dd></div>
-            <div><dt>State</dt><dd data-testid="series-state">{current.active ? 'Active' : 'Inactive'}</dd></div>
+            <div><dt>State</dt><dd><StatusBadge data-testid="series-state" value={current.active ? 'ACTIVE' : 'INACTIVE'} /></dd></div>
             <div><dt>Financial year</dt><dd>{current.financialYear === '0' ? 'Never restarts' : current.financialYear}</dd></div>
             <div><dt>Next number</dt><dd data-testid="series-next">{next}</dd></div>
             <div><dt>Reuses released numbers</dt><dd>{current.reuseReleased ? 'Yes' : 'No'}</dd></div>

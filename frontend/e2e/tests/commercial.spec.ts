@@ -151,16 +151,16 @@ test.describe('commercial desk', () => {
     await allocate.getByRole('button', { name: 'Allocate load' }).click();
 
     const panel = page.getByTestId('allocation-panel');
-    await expect(panel.getByTestId('allocation-status')).toHaveText('OFFERED');
+    await expect(panel.getByTestId('allocation-status')).toHaveAttribute('data-value', 'OFFERED');
     const offer = panel.getByTestId('offer-row');
     await expect(offer).toHaveCount(1);
-    await expect(offer.getByTestId('offer-outcome')).toHaveText('PENDING');
+    await expect(offer.getByTestId('offer-outcome')).toHaveAttribute('data-value', 'PENDING');
     await expect(offer).toContainText(`${lane.vendors[0].code} Carriers`);
 
     await offer.getByTestId('accept-offer').click();
-    await expect(panel.getByTestId('allocation-status')).toHaveText('AWARDED');
+    await expect(panel.getByTestId('allocation-status')).toHaveAttribute('data-value', 'AWARDED');
     await expect(panel.getByTestId('allocation-awarded')).toHaveText(`${lane.vendors[0].code} Carriers`);
-    await expect(offer.getByTestId('offer-outcome')).toHaveText('ACCEPTED');
+    await expect(offer.getByTestId('offer-outcome')).toHaveAttribute('data-value', 'ACCEPTED');
     await expect(panel.getByTestId('accept-offer')).toHaveCount(0);
     await expect(panel.getByTestId('cancel-allocation')).toHaveCount(0);
 
@@ -202,7 +202,7 @@ test.describe('commercial desk', () => {
     await expect(option).toHaveCount(1);
     await option.click();
     await allocate.getByRole('button', { name: 'Allocate load' }).click();
-    await expect(page.getByTestId('allocation-panel').getByTestId('allocation-status')).toHaveText('OFFERED');
+    await expect(page.getByTestId('allocation-panel').getByTestId('allocation-status')).toHaveAttribute('data-value', 'OFFERED');
   });
 
   test('a vendor\'s overclaim disputes the bill, the dispute is settled with a reason, and the bill prints', async ({ page, request }, info) => {
@@ -214,8 +214,8 @@ test.describe('commercial desk', () => {
 
     const panel = await openBill(page, trip.billId);
     await expect(panel.getByRole('heading', { name: trip.billNo })).toBeVisible();
-    await expect(panel.getByTestId('bill-status')).toHaveText('DRAFT');
-    await expect(panel.getByTestId('bill-computed')).toHaveText(amount(20000));
+    await expect(panel.getByTestId('bill-status')).toHaveAttribute('data-value', 'DRAFT');
+    await expect(panel.getByTestId('bill-computed')).toHaveAttribute('data-value', amount(20000));
     await expect(panel.getByTestId('bill-line')).toHaveCount(1);
     await expect(panel.getByTestId('bill-line')).toContainText('BASE_FREIGHT');
 
@@ -224,9 +224,9 @@ test.describe('commercial desk', () => {
       await match.getByLabel('Vendor\'s claimed amount').fill('25000');
       await match.getByRole('button', { name: 'Match claim' }).click();
       await expect(panel.getByTestId('match-outcome')).toHaveText('Matched: DISPUTED.');
-      await expect(panel.getByTestId('bill-status')).toHaveText('DISPUTED');
-      await expect(panel.getByTestId('bill-claimed')).toHaveText(amount(25000));
-      await expect(panel.getByTestId('bill-variance')).toHaveText(amount(5000));
+      await expect(panel.getByTestId('bill-status')).toHaveAttribute('data-value', 'DISPUTED');
+      await expect(panel.getByTestId('bill-claimed')).toHaveAttribute('data-value', amount(25000));
+      await expect(panel.getByTestId('bill-variance')).toHaveAttribute('data-value', amount(5000));
       await expect(panel.getByTestId('match-bill')).toHaveCount(0);
     });
 
@@ -234,7 +234,7 @@ test.describe('commercial desk', () => {
       const resolve = panel.getByTestId('resolve-bill');
       await resolve.getByLabel('Reason for settling').fill('Detention agreed with the vendor on a call');
       await resolve.getByRole('button', { name: /Settle in the vendor/ }).click();
-      await expect(panel.getByTestId('bill-status')).toHaveText('APPROVED_FOR_PAYMENT');
+      await expect(panel.getByTestId('bill-status')).toHaveAttribute('data-value', 'APPROVED_FOR_PAYMENT');
       await expect(panel.getByTestId('bill-resolution')).toContainText('Detention agreed with the vendor on a call');
       await expect(panel.getByTestId('resolve-bill')).toHaveCount(0);
     });
@@ -265,7 +265,7 @@ test.describe('what each person is offered', () => {
     await expect(page.getByTestId('allocate-load')).toHaveCount(0);
 
     const panel = await openBill(page, trip.billId);
-    await expect(panel.getByTestId('bill-status')).toHaveText('DRAFT');
+    await expect(panel.getByTestId('bill-status')).toHaveAttribute('data-value', 'DRAFT');
     await expect(panel.getByTestId('match-bill')).toHaveCount(0);
     await panel.getByTestId('print-bill').click();
     await panel.getByTestId('bill-slip').getByTestId('print-now').click();
@@ -376,7 +376,7 @@ test.describe('rate cards and rail tariffs', () => {
     await expect(page.getByTestId('rail-tariff-published')).toContainText(`ZZ-CM-RAILCARD-${salt}`);
     const panel = page.getByTestId('rail-tariff-panel');
     await expect(panel.getByTestId('rail-tariff-code')).toHaveText(`ZZ-CM-RAILCARD-${salt}`);
-    await expect(panel.getByTestId('rail-per-wagon')).toHaveText(amount(18000));
+    await expect(panel.getByTestId('rail-per-wagon')).toHaveAttribute('data-value', amount(18000));
     await expect(panel.getByTestId('rail-per-container')).toHaveText('—');
     await expect(page.getByTestId('rail-tariff-row').filter({ hasText: `ZZ-CM-RAILCARD-${salt}` })).toHaveCount(1);
 

@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { signIn } from './support';
+import { signIn, withValue } from './support';
 import {
   customer, destinationId, originId, stubEnquiries, stubSession, stubUpload, type EnquiryStub,
 } from './support-enquiry';
@@ -70,7 +70,7 @@ test.describe('enquiry desk', () => {
     await test.step('it is made with two lines, one of them added by the Enter that submits the form', async () => {
       await expect(page.getByTestId('enquiry-none')).toBeVisible();
       await createEnquiry(page, 'RFQ-100');
-      await expect(page.getByTestId('enquiry-status')).toHaveText('OPEN');
+      await expect(page.getByTestId('enquiry-status')).toHaveAttribute('data-value', 'OPEN');
       await expect(page.getByTestId('enquiry-line-row')).toHaveCount(2);
       await expect(page.getByTestId('enquiry-row')).toHaveCount(1);
       await expect(page.getByTestId('enquiry-deadline')).not.toBeEmpty();
@@ -133,19 +133,19 @@ test.describe('enquiry desk', () => {
     await test.step('lines are decided and the enquiry follows them', async () => {
       await line(page, 1).getByTestId('enquiry-line-won-quantity').fill('4');
       await line(page, 1).getByTestId('enquiry-outcome-partial').click();
-      await expect(line(page, 1).getByTestId('enquiry-line-status')).toContainText('PARTIAL');
-      await expect(page.getByTestId('enquiry-status')).toHaveText('OPEN');
+      await expect(withValue(line(page, 1).getByTestId('enquiry-line-status'), 'PARTIAL')).toBeVisible();
+      await expect(page.getByTestId('enquiry-status')).toHaveAttribute('data-value', 'OPEN');
       await line(page, 2).getByTestId('enquiry-outcome-lost').click();
       await expect(line(page, 2).getByTestId('enquiry-line-status')).toContainText('a cheaper carrier');
-      await expect(page.getByTestId('enquiry-status')).toHaveText('PARTIAL');
-      await expect(page.getByTestId('enquiry-row-status')).toHaveText('PARTIAL');
+      await expect(page.getByTestId('enquiry-status')).toHaveAttribute('data-value', 'PARTIAL');
+      await expect(page.getByTestId('enquiry-row-status')).toHaveAttribute('data-value', 'PARTIAL');
       await expect(line(page, 1).getByTestId('enquiry-quote-amount')).toHaveCount(0);
       await expect(page.getByTestId('enquiry-cancel')).toHaveCount(0);
     });
 
     await test.step('converting makes one order, and asking again shows the same one', async () => {
       await page.getByTestId('enquiry-convert').click();
-      await expect(page.getByTestId('enquiry-status')).toHaveText('CONVERTED');
+      await expect(page.getByTestId('enquiry-status')).toHaveAttribute('data-value', 'CONVERTED');
       await expect(page.getByTestId('enquiry-order')).toContainText('ORD-2026-000042');
       const order = await page.getByTestId('enquiry-order').getAttribute('data-id');
       await page.getByTestId('enquiry-convert').click();
@@ -161,7 +161,7 @@ test.describe('enquiry desk', () => {
     await signIn(page);
     await openDesk(page);
     await createEnquiry(page, 'RFQ-200');
-    await expect(page.getByTestId('enquiry-status')).toHaveText('OPEN');
+    await expect(page.getByTestId('enquiry-status')).toHaveAttribute('data-value', 'OPEN');
 
     await page.getByTestId('enquiry-rediscover').click();
     await expect(page.getByTestId('enquiry-note')).toContainText('rates');
@@ -170,9 +170,9 @@ test.describe('enquiry desk', () => {
 
     await page.getByTestId('enquiry-cancel-reason').fill('customer went away');
     await page.getByTestId('enquiry-cancel-reason').press('Enter');
-    await expect(page.getByTestId('enquiry-status')).toHaveText('CANCELLED');
+    await expect(page.getByTestId('enquiry-status')).toHaveAttribute('data-value', 'CANCELLED');
     await expect(page.getByTestId('enquiry-cancel-shown')).toHaveText('customer went away');
-    await expect(page.getByTestId('enquiry-line-status').first()).toHaveText('CANCELLED');
+    await expect(withValue(page.getByTestId('enquiry-line-status').first(), 'CANCELLED')).toBeVisible();
     await expect(page.getByTestId('enquiry-cancel')).toHaveCount(0);
     await expect(page.getByTestId('enquiry-quote-amount')).toHaveCount(0);
     expect(stub.changes.at(-1)).toMatchObject({ body: { reason: 'customer went away' } });
@@ -235,9 +235,9 @@ test.describe('bulk order upload', () => {
 
     const rows = page.getByTestId('upload-row');
     await expect(rows.nth(0)).toHaveAttribute('data-id', '2');
-    await expect(rows.nth(0).getByTestId('upload-row-status')).toHaveText('CREATED');
+    await expect(rows.nth(0).getByTestId('upload-row-status')).toHaveAttribute('data-value', 'CREATED');
     await expect(rows.nth(2)).toHaveAttribute('data-id', '4');
-    await expect(rows.nth(2).getByTestId('upload-row-status')).toHaveText('FAILED');
+    await expect(rows.nth(2).getByTestId('upload-row-status')).toHaveAttribute('data-value', 'FAILED');
     await expect(rows.nth(2).getByTestId('upload-row-reasons')).toContainText('NOWHERE');
     const first = await rows.nth(0).getByTestId('upload-row-order').getAttribute('data-id');
     await expect(rows.nth(1).getByTestId('upload-row-order')).toHaveAttribute('data-id', first!);

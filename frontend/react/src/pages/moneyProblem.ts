@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { formatMoney } from '../../../shared/format';
 import { ApiProblem } from '../gateway/lmsGateway';
 
 /** A refusal as a person reads it: the server's message, led by its problem code when it has one. */
@@ -24,9 +25,9 @@ export function problemText(e: unknown): string {
   return (e as Error).message;
 }
 
-/** Money as the desks show it: two decimals. */
+/** Money as the desks show it: rupees with Indian grouping and two decimals. */
 export function money(value: number | undefined): string {
-  return value === undefined || value === null ? '' : value.toFixed(2);
+  return formatMoney(value);
 }
 
 /** Today as `yyyy-mm-dd`, for a date input's starting value. */

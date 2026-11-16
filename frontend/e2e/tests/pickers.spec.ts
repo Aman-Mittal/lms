@@ -99,7 +99,7 @@ test.describe('pickers', () => {
     await pick(page, form, 'Line 1 SKU', floor.skuCode.toLowerCase(), new RegExp(floor.skuCode, 'i'));
     await form.getByLabel('Line 1 quantity').fill('5');
     await form.getByRole('button', { name: 'Create ASN' }).click();
-    await expect(page.getByTestId('asn-status')).toHaveText('EXPECTED');
+    await expect(page.getByTestId('asn-status')).toHaveAttribute('data-value', 'EXPECTED');
 
     const put = page.getByTestId('putaway');
     await pick(page, put, 'Bin', floor.binCode.toLowerCase(), new RegExp(`^${floor.binCode}$`, 'i'));

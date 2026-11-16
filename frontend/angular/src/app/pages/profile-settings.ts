@@ -24,6 +24,8 @@ import { Session } from '../session';
 import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settings-form';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
@@ -47,7 +49,7 @@ const PICKER: Record<string, PickKind> = {
  */
 @Component({
   selector: 'app-profile-settings',
-  imports: [FormsModule, EntityPicker, PageHeader],
+  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Profile settings" />
     <p class="muted">The most specific profile that sets a value wins: organisation, then unit (country, zone,
@@ -62,7 +64,7 @@ const PICKER: Record<string, PickKind> = {
         @for (s of scopes; track s) { <option [value]="s">{{ scopeLabel(s) }}</option> }
       </select>
     </label>
-    <table data-testid="profiles">
+    <div class="table-wrap"><table data-testid="profiles">
       <thead><tr><th>Name</th><th>Scope</th><th>For</th><th>Settings</th></tr></thead>
       <tbody>
         @for (p of profiles(); track p.id) {
@@ -76,7 +78,7 @@ const PICKER: Record<string, PickKind> = {
           <tr><td colspan="4" class="muted">No profiles yet.</td></tr>
         }
       </tbody>
-    </table>
+    </table></div>
 
     @if (manage) {
       <h2>Add a profile</h2>
@@ -133,7 +135,7 @@ const PICKER: Record<string, PickKind> = {
           </form>
         }
         <form (ngSubmit)="saveProfile()" data-testid="profile-values">
-          <table>
+          <div class="table-wrap"><table>
             <thead><tr><th>Setting</th><th>Value</th>@if (hasDated()) { <th>From</th> }<th></th></tr></thead>
             <tbody>
               @for (d of allowed(); track d.key) {
@@ -168,7 +170,7 @@ const PICKER: Record<string, PickKind> = {
                 </tr>
               }
             </tbody>
-          </table>
+          </table></div>
           @if (manage) {
             <p>
               <button type="submit" data-testid="save-profile">Save</button>
@@ -181,27 +183,27 @@ const PICKER: Record<string, PickKind> = {
         </form>
         @if (p.versions.length > 0) {
           <h3>Versions</h3>
-          <table data-testid="versions">
+          <div class="table-wrap"><table data-testid="versions">
             <thead><tr><th>Setting</th><th>From</th><th>Value</th><th>Status</th></tr></thead>
             <tbody>
               @for (v of p.versions; track v.key + v.effectiveFrom) {
-                <tr><td>{{ v.key }}</td><td>{{ v.effectiveFrom || 'always' }}</td><td>{{ shown(v.value) }}</td><td>{{ v.status }}</td></tr>
+                <tr><td>{{ v.key }}</td><td>{{ (v.effectiveFrom || 'always') | when }}</td><td>{{ shown(v.value) }}</td><td><app-status-badge [value]="v.status" /></td></tr>
               }
             </tbody>
-          </table>
+          </table></div>
         }
         <h3>History</h3>
-        <table data-testid="history">
+        <div class="table-wrap"><table data-testid="history">
           <thead><tr><th>When</th><th>Who</th><th>What</th><th>Setting</th><th>Before</th><th>After</th></tr></thead>
           <tbody>
             @for (h of history(); track h.id) {
               <tr data-testid="history-row">
-                <td>{{ h.occurredAt }}</td><td>{{ h.actor }}</td><td>{{ h.action }}</td>
+                <td class="nowrap">{{ (h.occurredAt) | when }}</td><td>{{ h.actor }}</td><td>{{ h.action }}</td>
                 <td>{{ h.setting }}</td><td>{{ h.before }}</td><td>{{ h.after }}</td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       </section>
     }
 
@@ -222,7 +224,7 @@ const PICKER: Record<string, PickKind> = {
       <button type="submit" data-testid="show-effective">Show</button>
     </form>
     @if (effective().length > 0) {
-      <table data-testid="effective">
+      <div class="table-wrap"><table data-testid="effective">
         <thead><tr><th>Setting</th><th>Value</th><th>From</th></tr></thead>
         <tbody>
           @for (e of effective(); track e.key) {
@@ -231,7 +233,7 @@ const PICKER: Record<string, PickKind> = {
             </tr>
           }
         </tbody>
-      </table>
+      </table></div>
     }
   `,
 })

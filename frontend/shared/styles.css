@@ -86,11 +86,47 @@ input[type=search] { max-width:22rem; margin:0 0 var(--space-4); }
 .links a { padding:var(--space-2) var(--space-3); background:var(--accent-soft); color:var(--accent); border-radius:var(--radius-full); text-decoration:none; }
 .links a:hover { text-decoration:underline; }
 
+/* Tables. A table sits in .table-wrap (or its older name .table-scroll): the wrapper scrolls both ways inside a bounded box,
+   the header row stays in view, and a shadow on the left or right edge shows there is more to scroll to. */
 table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:var(--radius-lg); overflow:hidden; }
-th, td { text-align:left; padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--line); }
-th { background:var(--head); font-size:var(--text-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+th, td { text-align:left; padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--line); vertical-align:middle; }
+th { background:var(--head); font-size:var(--text-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap; }
+tbody tr:last-child td { border-bottom:0; }
+tbody tr:hover { background:var(--row-hover); }
 tbody tr[data-testid=row] { cursor:pointer; }
-tbody tr[data-testid=row]:hover, tr.selected { background:var(--accent-soft); }
+tr.selected, tr.selected:hover, tr.picked, tr.picked:hover { background:var(--accent-soft); }
+.nowrap { white-space:nowrap; }
+.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.table-wrap, .table-scroll {
+  --edge-w:1.75rem;
+  max-height:70vh; overflow:auto; overscroll-behavior-x:contain; margin:var(--space-2) 0 var(--space-4);
+  border:1px solid var(--line); border-radius:var(--radius-lg); background-color:var(--card);
+  background-image:
+    linear-gradient(to right, var(--card) 35%, transparent),
+    linear-gradient(to left, var(--card) 35%, transparent),
+    radial-gradient(farthest-side at 0 50%, var(--edge-shadow), transparent),
+    radial-gradient(farthest-side at 100% 50%, var(--edge-shadow), transparent);
+  background-position:left center, right center, left center, right center;
+  background-size:var(--edge-w) 100%, var(--edge-w) 100%, 1rem 100%, 1rem 100%;
+  background-repeat:no-repeat;
+  background-attachment:local, local, scroll, scroll;
+}
+.table-wrap tbody td:first-child, .table-scroll tbody td:first-child { white-space:nowrap; }
+.table-wrap table, .table-scroll table { border:0; border-radius:0; background:transparent; }
+.table-wrap thead th, .table-scroll thead th { position:sticky; top:0; z-index:1; background:var(--head); box-shadow:inset 0 -1px 0 var(--line); border-bottom:0; }
+.table-state { text-align:center; padding:var(--space-6) var(--space-3); color:var(--muted); }
+tr.empty-row:hover, tr.loading-row:hover { background:transparent; }
+tr.loading-row td::before { content:""; display:inline-block; width:.9em; height:.9em; margin-right:var(--space-2); vertical-align:-.12em; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Status badge: the tone names the meaning, the text always says it too, so colour is never the only cue. */
+.badge--neutral, .badge--info, .badge--success, .badge--warning, .badge--danger { font-weight:var(--weight-medium); white-space:nowrap; }
+.badge--neutral { color:var(--tone-neutral-ink); background:var(--tone-neutral-bg); border-color:var(--tone-neutral-line); }
+.badge--info { color:var(--tone-info-ink); background:var(--tone-info-bg); border-color:var(--tone-info-line); }
+.badge--success { color:var(--tone-success-ink); background:var(--tone-success-bg); border-color:var(--tone-success-line); }
+.badge--warning { color:var(--tone-warning-ink); background:var(--tone-warning-bg); border-color:var(--tone-warning-line); }
+.badge--danger { color:var(--tone-danger-ink); background:var(--tone-danger-bg); border-color:var(--tone-danger-line); }
+@media (prefers-reduced-motion: reduce) { tr.loading-row td::before { animation:none; } }
 form.inline { display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center; }
 form.inline input, form.inline select { width:auto; margin:0; }
 
@@ -102,11 +138,6 @@ form.inline input, form.inline select { width:auto; margin:0; }
 .panel dt { color:var(--muted); } .panel dd { margin:0; text-align:right; }
 /* A panel longer than the screen (a profile with many settings) scrolls with the page: kept sticky, it would cover what follows it. */
 .panel.in-flow { position:static; }
-
-/* A long list -- a load of a hundred-odd consignments -- scrolls in its own box, its header in view. */
-.table-scroll { max-height:60vh; overflow-y:auto; border-radius:var(--radius-lg); margin:var(--space-2) 0 var(--space-4); }
-.table-scroll table { border-radius:0; }
-.table-scroll thead th { position:sticky; top:0; background:var(--card); z-index:1; }
 
 /* Pickers */
 .picker { position:relative; display:inline-block; min-width:14rem; }
@@ -128,8 +159,8 @@ form.inline input, form.inline select { width:auto; margin:0; }
   .nav-backdrop.open { opacity:1; pointer-events:auto; }
   main { padding:var(--space-4); }
   .with-panel { grid-template-columns:1fr; }
+  .table-wrap td, .table-scroll td { white-space:nowrap; }
   .panel { position:static; }
-  table { display:block; overflow-x:auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .nav-backdrop, .sidebar .group-toggle .icon { transition:none; }

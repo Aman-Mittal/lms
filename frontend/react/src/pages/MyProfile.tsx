@@ -175,7 +175,7 @@ export function MyProfile() {
 
         <h2>Notifications</h2>
         <p className="muted">Recorded for when the platform sends notifications; nothing is sent from these yet.</p>
-        <table data-testid="notifications">
+        <div className="table-wrap"><table data-testid="notifications">
           <thead><tr><th>Event</th><th>In the console</th><th>By e-mail</th></tr></thead>
           <tbody>
             {notifyRows(prefs?.effective ?? []).map((n) => (
@@ -188,7 +188,7 @@ export function MyProfile() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
         <p>
           <button type="submit" data-testid="save-preferences" disabled={busy || !prefs}>Save preferences</button>
           <button type="button" className="link" data-testid="reset-preferences" disabled={busy || !prefs}

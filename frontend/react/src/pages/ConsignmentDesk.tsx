@@ -20,6 +20,8 @@ import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { compareWithWhole, splitByCapacity, type PlannedPart } from './splitPlan';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Quantity } from './Figures';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -84,7 +86,7 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
     <section data-testid="consignment">
       <h2>{c.trackingRef}</h2>
       <dl>
-        <div><dt>Status</dt><dd data-testid="consignment-status">{c.status}</dd></div>
+        <div><dt>Status</dt><dd><StatusBadge data-testid="consignment-status" value={c.status} /></dd></div>
         <div><dt>Proof of delivery</dt><dd data-testid="consignment-proof">
           {c.proofStatus === 'CONFIRMED' || c.proofStatus === 'SUBMITTED' ? `Confirmed, ${c.proofCondition}` : c.proofStatus === 'PENDING' ? 'Draft started' : c.proofStatus ? 'Code issued' : 'None yet'}
         </dd></div>
@@ -98,9 +100,9 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
         <div><dt>Order</dt><dd>{c.orderNo || '—'}</dd></div>
         <div><dt>Consignee</dt><dd>{c.consigneeName}</dd></div>
         <div><dt>Destination</dt><dd>{c.destinationTerminalCode}</dd></div>
-        <div><dt>Weight kg</dt><dd data-testid="consignment-weight">{c.deadWeightKg}</dd></div>
+        <div><dt>Weight kg</dt><dd><Quantity data-testid="consignment-weight" value={c.deadWeightKg} /></dd></div>
         <div><dt>Volume m³</dt><dd>{c.volumeM3}</dd></div>
-        <div><dt>Chargeable kg</dt><dd>{c.chargeableWeightKg}</dd></div>
+        <div><dt>Chargeable kg</dt><dd><Quantity value={c.chargeableWeightKg} /></dd></div>
         <div><dt>Load</dt><dd>{c.loadNo || '—'}</dd></div>
         <div><dt>Client reference</dt><dd data-testid="consignment-client-ref">{c.clientReference || '—'}</dd></div>
         <div><dt>Consignee contact</dt><dd data-testid="consignment-contact">
@@ -128,17 +130,17 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
       )}
       {split && parts.error && <p className="error" role="alert">{parts.error}</p>}
       {split && parts.data && (
-        <table data-testid="parts">
+        <div className="table-wrap"><table data-testid="parts">
           <thead><tr><th>Part</th><th>Status</th><th>Weight kg</th><th>Load</th></tr></thead>
           <tbody>
             {parts.data.map((p) => (
               <tr key={p.id} data-testid="part-row">
                 <td><button className="link" onClick={() => onOpen(p.id)}>{p.trackingRef}</button></td>
-                <td>{p.status}</td><td>{p.deadWeightKg}</td><td>{p.loadNo || '—'}</td>
+                <td><StatusBadge value={p.status} /></td><td className="num"><Quantity value={p.deadWeightKg} /></td><td>{p.loadNo || '—'}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {splittable && <SplitForm consignment={c} onSplit={onChanged} />}
@@ -155,7 +157,7 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
                   <div><dt>Order</dt><dd>{c.orderNo || '—'}</dd></div>
                   <div><dt>Consignee</dt><dd>{c.consigneeName}</dd></div>
                   <div><dt>Destination</dt><dd>{c.destinationTerminalCode}</dd></div>
-                  <div><dt>Weight kg</dt><dd>{c.deadWeightKg}</dd></div>
+                  <div><dt>Weight kg</dt><dd><Quantity value={c.deadWeightKg} /></dd></div>
                   <div><dt>Load</dt><dd>{c.loadNo || '—'}</dd></div>
                 </dl>
                 <Qr payload={`LMS:CONSIGNMENT:${c.id}`} />
@@ -220,7 +222,7 @@ function SplitForm({ consignment: c, onSplit }: { consignment: ConsignmentCard; 
       {error && <p className="error" role="alert">{error}</p>}
       {parts.length > 0 && (
         <>
-          <table data-testid="planned-parts">
+          <div className="table-wrap"><table data-testid="planned-parts">
             <thead><tr><th>Part</th><th>Weight kg</th><th>Volume m³</th></tr></thead>
             <tbody>
               {parts.map((p, i) => (
@@ -233,7 +235,7 @@ function SplitForm({ consignment: c, onSplit }: { consignment: ConsignmentCard; 
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <p data-testid="split-totals" className={totals.ready ? 'muted' : 'error'}>
             Parts total {totals.weightKg} kg and {totals.volumeM3} m³, against {c.deadWeightKg} kg and {c.volumeM3} m³
             {totals.ready ? ' — they match.' : ' — they must match exactly.'}

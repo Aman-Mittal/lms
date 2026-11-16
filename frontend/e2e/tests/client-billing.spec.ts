@@ -72,12 +72,12 @@ test.describe('client billing', () => {
       await expect(page.getByTestId('invoice-row')).toHaveCount(1);
       const panel = page.getByTestId('invoice-panel');
       await expect(panel.getByTestId('invoice-line')).toHaveCount(1);
-      await expect(panel.getByTestId('invoice-total')).toContainText('100');
+      await expect(panel.getByTestId('invoice-total')).toHaveAttribute('data-value', /^100(\.0+)?$/);
 
       await page.getByTestId('run-billing').click();
       await expect(page.getByTestId('billing-result')).toBeVisible();
       await expect(page.getByTestId('invoice-row')).toHaveCount(1);
-      await expect(page.getByTestId('statement-balance')).toHaveText(amount(100));
+      await expect(page.getByTestId('statement-balance')).toHaveAttribute('data-value', amount(100));
     });
 
     await test.step('the invoice prints', async () => {
@@ -93,8 +93,8 @@ test.describe('client billing', () => {
       await form.getByLabel('Amount to credit').fill('10');
       await form.getByRole('button', { name: 'Issue credit note' }).click();
       await expect(page.getByTestId('credit-issued')).toBeVisible();
-      await expect(page.getByTestId('invoice-credited')).toHaveText(amount(10));
-      await expect(page.getByTestId('statement-balance')).toHaveText(amount(90));
+      await expect(page.getByTestId('invoice-credited')).toHaveAttribute('data-value', amount(10));
+      await expect(page.getByTestId('statement-balance')).toHaveAttribute('data-value', amount(90));
     });
 
     await test.step('a payment reduces the balance and what is outstanding', async () => {
@@ -103,9 +103,9 @@ test.describe('client billing', () => {
       await form.getByLabel('Remittance reference').fill(`E2E-PAY-${Date.now()}`);
       await form.getByRole('button', { name: 'Record payment' }).click();
       await expect(page.getByTestId('payment-recorded')).toBeVisible();
-      await expect(page.getByTestId('statement-balance')).toHaveText(amount(50));
+      await expect(page.getByTestId('statement-balance')).toHaveAttribute('data-value', amount(50));
       await expect(page.getByTestId('statement-row')).toHaveCount(3);
-      await expect(page.getByTestId('ageing-outstanding')).toContainText('50');
+      await expect(page.getByTestId('ageing-outstanding')).toHaveAttribute('data-value', /^50(\.0+)?$/);
     });
   });
 

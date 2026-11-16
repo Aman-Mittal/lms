@@ -21,11 +21,14 @@ import { Qr } from './qr';
 import { RESOURCES } from './resources';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Money } from './figures';
+import { Cell } from './cell';
 
 /** The panel beside the list: one claim, what may be done to it, and its slip. */
 @Component({
   selector: 'app-claim-panel',
-  imports: [FormsModule, Qr],
+  imports: [FormsModule, Qr, StatusBadge, Money],
   template: `
     <aside class="panel" data-testid="claim-panel" aria-label="Claim details">
       <header>
@@ -33,10 +36,10 @@ import { PageHeader } from './page-header';
         <button class="link" (click)="closed.emit()" aria-label="Close panel">Close</button>
       </header>
       <dl>
-        <div><dt>Status</dt><dd data-testid="claim-status">{{ row()['status'] }}</dd></div>
+        <div><dt>Status</dt><dd><app-status-badge data-testid="claim-status" [value]="row()['status']" /></dd></div>
         <div><dt>Type</dt><dd>{{ row()['claimType'] }}</dd></div>
-        <div><dt>Claimed</dt><dd>{{ row()['amount'] }}</dd></div>
-        <div><dt>Approved</dt><dd data-testid="claim-approved">{{ row()['approvedAmount'] || '—' }}</dd></div>
+        <div><dt>Claimed</dt><dd><app-money [value]="row()['amount']" /></dd></div>
+        <div><dt>Approved</dt><dd><app-money data-testid="claim-approved" [value]="row()['approvedAmount']" empty="—" /></dd></div>
         <div><dt>Note</dt><dd>{{ row()['resolutionNote'] || '—' }}</dd></div>
       </dl>
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -68,8 +71,8 @@ import { PageHeader } from './page-header';
             <dl>
               <div><dt>Claim</dt><dd>{{ row()['claimNo'] }}</dd></div>
               <div><dt>Type</dt><dd>{{ row()['claimType'] }}</dd></div>
-              <div><dt>Claimed</dt><dd>{{ row()['amount'] }}</dd></div>
-              <div><dt>Status</dt><dd>{{ row()['status'] }}</dd></div>
+              <div><dt>Claimed</dt><dd><app-money [value]="row()['amount']" /></dd></div>
+              <div><dt>Status</dt><dd><app-status-badge [value]="row()['status']" /></dd></div>
               <div><dt>Consignment</dt><dd>{{ row()['consignmentId'] }}</dd></div>
               <div><dt>Description</dt><dd>{{ row()['description'] }}</dd></div>
             </dl>
@@ -119,7 +122,7 @@ export class ClaimPanel {
 /** Claims: the list, a form to raise one, and a panel to decide and print it. */
 @Component({
   selector: 'app-claims',
-  imports: [FormsModule, ClaimPanel, EntityPicker, PageHeader],
+  imports: [FormsModule, ClaimPanel, EntityPicker, PageHeader, Cell],
   template: `
     <div [class.with-panel]="selected()">
       <div class="list">
@@ -134,17 +137,17 @@ export class ClaimPanel {
         @if (loading() && rows().length === 0) { <p>Loading…</p> }
         @else if (rows().length === 0 && !error()) { <p class="muted">{{ filteredBy() ? 'No claims against that consignment.' : 'Nothing here yet.' }}</p> }
         @else if (rows().length > 0) {
-          <table>
+          <div class="table-wrap"><table>
             <thead><tr>@for (c of columns; track c.field) { <th>{{ c.header }}</th> }</tr></thead>
             <tbody>
               @for (row of rows(); track row['id']) {
                 <tr data-testid="row" tabindex="0" [class.selected]="row['id'] === selectedId()"
                     (click)="selectedId.set(row['id'])" (keydown.enter)="selectedId.set(row['id'])">
-                  @for (c of columns; track c.field) { <td>{{ row[c.field] }}</td> }
+                  @for (c of columns; track c.field) { <td><app-cell [field]="c.field" [value]="row[c.field]" /></td> }
                 </tr>
               }
             </tbody>
-          </table>
+          </table></div>
         }
 
         @if (session.can('CLAIM_RAISE')) {

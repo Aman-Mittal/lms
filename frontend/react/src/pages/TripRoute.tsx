@@ -23,6 +23,7 @@ import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
 import { TripMoney } from './TripMoney';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /** A trip's track so far and where it is now. */
 export function TripRoute() {
@@ -79,7 +80,7 @@ export function TripRoute() {
         <section data-testid="trip-route">
           <dl className="facts">
             <div><dt>Trip</dt><dd data-testid="route-trip-no">{route.data.tripNo}</dd></div>
-            <div><dt>Status</dt><dd>{route.data.status}</dd></div>
+            <div><dt>Status</dt><dd><StatusBadge value={route.data.status} /></dd></div>
             <div><dt>From</dt><dd>{route.data.originCode}</dd></div>
             <div><dt>To</dt><dd>{route.data.destinationCode}</dd></div>
             <div><dt>Last fix</dt><dd>{route.data.lastFixAt || '—'}</dd></div>
@@ -98,7 +99,7 @@ export function TripRoute() {
           {(stops.data ?? []).length === 0 ? (
             <p className="muted" data-testid="stops-empty">This trip has no planned stops.</p>
           ) : (
-            <table data-testid="stops">
+            <div className="table-wrap"><table data-testid="stops">
               <thead>
                 <tr><th>#</th><th>Kind</th><th>Terminal</th><th>Planned arrival</th><th>Status</th><th>Arrived</th>
                   <th>Departed</th><th /><th /></tr>
@@ -108,7 +109,7 @@ export function TripRoute() {
                   <Fragment key={s.id}>
                     <tr data-testid="stop-row" data-seq={s.seq}>
                       <td>{s.seq}</td><td>{s.kind}</td><td>{s.terminalCode}</td><td>{s.plannedArrivalAt || '—'}</td>
-                      <td><span className="badge" data-testid="stop-status">{s.status}</span></td>
+                      <td><StatusBadge data-testid="stop-status" value={s.status} /></td>
                       <td>{s.arrivedAt || '—'}</td><td>{s.departedAt || '—'}</td>
                       <td>
                         {s.outOfOrder && <span className="badge" data-testid="stop-out-of-order">Out of order</span>}
@@ -148,7 +149,7 @@ export function TripRoute() {
                   </Fragment>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </section>
       )}

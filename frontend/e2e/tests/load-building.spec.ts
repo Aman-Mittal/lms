@@ -147,7 +147,7 @@ test.describe('load maintenance', () => {
     const [first, middle, last] = bulk.consignments;
     await signIn(page);
     await openLoad(page, bulk.loadId);
-    await expect(page.getByTestId('load-status')).toHaveText('PLANNED');
+    await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'PLANNED');
     await expect(page.getByTestId('aboard-row')).toHaveCount(3);
 
     await test.step('the middle consignment comes off and the drops close up', async () => {
@@ -159,13 +159,13 @@ test.describe('load maintenance', () => {
       await expect(aboard).toHaveCount(2);
       await expect(aboard.locator('td:nth-child(2)')).toHaveText([first.trackingRef, last.trackingRef]);
       await expect(aboard.last().locator('td').first()).toHaveText('2');
-      await expect(page.getByTestId('load-status')).toHaveText('PLANNED');
+      await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'PLANNED');
     });
 
     await test.step('the load is opened for building again', async () => {
       await page.getByTestId('unplan-load').click();
       await expect(page.getByTestId('load-done')).toHaveText('The load is open for building again.');
-      await expect(page.getByTestId('load-status')).toHaveText('DRAFT');
+      await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'DRAFT');
       await expect(page.getByTestId('unplan-load')).toHaveCount(0);
     });
 
@@ -173,7 +173,7 @@ test.describe('load maintenance', () => {
       await page.getByTestId('cancel-reason').fill('the yard is closed today');
       await page.getByTestId('cancel-load').click();
       await expect(page.getByTestId('load-done')).toHaveText('The load is cancelled and its consignments released.');
-      await expect(page.getByTestId('load-status')).toHaveText('CANCELLED');
+      await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'CANCELLED');
       await expect(page.getByTestId('nothing-aboard')).toBeVisible();
       await expect(page.getByTestId('load-actions')).toHaveCount(0);
       await expect(page.getByTestId('add-panel')).toHaveCount(0);
@@ -190,7 +190,7 @@ test.describe('load maintenance', () => {
     await page.getByTestId('unplan-load').click();
     await expect(page.getByTestId('load-refusal')).toHaveText('load-allocated');
     await expect(page.getByTestId('load-done')).toHaveCount(0);
-    await expect(page.getByTestId('load-status')).toHaveText('PLANNED');
+    await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'PLANNED');
   });
 
   test('a change made on a screen another planner has overtaken is refused, and the screen catches up', async ({ page, request }, info) => {

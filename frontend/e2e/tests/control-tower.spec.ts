@@ -46,30 +46,30 @@ test.describe('exception desk', () => {
 
     const panel = await openTicket(page, ticket.id);
     await expect(panel.getByRole('heading', { name: ticket.ticketNo })).toBeVisible();
-    await expect(panel.getByTestId('ticket-status')).toHaveText('RAISED');
-    await expect(panel.getByTestId('ticket-severity')).toHaveText('P3');
+    await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'RAISED');
+    await expect(panel.getByTestId('ticket-severity')).toHaveAttribute('data-value', 'P3');
 
     await test.step('assign it', async () => {
       await panel.getByTestId('assignee').selectOption(assignee);
       await panel.getByLabel('Assignment note').fill('Yours to chase');
       await panel.getByTestId('assign-ticket').getByRole('button', { name: 'Assign' }).click();
-      await expect(panel.getByTestId('ticket-status')).toHaveText('ASSIGNED');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'ASSIGNED');
       await expect(panel.getByTestId('ticket-assignee')).not.toHaveText('—');
     });
 
     await test.step('investigate and resolve it', async () => {
       await panel.getByTestId('act-investigate').click();
-      await expect(panel.getByTestId('ticket-status')).toHaveText('UNDER_INVESTIGATION');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'UNDER_INVESTIGATION');
       await panel.getByLabel('Resolution').fill('Consignee resent the invoice');
       await panel.getByTestId('resolve-ticket').getByRole('button', { name: 'Resolve' }).click();
-      await expect(panel.getByTestId('ticket-status')).toHaveText('RESOLVED');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'RESOLVED');
       await expect(panel.getByTestId('ticket-resolution')).toHaveText('Consignee resent the invoice');
     });
 
     await test.step('close it; nothing more is offered', async () => {
       await panel.getByLabel('Closing note').fill('Checked');
       await panel.getByTestId('close-ticket').getByRole('button', { name: 'Close ticket' }).click();
-      await expect(panel.getByTestId('ticket-status')).toHaveText('CLOSED');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'CLOSED');
       await expect(panel.getByTestId('ticket-done')).toHaveText('Closed.');
       await expect(panel.getByTestId('reopen-ticket')).toHaveCount(0);
       await expect(panel.getByTestId('assign-ticket')).toHaveCount(0);
@@ -96,21 +96,21 @@ test.describe('exception desk', () => {
 
     await test.step('reopening a resolved ticket puts it back under investigation', async () => {
       const panel = await openTicket(page, reopened.id);
-      await expect(panel.getByTestId('ticket-status')).toHaveText('RESOLVED');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'RESOLVED');
       await panel.getByLabel('Reason to reopen').fill('The invoice is still wrong');
       await panel.getByTestId('reopen-ticket').getByRole('button', { name: 'Reopen' }).click();
-      await expect(panel.getByTestId('ticket-status')).toHaveText('UNDER_INVESTIGATION');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'UNDER_INVESTIGATION');
       await expect(panel.getByTestId('history-row').last()).toContainText('REOPENED');
     });
 
     await test.step('a ticket closed meanwhile cannot be reopened, and the refusal says why', async () => {
       const panel = await openTicket(page, closedElsewhere.id);
-      await expect(panel.getByTestId('ticket-status')).toHaveText('RESOLVED');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'RESOLVED');
       await closeElsewhere(request, session, closedElsewhere.id);
       await panel.getByLabel('Reason to reopen').fill('Not convinced');
       await panel.getByTestId('reopen-ticket').getByRole('button', { name: 'Reopen' }).click();
       await expect(panel.getByTestId('exception-refusal')).toHaveText('exception-illegal-transition');
-      await expect(panel.getByTestId('ticket-status')).toHaveText('CLOSED');
+      await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'CLOSED');
       await expect(panel.getByTestId('reopen-ticket')).toHaveCount(0);
     });
   });
@@ -213,7 +213,7 @@ test.describe('what each person is offered', () => {
 
     await expect(page.getByTestId('raise-ticket')).toHaveCount(0);
     const panel = await openTicket(page, ticket.id);
-    await expect(panel.getByTestId('ticket-status')).toHaveText('RAISED');
+    await expect(panel.getByTestId('ticket-status')).toHaveAttribute('data-value', 'RAISED');
     await expect(panel.getByTestId('assign-ticket')).toHaveCount(0);
     await expect(panel.getByTestId('history-row')).toHaveCount(1);
     await expect(page.getByTestId('detector-settings').getByTestId('eta-slip')).toBeVisible();

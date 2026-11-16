@@ -24,6 +24,8 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Quantity } from './Figures';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -302,13 +304,13 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
     <section data-testid="order-panel">
       <h2>{order.orderNo}</h2>
       <dl>
-        <div><dt>Status</dt><dd data-testid="order-status">{order.status}</dd></div>
+        <div><dt>Status</dt><dd><StatusBadge data-testid="order-status" value={order.status} /></dd></div>
         <div><dt>Version</dt><dd data-testid="order-version">{version}</dd></div>
         <div><dt>Customer</dt><dd data-testid="order-customer">{order.customerName}</dd></div>
         <div><dt>Origin</dt><dd>{order.originTerminalCode}</dd></div>
         <div><dt>Mode</dt><dd>{order.freightMode}</dd></div>
         <div><dt>Lines</dt><dd data-testid="order-line-count">{order.lineCount}</dd></div>
-        <div><dt>Weight kg</dt><dd data-testid="order-weight">{order.totalDeadWeightKg}</dd></div>
+        <div><dt>Weight kg</dt><dd><Quantity data-testid="order-weight" value={order.totalDeadWeightKg} /></dd></div>
         <div><dt>Pickup</dt><dd>{order.requestedPickupAt || '—'}</dd></div>
         <div><dt>Contract</dt><dd data-testid="order-contract">{order.contractCode || '—'}</dd></div>
         <div><dt>Lane</dt><dd data-testid="order-lane">{order.contractLaneCode || '—'}</dd></div>
@@ -318,7 +320,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
         {order.closeKind && (
           <div>
             <dt>Closed</dt>
-            <dd data-testid="order-close-kind">{order.closeKind}</dd>
+            <dd><StatusBadge data-testid="order-close-kind" value={order.closeKind} /></dd>
             {order.closeReason && <dd className="muted" data-testid="order-close-reason">{order.closeReason}</dd>}
           </div>
         )}
@@ -373,7 +375,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
                 <td>{l.materialCode} · {l.materialDescription}</td>
                 <td>{l.materialClass}{l.hazmatUnCode && ` (UN ${l.hazmatUnCode})`}</td>
                 <td>{l.quantity} {l.uom}</td>
-                <td>{l.deadWeightKg}</td>
+                <td className="num"><Quantity value={l.deadWeightKg} /></td>
                 <td>{l.lengthM ? `${l.lengthM} × ${l.widthM} × ${l.heightM}` : '—'}</td>
                 <td>{l.consigneeName}</td>
                 <td>{l.destinationTerminalCode}</td>
@@ -549,17 +551,17 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
           <p>
             {order.customerName} · from {order.originTerminalCode} · {order.status} · {order.totalDeadWeightKg} kg
           </p>
-          <table>
+          <div className="table-wrap"><table>
             <thead><tr><th>#</th><th>Material</th><th>Qty</th><th>Weight kg</th><th>Consignee</th><th>Destination</th></tr></thead>
             <tbody>
               {desk.lines.map((l) => (
                 <tr key={l.id} data-testid="slip-line">
                   <td>{l.lineNo}</td><td>{l.materialCode} · {l.materialDescription}</td><td>{l.quantity} {l.uom}</td>
-                  <td>{l.deadWeightKg}</td><td>{l.consigneeName}</td><td>{l.destinationTerminalCode}</td>
+                  <td className="num"><Quantity value={l.deadWeightKg} /></td><td>{l.consigneeName}</td><td>{l.destinationTerminalCode}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <p className="actions no-print">
             <button data-testid="print-now" onClick={() => window.print()}>Print</button>{' '}
             <button className="link" onClick={() => setSlip(false)}>Close</button>
@@ -608,8 +610,8 @@ function OrderHistory({ orderId }: { orderId: string }) {
             <tbody>
               {entries.map((e) => (
                 <tr key={e.id} data-testid="history-entry">
-                  <td>{e.occurredAt}</td>
-                  <td data-testid="history-action">{e.action}</td>
+                  <td className="nowrap">{e.occurredAt}</td>
+                  <td><StatusBadge data-testid="history-action" value={e.action} /></td>
                   <td>{e.change}</td>
                   <td>{e.actor || 'platform'}</td>
                   <td>{e.reason}</td>

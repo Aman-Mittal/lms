@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { expect, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page, type TestInfo } from '@playwright/test';
 
 export const DEMO_EMAIL = 'admin@demo.local';
 
@@ -38,6 +38,14 @@ export async function signIn(page: Page): Promise<void> {
 export async function signOut(page: Page): Promise<void> {
   await page.getByTestId('sign-out').click();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+}
+
+/**
+ * The element inside `scope` that carries a raw status or amount as `data-value`. Both consoles keep the raw value
+ * there while showing it as a label or as formatted money, so a spec asserts the value, not the wording.
+ */
+export function withValue(scope: Locator, value: string): Locator {
+  return scope.locator(`[data-value="${value}"]`).first();
 }
 
 /**

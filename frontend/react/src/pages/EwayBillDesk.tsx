@@ -20,6 +20,7 @@ import {
 } from '../gateway/ewayTypes';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -191,25 +192,25 @@ export function EwayBillDesk() {
       {error && <p className="error" role="alert" data-testid="eway-error">{error}</p>}
       {note && <p className="ok" role="status" data-testid="eway-note">{note}</p>}
 
-      <table data-testid="eway-list">
+      <div className="table-wrap"><table data-testid="eway-list">
         <thead><tr><th>Bill</th><th>Consignment</th><th>Status</th><th>Valid until</th><th>Vehicle</th><th /></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} data-testid="eway-row" data-id={r.id}>
               <td data-testid="eway-row-no">{r.billNo}</td>
               <td data-testid="eway-row-consignment">{r.trackingRef}</td>
-              <td data-testid="eway-row-status">{r.status}</td>
+              <td><StatusBadge data-testid="eway-row-status" value={r.status} /></td>
               <td data-testid="eway-row-valid-until">{r.validUntil}</td>
               <td data-testid="eway-row-vehicle">{r.vehicleNo || '—'}</td>
               <td><button className="link" data-testid="eway-row-open" onClick={() => void open(r.id)}>Open</button></td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
       {rows.length === 0 && loaded && <p className="muted" data-testid="eway-none">No e-way bills.</p>}
 
       <h2>Expiring soon</h2>
-      <table data-testid="eway-expiring">
+      <div className="table-wrap"><table data-testid="eway-expiring">
         <thead><tr><th>Bill</th><th>Consignment</th><th>Valid until</th><th /></tr></thead>
         <tbody>
           {expiring.map((r) => (
@@ -221,7 +222,7 @@ export function EwayBillDesk() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
       {expiring.length === 0 && loaded && <p className="muted" data-testid="eway-expiring-none">Nothing is about to lapse.</p>}
 
       <h2>Find a consignment by bill number</h2>
@@ -234,7 +235,7 @@ export function EwayBillDesk() {
         <p data-testid="eway-lookup-result" data-id={found.id}>
           Bill <span data-testid="eway-lookup-bill">{found.billNo}</span> covers consignment{' '}
           <span data-testid="eway-lookup-consignment" data-id={found.consignmentId}>{found.trackingRef}</span>
-          {' '}(<span data-testid="eway-lookup-status">{found.status}</span>){' '}
+          {' '}(<StatusBadge data-testid="eway-lookup-status" value={found.status} />){' '}
           <button className="link" data-testid="eway-lookup-open" onClick={() => void open(found.id)}>Open</button>
         </p>
       )}
@@ -257,25 +258,25 @@ export function EwayBillDesk() {
           </>
         )}
       </form>
-      <table data-testid="eway-consignment-bills">
+      <div className="table-wrap"><table data-testid="eway-consignment-bills">
         <thead><tr><th>Bill</th><th>Status</th><th>Valid until</th><th /></tr></thead>
         <tbody>
           {consignmentBills.map((r) => (
             <tr key={r.id} data-testid="eway-consignment-bill" data-id={r.id}>
               <td data-testid="eway-consignment-bill-no">{r.billNo}</td>
-              <td data-testid="eway-consignment-bill-status">{r.status}</td>
-              <td>{r.validUntil}</td>
+              <td><StatusBadge data-testid="eway-consignment-bill-status" value={r.status} /></td>
+              <td className="nowrap">{r.validUntil}</td>
               <td><button className="link" data-testid="eway-consignment-bill-open" onClick={() => void open(r.id)}>Open</button></td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
 
       {selected && (
         <section data-testid="eway-detail" data-id={selected.id}>
           <h2>E-way bill <span data-testid="eway-detail-no">{selected.billNo}</span></h2>
           <dl>
-            <div><dt>Status</dt><dd data-testid="eway-detail-status">{selected.status}</dd></div>
+            <div><dt>Status</dt><dd><StatusBadge data-testid="eway-detail-status" value={selected.status} /></dd></div>
             <div><dt>Consignment</dt><dd data-testid="eway-detail-consignment" data-id={selected.consignmentId}>{selected.trackingRef}</dd></div>
             <div><dt>Valid until</dt><dd data-testid="eway-detail-valid-until">{selected.validUntil}</dd></div>
             <div><dt>Part-B vehicle</dt><dd data-testid="eway-detail-vehicle">{selected.vehicleNo || '—'}</dd></div>
@@ -320,19 +321,19 @@ export function EwayBillDesk() {
               <p data-testid="eway-trip-summary">
                 {tripResult.updated} of {tripResult.items.length} consignments updated for vehicle {tripResult.vehicleNo}.
               </p>
-              <table data-testid="eway-trip-results">
+              <div className="table-wrap"><table data-testid="eway-trip-results">
                 <thead><tr><th>Consignment</th><th>Bill</th><th>Outcome</th><th>Code</th></tr></thead>
                 <tbody>
                   {tripResult.items.map((i) => (
                     <tr key={i.consignmentId} data-testid="eway-trip-item" data-id={i.consignmentId}>
                       <td>{i.trackingRef}</td>
                       <td>{i.billNo || '—'}</td>
-                      <td data-testid="eway-trip-item-outcome">{i.outcome}</td>
+                      <td><StatusBadge data-testid="eway-trip-item-outcome" value={i.outcome} /></td>
                       <td data-testid="eway-trip-item-code">{i.code || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </>
           )}
         </>

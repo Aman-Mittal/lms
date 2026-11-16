@@ -57,7 +57,7 @@ test.describe('e-way bill desk', () => {
       await expect(page.getByTestId('eway-note')).toContainText('generated');
       await expect(page.getByTestId('eway-row')).toHaveCount(1);
       await expect(page.getByTestId('eway-consignment-bill')).toHaveCount(1);
-      await expect(page.getByTestId('eway-detail-status')).toHaveText('ACTIVE');
+      await expect(page.getByTestId('eway-detail-status')).toHaveAttribute('data-value', 'ACTIVE');
       await expect(page.getByTestId('eway-detail-valid-until')).not.toBeEmpty();
       await expect(page.getByTestId('eway-detail-vehicle')).toHaveText('—');
       const id = stub.bills[0].id;
@@ -78,13 +78,13 @@ test.describe('e-way bill desk', () => {
     await test.step('an extension without a reason is refused with its problem code, and changes nothing', async () => {
       await page.getByTestId('eway-extend').click();
       await expect(page.getByTestId('eway-error')).toContainText('eway-reason-required');
-      await expect(page.getByTestId('eway-detail-status')).toHaveText('ACTIVE');
+      await expect(page.getByTestId('eway-detail-status')).toHaveAttribute('data-value', 'ACTIVE');
     });
 
     await test.step('with a reason it is extended', async () => {
       await page.getByTestId('eway-reason').fill('road closed');
       await page.getByTestId('eway-extend').click();
-      await expect(page.getByTestId('eway-detail-status')).toHaveText('EXTENDED');
+      await expect(page.getByTestId('eway-detail-status')).toHaveAttribute('data-value', 'EXTENDED');
       await expect(page.getByTestId('eway-detail-extensions')).toHaveText('1');
       await expect(page.getByTestId('eway-error')).toHaveCount(0);
       expect(stub.changes.at(-1)?.body).toMatchObject({ action: 'EXTEND', reason: 'road closed' });
@@ -96,9 +96,9 @@ test.describe('e-way bill desk', () => {
       await expect(page.getByTestId('eway-detail-vehicle')).toHaveText('MH14ZZ0001');
       await page.getByTestId('eway-reason').fill('goods not moved');
       await page.getByTestId('eway-cancel').click();
-      await expect(page.getByTestId('eway-detail-status')).toHaveText('CANCELLED');
+      await expect(page.getByTestId('eway-detail-status')).toHaveAttribute('data-value', 'CANCELLED');
       await expect(page.getByTestId('eway-detail-cancel-reason')).toHaveText('goods not moved');
-      await expect(rowById(page, 'eway-row', stub.bills[0].id).getByTestId('eway-row-status')).toHaveText('CANCELLED');
+      await expect(rowById(page, 'eway-row', stub.bills[0].id).getByTestId('eway-row-status')).toHaveAttribute('data-value', 'CANCELLED');
       await expect(page.getByTestId('eway-part-b')).toHaveCount(0);
       await expect(page.getByTestId('eway-cancel')).toHaveCount(0);
     });
@@ -134,7 +134,7 @@ test.describe('e-way bill desk', () => {
     await expect(page.getByTestId('eway-lookup-result')).toHaveAttribute('data-id', bill.id);
     await expect(page.getByTestId('eway-lookup-consignment')).toHaveText('LR-777');
     await expect(page.getByTestId('eway-lookup-consignment')).toHaveAttribute('data-id', consignmentId);
-    await expect(page.getByTestId('eway-lookup-status')).toHaveText('ACTIVE');
+    await expect(page.getByTestId('eway-lookup-status')).toHaveAttribute('data-value', 'ACTIVE');
     expect(stub.lookups.at(-1)).toContain('/by-number/123456789012');
 
     await page.getByTestId('eway-lookup-open').click();
@@ -170,7 +170,7 @@ test.describe('e-way bill desk', () => {
     await page.getByTestId('eway-filter-status').selectOption('CANCELLED');
     await page.getByTestId('eway-filter-apply').click();
     await expect(page.getByTestId('eway-row')).toHaveCount(1);
-    await expect(page.getByTestId('eway-row-status')).toHaveText('CANCELLED');
+    await expect(page.getByTestId('eway-row-status')).toHaveAttribute('data-value', 'CANCELLED');
   });
 
   test('the expiring-soon list shows only flagged live bills, and each opens', async ({ page }) => {
@@ -192,7 +192,7 @@ test.describe('e-way bill desk', () => {
 
     await page.getByTestId('eway-reason').fill('held at the border');
     await page.getByTestId('eway-extend').click();
-    await expect(page.getByTestId('eway-detail-status')).toHaveText('EXTENDED');
+    await expect(page.getByTestId('eway-detail-status')).toHaveAttribute('data-value', 'EXTENDED');
     await expect(page.getByTestId('eway-expiring-row')).toHaveCount(0);
     await expect(page.getByTestId('eway-expiring-none')).toBeVisible();
   });
@@ -210,10 +210,10 @@ test.describe('e-way bill desk', () => {
 
     await expect(page.getByTestId('eway-trip-item')).toHaveCount(3);
     const item = (id: string) => rowById(page, 'eway-trip-item', id);
-    await expect(item(consignmentId).getByTestId('eway-trip-item-outcome')).toHaveText('UPDATED');
-    await expect(item(otherConsignmentId).getByTestId('eway-trip-item-outcome')).toHaveText('SKIPPED');
+    await expect(item(consignmentId).getByTestId('eway-trip-item-outcome')).toHaveAttribute('data-value', 'UPDATED');
+    await expect(item(otherConsignmentId).getByTestId('eway-trip-item-outcome')).toHaveAttribute('data-value', 'SKIPPED');
     await expect(item(otherConsignmentId).getByTestId('eway-trip-item-code')).toHaveText('eway-bill-missing');
-    await expect(item(stub.tripConsignments[2].id).getByTestId('eway-trip-item-outcome')).toHaveText('REFUSED');
+    await expect(item(stub.tripConsignments[2].id).getByTestId('eway-trip-item-outcome')).toHaveAttribute('data-value', 'REFUSED');
     await expect(item(stub.tripConsignments[2].id).getByTestId('eway-trip-item-code')).toHaveText('eway-bill-refused');
     await expect(page.getByTestId('eway-trip-summary')).toContainText('1 of 3');
     expect(stub.changes.at(-1)).toMatchObject({ path: expect.stringContaining(`/trips/${tripId}/eway-bills/part-b`),

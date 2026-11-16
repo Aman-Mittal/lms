@@ -20,6 +20,8 @@ import {
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -43,7 +45,7 @@ interface LineFields {
  */
 @Component({
   selector: 'app-pod-desk',
-  imports: [FormsModule, PageHeader],
+  imports: [FormsModule, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Proof of delivery desk" />
     <p class="muted">Start the proof, feed it line by line, list the documents and times, then submit it.</p>
@@ -60,7 +62,7 @@ interface LineFields {
       } @else if (proof(); as p) {
         <section data-testid="pod-proof">
           <dl>
-            <div><dt>Proof</dt><dd data-testid="pod-status">{{ p.status }}</dd></div>
+            <div><dt>Proof</dt><dd><app-status-badge data-testid="pod-status" [value]="p.status" /></dd></div>
             @if (p.paper) { <div><dt>Keyed from paper</dt><dd data-testid="pod-paper">Yes</dd></div> }
             @if (p.keyedBy) { <div><dt>Keyed by</dt><dd data-testid="pod-keyed-by">{{ p.keyedBy }}</dd></div> }
             @if (proves()) { <div><dt>Received by</dt><dd data-testid="pod-recipient-shown">{{ p.recipientName }}</dd></div> }
@@ -68,7 +70,7 @@ interface LineFields {
           </dl>
 
           <h2>Lines</h2>
-          <table data-testid="pod-lines">
+          <div class="table-wrap"><table data-testid="pod-lines">
             <thead><tr><th>Line</th><th>Material</th><th>Gross</th><th>Received</th><th>Short</th><th>Damaged</th><th>Excess</th></tr></thead>
             <tbody>
               @for (l of p.lines; track l.orderLineId) {
@@ -87,7 +89,7 @@ interface LineFields {
                 </tr>
               }
             </tbody>
-          </table>
+          </table></div>
           @if (editable()) { <p><button data-testid="pod-save-lines" (click)="saveLines()">Save lines</button></p> }
 
           <h2>Documents</h2>
@@ -123,7 +125,7 @@ interface LineFields {
             </form>
             @if (timingsSaved()) { <p class="ok" role="status" data-testid="pod-timings-saved">Times saved.</p> }
           } @else {
-            <p data-testid="pod-timings-shown">{{ p.reportedAt || '—' }} / {{ p.unloadingStartedAt || '—' }} / {{ p.unloadingEndedAt || '—' }}</p>
+            <p data-testid="pod-timings-shown">{{ (p.reportedAt || '—') | when }} / {{ (p.unloadingStartedAt || '—') | when }} / {{ (p.unloadingEndedAt || '—') | when }}</p>
           }
 
           @if (editable()) {

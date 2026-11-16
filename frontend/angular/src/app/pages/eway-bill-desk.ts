@@ -21,6 +21,8 @@ import {
 } from '../gateway/eway-types';
 import { Session } from '../session';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -42,7 +44,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
  */
 @Component({
   selector: 'app-eway-bill-desk',
-  imports: [FormsModule, PageHeader],
+  imports: [FormsModule, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="E-way bills" />
     <p class="muted">Generate a consignment's bill, put a vehicle on Part-B, extend or cancel it, and watch what is about to lapse.</p>
@@ -60,37 +62,37 @@ const ACTION_DONE: Record<EwayAction, string> = {
     @if (error()) { <p class="error" role="alert" data-testid="eway-error">{{ error() }}</p> }
     @if (note()) { <p class="ok" role="status" data-testid="eway-note">{{ note() }}</p> }
 
-    <table data-testid="eway-list">
+    <div class="table-wrap"><table data-testid="eway-list">
       <thead><tr><th>Bill</th><th>Consignment</th><th>Status</th><th>Valid until</th><th>Vehicle</th><th></th></tr></thead>
       <tbody>
         @for (r of rows(); track r.id) {
           <tr data-testid="eway-row" [attr.data-id]="r.id">
             <td data-testid="eway-row-no">{{ r.billNo }}</td>
             <td data-testid="eway-row-consignment">{{ r.trackingRef }}</td>
-            <td data-testid="eway-row-status">{{ r.status }}</td>
-            <td data-testid="eway-row-valid-until">{{ r.validUntil }}</td>
+            <td><app-status-badge data-testid="eway-row-status" [value]="r.status" /></td>
+            <td data-testid="eway-row-valid-until">{{ (r.validUntil) | when }}</td>
             <td data-testid="eway-row-vehicle">{{ r.vehicleNo || '—' }}</td>
             <td><button class="link" data-testid="eway-row-open" (click)="open(r.id)">Open</button></td>
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
     @if (rows().length === 0 && loaded()) { <p class="muted" data-testid="eway-none">No e-way bills.</p> }
 
     <h2>Expiring soon</h2>
-    <table data-testid="eway-expiring">
+    <div class="table-wrap"><table data-testid="eway-expiring">
       <thead><tr><th>Bill</th><th>Consignment</th><th>Valid until</th><th></th></tr></thead>
       <tbody>
         @for (r of expiring(); track r.id) {
           <tr data-testid="eway-expiring-row" [attr.data-id]="r.id">
             <td data-testid="eway-expiring-no">{{ r.billNo }}</td>
             <td>{{ r.trackingRef }}</td>
-            <td data-testid="eway-expiring-valid-until">{{ r.validUntil }}</td>
+            <td data-testid="eway-expiring-valid-until">{{ (r.validUntil) | when }}</td>
             <td><button class="link" data-testid="eway-expiring-open" (click)="open(r.id)">Open</button></td>
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
     @if (expiring().length === 0 && loaded()) { <p class="muted" data-testid="eway-expiring-none">Nothing is about to lapse.</p> }
 
     <h2>Find a consignment by bill number</h2>
@@ -103,7 +105,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
       <p data-testid="eway-lookup-result" [attr.data-id]="f.id">
         Bill <span data-testid="eway-lookup-bill">{{ f.billNo }}</span> covers consignment
         <span data-testid="eway-lookup-consignment" [attr.data-id]="f.consignmentId">{{ f.trackingRef }}</span>
-        (<span data-testid="eway-lookup-status">{{ f.status }}</span>)
+        (<app-status-badge data-testid="eway-lookup-status" [value]="f.status" />)
         <button class="link" data-testid="eway-lookup-open" (click)="open(f.id)">Open</button>
       </p>
     }
@@ -124,27 +126,27 @@ const ACTION_DONE: Record<EwayAction, string> = {
         <button type="button" data-testid="eway-generate" (click)="generate()">Generate bill</button>
       }
     </form>
-    <table data-testid="eway-consignment-bills">
+    <div class="table-wrap"><table data-testid="eway-consignment-bills">
       <thead><tr><th>Bill</th><th>Status</th><th>Valid until</th><th></th></tr></thead>
       <tbody>
         @for (r of consignmentBills(); track r.id) {
           <tr data-testid="eway-consignment-bill" [attr.data-id]="r.id">
             <td data-testid="eway-consignment-bill-no">{{ r.billNo }}</td>
-            <td data-testid="eway-consignment-bill-status">{{ r.status }}</td>
-            <td>{{ r.validUntil }}</td>
+            <td><app-status-badge data-testid="eway-consignment-bill-status" [value]="r.status" /></td>
+            <td class="nowrap">{{ (r.validUntil) | when }}</td>
             <td><button class="link" data-testid="eway-consignment-bill-open" (click)="open(r.id)">Open</button></td>
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
 
     @if (selected(); as b) {
       <section data-testid="eway-detail" [attr.data-id]="b.id">
         <h2>E-way bill <span data-testid="eway-detail-no">{{ b.billNo }}</span></h2>
         <dl>
-          <div><dt>Status</dt><dd data-testid="eway-detail-status">{{ b.status }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="eway-detail-status" [value]="b.status" /></dd></div>
           <div><dt>Consignment</dt><dd data-testid="eway-detail-consignment" [attr.data-id]="b.consignmentId">{{ b.trackingRef }}</dd></div>
-          <div><dt>Valid until</dt><dd data-testid="eway-detail-valid-until">{{ b.validUntil }}</dd></div>
+          <div><dt>Valid until</dt><dd data-testid="eway-detail-valid-until">{{ (b.validUntil) | when }}</dd></div>
           <div><dt>Part-B vehicle</dt><dd data-testid="eway-detail-vehicle">{{ b.vehicleNo || '—' }}</dd></div>
           <div><dt>Extensions</dt><dd data-testid="eway-detail-extensions">{{ b.extensionCount }}</dd></div>
           @if (b.expiringSoon) { <div><dt>Expiry</dt><dd data-testid="eway-detail-expiring">Expiring soon</dd></div> }
@@ -178,19 +180,19 @@ const ACTION_DONE: Record<EwayAction, string> = {
       </form>
       @if (tripResult(); as t) {
         <p data-testid="eway-trip-summary">{{ t.updated }} of {{ t.items.length }} consignments updated for vehicle {{ t.vehicleNo }}.</p>
-        <table data-testid="eway-trip-results">
+        <div class="table-wrap"><table data-testid="eway-trip-results">
           <thead><tr><th>Consignment</th><th>Bill</th><th>Outcome</th><th>Code</th></tr></thead>
           <tbody>
             @for (i of t.items; track i.consignmentId) {
               <tr data-testid="eway-trip-item" [attr.data-id]="i.consignmentId">
                 <td>{{ i.trackingRef }}</td>
                 <td>{{ i.billNo || '—' }}</td>
-                <td data-testid="eway-trip-item-outcome">{{ i.outcome }}</td>
+                <td><app-status-badge data-testid="eway-trip-item-outcome" [value]="i.outcome" /></td>
                 <td data-testid="eway-trip-item-code">{{ i.code || '—' }}</td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
     }
   `,

@@ -41,15 +41,15 @@ test.describe('closing an order', () => {
     await test.step('a short close needs a reason', async () => {
       await close.getByTestId('close-short').click();
       await expect(page.getByTestId('order-refusal')).toHaveText('close-reason-required');
-      await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
     });
 
     await test.step('with a reason it closes the order and its line', async () => {
       await close.getByLabel('Close reason').fill('customer needs no more');
       await close.getByTestId('close-short').click();
       await expect(page.getByTestId('order-done')).toHaveText('Order short-closed.');
-      await expect(page.getByTestId('order-status')).toHaveText('CLOSED');
-      await expect(page.getByTestId('order-close-kind')).toHaveText('SHORT');
+      await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CLOSED');
+      await expect(page.getByTestId('order-close-kind')).toHaveAttribute('data-value', 'SHORT');
       await expect(page.getByTestId('order-close-reason')).toHaveText('customer needs no more');
       await expect(page.getByTestId('order-line').getByTestId('line-closed')).toHaveText('SHORT');
       // A closed order offers nothing more to close or edit.
@@ -61,7 +61,7 @@ test.describe('closing an order', () => {
     await test.step('the history shows the close and why', async () => {
       await page.getByTestId('tab-history').click();
       const newest = page.getByTestId('order-history').getByTestId('history-entry').first();
-      await expect(newest.getByTestId('history-action')).toHaveText('ORDER_CLOSED');
+      await expect(newest.getByTestId('history-action')).toHaveAttribute('data-value', 'ORDER_CLOSED');
       await expect(newest).toContainText('VALIDATED → CLOSED');
       await expect(newest).toContainText('customer needs no more');
     });
@@ -73,20 +73,20 @@ test.describe('closing an order', () => {
     await cutConsignments(request, session, order.orderId);
     await signIn(page);
     await openOrder(page, order.orderId);
-    await expect(page.getByTestId('order-status')).toHaveText('FULLY_PLANNED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'FULLY_PLANNED');
     const close = page.getByTestId('close-order');
 
     await close.getByLabel('Close reason').fill('customer insolvent');
     await close.getByTestId('close-short').click();
     await expect(page.getByTestId('order-refusal')).toHaveText('order-freight-pending');
-    await expect(page.getByTestId('order-status')).toHaveText('FULLY_PLANNED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'FULLY_PLANNED');
 
     // A refused close keeps the reason, ready for the forced one.
     await expect(close.getByLabel('Close reason')).toHaveValue('customer insolvent');
     await close.getByTestId('close-force').click();
     await expect(page.getByTestId('order-done')).toHaveText('Order force-closed.');
-    await expect(page.getByTestId('order-status')).toHaveText('CLOSED');
-    await expect(page.getByTestId('order-close-kind')).toHaveText('FORCE');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CLOSED');
+    await expect(page.getByTestId('order-close-kind')).toHaveAttribute('data-value', 'FORCE');
   });
 
   test('closing one line leaves the order open, and closing the last one closes it', async ({ page, request }, info) => {
@@ -101,7 +101,7 @@ test.describe('closing an order', () => {
     await expect(page.getByTestId('order-done')).toHaveText('Line 2 closed.');
     await expect(second.getByTestId('line-closed')).toHaveText('SHORT');
     await expect(second.getByTestId('close-line')).toHaveCount(0);
-    await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
     // The reason went with the close.
     await expect(page.getByTestId('close-order').getByLabel('Close reason')).toHaveValue('');
 
@@ -110,8 +110,8 @@ test.describe('closing an order', () => {
     await page.getByTestId('close-order').getByLabel('Close reason').fill('first drop cancelled');
     await first.getByTestId('force-close-line').click();
     await expect(page.getByTestId('order-done')).toHaveText('Line 1 closed.');
-    await expect(page.getByTestId('order-status')).toHaveText('CLOSED');
-    await expect(page.getByTestId('order-close-kind')).toHaveText('FORCE');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CLOSED');
+    await expect(page.getByTestId('order-close-kind')).toHaveAttribute('data-value', 'FORCE');
   });
 });
 
@@ -134,7 +134,7 @@ test.describe('what each person is offered to close', () => {
     await signIn(page);
     await openOrder(page, order.orderId);
 
-    await expect(page.getByTestId('order-status')).toHaveText('VALIDATED');
+    await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'VALIDATED');
     await expect(page.getByTestId('close-order')).toHaveCount(0);
     await expect(page.getByTestId('close-line')).toHaveCount(0);
   });

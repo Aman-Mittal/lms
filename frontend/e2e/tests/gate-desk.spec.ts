@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { apiSession, newSite, openScreen, signIn, tag, withoutPermissions } from './support';
+import { apiSession, newSite, openScreen, signIn, tag, withoutPermissions, withValue } from './support';
 import { newTrip } from './support-control';
 
 /*
@@ -92,7 +92,7 @@ test.describe('the gate desk', () => {
       await page.getByTestId('register-search-submit').click();
       const row = page.getByTestId('register-row').filter({ hasText: registration });
       await expect(row).toHaveCount(1);
-      await expect(row).toContainText('CLOSED');
+      await expect(withValue(row, 'CLOSED')).toBeVisible();
       await expect(row).toContainText('SEAL-3');
     });
   });
@@ -119,14 +119,14 @@ test.describe('the gate desk', () => {
     await page.getByTestId('pass-search-submit').click();
     const row = page.getByTestId('pass-row').filter({ hasText: registration });
     await expect(row).toHaveCount(1);
-    await expect(row.getByTestId('pass-status')).toHaveText('ISSUED');
+    await expect(row.getByTestId('pass-status')).toHaveAttribute('data-value', 'ISSUED');
     await expect(row.getByTestId('pass-expired')).toHaveCount(0);
 
     await row.getByTestId('pass-cancel').click();
     await page.getByTestId('pass-cancel-reason').fill('Visit called off');
     await page.getByTestId('pass-cancel-confirm').click();
     await expect(page.getByTestId('gate-message')).toHaveText('Pass cancelled.');
-    await expect(row.getByTestId('pass-status')).toHaveText('CANCELLED');
+    await expect(row.getByTestId('pass-status')).toHaveAttribute('data-value', 'CANCELLED');
     await expect(row).toContainText('Visit called off');
     await expect(row.getByTestId('pass-cancel')).toHaveCount(0);
   });
@@ -184,18 +184,18 @@ test.describe('a trip\'s stops', () => {
     const stops = page.getByTestId('stop-row');
     await expect(stops.first()).toBeVisible();
     expect(await stops.count()).toBeGreaterThanOrEqual(2);
-    await expect(stops.first().getByTestId('stop-status')).toHaveText('PLANNED');
+    await expect(stops.first().getByTestId('stop-status')).toHaveAttribute('data-value', 'PLANNED');
     await expect(stops.first()).toContainText('PICKUP');
 
     await test.step('arrive at the first stop', async () => {
       await stops.first().getByTestId('stop-arrive').click();
-      await expect(stops.first().getByTestId('stop-status')).toHaveText('ARRIVED');
+      await expect(stops.first().getByTestId('stop-status')).toHaveAttribute('data-value', 'ARRIVED');
       await expect(stops.first().getByTestId('stop-arrive')).toHaveCount(0);
     });
 
     await test.step('depart from it', async () => {
       await stops.first().getByTestId('stop-depart').click();
-      await expect(stops.first().getByTestId('stop-status')).toHaveText('DEPARTED');
+      await expect(stops.first().getByTestId('stop-status')).toHaveAttribute('data-value', 'DEPARTED');
     });
 
     await test.step('skip the last stop with a reason', async () => {
@@ -203,7 +203,7 @@ test.describe('a trip\'s stops', () => {
       await last.getByTestId('stop-skip').click();
       await page.getByTestId('stop-skip-reason').fill('Consignee closed');
       await page.getByTestId('stop-skip-confirm').click();
-      await expect(last.getByTestId('stop-status')).toHaveText('SKIPPED');
+      await expect(last.getByTestId('stop-status')).toHaveAttribute('data-value', 'SKIPPED');
       await expect(last).toContainText('Consignee closed');
     });
   });

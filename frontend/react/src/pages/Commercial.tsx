@@ -24,6 +24,8 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Money } from './Figures';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 interface Refusal {
@@ -55,7 +57,7 @@ function RefusalNote({ refusal, testId }: { refusal: Refusal | null; testId: str
 /** A plain table of rows, one column per field. */
 function Table({ rows, columns, rowTestId }: { rows: Row[]; columns: Array<[string, string]>; rowTestId: string }) {
   return (
-    <table>
+    <div className="table-wrap"><table>
       <thead>
         <tr>{columns.map(([key, title]) => <th key={key}>{title}</th>)}</tr>
       </thead>
@@ -66,7 +68,7 @@ function Table({ rows, columns, rowTestId }: { rows: Row[]; columns: Array<[stri
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -349,7 +351,7 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
         <section data-testid="guide-panel" aria-label="Routing guide">
           <h3>{detail.guide.originTerminalCode} → {detail.guide.destinationTerminalCode} · {detail.guide.vehicleType}</h3>
           <p>Strategy {detail.guide.strategy} ·{' '}
-            <span data-testid="guide-state">{detail.guide.active ? 'Active' : 'Retired'}</span></p>
+            <StatusBadge data-testid="guide-state" value={detail.guide.active ? 'ACTIVE' : 'RETIRED'} /></p>
           {detail.entries.length === 0
             ? <p className="muted" data-testid="no-vendors">No vendor on this guide yet.</p>
             : <Table rows={detail.entries} columns={ENTRY_COLUMNS} rowTestId="guide-vendor" />}
@@ -473,38 +475,38 @@ function AllocationsPanel({ act }: { act: boolean }) {
       {loaded && rows.length === 0 ? (
         <p className="muted" data-testid="no-allocations">No allocation matches.</p>
       ) : (
-        <table>
+        <div className="table-wrap"><table>
           <thead><tr><th>Load</th><th>Status</th><th>Waiting on</th><th>Awarded to</th><th>Offers</th></tr></thead>
           <tbody>
             {rows.map((a) => (
               <tr key={a.id} data-testid="allocation-row" tabIndex={0} className={a.id === openId ? 'selected' : undefined}
                 onClick={() => void open(a.id)} onKeyDown={(e) => { if (e.key === 'Enter') { void open(a.id); } }}>
-                <td>{a.loadNo}</td><td>{a.status}</td><td>{a.pendingVendorName}</td>
+                <td>{a.loadNo}</td><td><StatusBadge value={a.status} /></td><td>{a.pendingVendorName}</td>
                 <td>{a.awardedVendorName}</td><td>{a.offersMade}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {detail && (
         <section data-testid="allocation-panel" aria-label="Allocation">
           <h3>Load {detail.allocation.loadNo}</h3>
           <dl>
-            <div><dt>Status</dt><dd data-testid="allocation-status">{detail.allocation.status}</dd></div>
+            <div><dt>Status</dt><dd><StatusBadge data-testid="allocation-status" value={detail.allocation.status} /></dd></div>
             <div><dt>Strategy</dt><dd>{detail.allocation.strategy}</dd></div>
             <div><dt>Awarded to</dt><dd data-testid="allocation-awarded">{detail.allocation.awardedVendorName}</dd></div>
             {detail.allocation.appliedRuleName && (
               <div><dt>Rule</dt><dd>{detail.allocation.appliedRuleName}</dd></div>
             )}
           </dl>
-          <table>
+          <div className="table-wrap"><table>
             <thead><tr><th>Rank</th><th>Vendor</th><th>Outcome</th><th>Answer by</th><th></th></tr></thead>
             <tbody>
               {detail.offers.map((o) => (
                 <tr key={o.id} data-testid="offer-row">
                   <td>{o.rankNo}</td><td>{o.vendorName}</td>
-                  <td data-testid="offer-outcome">{o.outcome}</td><td>{o.respondsBy}</td>
+                  <td><StatusBadge data-testid="offer-outcome" value={o.outcome} /></td><td className="nowrap">{o.respondsBy}</td>
                   <td>
                     {act && o.outcome === 'PENDING' && (
                       <>
@@ -518,7 +520,7 @@ function AllocationsPanel({ act }: { act: boolean }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           {act && detail.allocation.status !== 'CANCELLED' && detail.allocation.status !== 'AWARDED' && (
             <p><button className="link" data-testid="cancel-allocation"
               onClick={() => void respond((id) => gateway.cancelAllocation(id))}>Cancel allocation</button></p>
@@ -655,8 +657,8 @@ function BillsPanel({ approve, release = false }: { approve: boolean; release?: 
               {rows.map((b) => (
                 <tr key={b.id} data-testid="bill-row" tabIndex={0} className={b.id === openId ? 'selected' : undefined}
                   onClick={() => void open(b.id)} onKeyDown={(e) => { if (e.key === 'Enter') { void open(b.id); } }}>
-                  <td>{b.billNo}</td><td>{b.status}</td><td>{b.vendorName}</td>
-                  <td>{b.computedAmount}</td><td>{b.claimedAmount}</td><td>{b.varianceAmount}</td>
+                  <td>{b.billNo}</td><td><StatusBadge value={b.status} /></td><td>{b.vendorName}</td>
+                  <td className="num"><Money value={b.computedAmount} /></td><td className="num"><Money value={b.claimedAmount} /></td><td className="num"><Money value={b.varianceAmount} /></td>
                 </tr>
               ))}
             </tbody>
@@ -671,13 +673,13 @@ function BillsPanel({ approve, release = false }: { approve: boolean; release?: 
             <button className="link" onClick={() => { setOpenId(null); setDetail(null); }} aria-label="Close bill">Close</button>
           </header>
           <dl>
-            <div><dt>Status</dt><dd data-testid="bill-status">{detail.bill.status}</dd></div>
+            <div><dt>Status</dt><dd><StatusBadge data-testid="bill-status" value={detail.bill.status} /></dd></div>
             <div><dt>Vendor</dt><dd>{detail.bill.vendorName}</dd></div>
             <div><dt>Trip</dt><dd>{detail.bill.tripNo}</dd></div>
             <div><dt>Rate card</dt><dd>{detail.bill.tariffCode}</dd></div>
-            <div><dt>Computed</dt><dd data-testid="bill-computed">{detail.bill.computedAmount} {detail.bill.currency}</dd></div>
-            <div><dt>Claimed</dt><dd data-testid="bill-claimed">{detail.bill.claimedAmount}</dd></div>
-            <div><dt>Variance</dt><dd data-testid="bill-variance">{detail.bill.varianceAmount}</dd></div>
+            <div><dt>Computed</dt><dd><Money data-testid="bill-computed" value={detail.bill.computedAmount} currency={detail.bill.currency} /></dd></div>
+            <div><dt>Claimed</dt><dd><Money data-testid="bill-claimed" value={detail.bill.claimedAmount} /></dd></div>
+            <div><dt>Variance</dt><dd><Money data-testid="bill-variance" value={detail.bill.varianceAmount} /></dd></div>
             {detail.bill.resolution && (
               <div><dt>Resolution</dt><dd data-testid="bill-resolution">{detail.bill.resolution}</dd></div>
             )}
@@ -829,7 +831,7 @@ function RateCardsPanel() {
                 <tr key={t.id} data-testid="rate-card-row" tabIndex={0} className={t.id === openId ? 'selected' : undefined}
                   onClick={() => void open(t.id)} onKeyDown={(e) => { if (e.key === 'Enter') { void open(t.id); } }}>
                   <td>{t.code}</td><td>{t.vendorName}</td><td>{t.originTerminalCode} → {t.destinationTerminalCode}</td>
-                  <td>{t.vehicleType}</td><td>{t.effectiveFrom}</td><td>{t.effectiveTo || '—'}</td><td>{t.slabCount}</td>
+                  <td>{t.vehicleType}</td><td className="nowrap">{t.effectiveFrom}</td><td>{t.effectiveTo || '—'}</td><td>{t.slabCount}</td>
                 </tr>
               ))}
             </tbody>
@@ -848,9 +850,9 @@ function RateCardsPanel() {
             <div><dt>Published under</dt><dd>{card.orgUnitName}</dd></div>
             <div><dt>In force</dt><dd data-testid="rate-card-state">
               {card.superseded ? `${card.effectiveFrom} to ${card.effectiveTo}` : `from ${card.effectiveFrom}`}</dd></div>
-            <div><dt>Minimum charge</dt><dd>{card.minimumCharge} {card.currency}</dd></div>
+            <div><dt>Minimum charge</dt><dd><Money value={card.minimumCharge} currency={card.currency} /></dd></div>
             <div><dt>Free detention hours</dt><dd>{card.detentionFreeHours}</dd></div>
-            <div><dt>Detention per hour</dt><dd>{card.detentionHourlyRate}</dd></div>
+            <div><dt>Detention per hour</dt><dd><Money value={card.detentionHourlyRate} /></dd></div>
             <div><dt>Fee per additional drop</dt><dd>{card.additionalDropFee}</dd></div>
           </dl>
           <h4>Weight bands</h4>
@@ -982,7 +984,7 @@ function RailTariffsPanel({ manage }: { manage: boolean }) {
                 <tr key={r.id} data-testid="rail-tariff-row" tabIndex={0} className={r.id === openId ? 'selected' : undefined}
                   onClick={() => void open(r.id)} onKeyDown={(e) => { if (e.key === 'Enter') { void open(r.id); } }}>
                   <td>{r.code}</td><td>{r.carrierCode}</td><td>{r.originTerminalCode} → {r.destinationTerminalCode}</td>
-                  <td>{r.perWagonRate || '—'}</td><td>{r.perContainerRate || '—'}</td><td>{r.effectiveFrom}</td>
+                  <td className="num"><Money value={r.perWagonRate} empty="—" /></td><td className="num"><Money value={r.perContainerRate} empty="—" /></td><td className="nowrap">{r.effectiveFrom}</td>
                   <td>{r.effectiveTo || '—'}</td>
                 </tr>
               ))}
@@ -998,9 +1000,9 @@ function RailTariffsPanel({ manage }: { manage: boolean }) {
           <dl className="facts">
             <div><dt>Carrier</dt><dd>{card.carrierCode}</dd></div>
             <div><dt>Railheads</dt><dd>{card.originTerminalCode} → {card.destinationTerminalCode}</dd></div>
-            <div><dt>Per wagon</dt><dd data-testid="rail-per-wagon">{card.perWagonRate || '—'}</dd></div>
-            <div><dt>Per container</dt><dd data-testid="rail-per-container">{card.perContainerRate || '—'}</dd></div>
-            <div><dt>Minimum charge</dt><dd>{card.minimumCharge} {card.currency}</dd></div>
+            <div><dt>Per wagon</dt><dd><Money data-testid="rail-per-wagon" value={card.perWagonRate} empty="—" /></dd></div>
+            <div><dt>Per container</dt><dd><Money data-testid="rail-per-container" value={card.perContainerRate} empty="—" /></dd></div>
+            <div><dt>Minimum charge</dt><dd><Money value={card.minimumCharge} currency={card.currency} /></dd></div>
             <div><dt>In force</dt><dd>{card.effectiveTo ? `${card.effectiveFrom} to ${card.effectiveTo}` : `from ${card.effectiveFrom}`}</dd></div>
           </dl>
         </section>

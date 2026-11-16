@@ -128,7 +128,7 @@ test.describe('proof of delivery desk', () => {
     await test.step('nothing is started yet, and starting it shows every order line', async () => {
       await expect(page.getByTestId('pod-none')).toBeVisible();
       await page.getByTestId('pod-start').click();
-      await expect(page.getByTestId('pod-status')).toHaveText('PENDING');
+      await expect(page.getByTestId('pod-status')).toHaveAttribute('data-value', 'PENDING');
       await expect(page.getByTestId('pod-line-row')).toHaveCount(2);
       await expect(row(page, lineA).getByTestId('pod-line-gross')).toContainText('10');
       await expect(row(page, lineB).getByTestId('pod-line-gross')).toContainText('4');
@@ -181,7 +181,7 @@ test.describe('proof of delivery desk', () => {
     await test.step('paper is keyed with no code and says it was', async () => {
       await page.getByTestId('pod-paper-recipient').fill('Asha Rao');
       await page.getByTestId('pod-paper-submit').click();
-      await expect(page.getByTestId('pod-status')).toHaveText('SUBMITTED');
+      await expect(page.getByTestId('pod-status')).toHaveAttribute('data-value', 'SUBMITTED');
       await expect(page.getByTestId('pod-paper')).toBeVisible();
       await expect(page.getByTestId('pod-keyed-by')).toBeVisible();
       await expect(page.getByTestId('pod-recipient-shown')).toHaveText('Asha Rao');
@@ -203,10 +203,10 @@ test.describe('proof of delivery desk', () => {
     await signIn(page);
     await lookUp(page);
     await page.getByTestId('pod-start').click();
-    await expect(page.getByTestId('pod-status')).toHaveText('PENDING');
+    await expect(page.getByTestId('pod-status')).toHaveAttribute('data-value', 'PENDING');
     stub.status = 'NOT_RECEIVED';
     await page.getByTestId('pod-consignment-id').press('Enter');
-    await expect(page.getByTestId('pod-status')).toHaveText('NOT_RECEIVED');
+    await expect(page.getByTestId('pod-status')).toHaveAttribute('data-value', 'NOT_RECEIVED');
   });
 
   test('without the right to key paper, the form is not offered', async ({ page }) => {
@@ -215,7 +215,7 @@ test.describe('proof of delivery desk', () => {
     await withoutPermissions(page, ['POD_PAPER_KEY']);
     await signIn(page);
     await lookUp(page);
-    await expect(page.getByTestId('pod-status')).toHaveText('PENDING');
+    await expect(page.getByTestId('pod-status')).toHaveAttribute('data-value', 'PENDING');
     await expect(page.getByTestId('pod-submit-form')).toBeVisible();
     await expect(page.getByTestId('pod-paper-form')).toHaveCount(0);
   });

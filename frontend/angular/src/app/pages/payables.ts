@@ -19,6 +19,9 @@ import {
   ApiProblem, InvoiceBillView, LmsGateway, PAYMENT_MODES, VendorInvoiceView, VendorPaymentView,
 } from '../gateway/lms-gateway';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Money } from './figures';
+import { When } from './when';
 
 type Tab = 'invoices' | 'payments' | 'overdue';
 
@@ -37,7 +40,7 @@ function today(): string {
  */
 @Component({
   selector: 'app-payables',
-  imports: [PageHeader],
+  imports: [PageHeader, StatusBadge, Money, When],
   template: `
     <app-page-header title="Vendor payables" />
     <p class="muted">Vendor invoices, payments made and what is overdue.</p>
@@ -77,21 +80,21 @@ function today(): string {
       @if (invoices().length === 0) {
         <p class="muted" data-testid="inv-empty">No vendor invoices.</p>
       } @else {
-        <table data-testid="inv-list">
+        <div class="table-wrap"><table data-testid="inv-list">
           <thead><tr><th>Invoice</th><th>Vendor</th><th>Vendor's number</th><th>Due</th><th>Total</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
           <tbody>
             @for (i of invoices(); track i.id) {
               <tr data-testid="inv-row" [attr.data-id]="i.id" (click)="open(i.id)">
                 <td><button type="button" class="link" [attr.aria-label]="'Open ' + i.invoiceNo">{{ i.invoiceNo }}</button></td>
-                <td>{{ i.vendorName }}</td><td>{{ i.vendorInvoiceNo }}</td><td>{{ i.dueDate }}</td>
-                <td>{{ i.totalAmount }} {{ i.currency }}</td>
-                <td data-testid="inv-outstanding">{{ i.outstanding }}</td>
-                <td><span class="badge" data-testid="inv-status">{{ i.status }}</span></td>
+                <td>{{ i.vendorName }}</td><td>{{ i.vendorInvoiceNo }}</td><td class="nowrap">{{ (i.dueDate) | when }}</td>
+                <td class="num"><app-money [value]="i.totalAmount" [currency]="i.currency" /></td>
+                <td class="num"><app-money data-testid="inv-outstanding" [value]="i.outstanding" /></td>
+                <td><app-status-badge data-testid="inv-status" [value]="i.status" /></td>
                 <td>@if (i.overdue) { <span class="badge" data-testid="inv-overdue">Overdue {{ i.daysOverdue }} d</span> }</td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
         @if (next()) { <button type="button" class="link" (click)="more()">More</button> }
       }
       @if (detail(); as d) {
@@ -100,12 +103,12 @@ function today(): string {
           <dl class="facts">
             <div><dt>Vendor</dt><dd>{{ d.vendorName }}</dd></div>
             <div><dt>Invoiced</dt><dd>{{ d.amount }} + tax {{ d.taxAmount }}</dd></div>
-            <div><dt>Approved</dt><dd>{{ d.approvedAmount }}</dd></div>
-            <div><dt>Advances deducted</dt><dd>{{ d.advancesDeducted }}</dd></div>
-            <div><dt>Net payable</dt><dd>{{ d.netPayable }}</dd></div>
-            <div><dt>Paid</dt><dd>{{ d.paidAmount }}</dd></div>
-            <div><dt>Outstanding</dt><dd data-testid="detail-outstanding">{{ d.outstanding }}</dd></div>
-            <div><dt>Status</dt><dd data-testid="detail-status">{{ d.status }}</dd></div>
+            <div><dt>Approved</dt><dd><app-money [value]="d.approvedAmount" /></dd></div>
+            <div><dt>Advances deducted</dt><dd><app-money [value]="d.advancesDeducted" /></dd></div>
+            <div><dt>Net payable</dt><dd><app-money [value]="d.netPayable" /></dd></div>
+            <div><dt>Paid</dt><dd><app-money [value]="d.paidAmount" /></dd></div>
+            <div><dt>Outstanding</dt><dd><app-money data-testid="detail-outstanding" [value]="d.outstanding" /></dd></div>
+            <div><dt>Status</dt><dd><app-status-badge data-testid="detail-status" [value]="d.status" /></dd></div>
           </dl>
           <h3>Covered bills</h3>
           <ul data-testid="detail-bills">
@@ -113,7 +116,7 @@ function today(): string {
           </ul>
           <h3>Payments</h3>
           <ul data-testid="detail-payments">
-            @for (p of detailPayments(); track p.id) { <li>{{ p.paidOn }} {{ p.amount }} {{ p.mode }} {{ p.reference }}</li> }
+            @for (p of detailPayments(); track p.id) { <li>{{ (p.paidOn) | when }} {{ p.amount }} {{ p.mode }} {{ p.reference }}</li> }
           </ul>
           @if (payRefusal(); as r) {
             <p class="error" role="alert" data-testid="pay-error">
@@ -145,17 +148,17 @@ function today(): string {
       @if (payments().length === 0) {
         <p class="muted" data-testid="payments-empty">No payments.</p>
       } @else {
-        <table data-testid="payment-list">
+        <div class="table-wrap"><table data-testid="payment-list">
           <thead><tr><th>Paid on</th><th>Invoice</th><th>Vendor</th><th>Amount</th><th>Mode</th><th>Reference</th></tr></thead>
           <tbody>
             @for (p of payments(); track p.id) {
               <tr data-testid="payment-row">
-                <td>{{ p.paidOn }}</td><td>{{ p.invoiceNo }}</td><td>{{ p.vendorName }}</td><td>{{ p.amount }}</td>
+                <td class="nowrap">{{ (p.paidOn) | when }}</td><td>{{ p.invoiceNo }}</td><td>{{ p.vendorName }}</td><td class="num"><app-money [value]="p.amount" /></td>
                 <td>{{ p.mode }}</td><td>{{ p.reference }}</td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
         @if (next()) { <button type="button" class="link" (click)="more()">More</button> }
       }
     }
@@ -165,17 +168,17 @@ function today(): string {
       @if (invoices().length === 0) {
         <p class="muted" data-testid="overdue-empty">Nothing is overdue.</p>
       } @else {
-        <table data-testid="overdue-list">
+        <div class="table-wrap"><table data-testid="overdue-list">
           <thead><tr><th>Invoice</th><th>Vendor</th><th>Due</th><th>Days overdue</th><th>Outstanding</th></tr></thead>
           <tbody>
             @for (i of invoices(); track i.id) {
               <tr data-testid="overdue-row">
-                <td>{{ i.invoiceNo }}</td><td>{{ i.vendorName }}</td><td>{{ i.dueDate }}</td><td>{{ i.daysOverdue }}</td>
-                <td>{{ i.outstanding }}</td>
+                <td>{{ i.invoiceNo }}</td><td>{{ i.vendorName }}</td><td class="nowrap">{{ (i.dueDate) | when }}</td><td>{{ i.daysOverdue }}</td>
+                <td class="num"><app-money [value]="i.outstanding" /></td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
         @if (next()) { <button type="button" class="link" (click)="more()">More</button> }
       }
     }

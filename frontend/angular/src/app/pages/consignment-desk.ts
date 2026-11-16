@@ -20,6 +20,8 @@ import { Session } from '../session';
 import { Qr } from './qr';
 import { compareWithWhole, PlannedPart, splitByCapacity } from './split-plan';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Quantity } from './figures';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -32,7 +34,7 @@ import { PageHeader } from './page-header';
  */
 @Component({
   selector: 'app-consignment-desk',
-  imports: [FormsModule, Qr, PageHeader],
+  imports: [FormsModule, Qr, PageHeader, StatusBadge, Quantity],
   template: `
     <app-page-header title="Consignments" />
     <p class="muted">Look a consignment up by its lorry receipt or docket number.</p>
@@ -46,7 +48,7 @@ import { PageHeader } from './page-header';
       <section data-testid="consignment">
         <h2>{{ c.trackingRef }}</h2>
         <dl>
-          <div><dt>Status</dt><dd data-testid="consignment-status">{{ c.status }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="consignment-status" [value]="c.status" /></dd></div>
           <div><dt>Proof of delivery</dt><dd data-testid="consignment-proof">{{ c.proofStatus === 'CONFIRMED' || c.proofStatus === 'SUBMITTED' ? 'Confirmed, ' + c.proofCondition : c.proofStatus === 'PENDING' ? 'Draft started' : c.proofStatus ? 'Code issued' : 'None yet' }}</dd></div>
           @if (c.parentId) {
             <div><dt>Part of</dt><dd>
@@ -56,9 +58,9 @@ import { PageHeader } from './page-header';
           <div><dt>Order</dt><dd>{{ c.orderNo || '—' }}</dd></div>
           <div><dt>Consignee</dt><dd>{{ c.consigneeName }}</dd></div>
           <div><dt>Destination</dt><dd>{{ c.destinationTerminalCode }}</dd></div>
-          <div><dt>Weight kg</dt><dd data-testid="consignment-weight">{{ c.deadWeightKg }}</dd></div>
+          <div><dt>Weight kg</dt><dd><app-quantity data-testid="consignment-weight" [value]="c.deadWeightKg" /></dd></div>
           <div><dt>Volume m³</dt><dd>{{ c.volumeM3 }}</dd></div>
-          <div><dt>Chargeable kg</dt><dd>{{ c.chargeableWeightKg }}</dd></div>
+          <div><dt>Chargeable kg</dt><dd><app-quantity [value]="c.chargeableWeightKg" /></dd></div>
           <div><dt>Load</dt><dd>{{ c.loadNo || '—' }}</dd></div>
           <div><dt>Client reference</dt><dd data-testid="consignment-client-ref">{{ c.clientReference || '—' }}</dd></div>
           <div><dt>Consignee contact</dt><dd data-testid="consignment-contact">{{ c.contactName || '—' }}{{ c.contactPhone ? ', ' + c.contactPhone : '' }}</dd></div>
@@ -115,17 +117,17 @@ import { PageHeader } from './page-header';
           </div>
           @if (partsError()) { <p class="error" role="alert">{{ partsError() }}</p> }
           @if (parts().length) {
-            <table data-testid="parts">
+            <div class="table-wrap"><table data-testid="parts">
               <thead><tr><th>Part</th><th>Status</th><th>Weight kg</th><th>Load</th></tr></thead>
               <tbody>
                 @for (p of parts(); track p.id) {
                   <tr data-testid="part-row">
                     <td><button class="link" (click)="open(p.id)">{{ p.trackingRef }}</button></td>
-                    <td>{{ p.status }}</td><td>{{ p.deadWeightKg }}</td><td>{{ p.loadNo || '—' }}</td>
+                    <td><app-status-badge [value]="p.status" /></td><td class="num"><app-quantity [value]="p.deadWeightKg" /></td><td>{{ p.loadNo || '—' }}</td>
                   </tr>
                 }
               </tbody>
-            </table>
+            </table></div>
           }
         }
 
@@ -141,7 +143,7 @@ import { PageHeader } from './page-header';
             </form>
             @if (splitError()) { <p class="error" role="alert">{{ splitError() }}</p> }
             @if (planned().length) {
-              <table data-testid="planned-parts">
+              <div class="table-wrap"><table data-testid="planned-parts">
                 <thead><tr><th>Part</th><th>Weight kg</th><th>Volume m³</th></tr></thead>
                 <tbody>
                   @for (p of planned(); track $index) {
@@ -158,7 +160,7 @@ import { PageHeader } from './page-header';
                     </tr>
                   }
                 </tbody>
-              </table>
+              </table></div>
               <p data-testid="split-totals" [class]="totals().ready ? 'muted' : 'error'">
                 Parts total {{ totals().weightKg }} kg and {{ totals().volumeM3 }} m³, against
                 {{ c.deadWeightKg }} kg and {{ c.volumeM3 }} m³{{ totals().ready ? ' — they match.' : ' — they must match exactly.' }}
@@ -183,7 +185,7 @@ import { PageHeader } from './page-header';
                   <div><dt>Order</dt><dd>{{ c.orderNo || '—' }}</dd></div>
                   <div><dt>Consignee</dt><dd>{{ c.consigneeName }}</dd></div>
                   <div><dt>Destination</dt><dd>{{ c.destinationTerminalCode }}</dd></div>
-                  <div><dt>Weight kg</dt><dd>{{ c.deadWeightKg }}</dd></div>
+                  <div><dt>Weight kg</dt><dd><app-quantity [value]="c.deadWeightKg" /></dd></div>
                   <div><dt>Load</dt><dd>{{ c.loadNo || '—' }}</dd></div>
                 </dl>
                 <app-qr [payload]="'LMS:CONSIGNMENT:' + c.id" />

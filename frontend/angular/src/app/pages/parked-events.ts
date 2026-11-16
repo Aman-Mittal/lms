@@ -20,6 +20,8 @@ import { LmsGateway, PARKED_STATUSES, ParkedEventDetail, ParkedStatus, Row } fro
 import { Session } from '../session';
 import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 /**
  * Events whose listener failed on every retry and were parked. An operator
@@ -28,7 +30,7 @@ import { PageHeader } from './page-header';
  */
 @Component({
   selector: 'app-parked-events',
-  imports: [FormsModule, RowTable, PageHeader],
+  imports: [FormsModule, RowTable, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Parked events" />
     <p class="muted">Events whose listener kept failing after every retry. Replay one once its cause is fixed.</p>
@@ -58,9 +60,9 @@ import { PageHeader } from './page-header';
         <dl class="facts">
           <div><dt>Event</dt><dd>{{ d.summary['eventType'] }}</dd></div>
           <div><dt>Listener</dt><dd>{{ d.summary['listenerId'] }}</dd></div>
-          <div><dt>Status</dt><dd data-testid="parked-detail-status">{{ d.summary['status'] }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="parked-detail-status" [value]="d.summary['status']" /></dd></div>
           <div><dt>Attempts</dt><dd>{{ d.summary['attempts'] }}</dd></div>
-          <div><dt>Last failed</dt><dd>{{ d.summary['lastFailedAt'] }}</dd></div>
+          <div><dt>Last failed</dt><dd>{{ (d.summary['lastFailedAt']) | when }}</dd></div>
         </dl>
         <p class="muted" data-testid="parked-error">{{ d.summary['lastError'] }}</p>
         <pre data-testid="parked-payload">{{ d.payload }}</pre>

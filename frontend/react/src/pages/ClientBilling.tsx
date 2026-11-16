@@ -22,6 +22,9 @@ import { useLoad } from '../useLoad';
 import { ContractLifecycle } from './ContractLifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
 import { PageHeader } from './PageHeader';
+import { Cell } from './Cell';
+import { isDateColumn, isNumericColumn } from '../../../shared/format';
+import { Money } from './Figures';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -128,7 +131,7 @@ function ClientDesk({ clientId }: { clientId: string }) {
       {invoices.data && invoices.data.length === 0 ? (
         <p className="muted" data-testid="no-invoices">No invoice has been issued yet.</p>
       ) : (
-        <table>
+        <div className="table-wrap"><table>
           <thead>
             <tr><th>Invoice</th><th>Period</th><th>Total</th><th>Credited</th><th>Currency</th></tr>
           </thead>
@@ -138,12 +141,12 @@ function ClientDesk({ clientId }: { clientId: string }) {
                 className={i.id === invoiceId ? 'selected' : undefined}
                 onClick={() => setInvoiceId(i.id)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { setInvoiceId(i.id); } }}>
-                <td>{i.invoiceNo}</td><td>{i.periodStart} – {i.periodEnd}</td><td>{i.totalAmount}</td>
-                <td>{i.creditedAmount}</td><td>{i.currency}</td>
+                <td>{i.invoiceNo}</td><td>{i.periodStart} – {i.periodEnd}</td><td className="num"><Money value={i.totalAmount} /></td>
+                <td className="num"><Money value={i.creditedAmount} /></td><td>{i.currency}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
       {invoiceId && (
         <InvoicePanel key={invoiceId} invoiceId={invoiceId} version={reload} onChanged={changed}
@@ -159,16 +162,16 @@ function ClientDesk({ clientId }: { clientId: string }) {
           ['debit', 'Debit'], ['credit', 'Credit'], ['balance', 'Balance'],
         ]} />
       )}
-      <p>Balance <strong data-testid="statement-balance">{entries.length ? entries[entries.length - 1].balance : '0'}</strong></p>
+      <p>Balance <strong><Money data-testid="statement-balance" value={entries.length ? entries[entries.length - 1].balance : '0'} /></strong></p>
       {can('CLIENT_BILLING_RUN') && <RecordPayment clientId={clientId} onRecorded={changed} />}
 
       <h2>Ageing</h2>
       {ageing.data && (
         <dl>
-          <div><dt>Outstanding</dt><dd data-testid="ageing-outstanding">{ageing.data.outstanding} {ageing.data.currency}</dd></div>
-          <div><dt>Unapplied credit</dt><dd>{ageing.data.unappliedCredit}</dd></div>
+          <div><dt>Outstanding</dt><dd><Money data-testid="ageing-outstanding" value={ageing.data.outstanding} currency={ageing.data.currency} /></dd></div>
+          <div><dt>Unapplied credit</dt><dd><Money value={ageing.data.unappliedCredit} /></dd></div>
           {Object.entries(ageing.data.buckets).map(([bucket, amount]) => (
-            <div key={bucket}><dt>{bucket} days</dt><dd data-testid={`ageing-${bucket}`}>{amount}</dd></div>
+            <div key={bucket}><dt>{bucket} days</dt><dd><Money data-testid={`ageing-${bucket}`} value={amount} /></dd></div>
           ))}
         </dl>
       )}
@@ -178,18 +181,22 @@ function ClientDesk({ clientId }: { clientId: string }) {
 
 function Table({ rows, columns, rowTestId }: { rows: Row[]; columns: Array<[string, string]>; rowTestId: string }) {
   return (
-    <table>
+    <div className="table-wrap"><table>
       <thead>
-        <tr>{columns.map(([field, header]) => <th key={field}>{header}</th>)}</tr>
+        <tr>{columns.map(([field, header]) => <th key={field} className={isNumericColumn(field) ? 'num' : undefined}>{header}</th>)}</tr>
       </thead>
       <tbody>
         {rows.map((row, i) => (
           <tr key={row.id || i} data-testid={rowTestId}>
-            {columns.map(([field]) => <td key={field}>{row[field]}</td>)}
+            {columns.map(([field]) => (
+              <td key={field} className={isNumericColumn(field) ? 'num' : isDateColumn(field) ? 'nowrap' : undefined}>
+                <Cell field={field} value={row[field]} />
+              </td>
+            ))}
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -336,10 +343,10 @@ function InvoicePanel({ invoiceId, version, onChanged, onClose }: InvoicePanelPr
       </header>
       <dl>
         <div><dt>Period</dt><dd>{invoice.periodStart} – {invoice.periodEnd}</dd></div>
-        <div><dt>Taxable</dt><dd>{invoice.taxableAmount}</dd></div>
-        <div><dt>Tax</dt><dd>{invoice.taxAmount}</dd></div>
-        <div><dt>Total</dt><dd data-testid="invoice-total">{invoice.totalAmount} {invoice.currency}</dd></div>
-        <div><dt>Credited</dt><dd data-testid="invoice-credited">{invoice.creditedAmount}</dd></div>
+        <div><dt>Taxable</dt><dd><Money value={invoice.taxableAmount} /></dd></div>
+        <div><dt>Tax</dt><dd><Money value={invoice.taxAmount} /></dd></div>
+        <div><dt>Total</dt><dd><Money data-testid="invoice-total" value={invoice.totalAmount} currency={invoice.currency} /></dd></div>
+        <div><dt>Credited</dt><dd><Money data-testid="invoice-credited" value={invoice.creditedAmount} /></dd></div>
       </dl>
       <Table rows={lines} rowTestId="invoice-line" columns={lineColumns} />
       <p><button className="link" data-testid="print-invoice" onClick={() => setSlip(true)}>Print invoice</button></p>

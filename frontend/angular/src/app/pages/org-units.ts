@@ -41,7 +41,7 @@ type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 
       platform rules for that country and state then apply to everything beneath.</p>
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 
-    <table data-testid="org-units">
+    <div class="table-wrap"><table data-testid="org-units">
       <thead><tr><th>Unit</th><th>Level</th><th>Codes</th><th>Jurisdiction</th><th></th></tr></thead>
       <tbody>
         @for (u of units(); track u.id) {
@@ -63,7 +63,7 @@ type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 
           <tr><td colspan="5" class="muted">No units.</td></tr>
         }
       </tbody>
-    </table>
+    </table></div>
 
     @if (mode().kind !== 'none') {
       <section class="panel in-flow" data-testid="unit-panel">

@@ -22,6 +22,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -119,7 +120,7 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
       <h2>{s.summary}</h2>
       <dl className="facts">
         <div><dt>Subject</dt><dd>{s.subjectType} {s.action}</dd></div>
-        <div><dt>Status</dt><dd data-testid="approval-status">{s.status}</dd></div>
+        <div><dt>Status</dt><dd><StatusBadge data-testid="approval-status" value={s.status} /></dd></div>
         <div><dt>Approvals</dt><dd>{s.approvals}</dd></div>
         <div><dt>Requested</dt><dd>{s.requestedAt}</dd></div>
         <div><dt>Due</dt><dd>{s.dueAt}</dd></div>

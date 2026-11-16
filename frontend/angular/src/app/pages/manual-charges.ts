@@ -19,6 +19,8 @@ import {
   ApiProblem, CHARGE_SUBJECT_TYPES, ChargeEntryView, LmsGateway, ManualChargeView,
 } from '../gateway/lms-gateway';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Money } from './figures';
 
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -31,7 +33,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-manual-charges',
-  imports: [PageHeader],
+  imports: [PageHeader, StatusBadge, Money],
   template: `
     <app-page-header title="Manual charges" />
     <p class="muted">Detention, loading, tolls and penalties raised by hand against a trip, consignment or order.</p>
@@ -84,15 +86,15 @@ function valueOf(event: Event): string {
     @if (charges().length === 0) {
       <p class="muted" data-testid="mc-empty">No charges.</p>
     } @else {
-      <table data-testid="mc-list">
+      <div class="table-wrap"><table data-testid="mc-list">
         <thead><tr><th>Charge</th><th>Code</th><th>Subject</th><th>Direction</th><th>Amount</th><th>Status</th><th>Billed</th><th></th></tr></thead>
         <tbody>
           @for (c of charges(); track c.id) {
             <tr data-testid="mc-row" [attr.data-id]="c.id">
               <td>{{ c.chargeNo }}</td><td>{{ c.chargeCode }}</td><td>{{ c.subjectType }} {{ c.subjectRef }}</td>
               <td data-testid="mc-direction-cell">{{ c.direction }}</td>
-              <td data-testid="mc-amount">{{ c.amount }} {{ c.currency }}</td>
-              <td><span class="badge" data-testid="mc-status">{{ c.status }}</span></td>
+              <td class="num"><app-money data-testid="mc-amount" [value]="c.amount" [currency]="c.currency" /></td>
+              <td><app-status-badge data-testid="mc-status" [value]="c.status" /></td>
               <td>{{ c.billed ? 'Yes' : 'No' }}</td>
               <td>
                 @if ((c.status === 'PENDING_APPROVAL' || (c.status === 'APPROVED' && !c.billed))) {
@@ -115,7 +117,7 @@ function valueOf(event: Event): string {
             }
           }
         </tbody>
-      </table>
+      </table></div>
       @if (next()) { <button type="button" class="link" (click)="more()">More</button> }
     }
   `,

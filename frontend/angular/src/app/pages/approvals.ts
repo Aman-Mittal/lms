@@ -21,6 +21,8 @@ import {
 } from '../gateway/lms-gateway';
 import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -36,7 +38,7 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
  */
 @Component({
   selector: 'app-approvals',
-  imports: [FormsModule, RowTable, PageHeader],
+  imports: [FormsModule, RowTable, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Approvals" />
     <p class="muted">Requests waiting for somebody to agree before anything happens.</p>
@@ -66,10 +68,10 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
         <h2>{{ d.summary['summary'] }}</h2>
         <dl class="facts">
           <div><dt>Subject</dt><dd>{{ d.summary['subjectType'] }} {{ d.summary['action'] }}</dd></div>
-          <div><dt>Status</dt><dd data-testid="approval-status">{{ d.summary['status'] }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="approval-status" [value]="d.summary['status']" /></dd></div>
           <div><dt>Approvals</dt><dd>{{ d.summary['approvals'] }}</dd></div>
-          <div><dt>Requested</dt><dd>{{ d.summary['requestedAt'] }}</dd></div>
-          <div><dt>Due</dt><dd>{{ d.summary['dueAt'] }}</dd></div>
+          <div><dt>Requested</dt><dd>{{ (d.summary['requestedAt']) | when }}</dd></div>
+          <div><dt>Due</dt><dd>{{ (d.summary['dueAt']) | when }}</dd></div>
           @if (d.summary['reason']) {
             <div><dt>Reason</dt><dd data-testid="approval-reason">{{ d.summary['reason'] }}</dd></div>
           }
