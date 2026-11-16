@@ -21,6 +21,7 @@ import {
   EffectiveSettingView, LmsGateway, MeView, SettingDefinitionView, SettingValue,
 } from '../gateway/lms-gateway';
 import { choicesOf, controlOf, fromInput, toInput } from '../settings-form';
+import { PageHeader } from './page-header';
 
 /** One notification event and its two channels. */
 interface NotifyRow {
@@ -37,9 +38,9 @@ interface NotifyRow {
  */
 @Component({
   selector: 'app-my-profile',
-  imports: [FormsModule],
+  imports: [FormsModule, PageHeader],
   template: `
-    <h1>My profile &amp; preferences</h1>
+    <app-page-header title="My profile &amp; preferences" />
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (me(); as m) {
       <section class="panel" data-testid="me-identity">

@@ -17,6 +17,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ORG_UNIT_RANK, ORG_UNIT_TYPES, ORG_UNIT_WORDS, type OrgUnitView } from '../gateway/lmsGateway';
 import { useSession } from '../session';
+import { PageHeader } from './PageHeader';
 
 /** What the form beneath the tree is doing: adding a child, editing a unit, or nothing. */
 type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 'edit'; unit: OrgUnitView };
@@ -118,7 +119,7 @@ export function OrgUnits() {
 
   return (
     <>
-      <h1>Organisation units</h1>
+      <PageHeader title="Organisation units" />
       <p className="muted">Levels run head office, line of business, country, zone (or region), branch, hub; a unit
         sits below its parent's level. A country carries its ISO code and a zone, branch or hub may carry a state
         code: platform rules for that country and state then apply to everything beneath.</p>

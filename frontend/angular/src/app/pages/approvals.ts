@@ -20,6 +20,7 @@ import {
   APPROVAL_SCOPES, APPROVAL_STATUSES, ApprovalDetail, ApprovalScopeName, ApprovalStatusName, LmsGateway, Row,
 } from '../gateway/lms-gateway';
 import { RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -35,9 +36,9 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
  */
 @Component({
   selector: 'app-approvals',
-  imports: [FormsModule, RowTable],
+  imports: [FormsModule, RowTable, PageHeader],
   template: `
-    <h1>Approvals</h1>
+    <app-page-header title="Approvals" />
     <p class="muted">Requests waiting for somebody to agree before anything happens.</p>
     <form class="inline" (ngSubmit)="load()" data-testid="approvals-filter">
       <select name="scope" aria-label="Scope" data-testid="approvals-scope" [(ngModel)]="filter.scope">
