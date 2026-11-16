@@ -21,6 +21,7 @@ import {
   type GateVisitPage, type GateVisitView,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
+import { PageHeader } from './PageHeader';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -223,7 +224,7 @@ export function GateDesk() {
 
   return (
     <>
-      <h1>Gate desk</h1>
+      <PageHeader title="Gate desk" />
       <p className="muted">Vehicles at the gate: who is inside, entries and exits, the register and gate passes.</p>
       {refusal && (
         <p className="error" role="alert" data-testid="gate-error">
