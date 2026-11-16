@@ -24,6 +24,9 @@ import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { Quantity } from './figures';
+import { When } from './when';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -91,7 +94,7 @@ interface Refusal {
  */
 @Component({
   selector: 'app-order-desk',
-  imports: [FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, PageHeader],
+  imports: [FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, PageHeader, StatusBadge, Quantity, When],
   template: `
     <app-page-header title="Order desk" />
     <p class="muted">
@@ -136,23 +139,23 @@ interface Refusal {
       <section data-testid="order-panel">
         <h2>{{ d.order['orderNo'] }}</h2>
         <dl>
-          <div><dt>Status</dt><dd data-testid="order-status">{{ d.order['status'] }}</dd></div>
+          <div><dt>Status</dt><dd><app-status-badge data-testid="order-status" [value]="d.order['status']" /></dd></div>
           <div><dt>Version</dt><dd data-testid="order-version">{{ d.version }}</dd></div>
           <div><dt>Customer</dt><dd data-testid="order-customer">{{ d.order['customerName'] }}</dd></div>
           <div><dt>Origin</dt><dd>{{ d.order['originTerminalCode'] }}</dd></div>
           <div><dt>Mode</dt><dd>{{ d.order['freightMode'] }}</dd></div>
           <div><dt>Lines</dt><dd data-testid="order-line-count">{{ d.order['lineCount'] }}</dd></div>
-          <div><dt>Weight kg</dt><dd data-testid="order-weight">{{ d.order['totalDeadWeightKg'] }}</dd></div>
-          <div><dt>Pickup</dt><dd>{{ d.order['requestedPickupAt'] || '—' }}</dd></div>
+          <div><dt>Weight kg</dt><dd><app-quantity data-testid="order-weight" [value]="d.order['totalDeadWeightKg']" /></dd></div>
+          <div><dt>Pickup</dt><dd>{{ (d.order['requestedPickupAt'] || '—') | when }}</dd></div>
           <div><dt>Contract</dt><dd data-testid="order-contract">{{ d.order['contractCode'] || '—' }}</dd></div>
           <div><dt>Lane</dt><dd data-testid="order-lane">{{ d.order['contractLaneCode'] || '—' }}</dd></div>
           <div><dt>Load type</dt><dd data-testid="order-load-type">{{ d.order['loadType'] || '—' }}</dd></div>
           <div><dt>Transit days</dt><dd data-testid="order-transit">{{ d.order['transitDays'] || '—' }}</dd></div>
-          <div><dt>Expected delivery</dt><dd data-testid="order-expected">{{ d.order['expectedDeliveryDate'] || '—' }}</dd></div>
+          <div><dt>Expected delivery</dt><dd data-testid="order-expected">{{ (d.order['expectedDeliveryDate'] || '—') | when }}</dd></div>
           @if (d.order['closeKind']) {
             <div>
               <dt>Closed</dt>
-              <dd data-testid="order-close-kind">{{ d.order['closeKind'] }}</dd>
+              <dd><app-status-badge data-testid="order-close-kind" [value]="d.order['closeKind']" /></dd>
               @if (d.order['closeReason']) {
                 <dd class="muted" data-testid="order-close-reason">{{ d.order['closeReason'] }}</dd>
               }
@@ -208,8 +211,8 @@ interface Refusal {
                   <tbody>
                     @for (e of history(); track e.id) {
                       <tr data-testid="history-entry">
-                        <td>{{ e.occurredAt }}</td>
-                        <td data-testid="history-action">{{ e.action }}</td>
+                        <td class="nowrap">{{ (e.occurredAt) | when }}</td>
+                        <td><app-status-badge data-testid="history-action" [value]="e.action" /></td>
                         <td>{{ e.change }}</td>
                         <td>{{ e.actor || 'platform' }}</td>
                         <td>{{ e.reason }}</td>
@@ -240,7 +243,7 @@ interface Refusal {
                   <td>{{ l.materialCode }} · {{ l.materialDescription }}</td>
                   <td>{{ l.materialClass }}@if (l.hazmatUnCode) { (UN {{ l.hazmatUnCode }})}</td>
                   <td>{{ l.quantity }} {{ l.uom }}</td>
-                  <td>{{ l.deadWeightKg }}</td>
+                  <td class="num"><app-quantity [value]="l.deadWeightKg" /></td>
                   <td>{{ l.lengthM ? l.lengthM + ' × ' + l.widthM + ' × ' + l.heightM : '—' }}</td>
                   <td>{{ l.consigneeName }}</td>
                   <td>{{ l.destinationTerminalCode }}</td>
@@ -407,18 +410,18 @@ interface Refusal {
               {{ d.order['customerName'] }} · from {{ d.order['originTerminalCode'] }} · {{ d.order['status'] }} ·
               {{ d.order['totalDeadWeightKg'] }} kg
             </p>
-            <table>
+            <div class="table-wrap"><table>
               <thead><tr><th>#</th><th>Material</th><th>Qty</th><th>Weight kg</th><th>Consignee</th><th>Destination</th></tr></thead>
               <tbody>
                 @for (l of d.lines; track l.id) {
                   <tr data-testid="slip-line">
                     <td>{{ l.lineNo }}</td><td>{{ l.materialCode }} · {{ l.materialDescription }}</td>
-                    <td>{{ l.quantity }} {{ l.uom }}</td><td>{{ l.deadWeightKg }}</td>
+                    <td>{{ l.quantity }} {{ l.uom }}</td><td class="num"><app-quantity [value]="l.deadWeightKg" /></td>
                     <td>{{ l.consigneeName }}</td><td>{{ l.destinationTerminalCode }}</td>
                   </tr>
                 }
               </tbody>
-            </table>
+            </table></div>
             <p class="actions no-print">
               <button data-testid="print-now" (click)="print()">Print</button>
               <button class="link" (click)="slip.set(false)">Close</button>
