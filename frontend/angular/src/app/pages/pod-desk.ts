@@ -19,6 +19,7 @@ import {
   ApiProblem, DeliveryProofView, LmsGateway, POD_DOCUMENT_TYPES, PodDocument, PodDocumentType, PodLineDraft, provesDelivery,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { PageHeader } from './page-header';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -42,9 +43,9 @@ interface LineFields {
  */
 @Component({
   selector: 'app-pod-desk',
-  imports: [FormsModule],
+  imports: [FormsModule, PageHeader],
   template: `
-    <h1>Proof of delivery desk</h1>
+    <app-page-header title="Proof of delivery desk" />
     <p class="muted">Start the proof, feed it line by line, list the documents and times, then submit it.</p>
     <form class="inline" (ngSubmit)="lookUp()" data-testid="pod-lookup">
       <input name="consignment" placeholder="Consignment id" aria-label="Consignment id" data-testid="pod-consignment-id"

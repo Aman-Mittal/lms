@@ -19,6 +19,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { compareWithWhole, splitByCapacity, type PlannedPart } from './splitPlan';
+import { PageHeader } from './PageHeader';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -46,7 +47,7 @@ export function ConsignmentDesk() {
 
   return (
     <>
-      <h1>Consignments</h1>
+      <PageHeader title="Consignments" />
       <p className="muted">Look a consignment up by its lorry receipt or docket number.</p>
       <form className="inline" onSubmit={lookUp} data-testid="consignment-lookup">
         <input placeholder="Reference" aria-label="Reference" data-testid="consignment-ref"

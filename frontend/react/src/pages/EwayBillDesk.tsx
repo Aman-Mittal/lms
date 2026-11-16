@@ -19,6 +19,7 @@ import {
   EWAY_STATUSES, type EwayAction, type EwayBillRow, type EwayFilter, type EwayGenerateDraft, type EwayPartBResult,
 } from '../gateway/ewayTypes';
 import { useSession } from '../session';
+import { PageHeader } from './PageHeader';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -174,7 +175,7 @@ export function EwayBillDesk() {
 
   return (
     <>
-      <h1>E-way bills</h1>
+      <PageHeader title="E-way bills" />
       <p className="muted">Generate a consignment's bill, put a vehicle on Part-B, extend or cancel it, and watch what is about to lapse.</p>
 
       <form className="inline" data-testid="eway-filter" onSubmit={(ev) => { ev.preventDefault(); void load(); }}>
