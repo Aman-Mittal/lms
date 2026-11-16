@@ -19,6 +19,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
 import { RowTable } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 /** Road-rail-road itineraries, and one itinerary's legs on the map. */
 export function Itineraries() {
@@ -29,7 +30,7 @@ export function Itineraries() {
 
   return (
     <>
-      <h1>Itineraries</h1>
+      <PageHeader title="Itineraries" />
       <p className="muted">Multimodal movements leg by leg: road to the railhead, rail between railheads, road to the customer.</p>
       {list.loading && <p className="muted">Loading…</p>}
       {list.error && <p className="error" role="alert">{list.error}</p>}

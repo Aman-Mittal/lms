@@ -19,6 +19,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
 import { RowTable } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 /** Milk-run routes, one route's circuit on the map, and the runs generated from it. */
 export function MilkRuns() {
@@ -30,7 +31,7 @@ export function MilkRuns() {
 
   return (
     <>
-      <h1>Milk runs</h1>
+      <PageHeader title="Milk runs" />
       <p className="muted">Scheduled pickup circuits: from the plant, round the suppliers in order, and back.</p>
       {list.loading && <p className="muted">Loading…</p>}
       {list.error && <p className="error" role="alert">{list.error}</p>}

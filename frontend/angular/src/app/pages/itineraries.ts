@@ -18,13 +18,14 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { LmsGateway, MappedDetail, Row } from '../gateway/lms-gateway';
 import { MapView } from './map-view';
 import { RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 /** Road-rail-road itineraries, and one itinerary's legs on the map. */
 @Component({
   selector: 'app-itineraries',
-  imports: [MapView, RowTable],
+  imports: [MapView, RowTable, PageHeader],
   template: `
-    <h1>Itineraries</h1>
+    <app-page-header title="Itineraries" />
     <p class="muted">Multimodal movements leg by leg: road to the railhead, rail between railheads, road to the customer.</p>
     @if (loading()) { <p class="muted">Loading…</p> }
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
