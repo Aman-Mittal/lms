@@ -55,7 +55,7 @@
     <spring-modulith.version>2.1.2</spring-modulith.version>
     <mapstruct.version>1.6.3</mapstruct.version>
     <cucumber.version>8.0.4</cucumber.version>
-    <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
+    <license-maven-plugin.version>2.8.0</license-maven-plugin.version>
     <error-prone.version>2.52.0</error-prone.version>
     <spotless.version>3.10.4</spotless.version>
     <!--
