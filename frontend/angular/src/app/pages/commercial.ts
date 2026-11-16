@@ -23,6 +23,7 @@ import {
 import type { RailTariffDraft, TariffCardDetail, TariffFilter } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 export interface Refusal {
@@ -1098,9 +1099,9 @@ export class RailTariffsPanel implements OnInit {
 /** Rate cards, routing guides, allocations and freight bills: what a lane costs and who carries it. */
 @Component({
   selector: 'app-commercial',
-  imports: [TariffsPanel, GuidesPanel, AllocationsPanel, BillsPanel, RateCardsPanel, RailTariffsPanel],
+  imports: [TariffsPanel, GuidesPanel, AllocationsPanel, BillsPanel, RateCardsPanel, RailTariffsPanel, PageHeader],
   template: `
-    <h1>Commercial</h1>
+    <app-page-header title="Commercial" />
     <p class="muted">
       Publish rate cards, decide which vendors are offered a lane, follow loads out to vendors,
       and settle what each vendor bills.
