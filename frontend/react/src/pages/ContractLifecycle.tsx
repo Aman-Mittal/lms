@@ -21,6 +21,8 @@ import {
 } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
+import { StatusBadge } from './StatusBadge';
+import { Money } from './Figures';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -251,18 +253,18 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
   return (
     <section data-testid="contract-lifecycle" aria-label="Contract lifecycle">
       <h3>Contract versions</h3>
-      <table>
+      <div className="table-wrap"><table>
         <thead><tr><th>Contract</th><th>State</th><th>From</th><th>To</th><th>Ends</th><th></th></tr></thead>
         <tbody>
           {contracts.map((c) => (
             <tr key={c.id} data-testid="version-row">
-              <td>{c.code}</td><td data-testid="version-state">{c.state}</td>
-              <td>{c.effectiveFrom}</td><td>{c.effectiveTo}</td><td>{c.validTill}</td>
+              <td>{c.code}</td><td><StatusBadge data-testid="version-state" value={c.state} /></td>
+              <td className="nowrap">{c.effectiveFrom}</td><td className="nowrap">{c.effectiveTo}</td><td>{c.validTill}</td>
               <td><button className="link" data-testid="open-version" onClick={() => void open(c.id)}>Open</button></td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
 
       {manage && (
         <>
@@ -299,7 +301,7 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
             <button className="link" onClick={() => setDetail(null)} aria-label="Close contract">Close</button>
           </header>
           <dl>
-            <div><dt>State</dt><dd data-testid="contract-status">{detail.state}</dd></div>
+            <div><dt>State</dt><dd><StatusBadge data-testid="contract-status" value={detail.state} /></dd></div>
             <div><dt>Starts</dt><dd>{detail.effectiveFrom}</dd></div>
             <div><dt>Ends</dt><dd data-testid="contract-valid-till">{detail.validTill}</dd></div>
             <div><dt>Services</dt><dd>{detail.services.map((s) => `${s.serviceCode} ${s.rate}/${s.unit}`).join('; ')}</dd></div>
@@ -309,7 +311,7 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
           <h4>Lanes</h4>
           {detail.lanes.length === 0 && <p className="muted" data-testid="no-lanes">No lanes: orders are priced by the per-kilo rate.</p>}
           {detail.lanes.length > 0 && (
-            <table data-testid="contract-lanes">
+            <div className="table-wrap"><table data-testid="contract-lanes">
               <thead><tr><th>Lane</th><th>From</th><th>To</th><th>Mode</th><th>Load</th><th>Basis</th><th>Rate</th><th>Days</th><th>Slabs</th><th /></tr></thead>
               <tbody>
                 {detail.lanes.map((l) => (
@@ -317,7 +319,7 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
                     <td data-testid="lane-code">{l.laneCode}</td>
                     <td>{end(l.originTerminalId, l.originZone)}</td><td>{end(l.destinationTerminalId, l.destinationZone)}</td>
                     <td>{l.freightMode || 'Any'}</td><td>{l.loadType || 'Any'}</td>
-                    <td>{l.rateBasis}</td><td>{l.rate || '—'}</td><td>{l.transitDays || '—'}</td>
+                    <td>{l.rateBasis}</td><td className="num"><Money value={l.rate} empty="—" /></td><td>{l.transitDays || '—'}</td>
                     <td>{l.slabs || '—'}</td>
                     <td>
                       {detail.status === 'DRAFT' && manage && (
@@ -327,7 +329,7 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
           {detail.rejectionReason && (
             <p className="error" data-testid="contract-rejection">Verification refused: {detail.rejectionReason}</p>

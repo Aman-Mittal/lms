@@ -22,6 +22,10 @@ import { EntityPicker } from './entity-picker';
 import { ContractLifecycle } from './contract-lifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
 import { PageHeader } from './page-header';
+import { Cell } from './cell';
+import { isDateColumn, isNumericColumn } from '../../../../shared/format';
+import { Money } from './figures';
+import { When } from './when';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -39,25 +43,30 @@ function lastMonth(): string {
 /** A plain table of rows, one column per field. */
 @Component({
   selector: 'app-billing-table',
+  imports: [Cell],
   template: `
-    <table>
+    <div class="table-wrap"><table>
       <thead>
-        <tr>@for (c of columns(); track c[0]) { <th>{{ c[1] }}</th> }</tr>
+        <tr>@for (c of columns(); track c[0]) { <th [class.num]="numeric(c[0])">{{ c[1] }}</th> }</tr>
       </thead>
       <tbody>
         @for (row of rows(); track $index) {
           <tr [attr.data-testid]="rowTestId()">
-            @for (c of columns(); track c[0]) { <td>{{ row[c[0]] }}</td> }
+            @for (c of columns(); track c[0]) {
+              <td [class.num]="numeric(c[0])" [class.nowrap]="date(c[0])"><app-cell [field]="c[0]" [value]="row[c[0]]" /></td>
+            }
           </tr>
         }
       </tbody>
-    </table>
+    </table></div>
   `,
 })
 export class BillingTable {
   readonly rows = input.required<Row[]>();
   readonly columns = input.required<Array<[string, string]>>();
   readonly rowTestId = input.required<string>();
+  protected readonly numeric = isNumericColumn;
+  protected readonly date = isDateColumn;
 }
 
 const CONTRACT_COLUMNS: Array<[string, string]> = [
@@ -88,7 +97,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
  */
 @Component({
   selector: 'app-client-desk',
-  imports: [FormsModule, BillingTable, ContractLifecycle, CreditPositionPanel, CreditOverride],
+  imports: [FormsModule, BillingTable, ContractLifecycle, CreditPositionPanel, CreditOverride, Money, When],
   template: `
     <section data-testid="client-desk">
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -152,7 +161,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
       @if (loaded() && invoices().length === 0) {
         <p class="muted" data-testid="no-invoices">No invoice has been issued yet.</p>
       } @else {
-        <table>
+        <div class="table-wrap"><table>
           <thead>
             <tr><th>Invoice</th><th>Period</th><th>Total</th><th>Credited</th><th>Currency</th></tr>
           </thead>
@@ -160,12 +169,12 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
             @for (i of invoices(); track i['id']) {
               <tr data-testid="invoice-row" tabindex="0" [class.selected]="i['id'] === invoiceId()"
                   (click)="openInvoice(i['id'])" (keydown.enter)="openInvoice(i['id'])">
-                <td>{{ i['invoiceNo'] }}</td><td>{{ i['periodStart'] }} – {{ i['periodEnd'] }}</td>
-                <td>{{ i['totalAmount'] }}</td><td>{{ i['creditedAmount'] }}</td><td>{{ i['currency'] }}</td>
+                <td>{{ i['invoiceNo'] }}</td><td>{{ (i['periodStart']) | when }} – {{ (i['periodEnd']) | when }}</td>
+                <td class="num"><app-money [value]="i['totalAmount']" /></td><td class="num"><app-money [value]="i['creditedAmount']" /></td><td>{{ i['currency'] }}</td>
               </tr>
             }
           </tbody>
-        </table>
+        </table></div>
       }
       @if (invoiceError()) { <p class="error" role="alert">{{ invoiceError() }}</p> }
       @if (invoice(); as d) {
@@ -175,18 +184,18 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
             <button class="link" (click)="closeInvoice()" aria-label="Close invoice">Close</button>
           </header>
           <dl>
-            <div><dt>Period</dt><dd>{{ d.invoice['periodStart'] }} – {{ d.invoice['periodEnd'] }}</dd></div>
-            <div><dt>Taxable</dt><dd>{{ d.invoice['taxableAmount'] }}</dd></div>
-            <div><dt>Tax</dt><dd>{{ d.invoice['taxAmount'] }}</dd></div>
-            <div><dt>Total</dt><dd data-testid="invoice-total">{{ d.invoice['totalAmount'] }} {{ d.invoice['currency'] }}</dd></div>
-            <div><dt>Credited</dt><dd data-testid="invoice-credited">{{ d.invoice['creditedAmount'] }}</dd></div>
+            <div><dt>Period</dt><dd>{{ (d.invoice['periodStart']) | when }} – {{ (d.invoice['periodEnd']) | when }}</dd></div>
+            <div><dt>Taxable</dt><dd><app-money [value]="d.invoice['taxableAmount']" /></dd></div>
+            <div><dt>Tax</dt><dd><app-money [value]="d.invoice['taxAmount']" /></dd></div>
+            <div><dt>Total</dt><dd><app-money data-testid="invoice-total" [value]="d.invoice['totalAmount']" [currency]="d.invoice['currency']" /></dd></div>
+            <div><dt>Credited</dt><dd><app-money data-testid="invoice-credited" [value]="d.invoice['creditedAmount']" /></dd></div>
           </dl>
           <app-billing-table [rows]="d.lines" [columns]="lineColumns" rowTestId="invoice-line" />
           <p><button class="link" data-testid="print-invoice" (click)="slip.set(true)">Print invoice</button></p>
           @if (slip()) {
             <section class="slip manifest" data-testid="invoice-slip" aria-label="Invoice to print">
               <h3>Invoice {{ d.invoice['invoiceNo'] }}</h3>
-              <p>{{ d.invoice['clientName'] }} · {{ d.invoice['periodStart'] }} – {{ d.invoice['periodEnd'] }} · issued {{ d.invoice['issuedAt'] }}</p>
+              <p>{{ d.invoice['clientName'] }} · {{ (d.invoice['periodStart']) | when }} – {{ (d.invoice['periodEnd']) | when }} · issued {{ (d.invoice['issuedAt']) | when }}</p>
               <app-billing-table [rows]="d.lines" [columns]="lineColumns" rowTestId="slip-line" />
               <p>Taxable {{ d.invoice['taxableAmount'] }} · tax {{ d.invoice['taxAmount'] }} · total {{ d.invoice['totalAmount'] }} {{ d.invoice['currency'] }}</p>
               <p class="actions no-print">
@@ -215,7 +224,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
       } @else {
         <app-billing-table [rows]="statement()" [columns]="statementColumns" rowTestId="statement-row" />
       }
-      <p>Balance <strong data-testid="statement-balance">{{ balance() }}</strong></p>
+      <p>Balance <strong><app-money data-testid="statement-balance" [value]="balance()" /></strong></p>
       @if (session.can('CLIENT_BILLING_RUN')) {
         <h3>Record a payment</h3>
         <form class="inline" (ngSubmit)="pay()" data-testid="record-payment">
@@ -234,10 +243,10 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
       <h2>Ageing</h2>
       @if (ageing(); as a) {
         <dl>
-          <div><dt>Outstanding</dt><dd data-testid="ageing-outstanding">{{ a.outstanding }} {{ a.currency }}</dd></div>
-          <div><dt>Unapplied credit</dt><dd>{{ a.unappliedCredit }}</dd></div>
+          <div><dt>Outstanding</dt><dd><app-money data-testid="ageing-outstanding" [value]="a.outstanding" [currency]="a.currency" /></dd></div>
+          <div><dt>Unapplied credit</dt><dd><app-money [value]="a.unappliedCredit" /></dd></div>
           @for (b of buckets; track b) {
-            <div><dt>{{ b }} days</dt><dd [attr.data-testid]="'ageing-' + b">{{ a.buckets[b] }}</dd></div>
+            <div><dt>{{ b }} days</dt><dd><app-money [attr.data-testid]="'ageing-' + b" [value]="a.buckets[b]" /></dd></div>
           }
         </dl>
       }
