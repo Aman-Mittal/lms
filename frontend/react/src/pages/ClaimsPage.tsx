@@ -22,6 +22,7 @@ import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { RESOURCES } from './resources';
 import { PageHeader } from './PageHeader';
+import { Cell } from './Cell';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
 
@@ -74,7 +75,7 @@ export function ClaimsPage() {
                     onClick={() => setSelectedId(row.id)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { setSelectedId(row.id); } }}
                   >
-                    {resource.columns.map((c) => <td key={c.field}>{row[c.field]}</td>)}
+                    {resource.columns.map((c) => <td key={c.field}><Cell field={c.field} value={row[c.field]} /></td>)}
                   </tr>
                 ))}
               </tbody>

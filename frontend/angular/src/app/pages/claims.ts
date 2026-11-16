@@ -23,6 +23,7 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
+import { Cell } from './cell';
 
 /** The panel beside the list: one claim, what may be done to it, and its slip. */
 @Component({
@@ -121,7 +122,7 @@ export class ClaimPanel {
 /** Claims: the list, a form to raise one, and a panel to decide and print it. */
 @Component({
   selector: 'app-claims',
-  imports: [FormsModule, ClaimPanel, EntityPicker, PageHeader],
+  imports: [FormsModule, ClaimPanel, EntityPicker, PageHeader, Cell],
   template: `
     <div [class.with-panel]="selected()">
       <div class="list">
@@ -142,7 +143,7 @@ export class ClaimPanel {
               @for (row of rows(); track row['id']) {
                 <tr data-testid="row" tabindex="0" [class.selected]="row['id'] === selectedId()"
                     (click)="selectedId.set(row['id'])" (keydown.enter)="selectedId.set(row['id'])">
-                  @for (c of columns; track c.field) { <td>{{ row[c.field] }}</td> }
+                  @for (c of columns; track c.field) { <td><app-cell [field]="c.field" [value]="row[c.field]" /></td> }
                 </tr>
               }
             </tbody>
