@@ -16,19 +16,24 @@
 
 import { useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { PARTNER_TYPES, type PartnerType } from '../gateway/lmsGateway';
+import { PARTNER_TYPES, type MasterKind, type PartnerType } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RecordPanel } from './RecordPanel';
 import { RESOURCES } from './resources';
 import { PageHeader } from './PageHeader';
 import { Cell } from './Cell';
+import { MasterDataForm } from './MasterDataForm';
+import { CREATE_PERMISSION, KIND_LABEL, STATUS_OPTIONS } from './masterDataFields';
 import { isDateColumn, isNumericColumn } from '../../../shared/format';
 
 export function ListPage() {
   const { resource: key } = useParams(); // the :resource part of the URL
   const resource = RESOURCES.find((r) => r.key === key);
-  const { auth, gateway } = useSession();
+  const { auth, gateway, can } = useSession();
+  const kind: MasterKind | null = resource && resource.key in KIND_LABEL ? (resource.key as MasterKind) : null;
+  const [status, setStatus] = useState('');
+  const [creating, setCreating] = useState(false);
 
   // Bumping this number makes useLoad fetch again (e.g. after registering).
   const [reload, setReload] = useState(0);
@@ -37,8 +42,8 @@ export function ListPage() {
 
   // The effect also re-runs when the route changes, because `key` is in here.
   const { data, error, loading } = useLoad(
-    () => (resource ? gateway.list(resource.key) : Promise.resolve([])),
-    `${key}:${reload}`,
+    () => (resource ? gateway.list(resource.key, kind ? { status } : undefined) : Promise.resolve([])),
+    `${key}:${reload}:${status}`,
   );
 
   if (!resource) {
@@ -59,9 +64,26 @@ export function ListPage() {
   const selected = rows.find((row) => row.id === selectedId) ?? null;
 
   return (
-    <div className={selected ? 'with-panel' : undefined}>
+    <div className={selected || creating ? 'with-panel' : undefined}>
       <div className="list">
-        <PageHeader title={resource.title} />
+        <PageHeader title={resource.title}>
+          {kind && can(CREATE_PERMISSION[kind]) && auth?.orgUnitId && (
+            <button type="button" data-testid="new-record" onClick={() => { setSelectedId(null); setCreating(true); }}>
+              New {KIND_LABEL[kind]}
+            </button>
+          )}
+        </PageHeader>
+        {kind && (
+          <div className="field field--inline">
+            <label htmlFor="status-filter">Status</label>
+            <select id="status-filter" data-testid="status-filter" value={status}
+              onChange={(e) => { setStatus(e.target.value); setSelectedId(null); }}>
+              <option value="">Active</option>
+              <option value="ALL">All</option>
+              {STATUS_OPTIONS[kind].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
         <input
           type="search" aria-label="Search" placeholder="Search" data-testid="search"
           value={query} onChange={(e) => setQuery(e.target.value)}
@@ -81,9 +103,9 @@ export function ListPage() {
                 </tr>
               ) : visible.map((row) => (
                 <tr
-                  key={row.id} data-testid="row" tabIndex={0}
+                  key={row.id} data-testid="row" data-id={row.id} tabIndex={0}
                   className={row.id === selectedId ? 'selected' : undefined}
-                  onClick={() => setSelectedId(row.id)}
+                  onClick={() => { setCreating(false); setSelectedId(row.id); }}
                   onKeyDown={(e) => { if (e.key === 'Enter') { setSelectedId(row.id); } }}
                 >
                   {resource.columns.map((c) => (
@@ -107,9 +129,13 @@ export function ListPage() {
         * different record as a different panel, so a half-typed form is never
         * carried from one record to the next.
         */}
-      {selected && (
+      {creating && kind && auth?.orgUnitId && (
+        <MasterDataForm key="new" kind={kind} orgUnitId={auth.orgUnitId} onCancel={() => setCreating(false)}
+          onSaved={() => { setCreating(false); setReload((n) => n + 1); }} />
+      )}
+      {selected && !creating && (
         <RecordPanel key={selected.id} resource={resource} row={selected}
-          onClose={() => setSelectedId(null)} />
+          onClose={() => setSelectedId(null)} onChanged={() => setReload((n) => n + 1)} />
       )}
     </div>
   );

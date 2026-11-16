@@ -18,14 +18,15 @@ import {
   AllocationRulesApi, AuthenticationApi, ControlTowerApi, Configuration, CustomFieldsApi, DeliveryAndClaimsApi,
   DriversApi, EventDeadLetterApi, LTLRatingApi, OrdersApi, MilkRunsApi, MultimodalApi, PartnersApi, PlanningApi,
   PublicTrackingApi, SettlementApi, TerminalsApi, SourcingApi, TelematicsApi, TrackingLinksApi, TripsApi,
-  VehiclesApi, WebhooksApi, SettingsApi, DemoDataApi, ApprovalsApi, ClientBillingApi, WarehouseApi,
+  VehiclesApi, WebhooksApi, SettingsApi, DemoDataApi, ApprovalsApi, ClientBillingApi, WarehouseApi, ListTerminalsStatusEnum,
 } from '../api';
 import { API_URL } from '../config';
 import { GEOMETRY_TTL_MS, cacheGet, cachePut, cacheTouch, clientCacheEnabled, isFresh } from '../client-cache';
-import type { LmsGateway, ResourceKey, Row } from './lmsGateway';
+import type { ListFilter, LmsGateway, ResourceKey, Row } from './lmsGateway';
 import { GatewayDeps, text } from './gatewayShared';
 import { adminGateway, warehouseVerbs } from './gatewayWarehouseAdmin';
 import { clientBillingVerbs } from './gatewayClientBilling';
+import { masterDataVerbs } from './gatewayMasterData';
 import { creditVerbs, gateVerbs } from './gatewayCreditGate';
 import { deliveryVerbs } from './gatewayDelivery';
 import { enquiryVerbs } from './gatewayEnquiries';
@@ -108,19 +109,19 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
       approvedAmount: text(c.approvedAmount), description: text(c.description),
       resolutionNote: text(c.resolutionNote) }));
 
-  const listers: Record<ResourceKey, () => Promise<Row[]>> = {
-    partners: async () => (await partners.listPartners({ limit: displayPreferences().pageSize })).items.map((p) => ({
+  const listers: Record<ResourceKey, (filter?: ListFilter) => Promise<Row[]>> = {
+    partners: async (f) => (await partners.listPartners({ limit: displayPreferences().pageSize, status: f?.status || undefined })).items.map((p) => ({
       id: text(p.id), code: text(p.code), legalName: text(p.legalName),
       partnerType: text(p.partnerType), status: text(p.status) })),
-    vehicles: async () => (await vehicles.listVehicles({ limit: displayPreferences().pageSize })).items.map((v) => ({
+    vehicles: async (f) => (await vehicles.listVehicles({ limit: displayPreferences().pageSize, status: f?.status || undefined })).items.map((v) => ({
       id: text(v.id), registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType),
       status: text(v.status), payloadCapacityKg: text(v.payloadCapacityKg) })),
-    drivers: async () => (await drivers.listDrivers({ limit: displayPreferences().pageSize })).items.map((d) => ({
+    drivers: async (f) => (await drivers.listDrivers({ limit: displayPreferences().pageSize, status: f?.status || undefined })).items.map((d) => ({
       id: text(d.id), fullName: text(d.fullName), licenceNo: text(d.licenceNo),
       licenceExpiresOn: text(d.licenceExpiresOn), status: text(d.status) })),
-    terminals: async () => (await terminals.listTerminals({ limit: displayPreferences().pageSize })).items.map((t) => ({
+    terminals: async (f) => (await terminals.listTerminals({ limit: displayPreferences().pageSize, status: (f?.status || undefined) as ListTerminalsStatusEnum | undefined })).items.map((t) => ({
       id: text(t.id), code: text(t.code), name: text(t.name),
-      functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount) })),
+      functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount), status: text(t.status) })),
     orders: async () => (await orders.listOrders({ limit: displayPreferences().pageSize })).items.map((o) => ({
       id: text(o.id), orderNo: text(o.orderNo), status: text(o.status),
       customerName: text(o.customerName), originTerminalCode: text(o.originTerminalCode) })),
@@ -154,6 +155,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...enquiryVerbs(config),
     ...ewayVerbs(config),
     ...clientBillingVerbs(deps),
+    ...masterDataVerbs(deps),
 
     // Warehouse operations
     ...warehouseVerbs(new WarehouseApi(config), terminals),
