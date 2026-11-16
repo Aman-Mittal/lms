@@ -19,6 +19,7 @@ import { PARKED_STATUSES, type ParkedFilter, type ParkedStatus } from '../gatewa
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
+import { PageHeader } from './PageHeader';
 
 /**
  * Events whose listener failed on every retry and were parked. An operator
@@ -43,7 +44,7 @@ export function ParkedEvents() {
 
   return (
     <>
-      <h1>Parked events</h1>
+      <PageHeader title="Parked events" />
       <p className="muted">Events whose listener kept failing after every retry. Replay one once its cause is fixed.</p>
       <form className="inline" onSubmit={apply} data-testid="parked-filter">
         <select aria-label="Status" data-testid="parked-status" value={status}

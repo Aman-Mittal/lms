@@ -20,6 +20,7 @@ import {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { PageHeader } from './PageHeader';
 
 const KIND_LABEL: Record<CustomFieldKind, string> = {
   PARTNER: 'Partners', VEHICLE: 'Vehicles', DRIVER: 'Drivers', TERMINAL: 'Terminals',
@@ -49,7 +50,7 @@ export function FieldsSettings() {
 
   return (
     <>
-      <h1>Custom fields</h1>
+      <PageHeader title="Custom fields" />
       <p className="muted">Fields your company tracks on its own records. Retiring a field keeps what was recorded under it.</p>
       <label>
         Record kind

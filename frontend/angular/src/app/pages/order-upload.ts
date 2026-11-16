@@ -20,6 +20,7 @@ import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import { UploadOutcome } from '../gateway/enquiry-types';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { PageHeader } from './page-header';
 
 /**
  * Orders from a spreadsheet: choose a customer and a CSV or XLSX file, and see what became of every row.
@@ -28,9 +29,9 @@ import { EntityPicker } from './entity-picker';
  */
 @Component({
   selector: 'app-order-upload',
-  imports: [FormsModule, EntityPicker],
+  imports: [FormsModule, EntityPicker, PageHeader],
   template: `
-    <h1>Bulk order upload</h1>
+    <app-page-header title="Bulk order upload" />
     <p class="muted">
       One row is one order line. Columns are the customer's own where a column mapping is set, else
       order_ref, origin, destination, pickup_date, delivery_date, load_type, material_code, material, quantity,

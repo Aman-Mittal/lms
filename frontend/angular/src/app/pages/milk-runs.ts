@@ -18,13 +18,14 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { LmsGateway, MappedDetail, Row } from '../gateway/lms-gateway';
 import { MapView } from './map-view';
 import { RowTable } from './row-table';
+import { PageHeader } from './page-header';
 
 /** Milk-run routes, one route's circuit on the map, and the runs generated from it. */
 @Component({
   selector: 'app-milk-runs',
-  imports: [MapView, RowTable],
+  imports: [MapView, RowTable, PageHeader],
   template: `
-    <h1>Milk runs</h1>
+    <app-page-header title="Milk runs" />
     <p class="muted">Scheduled pickup circuits: from the plant, round the suppliers in order, and back.</p>
     @if (loading()) { <p class="muted">Loading…</p> }
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }

@@ -86,8 +86,13 @@ test.describe('moving around', () => {
   test('the layout fits a phone: nothing makes the page scroll sideways', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await signIn(page);
+    // On a phone the sidebar is a drawer: open it from the menu button, and it closes again once a link is followed.
+    await expect(page.getByTestId('nav-partners')).toBeHidden();
+    await page.getByTestId('nav-toggle').click();
+    await page.getByTestId('nav-toggle-master-data').click();
     await page.getByTestId('nav-partners').click();
     await expect(page.getByRole('heading', { name: 'Partners', level: 1 })).toBeVisible();
+    await expect(page.getByTestId('sidebar')).toBeHidden();
 
     const overflow = await page.evaluate(() => {
       const root = document.scrollingElement!;

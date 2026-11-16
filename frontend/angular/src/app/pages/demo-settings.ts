@@ -19,16 +19,17 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DemoResetOutcome, LmsGateway } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { PageHeader } from './page-header';
 
 /** Puts the demo back to its seeded state. Two clicks on purpose: the first only asks. */
 @Component({
   selector: 'app-demo-settings',
-  imports: [FormsModule],
+  imports: [FormsModule, PageHeader],
   template: `
     @if (!session.can('DEMO_RESET')) {
       <p class="muted" data-testid="demo-reset-forbidden">You cannot reset the demo.</p>
     } @else {
-      <h1>Demo data</h1>
+      <app-page-header title="Demo data" />
       <p class="muted">
         Deletes everything in the demo -- orders, trips, partners, custom fields, users -- and seeds it
         again: one administrator with the same password. Anything you built here is lost.
