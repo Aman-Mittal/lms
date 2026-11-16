@@ -63,6 +63,12 @@ export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 
 /** One table row, every cell already formatted for display. `id` is always present. */
 export type Row = Record<string, string>;
+/** What a list can be narrowed by; an empty status is the server's default, the active records, and ALL is every one. */
+export interface ListFilter { status?: string }
+export type MasterKind = 'partners' | 'vehicles' | 'drivers' | 'terminals';
+export type MasterValues = Record<string, string | boolean>;
+export interface MasterRecord { id: string; version: number; values: Record<string, string | boolean> }
+export type MasterSwitch = 'deactivate' | 'reactivate' | 'blacklist';
 
 export const PARTNER_TYPES = ['CUSTOMER', 'VENDOR', 'BROKER', 'CONSIGNEE'] as const;
 export type PartnerType = (typeof PARTNER_TYPES)[number];
@@ -856,7 +862,13 @@ export interface LmsGateway {
    * `confirm` is the demo tenant's code, typed by the person resetting it.
    */
   resetDemoData(confirm: string): Promise<DemoResetOutcome>;
-  list(resource: ResourceKey): Promise<Row[]>;
+  list(resource: ResourceKey, filter?: ListFilter): Promise<Row[]>;
+  /** One master-data record read fresh, as the form's strings, with the version to send back as If-Match. */
+  masterRecord(kind: MasterKind, id: string): Promise<MasterRecord>;
+  /** Creates (id null) or edits (id and the version read) a partner, vehicle, driver or terminal; returns its id. */
+  saveMasterRecord(kind: MasterKind, orgUnitId: string, id: string | null, values: MasterValues, version?: number): Promise<string>;
+  /** Switches a record off or on, or blacklists a partner, with a reason. */
+  switchMasterRecord(kind: MasterKind, id: string, action: MasterSwitch, reason: string, version: number): Promise<void>;
   registerPartner(orgUnitId: string, draft: PartnerDraft): Promise<void>;
 
   /** Every definition of a kind, retired ones included, or of every kind. */
