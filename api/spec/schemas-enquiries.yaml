@@ -1,0 +1,196 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A fragment of the API contract, spliced into api/openapi.yaml by the
+# build -- see that file. $refs are relative to the assembled document.
+
+EnquiryStatus:
+  type: string
+  enum: [OPEN, WON, PARTIAL, LOST, CONVERTED, CANCELLED]
+  description: |
+    OPEN while any line is undecided. Once every line is decided: WON (all won
+    in full), PARTIAL (some won, in part or in full) or LOST (none won).
+    CONVERTED once its won lines became an order; CANCELLED when it was
+    cancelled, or its deadline passed with nothing won.
+
+EnquiryLineStatus:
+  type: string
+  enum: [OPEN, WON, PARTIAL, LOST, CANCELLED]
+  description: |
+    OPEN until decided. WON is the whole quantity; PARTIAL a part of it
+    (`wonQuantity`); LOST carries a reason; CANCELLED is a line that was still
+    open when the enquiry was cancelled or its deadline passed.
+
+EnquiryLineOutcome:
+  type: string
+  enum: [WON, LOST, PARTIAL]
+
+QuoteStatus:
+  type: string
+  enum: [ISSUED, SUPERSEDED, REVOKED]
+  description: ISSUED is the one the customer holds; a revision supersedes it; revoked is withdrawn.
+
+EnquiryQuote:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    lineId: { type: string, format: uuid }
+    revision: { type: integer, description: "1 for the first quote on the line; a revision is the next number." }
+    amount: { type: number }
+    currency: { type: string }
+    validUntil: { type: string, format: date-time }
+    note: { type: string }
+    status: { $ref: "#/components/schemas/QuoteStatus" }
+    revokedAt: { type: string, format: date-time }
+    revokeReason: { type: string }
+    createdAt: { type: string, format: date-time }
+  required: [id, lineId, revision, amount, currency, validUntil, status, createdAt]
+
+EnquiryLine:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    lineNo: { type: integer }
+    originTerminalId: { type: string, format: uuid }
+    originCode: { type: string }
+    destinationTerminalId: { type: string, format: uuid }
+    destinationCode: { type: string }
+    loadType: { type: string, description: The load or vehicle type, upper case. }
+    material: { type: string }
+    quantity: { type: number }
+    uom: { type: string }
+    weightKg: { type: number }
+    wantedPickupOn: { type: string, format: date }
+    wantedDeliveryOn: { type: string, format: date }
+    status: { $ref: "#/components/schemas/EnquiryLineStatus" }
+    wonQuantity: { type: number, description: Set for WON and PARTIAL lines. }
+    lostReason: { type: string }
+    outcomeAt: { type: string, format: date-time }
+    suggestedContractCode: { type: string, description: The customer's contract the suggested rate comes from. }
+    suggestedLaneCode: { type: string }
+    suggestedRateBasis: { type: string, description: "PER_KG, PER_TONNE or PER_TRIP." }
+    suggestedRate: { type: number }
+    suggestedAmount: { type: number, description: The lane's price for the line's weight; absent when no weight is known. }
+    currency: { type: string }
+    quotes:
+      type: array
+      description: Every revision of the quotes made on the line, oldest first. Empty in a listing.
+      items: { $ref: "#/components/schemas/EnquiryQuote" }
+  required: [id, lineNo, originTerminalId, destinationTerminalId, quantity, uom, status, currency, quotes]
+
+Enquiry:
+  type: object
+  properties:
+    id: { type: string, format: uuid }
+    enquiryNo: { type: string }
+    status: { $ref: "#/components/schemas/EnquiryStatus" }
+    orgUnitId: { type: string, format: uuid }
+    customerPartnerId: { type: string, format: uuid }
+    customerName: { type: string }
+    reference: { type: string, description: The customer's own reference. }
+    notes: { type: string }
+    deadlineAt:
+      type: string
+      format: date-time
+      description: Fixed when the enquiry was created, from the tenant's policy. Never moves.
+    cancelReason: { type: string }
+    cancelledAt: { type: string, format: date-time }
+    orderId: { type: string, format: uuid, description: The draft order the won lines became. }
+    orderNo: { type: string }
+    convertedAt: { type: string, format: date-time }
+    lineCount: { type: integer }
+    wonLineCount: { type: integer }
+    version: { type: integer, format: int64, description: The `ETag`; sent back in `If-Match`. }
+    createdAt: { type: string, format: date-time }
+    updatedAt: { type: string, format: date-time }
+    lines:
+      type: array
+      description: The lines, with their quotes. Empty in a listing, which carries the counts.
+      items: { $ref: "#/components/schemas/EnquiryLine" }
+  required: [id, enquiryNo, status, orgUnitId, customerPartnerId, deadlineAt, lineCount, wonLineCount, createdAt, lines]
+
+EnquirySlice:
+  type: object
+  properties:
+    items:
+      type: array
+      items: { $ref: "#/components/schemas/Enquiry" }
+    nextCursor: { type: string, description: Pass as `cursor` for the next page. Null on the last. }
+    hasMore: { type: boolean }
+  required: [items, hasMore]
+
+EnquiryLineRequest:
+  type: object
+  properties:
+    originTerminalId: { type: string, format: uuid }
+    destinationTerminalId: { type: string, format: uuid }
+    loadType: { type: string, maxLength: 60, description: The load or vehicle type; checked against the customer's contract for a rate. }
+    material: { type: string, maxLength: 200 }
+    quantity: { type: number, exclusiveMinimum: 0 }
+    uom: { type: string, maxLength: 20 }
+    weightKg:
+      type: number
+      exclusiveMinimum: 0
+      description: Needed to price by weight, and to weigh the order a won line becomes; taken from the quantity when the unit is kilograms.
+    wantedPickupOn: { type: string, format: date, description: The day the contract is read for, else today. }
+    wantedDeliveryOn: { type: string, format: date }
+  required: [originTerminalId, destinationTerminalId, quantity, uom]
+
+CreateEnquiryRequest:
+  type: object
+  properties:
+    orgUnitId: { type: string, format: uuid }
+    customerPartnerId: { type: string, format: uuid }
+    reference: { type: string, maxLength: 120 }
+    notes: { type: string, maxLength: 1000 }
+    lines:
+      type: array
+      minItems: 1
+      maxItems: 100
+      items: { $ref: "#/components/schemas/EnquiryLineRequest" }
+  required: [orgUnitId, customerPartnerId, lines]
+
+EnquiryQuoteRequest:
+  type: object
+  properties:
+    amount: { type: number, exclusiveMinimum: 0 }
+    validUntil: { type: string, format: date-time, description: "A moment in the future; omitted, the quote holds for the tenant's validity policy." }
+    note: { type: string, maxLength: 500 }
+  required: [amount]
+
+EnquiryReasonRequest:
+  type: object
+  properties:
+    reason: { type: string, maxLength: 500 }
+
+EnquiryOutcomeRequest:
+  type: object
+  properties:
+    outcome: { $ref: "#/components/schemas/EnquiryLineOutcome" }
+    wonQuantity: { type: number, exclusiveMinimum: 0, description: Required for PARTIAL, above zero and below the line's quantity. }
+    reason: { type: string, maxLength: 500, description: Required for LOST. }
+  required: [outcome]
+
+CancelEnquiryRequest:
+  type: object
+  properties:
+    reason: { type: string, minLength: 1, maxLength: 500 }
+  required: [reason]
+
+EnquiryConversion:
+  type: object
+  properties:
+    orderId: { type: string, format: uuid }
+    alreadyConverted: { type: boolean, description: True when the order existed before this call. }
+  required: [orderId, alreadyConverted]

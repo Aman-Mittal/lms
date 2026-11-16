@@ -100,6 +100,38 @@ class OrderContractResolver implements OrderContractPort {
                 + contract.code() + " does not allow direct orders)");
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<RateSuggestion> suggestRate(RateQuery query) {
+        UUID tenantId = TenantContext.requireTenantId();
+        Optional<ClientContract> found = contracts.findInForceOn(tenantId, query.customerPartnerId(),
+                query.onDate());
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+        ClientContract contract = found.get();
+        try {
+            LaneMatching.requireLoadTypeAllowed(contract.allowedLoadTypes(), query.loadType());
+        } catch (BusinessRuleViolationException notCovered) {
+            return Optional.empty();
+        }
+        Map<UUID, String> zones = zonesOf(List.of(query.originTerminalId(), query.destinationTerminalId()));
+        LaneMatching.Outcome outcome = LaneMatching.match(laneStore.lanesOf(contract.id()),
+                new LaneMatching.Order(site(query.originTerminalId(), zones), null,
+                        ContractLane.normaliseLoadType(query.loadType()),
+                        List.of(new LaneMatching.Leg(site(query.destinationTerminalId(), zones), null))));
+        if (!outcome.matched()) {
+            return Optional.empty();
+        }
+        ContractLane lane = outcome.lane();
+        if (query.weightKg() == null) {
+            return lane.rate() == null ? Optional.empty() : Optional.of(new RateSuggestion(contract.id(),
+                    contract.code(), lane.laneCode(), lane.rateBasis().name(), lane.rate(), null));
+        }
+        return lane.rate(query.weightKg()).map(r -> new RateSuggestion(contract.id(), contract.code(),
+                lane.laneCode(), r.rateBasis().name(), r.rate(), r.amount()));
+    }
+
     private static Resolution answer(ClientContract contract, ContractLane lane) {
         return new Resolution(contract.id(), contract.familyKey(), contract.code(),
                 lane == null ? null : lane.id(), lane == null ? null : lane.laneCode(),
