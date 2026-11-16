@@ -76,6 +76,13 @@ spring:
     virtual:
       enabled: true
 
+  servlet:
+    multipart:
+      # An order file is capped at 2 MB by IntakeFileService, which answers with a named
+      # problem; this limit only keeps the container from buffering something far larger.
+      max-file-size: 4MB
+      max-request-size: 4MB
+
   modulith:
     events:
       jdbc:

@@ -43,6 +43,15 @@
  * does not allow, is refused by name unless the contract allows direct orders.
  * Its promised transit days are the lane's, else the distance between its
  * origin and destinations over the {@code order.transit.kmPerDay} setting.
+ *
+ * <p>The sales funnel in front of an order (V62, issue #229) lives here too:
+ * an enquiry with lines, a rate suggested from the customer's contract lanes
+ * through {@code OrderContractPort.suggestRate}, quotes and outcomes per line, a
+ * deadline fixed at creation and closed by a tenant sweep, and idempotent
+ * conversion of the won lines to a draft order through this module's own raise
+ * and add-line commands. Bulk intake (a batch with a key per item, or a CSV or
+ * XLSX file read into one) goes through the same raise, add-line and validate
+ * commands, an item at a time.
  */
 @org.springframework.modulith.ApplicationModule(
         displayName = "Order Management",

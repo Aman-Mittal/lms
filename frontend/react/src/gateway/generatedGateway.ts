@@ -28,6 +28,7 @@ import { adminGateway, warehouseVerbs } from './gatewayWarehouseAdmin';
 import { clientBillingVerbs } from './gatewayClientBilling';
 import { creditVerbs, gateVerbs } from './gatewayCreditGate';
 import { deliveryVerbs } from './gatewayDelivery';
+import { enquiryVerbs } from './gatewayEnquiries';
 import { moneyVerbs, numberingVerbs } from './gatewayMoney';
 import { networkVerbs } from './gatewayNetwork';
 import { orderVerbs } from './gatewayOrders';
@@ -148,6 +149,8 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...deliveryVerbs(deps),
     ...networkVerbs(deps),
     ...orderVerbs(deps),
+    // Enquiries and order file upload
+    ...enquiryVerbs(config),
     ...clientBillingVerbs(deps),
 
     // Warehouse operations

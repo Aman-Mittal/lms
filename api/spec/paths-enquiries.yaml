@@ -1,0 +1,299 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/enquiries:
+  get:
+    tags: [Enquiries]
+    operationId: listEnquiries
+    summary: The enquiry desk, newest first
+    description: |
+      Keyset-paged on creation time. `q` matches the number or the customer's
+      reference. A customer-portal caller sees only that customer's enquiries.
+    parameters:
+      - $ref: "#/components/parameters/status"
+      - name: customerId
+        in: query
+        required: false
+        schema: { type: string, format: uuid }
+      - $ref: "#/components/parameters/q"
+      - $ref: "#/components/parameters/cursor"
+      - $ref: "#/components/parameters/limit"
+    responses:
+      "200":
+        description: One page; the lines are not loaded, the counts are.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnquirySlice" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [Enquiries]
+    operationId: createEnquiry
+    summary: Open an enquiry
+    description: |
+      Requires `ORDER_CREATE` in the unit. Numbered `ENQ-<year>-<6 digits>`.
+      The response deadline is fixed now from `order.enquiry.responseDeadlineHours`
+      resolved for the unit and the customer; it is stored and never moves.
+      Each line is given the rate the customer's contract lanes suggest, when
+      a contract is in force on the wanted pickup day and a lane serves the
+      journey and load type. Audited (`ENQUIRY_CREATED`).
+    parameters:
+      - $ref: "#/components/parameters/idempotencyKey"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateEnquiryRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/enquiries/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the enquiry.
+  get:
+    tags: [Enquiries]
+    operationId: getEnquiry
+    summary: One enquiry with its lines, suggested rates and quotes
+    description: The `ETag` is the version every change sends back in `If-Match`.
+    responses:
+      "200":
+        description: The enquiry.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Enquiry" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "404": { $ref: "#/components/responses/NotFound" }
+
+/api/v1/enquiries/{id}/rate-discovery:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Enquiries]
+    operationId: discoverEnquiryRates
+    summary: Look for a contract rate again on every open line
+    description: |
+      Requires `ORDER_UPDATE`, `If-Match`, an OPEN enquiry. For a contract or
+      lane that changed since the enquiry was made. Audited
+      (`ENQUIRY_RATES_DISCOVERED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/enquiries/{id}/lines/{lineId}/quote:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    - name: lineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Enquiries]
+    operationId: issueEnquiryQuote
+    summary: Issue a quote on an open line
+    description: |
+      Requires `ORDER_UPDATE`, `If-Match`. A line holds one live quote
+      (`enquiry-quote-exists` otherwise: revise it). Holds until `validUntil`,
+      else for `order.enquiry.quoteValidityHours`. Audited
+      (`ENQUIRY_QUOTE_ISSUED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EnquiryQuoteRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  put:
+    tags: [Enquiries]
+    operationId: reviseEnquiryQuote
+    summary: Revise the live quote on an open line
+    description: |
+      Requires `ORDER_UPDATE`, `If-Match`. A new revision replaces the live
+      quote, which is kept as SUPERSEDED (`enquiry-quote-missing` when there is
+      none). Audited (`ENQUIRY_QUOTE_REVISED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EnquiryQuoteRequest" }
+    responses:
+      "200":
+        description: The new revision.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdResponse" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/enquiries/{id}/lines/{lineId}/quote/revocation:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    - name: lineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Enquiries]
+    operationId: revokeEnquiryQuote
+    summary: Withdraw the live quote on an open line
+    description: |
+      Requires `ORDER_UPDATE`, `If-Match`. Audited (`ENQUIRY_QUOTE_REVOKED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EnquiryReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/enquiries/{id}/lines/{lineId}/outcome:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    - name: lineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Enquiries]
+    operationId: recordEnquiryOutcome
+    summary: Decide an open line
+    description: |
+      Requires `ORDER_UPDATE`, `If-Match`. WON takes the whole quantity;
+      LOST needs a reason (`enquiry-lost-reason-required`); PARTIAL needs a
+      quantity above zero and below the line's (`enquiry-partial-quantity-invalid`).
+      A decided line is final (`enquiry-line-not-open`). When it was the last
+      open line the enquiry becomes WON, PARTIAL or LOST. Audited
+      (`ENQUIRY_LINE_WON`, `_LOST`, `_PARTIAL`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EnquiryOutcomeRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/enquiries/{id}/cancel:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Enquiries]
+    operationId: cancelEnquiry
+    summary: Cancel an open enquiry
+    description: |
+      Requires `ORDER_UPDATE`, `If-Match`, a reason. Open lines are cancelled
+      and the quotes held are withdrawn. Refused once a line is won
+      (`enquiry-has-won-lines`: won lines are never cancelled). Cancelling a
+      cancelled enquiry changes nothing. Audited (`ENQUIRY_CANCELLED`).
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CancelEnquiryRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/enquiries/{id}/convert:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  post:
+    tags: [Enquiries]
+    operationId: convertEnquiry
+    summary: Turn the won lines into a draft order
+    description: |
+      Requires `ORDER_CREATE` and `ORDER_UPDATE`. No `If-Match`: the call is
+      idempotent by itself, and a second one answers with the order the first
+      made (`alreadyConverted`). Needs an enquiry whose lines are all decided
+      with some won (`enquiry-not-decided`); the won lines must start at one
+      terminal (`enquiry-origins-differ`). The order goes through the same
+      commands an order typed in does, so its customer, terminals, contract and
+      credit are judged as for any order; its lines are consigned to the customer, and it is left a DRAFT. Audited
+      (`ENQUIRY_CONVERTED`).
+    responses:
+      "200":
+        description: The order, new or existing.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnquiryConversion" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "409": { $ref: "#/components/responses/Conflict" }

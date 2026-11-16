@@ -22,6 +22,8 @@ import { ConsignmentDesk } from './pages/ConsignmentDesk';
 import { Dashboard } from './pages/Dashboard';
 import { DeliveryDesk } from './pages/DeliveryDesk';
 import { PodDesk } from './pages/PodDesk';
+import { EnquiryDeskPage } from './pages/EnquiryDesk';
+import { OrderUpload } from './pages/OrderUpload';
 import { DemoSettings } from './pages/DemoSettings';
 import { FieldsSettings } from './pages/FieldsSettings';
 import { ListPage } from './pages/ListPage';
@@ -90,6 +92,8 @@ export function App() {
           <Route path="settings/webhooks" element={<Webhooks />} />
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="delivery" element={<DeliveryDesk />} />
+          <Route path="enquiries" element={<EnquiryDeskPage />} />
+          <Route path="order-upload" element={<OrderUpload />} />
           <Route path="pod" element={<PodDesk />} />
           <Route path="consignments" element={<ConsignmentDesk />} />
           <Route path="tracking" element={<TrackingLinks />} />

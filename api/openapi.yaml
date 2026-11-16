@@ -92,6 +92,13 @@ tags:
     description: Certificates that have lapsed or are about to.
   - name: Orders
     description: Customer indents and their line items.
+  - name: Enquiries
+    description: |
+      The sales funnel in front of an order: an enquiry with lines, a rate
+      suggested from the customer's contract, quotes, outcomes per line, a
+      fixed response deadline, and conversion of the won lines to a draft order.
+  - name: Order intake
+    description: Orders in bulk, each item with its own idempotency key, and from CSV or XLSX files.
   - name: Planning
     description: Consignment generation and load building.
   - name: LTL rating

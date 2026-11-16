@@ -362,7 +362,7 @@ known document types), `execution.dispatch.weightTolerancePct` and
 `.toleranceAbsolute` (unit, vendor); `finance.manualCharge.approvalThreshold` (decimal, default 10000.00;
 unit, customer, vendor, combination), `finance.payables.paymentTermsDays` (integer, default 30; unit, vendor,
 combination) and `finance.advance.maxPercentOfFreight` (decimal, default 70; unit, vendor, combination), V60;
-`delivery.pod.quantityTolerancePercent` (decimal, default 100), `.feedingRequired`, `.frontDocumentRequired` and
+`order.enquiry.responseDeadlineHours` (integer, default 72; unit, customer) and `.quoteValidityHours` (default 168), and `order.intake.columnMapping` (JSON, field to header; unit, customer), V62; `delivery.pod.quantityTolerancePercent` (decimal, default 100), `.feedingRequired`, `.frontDocumentRequired` and
 `.backDocumentRequired` (booleans, default false; unit, customer, combination), V61; and the calendar, UI and notification
 preferences; `approvals.policy.orderCancellation`, `.podReversal`, `.manualCharge` and
 `.vendorAdvance` (unit,
@@ -591,6 +591,32 @@ webhook facts); `clientbilling` implements the receivable side. Decisions worth 
   payment requests, a fuel-card provider, an e-payment export, editing a manual
   charge (cancel and raise again), a supplementary bill for a vendor with no further
   bill.
+
+### Enquiries and bulk order intake (V62, issue #229)
+
+All in `order`; `OrderContractPort.suggestRate` (client billing answers) is the one new SPI method. Decisions worth knowing:
+
+- **An enquiry** (`enquiry`, `enquiry_line`, `enquiry_quote`) is written under a lock on its header; the header's version is the
+  `If-Match` of the whole (every change bumps it). Statuses: `OPEN` while a line is open, then `WON`, `PARTIAL`, `LOST` by the lines,
+  `CONVERTED` when an order was made, `CANCELLED`. A line is `OPEN`, `WON` (whole quantity), `PARTIAL` (`wonQuantity`), `LOST` (reason)
+  or `CANCELLED`; a decided line is final. A line holds one live quote; a revision supersedes it, a revocation withdraws it.
+  Rights are `ORDER_CREATE` (create, in the unit) and `ORDER_UPDATE` (everything after); reads need only a token, and a portal
+  caller sees its own customer's. Not yet held to an org unit by ABAC after creation.
+- **The deadline is stored at creation** from `order.enquiry.responseDeadlineHours` resolved for the unit and customer, and never
+  moves. `EnquiryDeadlines` (TenantSweep, `@Scheduled` with an initial delay so it runs shortly after start) cancels the open
+  lines of open enquiries past it and withdraws their quotes; won lines are never touched, and an enquiry with a win becomes
+  `WON`/`PARTIAL` by what is left, one with none is `CANCELLED`.
+- **Convert** has no `If-Match` and is idempotent: the header is locked, an enquiry that has an order answers with it. The order is
+  raised and lined through `OrderCommandService` (so contract and credit apply), consigned to the customer, left a DRAFT. The won
+  lines must share one origin (`enquiry-origins-differ`) and be weighable (`enquiry-line-weight-missing`).
+- **Bulk intake** (`/order-intake/batches`, at most 500 items, `bulk-batch-too-large`) runs each item in its own transaction after a
+  per-key advisory lock; `bulk_intake_key` remembers the key, a digest of the item and the order, so a repeat is `DUPLICATE`
+  and other content under the key is `idempotency-key-reused`. A line's consignee is the customer when omitted (the column is
+  `NOT NULL`). **Files** (`/order-intake/files`, 2 MB, 2000 rows) are CSV or XLSX; the XLSX reader is the JDK's own zip and StAX
+  (no spreadsheet library, so nothing new for the licence gate, the native image or the 512 MB budget; a formula reads as its
+  stored value and a date as Excel's serial number). Columns come from `order.intake.columnMapping` over a default; terminals
+  and consignees are named by code; rows with one order reference make one order and a bad row fails its whole order only.
+  Keys are not pruned.
 
 ### Idempotency is required on every state-changing endpoint
 
