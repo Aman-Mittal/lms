@@ -23,6 +23,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
 
 // The map is Leaflet, the console's largest dependency: loaded only when the fleet is shown.
 const MapView = lazy(() => import('./MapView').then((m) => ({ default: m.MapView })));
@@ -50,7 +51,7 @@ function RefusalNote({ refusal }: { refusal: Refusal | null }) {
 
 function Table({ rows, columns, rowTestId }: { rows: Row[]; columns: Array<[string, string]>; rowTestId: string }) {
   return (
-    <table>
+    <div className="table-wrap"><table>
       <thead>
         <tr>{columns.map(([field, header]) => <th key={field}>{header}</th>)}</tr>
       </thead>
@@ -61,7 +62,7 @@ function Table({ rows, columns, rowTestId }: { rows: Row[]; columns: Array<[stri
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -169,7 +170,7 @@ function TicketList({ onOpen, reload }: { onOpen: (id: string) => void; reload: 
               {(tickets.data ?? []).map((t) => (
                 <tr key={t.id} data-testid="ticket-row" tabIndex={0} onClick={() => onOpen(t.id)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { onOpen(t.id); } }}>
-                  <td>{t.ticketNo}</td><td>{t.severity}</td><td>{t.status}</td><td>{t.category}</td>
+                  <td>{t.ticketNo}</td><td><StatusBadge value={t.severity} /></td><td><StatusBadge value={t.status} /></td><td>{t.category}</td>
                   <td>{t.tripNo || t.subjectLabel}</td><td>{t.assigneeName}</td>
                 </tr>
               ))}
@@ -269,8 +270,8 @@ function TicketPanel({ ticketId, onChanged, onClose, onTrip }: TicketPanelProps)
         <button className="link" onClick={onClose} aria-label="Close ticket">Close</button>
       </header>
       <dl className="facts">
-        <div><dt>Status</dt><dd data-testid="ticket-status">{t.status}</dd></div>
-        <div><dt>Severity</dt><dd data-testid="ticket-severity">{t.severity}</dd></div>
+        <div><dt>Status</dt><dd><StatusBadge data-testid="ticket-status" value={t.status} /></dd></div>
+        <div><dt>Severity</dt><dd><StatusBadge data-testid="ticket-severity" value={t.severity} /></dd></div>
         <div><dt>Category</dt><dd>{t.category}</dd></div>
         <div><dt>Source</dt><dd>{t.source}</dd></div>
         <div><dt>About</dt><dd>{t.tripNo || t.subjectLabel}</dd></div>
@@ -462,7 +463,7 @@ function TripPanel({ tripId }: { tripId: string }) {
       {progress && (
         <dl className="facts">
           <div><dt>Trip</dt><dd data-testid="trip-no">{progress.tripNo}</dd></div>
-          <div><dt>Status</dt><dd>{progress.status}</dd></div>
+          <div><dt>Status</dt><dd><StatusBadge value={progress.status} /></dd></div>
           <div><dt>Last fix</dt><dd>{progress.lastFixAt || '—'}</dd></div>
           <div><dt>Done</dt><dd>{progress.completionPct ? `${progress.completionPct} %` : '—'}</dd></div>
           <div><dt>Minutes left</dt><dd>{progress.estimatedMinutesRemaining || '—'}</dd></div>
@@ -533,19 +534,19 @@ function Fleet({ onTrip }: { onTrip: (tripId: string) => void }) {
       {deviations.data && deviations.data.length === 0 ? (
         <p className="muted" data-testid="no-deviations">No trip is off its route.</p>
       ) : (
-        <table>
+        <div className="table-wrap"><table>
           <thead>
             <tr><th>Trip</th><th>Since</th><th>Off by (m)</th><th>Corridor (m)</th><th /></tr>
           </thead>
           <tbody>
             {(deviations.data ?? []).map((d) => (
               <tr key={d.id} data-testid="deviation-row">
-                <td>{d.tripNo}</td><td>{d.detectedAt}</td><td>{d.distanceM}</td><td>{d.corridorM}</td>
+                <td>{d.tripNo}</td><td className="nowrap">{d.detectedAt}</td><td>{d.distanceM}</td><td>{d.corridorM}</td>
                 <td><button className="link" onClick={() => onTrip(d.tripId)}>Open trip</button></td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
       <h3>Positions</h3>
       {positions.error && <p className="error" role="alert">{positions.error}</p>}
