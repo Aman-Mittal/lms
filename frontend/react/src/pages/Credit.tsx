@@ -23,6 +23,8 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable, type RowColumn } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { StatusBadge } from './StatusBadge';
+import { Money } from './Figures';
 
 /** The problem a hard credit limit refuses an action with. */
 export const CREDIT_LIMIT_EXCEEDED = 'credit-limit-exceeded';
@@ -55,12 +57,12 @@ export function CreditPosition({ partnerId, refreshKey }: { partnerId: string; r
         <>
           <dl>
             <div><dt>Customer</dt><dd data-testid="credit-partner">{p.partnerCode} · {p.partnerStatus}</dd></div>
-            <div><dt>State</dt><dd data-testid="credit-state">{p.limitState}</dd></div>
-            <div><dt>Credit limit</dt><dd data-testid="credit-limit">{p.creditLimit || 'No limit'}</dd></div>
-            <div><dt>Soft limit</dt><dd data-testid="credit-soft-limit">{p.softLimit || '—'}</dd></div>
+            <div><dt>State</dt><dd><StatusBadge data-testid="credit-state" value={p.limitState} /></dd></div>
+            <div><dt>Credit limit</dt><dd><Money data-testid="credit-limit" value={p.creditLimit} empty="No limit" /></dd></div>
+            <div><dt>Soft limit</dt><dd><Money data-testid="credit-soft-limit" value={p.softLimit} empty="—" /></dd></div>
             <div><dt>Open orders</dt><dd data-testid="credit-open-orders">{p.openOrders} ({p.openOrderCount})</dd></div>
-            <div><dt>Not yet invoiced</dt><dd data-testid="credit-unbilled">{p.unbilledCharges}</dd></div>
-            <div><dt>Unpaid invoices</dt><dd data-testid="credit-outstanding">{p.outstandingInvoices}</dd></div>
+            <div><dt>Not yet invoiced</dt><dd><Money data-testid="credit-unbilled" value={p.unbilledCharges} /></dd></div>
+            <div><dt>Unpaid invoices</dt><dd><Money data-testid="credit-outstanding" value={p.outstandingInvoices} /></dd></div>
             <div><dt>Exposure</dt><dd data-testid="credit-exposure">{p.exposure} {p.currency}</dd></div>
             <div><dt>Headroom</dt><dd data-testid="credit-headroom">{p.headroom || '—'}</dd></div>
           </dl>
@@ -274,15 +276,15 @@ export function CreditLimits() {
       {rows.length === 0 ? (
         <p className="muted" data-testid="credit-queue-empty">Nothing here.</p>
       ) : (
-        <table data-testid="credit-queue">
+        <div className="table-wrap"><table data-testid="credit-queue">
           <thead>
             <tr><th>Partner</th><th>From</th><th>To</th><th>Soft limit</th><th>Reason</th><th>Asked by</th><th>Status</th><th /></tr>
           </thead>
           <tbody>
             {rows.map((c) => (
               <tr key={c.id} data-testid="credit-queue-row" data-id={c.id}>
-                <td>{c.partnerCode}</td><td>{c.previousLimit || '—'}</td><td>{c.requestedLimit}</td>
-                <td>{c.requestedSoftLimit || '—'}</td><td>{c.reason}</td><td>{c.requestedBy}</td><td>{c.status}</td>
+                <td>{c.partnerCode}</td><td className="num"><Money value={c.previousLimit} empty="—" /></td><td className="num"><Money value={c.requestedLimit} /></td>
+                <td className="num"><Money value={c.requestedSoftLimit} empty="—" /></td><td>{c.reason}</td><td className="nowrap">{c.requestedBy}</td><td><StatusBadge value={c.status} /></td>
                 <td>
                   {c.status === 'PENDING' && can('CREDIT_LIMIT_APPROVE') && (
                     <>
@@ -297,7 +299,7 @@ export function CreditLimits() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </>
   );
