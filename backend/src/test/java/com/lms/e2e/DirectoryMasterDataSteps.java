@@ -473,20 +473,20 @@ public class DirectoryMasterDataSteps {
     @Then("the directory lists terminals by category from a cursor and pages them")
     public void terminalListing() {
         TerminalsApi api = world.api(TerminalsApi.class);
-        TerminalSlice hubs = api.listTerminals("HUB", "MDT-POLY-", 1, null);
+        TerminalSlice hubs = api.listTerminals("HUB", null, "MDT-POLY-", 1, null);
         assertThat(hubs.getItems()).extracting(Terminal::getId).containsExactly(polygonTerminal);
-        assertThat(api.listTerminals("CUSTOMER_SITE", "MDT-PT-", 1, null).getItems())
+        assertThat(api.listTerminals("CUSTOMER_SITE", null, "MDT-PT-", 1, null).getItems())
                 .extracting(Terminal::getId).containsExactly(pointTerminal);
-        assertThat(api.listTerminals("HUB", null, 200, null).getItems())
+        assertThat(api.listTerminals("HUB", null, null, 200, null).getItems())
                 .extracting(Terminal::getId).doesNotContain(pointTerminal);
-        assertThat(api.listTerminals("PORT", "MDT-", 200, null).getItems())
+        assertThat(api.listTerminals("PORT", null, "MDT-", 200, null).getItems())
                 .extracting(Terminal::getId).doesNotContain(pointTerminal, polygonTerminal);
 
-        TerminalSlice window = api.listTerminals(null, "MDT-P", 1, null);
+        TerminalSlice window = api.listTerminals(null, null, "MDT-P", 1, null);
         assertThat(window.getItems()).extracting(Terminal::getCode).containsExactly(polygonCode);
         assertThat(window.getHasMore()).isTrue();
         assertThat(window.getNextCursor()).isEqualTo(polygonCode);
-        assertThat(api.listTerminals(null, window.getNextCursor(), 1, null).getItems())
+        assertThat(api.listTerminals(null, null, window.getNextCursor(), 1, null).getItems())
                 .extracting(Terminal::getCode).containsExactly(pointCode);
     }
 
@@ -546,7 +546,7 @@ public class DirectoryMasterDataSteps {
         refusedWith(404, "not-found", () -> ours.getTerminal(theirHub));
         refusedWith(404, "not-found", () -> theirs.getTerminal(polygonTerminal));
         refusedWith(404, "not-found", () -> ours.getTerminal(UUID.randomUUID()));
-        assertThat(theirs.listTerminals(null, null, 200, null).getItems())
+        assertThat(theirs.listTerminals(null, null, null, 200, null).getItems())
                 .extracting(Terminal::getId).contains(theirHub).doesNotContain(polygonTerminal, pointTerminal);
         assertThat(ours.getTerminal(polygonTerminal).getName()).isEqualTo("Hub " + polygonCode);
     }
@@ -555,13 +555,13 @@ public class DirectoryMasterDataSteps {
     public void terminalPermissions() {
         TerminalsApi reader = world.client(cast.reader().getAccessToken(), TerminalsApi.class);
         assertThat(reader.getTerminal(polygonTerminal).getCode()).isEqualTo(polygonCode);
-        assertThat(reader.listTerminals("HUB", "MDT-POLY-", 1, null).getItems())
+        assertThat(reader.listTerminals("HUB", null, "MDT-POLY-", 1, null).getItems())
                 .extracting(Terminal::getId).containsExactly(polygonTerminal);
         refusedWith(403, "access-denied", () -> reader.registerPolygonTerminal(polygon(
                 world.code("MDT-READER"), RegisterPolygonTerminalRequest.CategoryEnum.HUB, 43.10, lon0), null));
 
         TerminalsApi nobody = world.client(cast.nobody().getAccessToken(), TerminalsApi.class);
-        refusedWith(403, "access-denied", () -> nobody.listTerminals(null, null, null, null));
+        refusedWith(403, "access-denied", () -> nobody.listTerminals(null, null, null, null, null));
         refusedWith(403, "access-denied", () -> nobody.getTerminal(polygonTerminal));
     }
 }
