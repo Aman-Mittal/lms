@@ -23,6 +23,7 @@ import {
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
+import { PageHeader } from './page-header';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -90,9 +91,9 @@ interface Refusal {
  */
 @Component({
   selector: 'app-order-desk',
-  imports: [FormsModule, EntityPicker, CreditPositionPanel, CreditOverride],
+  imports: [FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, PageHeader],
   template: `
-    <h1>Order desk</h1>
+    <app-page-header title="Order desk" />
     <p class="muted">
       Raise an order, edit it while it is a draft, and amend it once validated, until consignments
       are cut from it.
