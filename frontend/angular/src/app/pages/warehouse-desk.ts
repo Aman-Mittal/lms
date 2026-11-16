@@ -23,6 +23,8 @@ import { Session } from '../session';
 import { Qr } from './qr';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 type Columns = Array<[string, string]>;
@@ -104,7 +106,7 @@ export class WhTable {
  */
 @Component({
   selector: 'app-warehouse-floor',
-  imports: [FormsModule, WhTable, Qr, EntityPicker],
+  imports: [FormsModule, WhTable, Qr, EntityPicker, StatusBadge, When],
   template: `
     <section data-testid="warehouse-desk">
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -126,7 +128,7 @@ export class WhTable {
           }
           @if (asn(); as a) {
             <section data-testid="asn-panel" aria-label="ASN">
-              <h3>{{ a.header['asnNo'] }} <span class="muted" data-testid="asn-status">{{ a.header['status'] }}</span></h3>
+              <h3>{{ a.header['asnNo'] }} <app-status-badge data-testid="asn-status" [value]="a.header['status']" /></h3>
               <app-wh-table [rows]="a.lines" [columns]="asnLineColumns" rowTestId="asn-line" />
               @if (a.header['status'] === 'EXPECTED' && session.can('WAREHOUSE_OPERATE')) {
                 <form (ngSubmit)="receive()" data-testid="receive-asn">
@@ -234,7 +236,7 @@ export class WhTable {
           }
           @if (order(); as o) {
             <section data-testid="outbound-panel" aria-label="Outbound order">
-              <h3>{{ o.header['orderNo'] }} <span class="muted" data-testid="outbound-status">{{ o.header['status'] }}</span></h3>
+              <h3>{{ o.header['orderNo'] }} <app-status-badge data-testid="outbound-status" [value]="o.header['status']" /></h3>
               <app-wh-table [rows]="o.lines" [columns]="orderLineColumns" rowTestId="outbound-line" />
               <p class="actions">
                 @if (session.can('WAREHOUSE_OPERATE') && (o.header['status'] === 'OPEN' || o.header['status'] === 'BACK_ORDERED')) {
@@ -251,8 +253,8 @@ export class WhTable {
               @if (pickList()) {
                 <section class="slip manifest" data-testid="pick-list" aria-label="Pick list to print">
                   <h3>Pick list {{ o.header['orderNo'] }}</h3>
-                  <p>@if (o.header['shipTo']) { Ship to {{ o.header['shipTo'] }} · } raised {{ o.header['createdAt'] }}</p>
-                  <table>
+                  <p>@if (o.header['shipTo']) { Ship to {{ o.header['shipTo'] }} · } raised {{ (o.header['createdAt']) | when }}</p>
+                  <div class="table-wrap"><table>
                     <thead><tr><th>#</th><th>SKU</th><th>Quantity</th><th>From bins</th><th>Picked</th></tr></thead>
                     <tbody>
                       @for (l of o.lines; track l['lineNo']) {
@@ -262,7 +264,7 @@ export class WhTable {
                         </tr>
                       }
                     </tbody>
-                  </table>
+                  </table></div>
                   <p class="actions no-print">
                     <button data-testid="print-now" (click)="print()">Print</button>
                     <button class="link" (click)="pickList.set(false)">Close</button>
@@ -303,7 +305,7 @@ export class WhTable {
           }
           @if (unit(); as u) {
             <section data-testid="unit-panel" aria-label="Handling unit">
-              <h3>{{ u.header['huNo'] }} <span class="muted" data-testid="unit-status">{{ u.header['status'] }}</span></h3>
+              <h3>{{ u.header['huNo'] }} <app-status-badge data-testid="unit-status" [value]="u.header['status']" /></h3>
               <app-wh-table [rows]="u.lines" [columns]="contentColumns" rowTestId="unit-content" />
               <p><button class="link" data-testid="print-unit-label" (click)="label.set(true)">Print label</button></p>
               @if (label()) {
@@ -353,7 +355,7 @@ export class WhTable {
           }
           @if (wave(); as w) {
             <section data-testid="wave-panel" aria-label="Pick wave">
-              <h3>{{ w.header['waveNo'] }} <span class="muted" data-testid="wave-status">{{ w.header['status'] }}</span></h3>
+              <h3>{{ w.header['waveNo'] }} <app-status-badge data-testid="wave-status" [value]="w.header['status']" /></h3>
               <app-wh-table [rows]="w.lines" [columns]="waveOrderColumns" rowTestId="wave-order" />
               @if (w.header['status'] === 'RELEASED' && session.can('WAREHOUSE_OPERATE')) {
                 <p><button data-testid="pick-wave" (click)="pickWave()">Pick wave</button></p>
