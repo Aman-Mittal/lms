@@ -22,6 +22,8 @@ import {
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
+import { StatusBadge } from './status-badge';
+import { When } from './when';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -45,7 +47,7 @@ function listOf(text: string): string[] {
  */
 @Component({
   selector: 'app-gate-desk',
-  imports: [EntityPicker, PageHeader],
+  imports: [EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Gate desk" />
     <p class="muted">Vehicles at the gate: who is inside, entries and exits, the register and gate passes.</p>
@@ -72,7 +74,7 @@ function listOf(text: string): string[] {
         @if (inside().length === 0) {
           <p class="muted" data-testid="inside-empty">No vehicle is inside.</p>
         } @else {
-          <table data-testid="inside">
+          <div class="table-wrap"><table data-testid="inside">
             <thead>
               <tr><th>Vehicle</th><th>Site</th><th>Purpose</th><th>Driver</th><th>Trip</th><th>Pass</th><th>Entered</th>
                 <th>Inside for</th><th></th></tr>
@@ -82,7 +84,7 @@ function listOf(text: string): string[] {
                 <tr data-testid="inside-row" [attr.data-id]="v.id">
                   <td>{{ v.registrationNo }}</td><td>{{ v.terminalCode }}</td><td>{{ v.purpose }}</td>
                   <td>{{ v.driverName }}</td><td>{{ v.tripNo }}</td><td>{{ v.gatePassNo }}</td>
-                  <td>{{ v.enteredAt }}</td><td>{{ v.dwell }}</td>
+                  <td class="nowrap">{{ (v.enteredAt) | when }}</td><td>{{ v.dwell }}</td>
                   <td>
                     @if (session.can('GATE_REGISTER')) {
                       <button type="button" class="link" data-testid="visit-exit"
@@ -108,7 +110,7 @@ function listOf(text: string): string[] {
                 }
               }
             </tbody>
-          </table>
+          </table></div>
         }
 
         @if (session.can('GATE_REGISTER')) {
@@ -185,7 +187,7 @@ function listOf(text: string): string[] {
         @if (visits().length === 0) {
           <p class="muted" data-testid="register-empty">No visit matches.</p>
         } @else {
-          <table data-testid="register">
+          <div class="table-wrap"><table data-testid="register">
             <thead>
               <tr><th>Vehicle</th><th>Site</th><th>Purpose</th><th>Driver</th><th>Trip</th><th>Pass</th><th>Status</th>
                 <th>Entered</th><th>Left</th><th>Inside for</th><th>Seals in</th><th>Seals out</th></tr>
@@ -194,13 +196,13 @@ function listOf(text: string): string[] {
               @for (v of visits(); track v.id) {
                 <tr data-testid="register-row" [attr.data-id]="v.id">
                   <td>{{ v.registrationNo }}</td><td>{{ v.terminalCode }}</td><td>{{ v.purpose }}</td>
-                  <td>{{ v.driverName }}</td><td>{{ v.tripNo }}</td><td>{{ v.gatePassNo }}</td><td>{{ v.status }}</td>
-                  <td>{{ v.enteredAt }}</td><td>{{ v.exitedAt }}</td><td>{{ v.dwell }}</td>
+                  <td>{{ v.driverName }}</td><td>{{ v.tripNo }}</td><td>{{ v.gatePassNo }}</td><td><app-status-badge [value]="v.status" /></td>
+                  <td class="nowrap">{{ (v.enteredAt) | when }}</td><td class="nowrap">{{ (v.exitedAt) | when }}</td><td>{{ v.dwell }}</td>
                   <td>{{ v.entrySeals }}</td><td>{{ v.exitSeals }}</td>
                 </tr>
               }
             </tbody>
-          </table>
+          </table></div>
         }
         @if (visitsNext()) {
           <button type="button" data-testid="register-more" (click)="moreVisits()">Load more</button>
@@ -254,7 +256,7 @@ function listOf(text: string): string[] {
         @if (passes().length === 0) {
           <p class="muted" data-testid="passes-empty">No pass matches.</p>
         } @else {
-          <table data-testid="passes">
+          <div class="table-wrap"><table data-testid="passes">
             <thead>
               <tr><th>Pass</th><th>Site</th><th>Vehicle</th><th>Trip</th><th>Purpose</th><th>Valid from</th>
                 <th>Valid until</th><th>Status</th><th></th></tr>
@@ -263,9 +265,9 @@ function listOf(text: string): string[] {
               @for (p of passes(); track p.id) {
                 <tr data-testid="pass-row" [attr.data-id]="p.id">
                   <td>{{ p.passNo }}</td><td>{{ p.terminalCode }}</td><td>{{ p.registrationNo }}</td>
-                  <td>{{ p.tripNo }}</td><td>{{ p.purpose }}</td><td>{{ p.validFrom }}</td><td>{{ p.validUntil }}</td>
+                  <td>{{ p.tripNo }}</td><td>{{ p.purpose }}</td><td class="nowrap">{{ (p.validFrom) | when }}</td><td class="nowrap">{{ (p.validUntil) | when }}</td>
                   <td>
-                    <span class="badge" data-testid="pass-status">{{ p.status }}</span>
+                    <app-status-badge data-testid="pass-status" [value]="p.status" />
                     @if (p.expired) { <span class="badge" data-testid="pass-expired">Expired</span> }
                     @if (p.cancelReason) { <span class="muted">{{ p.cancelReason }}</span> }
                   </td>
@@ -290,7 +292,7 @@ function listOf(text: string): string[] {
                 }
               }
             </tbody>
-          </table>
+          </table></div>
         }
         @if (passesNext()) {
           <button type="button" data-testid="passes-more" (click)="morePasses()">Load more</button>
