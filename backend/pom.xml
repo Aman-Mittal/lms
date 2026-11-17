@@ -57,7 +57,7 @@
     <cucumber.version>8.0.4</cucumber.version>
     <license-maven-plugin.version>2.8.0</license-maven-plugin.version>
     <error-prone.version>2.52.0</error-prone.version>
-    <spotless.version>3.10.4</spotless.version>
+    <spotless.version>3.11.0</spotless.version>
     <!--
       Test scope only. The API tests drive the running application through a
       Feign client generated from api/openapi.yaml, so a contract that has
