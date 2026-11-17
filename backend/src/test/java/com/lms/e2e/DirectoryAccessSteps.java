@@ -429,7 +429,7 @@ public class DirectoryAccessSteps {
     @When("the administrator switches the denying rule off")
     public void switchRuleOff() {
         AccessPolicy rule = access().getAccessPolicy(policies.get(0));
-        access().reviseAccessPolicy(policies.get(0), new ReviseAccessPolicyRequest()
+        access().reviseAccessPolicy(String.valueOf(rule.getVersion()), policies.get(0), new ReviseAccessPolicyRequest()
                 .effect(ReviseAccessPolicyRequest.EffectEnum.DENY).description(rule.getDescription())
                 .condition(rule.getCondition()).enabled(false));
     }
@@ -440,7 +440,7 @@ public class DirectoryAccessSteps {
 
         AccessPolicy rule = access().getAccessPolicy(policies.get(0));
         assertThat(rule.getEnabled()).isFalse();
-        access().reviseAccessPolicy(policies.get(0), new ReviseAccessPolicyRequest()
+        access().reviseAccessPolicy(String.valueOf(rule.getVersion()), policies.get(0), new ReviseAccessPolicyRequest()
                 .effect(ReviseAccessPolicyRequest.EffectEnum.DENY).description(rule.getDescription())
                 .condition(rule.getCondition()).enabled(true));
         branchIsRefused(branchSession.getAccessToken());
