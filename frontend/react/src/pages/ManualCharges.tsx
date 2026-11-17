@@ -17,14 +17,18 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   CHARGE_SIDES, CHARGE_SUBJECT_TYPES, type ChargeEntryView, type ChargeSideChoice, type ChargeSubjectType,
-  type ManualChargeView,
+  type ManualChargeView, type PickKind,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { money, problemText } from './moneyProblem';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
+import { EntityPicker } from '../EntityPicker';
 
+/** What the subject picker offers for each kind of subject. */
+const SUBJECT_KIND: Record<ChargeSubjectType, PickKind> = { TRIP: 'trip', CONSIGNMENT: 'consignment', ORDER: 'order' };
 const STATUSES = ['PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CANCELLED'];
 
 /**
@@ -99,7 +103,7 @@ export function ManualCharges() {
     <>
       <PageHeader title="Manual charges" />
       <p className="muted">Charges raised by hand against a trip, consignment or order, billed to the customer or paid to the vendor.</p>
-      {error && <p className="error" role="alert" data-testid="mc-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="mc-error" />}
 
       {can('MANUAL_CHARGE_RECORD') && (
         <form data-testid="mc-form" onSubmit={submit}>
@@ -110,18 +114,18 @@ export function ManualCharges() {
             {catalogue.map((c) => <option key={c.id} value={c.id}>{`${c.code} - ${c.name}`}</option>)}
           </select>
           <select aria-label="Subject type" data-testid="mc-subject-type" value={subjectType}
-            onChange={(e) => setSubjectType(e.target.value as ChargeSubjectType)}>
+            onChange={(e) => { setSubjectType(e.target.value as ChargeSubjectType); setSubject(''); }}>
             {CHARGE_SUBJECT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <input placeholder="Trip, consignment or order id" aria-label="Subject id" data-testid="mc-subject" required
-            value={subject} onChange={(e) => setSubject(e.target.value)} />
+          <EntityPicker kind={SUBJECT_KIND[subjectType]} placeholder="Trip, consignment or order id" ariaLabel="Subject id"
+            testId="mc-subject" required value={subject} onChange={setSubject} />
           <select aria-label="Direction" data-testid="mc-direction" value={direction}
             onChange={(e) => setDirection(e.target.value as ChargeSideChoice | '')}>
             <option value="">Direction (from the charge)</option>
             {CHARGE_SIDES.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
-          <input placeholder="Customer id (optional)" aria-label="Customer id" data-testid="mc-customer"
-            value={customer} onChange={(e) => setCustomer(e.target.value)} />
+          <EntityPicker kind="customer" placeholder="Customer id (optional)" ariaLabel="Customer id" testId="mc-customer"
+            value={customer} onChange={setCustomer} />
           <input type="number" min="0" step="any" placeholder="Quantity" aria-label="Quantity" data-testid="mc-quantity"
             required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           <input type="number" min="0" step="0.01" aria-label="Rate" data-testid="mc-rate"

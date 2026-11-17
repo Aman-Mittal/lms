@@ -24,11 +24,12 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 @Component({
   selector: 'app-tracking-links',
-  imports: [FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Tracking links" />
     <p class="muted">
@@ -38,15 +39,15 @@ import { When } from './when';
       <p class="muted" data-testid="no-rights">You do not have the right to manage tracking links.</p>
     } @else {
       <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-      <form class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
+      <form ngNativeValidate class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
         <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Consignment id" testId="consignment-id" [required]="true"
                            [(value)]="typed" />
         <button type="submit">Look up</button>
       </form>
-      @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
+      @if (loadError()) { <app-error-banner [message]="loadError()" /> }
       @if (consignmentId() && loaded()) {
         <section data-testid="links-panel">
-          <form class="inline" (ngSubmit)="issue()" data-testid="issue-link-form">
+          <form ngNativeValidate class="inline" (ngSubmit)="issue()" data-testid="issue-link-form">
             <label>
               Valid for (days)
               <input name="days" type="number" min="1" max="180" aria-label="Valid for (days)"
@@ -54,7 +55,7 @@ import { When } from './when';
             </label>
             <button type="submit" data-testid="issue-link">Issue a link</button>
           </form>
-          @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+          @if (error()) { <app-error-banner [message]="error()" /> }
           @if (issued(); as i) {
             <section data-testid="issued-link">
               <p>Link issued, valid until {{ (i.expiresAt) | when }}. Copy it now: the secret is not shown again.</p>

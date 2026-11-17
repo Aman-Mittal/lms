@@ -23,6 +23,7 @@ import { PageHeader } from './page-header';
 import { Money } from './figures';
 import { STALE_MESSAGE } from './master-data-form';
 import { StatusFilter } from './status-filter';
+import { ErrorBanner } from './error-banner';
 
 /** What an `(input)` or `(change)` event carries, read without a cast in the template. */
 function valueOf(event: Event): string {
@@ -38,20 +39,17 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-charge-catalogue',
-  imports: [ConfigActions, PageHeader, Money, StatusFilter],
+  imports: [ErrorBanner, ConfigActions, PageHeader, Money, StatusFilter],
   template: `
     <app-page-header title="Charge catalogue" />
     <p class="muted">The charges raised by hand against a trip, consignment or order, and their default rates.</p>
     @if (refusal(); as r) {
-      <p class="error" role="alert" data-testid="cc-error">
-        @if (r.code) { <code>{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" testId="cc-error" />
     }
     @if (saved()) { <p class="ok" role="status" data-testid="cc-saved">{{ saved() }}</p> }
     @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
 
-    <form data-testid="cc-form" (submit)="save($event)">
+    <form ngNativeValidate data-testid="cc-form" (submit)="save($event)">
       <h2>{{ editing() ? 'Edit ' + code() : 'New charge' }}</h2>
       <input placeholder="Code" aria-label="Code" data-testid="cc-code" required [disabled]="!!editing()"
              [value]="code()" (input)="code.set(valueOf($event))" />
@@ -72,7 +70,7 @@ function valueOf(event: Event): string {
     </form>
 
     <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
-    <form class="inline" role="search" (submit)="search($event)">
+    <form ngNativeValidate class="inline" role="search" (submit)="search($event)">
       <input type="search" placeholder="Search code or name" aria-label="Search charges" data-testid="cc-search"
              [value]="q()" (input)="q.set(valueOf($event))" />
       <button type="submit">Search</button>

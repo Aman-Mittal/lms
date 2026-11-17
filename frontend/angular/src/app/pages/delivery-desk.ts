@@ -22,21 +22,22 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** The delivery desk: issue a one-time code, record the proof, print the slip. */
 @Component({
   selector: 'app-delivery-desk',
-  imports: [FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Delivery desk" />
     <p class="muted">Issue the consignee's one-time code, then record the proof when they give it back.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-    <form class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
+    <form ngNativeValidate class="inline" (ngSubmit)="lookUp()" data-testid="lookup">
       <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Consignment id" testId="consignment-id" [required]="true"
                          [(value)]="typed" />
       <button type="submit">Look up</button>
     </form>
-    @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
+    @if (loadError()) { <app-error-banner [message]="loadError()" /> }
     @if (consignmentId() && loaded()) {
       <section data-testid="proof">
         @if (consignmentStatus()) {
@@ -58,7 +59,7 @@ import { When } from './when';
             }
           </dl>
         }
-        @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+        @if (error()) { <app-error-banner [message]="error()" /> }
         @if (record() && !confirmed()) {
           <p><button data-testid="issue-otp" (click)="issue()">Issue a code</button></p>
           @if (issued(); as i) {
@@ -68,7 +69,7 @@ import { When } from './when';
             </p>
           }
           @if (proof() !== null) {
-            <form class="inline" (ngSubmit)="submit()" data-testid="record-proof">
+            <form ngNativeValidate class="inline" (ngSubmit)="submit()" data-testid="record-proof">
               <input name="otp" placeholder="Code" aria-label="Code" data-testid="proof-otp"
                      [(ngModel)]="otp" required />
               <input name="recipient" placeholder="Recipient name" aria-label="Recipient name"
@@ -86,7 +87,7 @@ import { When } from './when';
           }
         }
         @if (confirmed() && reverse()) {
-          <form class="inline" (ngSubmit)="askReversal()" data-testid="reverse-proof">
+          <form ngNativeValidate class="inline" (ngSubmit)="askReversal()" data-testid="reverse-proof">
             <input name="reversalReason" placeholder="Why the proof is wrong" aria-label="Reason to reverse"
                    data-testid="reversal-reason" [value]="reversalReason()"
                    (input)="reversalReason.set($any($event.target).value)" required />

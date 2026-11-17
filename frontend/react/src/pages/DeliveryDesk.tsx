@@ -22,6 +22,7 @@ import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 /** The delivery desk: issue a one-time code, record the proof, print the slip. */
 export function DeliveryDesk() {
@@ -62,7 +63,7 @@ export function DeliveryDesk() {
           value={typed} onChange={setTyped} required />
         <button type="submit">Look up</button>
       </form>
-      {proof.error && <p className="error" role="alert">{proof.error}</p>}
+      {proof.error && <ErrorBanner message={proof.error} />}
       {consignmentId && !proof.loading && !proof.error && (
         <Desk key={`${consignmentId}:${reload}`} consignmentId={consignmentId} proof={proof.data}
           consignmentStatus={status.data ?? ''}
@@ -154,7 +155,7 @@ function Desk({ consignmentId, proof, consignmentStatus, issued, onIssued, onCha
           )}
         </dl>
       )}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {record && !confirmed && (
         <>
           <p><button data-testid="issue-otp" onClick={issue}>Issue a code</button></p>
