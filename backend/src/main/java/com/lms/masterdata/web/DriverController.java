@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.masterdata.command.FleetCommandService;
+import com.lms.masterdata.command.MasterDataMaintenanceService;
 import com.lms.masterdata.command.domain.ComplianceDocument;
 import com.lms.masterdata.query.ComplianceDocumentView;
 import com.lms.masterdata.query.DriverView;
@@ -27,6 +28,7 @@ import com.lms.masterdata.query.MasterDataQueryService;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -34,6 +36,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -46,10 +50,13 @@ public class DriverController {
 
     private final FleetCommandService fleet;
     private final MasterDataQueryService masterData;
+    private final MasterDataMaintenanceService maintenance;
 
-    public DriverController(FleetCommandService fleet, MasterDataQueryService masterData) {
+    public DriverController(FleetCommandService fleet, MasterDataQueryService masterData,
+                            MasterDataMaintenanceService maintenance) {
         this.fleet = fleet;
         this.masterData = masterData;
+        this.maintenance = maintenance;
     }
 
     @GetMapping
@@ -61,9 +68,42 @@ public class DriverController {
     }
 
     @GetMapping("/{id}")
-    public DriverView get(@PathVariable UUID id) {
-        return masterData.findDriver(id)
+    public ResponseEntity<DriverView> get(@PathVariable UUID id) {
+        DriverView view = masterData.findDriver(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Driver", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
+    }
+
+    /** Edits everything but the licence number; a stale {@code If-Match} is a 409. */
+    @PutMapping("/{id}")
+    public ResponseEntity<Void> update(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @Valid @RequestBody UpdateDriverRequest request) {
+        maintenance.updateDriver(id, IfMatch.version(ifMatch, "the driver's version"),
+                request.employerPartnerId(), request.fullName(), request.phone(), request.licenceClass(),
+                request.licenceAuthority(), request.licenceExpiresOn(), request.hazmatEndorsed());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Switches the driver off, with a reason. There is no delete. */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        maintenance.deactivateDriver(id, optionalVersion(ifMatch), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        maintenance.reactivateDriver(id, optionalVersion(ifMatch), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    private static Long optionalVersion(String ifMatch) {
+        return ifMatch == null || ifMatch.isBlank() ? null : IfMatch.version(ifMatch, "the driver's version");
     }
 
     @GetMapping("/{id}/documents")
@@ -88,6 +128,16 @@ public class DriverController {
                 request.issuedOn(), request.expiresOn());
         return ResponseEntity.created(URI.create("/api/v1/drivers/" + id + "/documents"))
                 .body(new IdResponse(documentId));
+    }
+
+    public record UpdateDriverRequest(
+            UUID employerPartnerId,
+            @NotBlank String fullName,
+            @NotBlank String phone,
+            @NotBlank String licenceClass,
+            String licenceAuthority,
+            @NotNull LocalDate licenceExpiresOn,
+            boolean hazmatEndorsed) {
     }
 
     public record RegisterDriverRequest(

@@ -29,6 +29,7 @@ import {
   YardGateService, ChargesService, VendorAdvancesService, VendorPayablesService,
 } from '../api';
 import { ApiProblem, LmsGateway, ResourceKey, Row } from './lms-gateway';
+import type { ListFilter } from './master-data-types';
 import { text } from './generated-gateway-helpers';
 
 /** The injected clients and the shared call and cached-read helpers; the verb groups extend it in turn. */
@@ -74,19 +75,19 @@ export abstract class GeneratedGatewayBase extends LmsGateway {
   protected readonly accessPolicyApi = inject(AccessPoliciesService);
   protected readonly compliance = inject(ComplianceService);
 
-  protected readonly listers: Record<ResourceKey, () => Promise<Row[]>> = {
-    partners: () => this.call(this.partners.listPartners({ limit: displayPreferences().pageSize }), (s) => s.items.map((p) => ({
+  protected readonly listers: Record<ResourceKey, (filter?: ListFilter) => Promise<Row[]>> = {
+    partners: (f) => this.call(this.partners.listPartners({ limit: displayPreferences().pageSize, status: f?.status || undefined }), (s) => s.items.map((p) => ({
       id: text(p.id), code: text(p.code), legalName: text(p.legalName),
       partnerType: text(p.partnerType), status: text(p.status) }))),
-    vehicles: () => this.call(this.vehicles.listVehicles({ limit: displayPreferences().pageSize }), (s) => s.items.map((v) => ({
+    vehicles: (f) => this.call(this.vehicles.listVehicles({ limit: displayPreferences().pageSize, status: f?.status || undefined }), (s) => s.items.map((v) => ({
       id: text(v.id), registrationNo: text(v.registrationNo), vehicleType: text(v.vehicleType),
       status: text(v.status), payloadCapacityKg: text(v.payloadCapacityKg) }))),
-    drivers: () => this.call(this.drivers.listDrivers({ limit: displayPreferences().pageSize }), (s) => s.items.map((d) => ({
+    drivers: (f) => this.call(this.drivers.listDrivers({ limit: displayPreferences().pageSize, status: f?.status || undefined }), (s) => s.items.map((d) => ({
       id: text(d.id), fullName: text(d.fullName), licenceNo: text(d.licenceNo),
       licenceExpiresOn: text(d.licenceExpiresOn), status: text(d.status) }))),
-    terminals: () => this.call(this.terminals.listTerminals({ limit: displayPreferences().pageSize }), (s) => s.items.map((t) => ({
+    terminals: (f) => this.call(this.terminals.listTerminals({ limit: displayPreferences().pageSize, status: (f?.status || undefined) as 'ACTIVE' | 'INACTIVE' | 'ALL' | undefined }), (s) => s.items.map((t) => ({
       id: text(t.id), code: text(t.code), name: text(t.name),
-      functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount) }))),
+      functionalCategory: text(t.functionalCategory), dockCount: text(t.dockCount), status: text(t.status) }))),
     orders: () => this.call(this.orders.listOrders({ limit: displayPreferences().pageSize }), (s) => s.items.map((o) => ({
       id: text(o.id), orderNo: text(o.orderNo), status: text(o.status),
       customerName: text(o.customerName), originTerminalCode: text(o.originTerminalCode) }))),

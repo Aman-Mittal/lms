@@ -55,6 +55,8 @@ export interface ControlTowerSummary {
   openWithoutTrip: number;
 }
 
+import type { ListFilter, MasterAction, MasterKind, MasterRecord } from './master-data-types';
+
 export const RESOURCE_KEYS = [
   'partners', 'vehicles', 'drivers', 'terminals', 'orders', 'loads', 'trips', 'freight-bills',
   'exceptions', 'claims',
@@ -857,7 +859,21 @@ export abstract class LmsGateway {
    * `confirm` is the demo tenant's code, typed by the person resetting it.
    */
   abstract resetDemoData(confirm: string): Promise<DemoResetOutcome>;
-  abstract list(resource: ResourceKey): Promise<Row[]>;
+  abstract list(resource: ResourceKey, filter?: ListFilter): Promise<Row[]>;
+  /** One partner, vehicle, driver or terminal as its form shows it, with the version to send as If-Match. */
+  abstract masterRecord(kind: MasterKind, id: string): Promise<MasterRecord>;
+  /**
+   * Creates the record (`id` null) or edits it under If-Match with `version`. A stale version is an ApiProblem
+   * with code `concurrent-modification`. Resolves to the record's id.
+   */
+  abstract saveMasterRecord(kind: MasterKind, orgUnitId: string, id: string | null, values: Record<string, string>,
+    version?: number): Promise<string>;
+  /**
+   * Switches a record off or on, or blacklists a partner, with a reason. There is no delete. A refusal is an
+   * ApiProblem whose `code` names it, such as `terminal-in-use`.
+   */
+  abstract switchMasterRecord(kind: MasterKind, id: string, action: MasterAction, reason: string,
+    version: number): Promise<void>;
   abstract registerPartner(orgUnitId: string, draft: PartnerDraft): Promise<void>;
 
   /** Every definition of a kind, retired ones included, or of every kind. */

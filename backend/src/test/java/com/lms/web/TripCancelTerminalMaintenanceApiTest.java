@@ -301,20 +301,25 @@ class TripCancelTerminalMaintenanceApiTest {
     // -------------------------------------------------------- terminal delete
 
     @Test
-    @DisplayName("an unreferenced terminal is deleted, once; the audit row keeps what it was")
+    @DisplayName("DELETE on an unreferenced terminal switches it off, once; the row stays and the audit row says why")
     void deleteTerminal() {
         UUID id = createTerminal("DEL", 76.70, 10.0, "TERMINAL_CREATE");
 
-        assertThat(delete("/api/v1/terminals/" + id, "TERMINAL_DELETE").status()).isEqualTo(204);
+        assertThat(delete("/api/v1/terminals/" + id + "?reason=closed", "TERMINAL_DELETE").status())
+                .isEqualTo(204);
 
         assertThat(kit.get(tenant, "/api/v1/terminals/" + id, "TERMINAL_READ").status())
-                .isEqualTo(404);
-        assertThat(auditCount("TERMINAL_DELETED", id)).isEqualTo(1);
-        assertThat(delete("/api/v1/terminals/" + id, "TERMINAL_DELETE").status()).isEqualTo(404);
+                .isEqualTo(200);
+        assertThat(jdbc.sql("SELECT status FROM terminal WHERE id = :id").param("id", id)
+                .query(String.class).single()).isEqualTo("INACTIVE");
+        assertThat(auditCount("TERMINAL_DEACTIVATED", id)).isEqualTo(1);
+        Outcome again = delete("/api/v1/terminals/" + id, "TERMINAL_DELETE");
+        assertThat(again.status()).isEqualTo(409);
+        assertThat(again.code()).isEqualTo("terminal-already-inactive");
     }
 
     @Test
-    @DisplayName("a terminal a trip starts from cannot be deleted: 409 terminal-in-use, and it is still there")
+    @DisplayName("a terminal a trip starts from cannot be switched off: 409 terminal-in-use, and it is still there")
     void deleteRefusedWhileReferenced() {
         UUID origin = jdbc.sql("SELECT origin_terminal_id FROM trip WHERE id = :id")
                 .param("id", built.tripId()).query(UUID.class).single();

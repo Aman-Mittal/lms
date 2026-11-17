@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.masterdata.command.FleetCommandService;
+import com.lms.masterdata.command.MasterDataMaintenanceService;
 import com.lms.masterdata.command.domain.ComplianceDocument;
 import com.lms.masterdata.query.ComplianceDocumentView;
 import com.lms.masterdata.query.MasterDataQueryService;
@@ -27,6 +28,7 @@ import com.lms.masterdata.query.VehicleView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -35,6 +37,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -47,10 +51,13 @@ public class VehicleController {
 
     private final FleetCommandService fleet;
     private final MasterDataQueryService masterData;
+    private final MasterDataMaintenanceService maintenance;
 
-    public VehicleController(FleetCommandService fleet, MasterDataQueryService masterData) {
+    public VehicleController(FleetCommandService fleet, MasterDataQueryService masterData,
+                             MasterDataMaintenanceService maintenance) {
         this.fleet = fleet;
         this.masterData = masterData;
+        this.maintenance = maintenance;
     }
 
     @GetMapping
@@ -62,9 +69,43 @@ public class VehicleController {
     }
 
     @GetMapping("/{id}")
-    public VehicleView get(@PathVariable UUID id) {
-        return masterData.findVehicle(id)
+    public ResponseEntity<VehicleView> get(@PathVariable UUID id) {
+        VehicleView view = masterData.findVehicle(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
+    }
+
+    /** Edits everything but the registration number; a stale {@code If-Match} is a 409. */
+    @PutMapping("/{id}")
+    public ResponseEntity<Void> update(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @Valid @RequestBody UpdateVehicleRequest request) {
+        maintenance.updateVehicle(id, IfMatch.version(ifMatch, "the vehicle's version"),
+                request.ownerPartnerId(), request.category(), request.vehicleType(), request.axleConfig(),
+                request.grossWeightKg(), request.tareWeightKg(), request.maxVolumeM3(),
+                request.hazmatCertified(), request.reeferCapable());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Switches the vehicle off, with a reason. There is no delete. */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        maintenance.deactivateVehicle(id, optionalVersion(ifMatch), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        maintenance.reactivateVehicle(id, optionalVersion(ifMatch), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    private static Long optionalVersion(String ifMatch) {
+        return ifMatch == null || ifMatch.isBlank() ? null : IfMatch.version(ifMatch, "the vehicle's version");
     }
 
     @GetMapping("/{id}/documents")
@@ -90,6 +131,18 @@ public class VehicleController {
                 request.issuedOn(), request.expiresOn());
         return ResponseEntity.created(URI.create("/api/v1/vehicles/" + id + "/documents"))
                 .body(new IdResponse(documentId));
+    }
+
+    public record UpdateVehicleRequest(
+            UUID ownerPartnerId,
+            @NotBlank String category,
+            @NotBlank String vehicleType,
+            String axleConfig,
+            @NotNull @Positive BigDecimal grossWeightKg,
+            @NotNull @Positive BigDecimal tareWeightKg,
+            @NotNull @Positive BigDecimal maxVolumeM3,
+            boolean hazmatCertified,
+            boolean reeferCapable) {
     }
 
     public record RegisterVehicleRequest(

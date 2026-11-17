@@ -152,7 +152,7 @@ class ConflictHandlingApiTest {
 
     private Outcome transition(UUID partner, String target) {
         return kit.post(tenant, "/api/v1/partners/" + partner + "/transitions",
-                "{\"target\":\"" + target + "\"}", "PARTNER_UPDATE");
+                "{\"target\":\"" + target + "\",\"reason\":\"conflict test\"}", "PARTNER_UPDATE");
     }
 
     private UUID createPartner(String code) {

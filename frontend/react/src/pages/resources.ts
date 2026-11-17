@@ -46,7 +46,8 @@ export const RESOURCES: Resource[] = [
     { header: 'Licence expires', field: 'licenceExpiresOn' }, { header: 'Status', field: 'status' } ] },
   { key: 'terminals', title: 'Terminals', group: 'Master data', customKind: 'TERMINAL', columns: [
     { header: 'Code', field: 'code' }, { header: 'Name', field: 'name' },
-    { header: 'Category', field: 'functionalCategory' }, { header: 'Docks', field: 'dockCount' } ] },
+    { header: 'Category', field: 'functionalCategory' }, { header: 'Docks', field: 'dockCount' },
+    { header: 'Status', field: 'status' } ] },
   { key: 'orders', title: 'Orders', group: 'Operations', customKind: 'ORDER', columns: [
     { header: 'Order', field: 'orderNo' }, { header: 'Status', field: 'status' },
     { header: 'Customer', field: 'customerName' }, { header: 'Origin', field: 'originTerminalCode' } ] },

@@ -131,6 +131,27 @@ public record BusinessPartner(
     }
 
     /**
+     * The partner with its descriptive fields replaced. The code, unit, type and
+     * credit limits are not parameters: the code is the partner's identity, the
+     * type decides how orders treat it, and limits move only through an approved
+     * change request.
+     */
+    public BusinessPartner edited(String newLegalName, String newTaxId, String newPaymentTerms,
+                                  String newBillingAddress) {
+        if (newLegalName == null || newLegalName.isBlank()) {
+            throw new IllegalArgumentException("A partner needs a legal name");
+        }
+        return new BusinessPartner(id, tenantId, orgUnitId, code, newLegalName.strip(), partnerType,
+                status, blankToNull(newTaxId), creditLimit, blankToNull(newPaymentTerms),
+                blankToNull(newBillingAddress), onTimePct, claimsRatio, scorecardAt,
+                creditSoftLimit, version, createdAt, Instant.now());
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    /**
      * The partner with new credit limits, as an approved change request sets
      * them. Never called except from that approval, so a limit cannot move
      * without a second person agreeing.

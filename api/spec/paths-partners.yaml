@@ -72,10 +72,36 @@
         content:
           application/json:
             schema: { $ref: "#/components/schemas/Partner" }
+        headers:
+          ETag:
+            description: The partner's version; send it back as `If-Match` when editing.
+            schema: { type: string }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Partners]
+    operationId: updatePartner
+    summary: Change a partner's name, tax id, payment terms and billing address
+    description: |
+      The code, organisational unit and type never change, and the status
+      moves only through `/transitions`. A stale `If-Match` is refused with 409
+      `concurrent-modification`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdatePartnerRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/partners/{id}/documents:
   parameters:
@@ -130,7 +156,11 @@
     summary: Move a partner along its KYC lifecycle
     description: |
       A named transition rather than a settable status. Refused with 409 when
-      the move is not one the lifecycle allows.
+      the move is not one the lifecycle allows. A `reason` is required for
+      SUSPENDED (deactivate), BLACKLISTED and ACTIVE from SUSPENDED
+      (reactivate) and is kept in the audit trail. An `If-Match` header, where
+      sent, is the version last read and a stale one is a 409
+      `concurrent-modification`.
     parameters:
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:

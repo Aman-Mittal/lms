@@ -53,7 +53,9 @@ public record Vehicle(
         Instant updatedAt) {
 
     public enum VehicleStatus {
-        AVAILABLE, ON_TRIP, MAINTENANCE, RETIRED
+        AVAILABLE, ON_TRIP, MAINTENANCE, RETIRED,
+        /** Switched off with a reason; reversible, unlike RETIRED. */
+        INACTIVE
     }
 
     public static Vehicle register(UUID id, UUID tenantId, UUID orgUnitId, UUID ownerPartnerId,
@@ -94,6 +96,35 @@ public record Vehicle(
 
     public boolean isAvailable() {
         return status == VehicleStatus.AVAILABLE;
+    }
+
+    public boolean isInactive() {
+        return status == VehicleStatus.INACTIVE;
+    }
+
+    /**
+     * The vehicle with its descriptive fields replaced. The registration number
+     * is its identity and does not change; the version is the one the caller
+     * read, so the save is guarded on it.
+     */
+    public Vehicle edited(UUID newOwnerPartnerId, String newCategory, String newVehicleType,
+                          String newAxleConfig, BigDecimal newGrossWeightKg, BigDecimal newTareWeightKg,
+                          BigDecimal newMaxVolumeM3, boolean newHazmatCertified,
+                          boolean newReeferCapable, Long expectedVersion) {
+        if (newGrossWeightKg == null || newTareWeightKg == null || newMaxVolumeM3 == null) {
+            throw new IllegalArgumentException("Gross weight, tare weight and volume are mandatory");
+        }
+        if (newTareWeightKg.compareTo(newGrossWeightKg) >= 0) {
+            throw new IllegalArgumentException(
+                    "Tare weight " + newTareWeightKg + " must be less than gross weight " + newGrossWeightKg);
+        }
+        if (newMaxVolumeM3.signum() <= 0) {
+            throw new IllegalArgumentException("Maximum volume must be positive");
+        }
+        return new Vehicle(id, tenantId, orgUnitId, newOwnerPartnerId, registrationNo, newCategory,
+                newVehicleType, newAxleConfig, newGrossWeightKg, newTareWeightKg, newMaxVolumeM3,
+                lengthM, widthM, heightM, status, newHazmatCertified, newReeferCapable,
+                expectedVersion, createdAt, Instant.now());
     }
 
     public Vehicle withStatus(VehicleStatus newStatus) {

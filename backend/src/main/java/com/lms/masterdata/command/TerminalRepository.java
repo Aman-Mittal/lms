@@ -46,6 +46,7 @@ public interface TerminalRepository extends CrudRepository<Terminal, UUID> {
             SELECT * FROM terminal
              WHERE tenant_id = :tenantId
                AND functional_category = :category
+               AND status = 'ACTIVE'
                AND min_lat <= :maxLat AND max_lat >= :minLat
                AND min_lon <= :maxLon AND max_lon >= :minLon
                -- The cast is required, not cosmetic. A bind parameter used only

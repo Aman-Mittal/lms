@@ -29,6 +29,10 @@
       - name: category
         in: query
         schema: { type: string, enum: [PLANT, WAREHOUSE, PORT, HUB, TOLL_PLAZA, CUSTOMER_SITE, RAILHEAD] }
+      - name: status
+        in: query
+        description: One status, or `ALL`. Without it the list is the active terminals.
+        schema: { type: string, enum: [ACTIVE, INACTIVE, ALL] }
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
       - $ref: "#/components/parameters/q"
@@ -86,7 +90,9 @@
       The code never changes. A new geofence is refused with 409
       `terminal-overlap` if it overlaps another terminal of the same category
       (the terminal's own old footprint does not count). Send the `version`
-      last read: a stale one is refused with 409 `concurrent-modification`.
+      last read, in the body or as `If-Match` (the header wins): a stale one is
+      refused with 409 `concurrent-modification`. Omitting
+      `permittedVehicleTypes` keeps the present list.
     requestBody:
       required: true
       content:
@@ -102,12 +108,73 @@
   delete:
     tags: [Terminals]
     operationId: deleteTerminal
-    summary: Remove a terminal nothing refers to
+    summary: Switch a terminal off (deprecated spelling of deactivate)
+    deprecated: true
     description: |
-      Refused with 409 `terminal-in-use` while any trip, load, consignment,
-      order, itinerary, milk-run route or circuit, warehouse record, gate or
-      weighbridge entry, routing guide or tariff still refers to it. The
-      database's foreign keys are the backstop behind that check.
+      Kept for existing clients and now a soft deactivate: nothing is deleted.
+      The optional `reason` goes to the audit trail. Use `POST
+      /terminals/{id}/deactivate`.
+    parameters:
+      - name: reason
+        in: query
+        required: false
+        schema: { type: string }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/terminals/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Terminals]
+    operationId: deactivateTerminal
+    summary: Switch a terminal off, with a reason
+    description: |
+      Nothing is deleted. Refused with 409 `terminal-in-use` while an open
+      order, load or trip names the terminal, and `terminal-already-inactive`
+      if it is already off.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/terminals/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [Terminals]
+    operationId: reactivateTerminal
+    summary: Switch an inactive terminal back on, with a reason
+    description: |
+      Refused with 409 `terminal-overlap` if its ground has been taken by an
+      active terminal of the same category meanwhile, and
+      `terminal-not-inactive` if it is not inactive.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }

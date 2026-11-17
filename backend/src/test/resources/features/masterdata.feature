@@ -149,25 +149,27 @@ Feature: Master data -- the geospatial terminal network
     Then the update is refused with "concurrent-modification"
     And terminal "WH-1" is named "First edit" with 5 docks
 
-  Scenario: An unreferenced terminal is deleted
+  Scenario: A terminal nothing open refers to is deactivated, and kept
     Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
-    When terminal "WH-1" is deleted
-    Then the terminal is deleted
-    And terminal "WH-1" no longer exists
-    And the audit trail has 1 "TERMINAL_DELETED" entry for terminal "WH-1"
+    When terminal "WH-1" is deactivated
+    Then the terminal is deactivated
+    And terminal "WH-1" is inactive
+    And the audit trail has 1 "TERMINAL_DEACTIVATED" entry for terminal "WH-1"
 
-  Scenario: A deleted terminal's code and ground can be used again
+  Scenario: A deactivated terminal's ground can be used again, and it cannot return over it
     Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
-    And terminal "WH-1" is deleted
-    When a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
+    And terminal "WH-1" is deactivated
+    When a WAREHOUSE terminal "WH-2" is registered with the square from 19.00,72.80 to 19.01,72.81
     Then the terminal is registered
+    When terminal "WH-1" is reactivated
+    Then deactivating the terminal is refused with "terminal-overlap" mentioning "WH-2"
 
-  Scenario: Another tenant cannot change or delete a terminal and learns nothing about it
+  Scenario: Another tenant cannot change or deactivate a terminal and learns nothing about it
     Given a WAREHOUSE terminal "WH-1" is registered with the square from 19.00,72.80 to 19.01,72.81
     And a tenant "globex" named "Globex Freight"
     And tenant "globex" has an organisational unit "/globex/" named "Globex HQ" of type "HQ"
     And the tenant scope is "globex" at "/globex/"
-    When terminal "WH-1" is deleted
-    Then deleting the terminal is refused as not found
+    When terminal "WH-1" is deactivated
+    Then deactivating the terminal is refused as not found
     And terminal "WH-1" still exists
 

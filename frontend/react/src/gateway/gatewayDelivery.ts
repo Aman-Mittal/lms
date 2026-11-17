@@ -61,7 +61,7 @@ export function deliveryVerbs(d: GatewayDeps): Pick<LmsGateway,
         return { tenantCode: r.tenantCode, rowsDeleted: r.rowsDeleted, signInAgain: r.signInAgain };
       }),
 
-    list: (resource) => guard(listers[resource]),
+    list: (resource, filter) => guard(() => listers[resource](filter)),
     claims: (consignmentId?: string) => guard(() => listClaims(consignmentId)),
 
     registerPartner: (orgUnitId: string, draft: PartnerDraft) =>

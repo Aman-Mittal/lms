@@ -37,6 +37,9 @@ public record PartnerView(
         BigDecimal onTimePct,
         BigDecimal claimsRatio,
         Instant scorecardAt,
+        String billingAddress,
+        UUID orgUnitId,
         int expiredDocumentCount,
+        Long version,
         Instant createdAt) {
 }

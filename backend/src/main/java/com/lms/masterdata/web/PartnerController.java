@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.masterdata.command.FleetCommandService;
+import com.lms.masterdata.command.MasterDataMaintenanceService;
 import com.lms.masterdata.command.domain.BusinessPartner;
 import com.lms.masterdata.query.ComplianceDocumentView;
 import com.lms.masterdata.query.MasterDataQueryService;
@@ -26,6 +27,7 @@ import com.lms.masterdata.query.PartnerView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -33,6 +35,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -54,10 +58,13 @@ public class PartnerController {
 
     private final FleetCommandService fleet;
     private final MasterDataQueryService masterData;
+    private final MasterDataMaintenanceService maintenance;
 
-    public PartnerController(FleetCommandService fleet, MasterDataQueryService masterData) {
+    public PartnerController(FleetCommandService fleet, MasterDataQueryService masterData,
+                             MasterDataMaintenanceService maintenance) {
         this.fleet = fleet;
         this.masterData = masterData;
+        this.maintenance = maintenance;
     }
 
     @GetMapping
@@ -70,9 +77,24 @@ public class PartnerController {
     }
 
     @GetMapping("/{id}")
-    public PartnerView get(@PathVariable UUID id) {
-        return masterData.findPartner(id)
+    public ResponseEntity<PartnerView> get(@PathVariable UUID id) {
+        PartnerView view = masterData.findPartner(id)
                 .orElseThrow(() -> new ResourceNotFoundException("BusinessPartner", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
+    }
+
+    /**
+     * Edits the descriptive fields. The code, unit and type are fixed, and the
+     * status moves only through {@code /transitions}. {@code If-Match} carries
+     * the version read; a stale one is 409 {@code concurrent-modification}.
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<Void> update(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @Valid @RequestBody UpdatePartnerRequest request) {
+        maintenance.updatePartner(id, IfMatch.version(ifMatch, "the partner's version"),
+                request.legalName(), request.taxId(), request.paymentTerms(), request.billingAddress());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/documents")
@@ -98,8 +120,10 @@ public class PartnerController {
      */
     @PostMapping("/{id}/transitions")
     public ResponseEntity<Void> transition(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
                                            @Valid @RequestBody TransitionRequest request) {
-        fleet.transitionPartner(id, request.target());
+        maintenance.transitionPartner(id, request.target(), request.reason(),
+                ifMatch == null || ifMatch.isBlank() ? null : IfMatch.version(ifMatch, "the partner's version"));
         return ResponseEntity.noContent().build();
     }
 
@@ -122,6 +146,14 @@ public class PartnerController {
             String taxId) {
     }
 
-    public record TransitionRequest(@NotNull BusinessPartner.PartnerStatus target) {
+    /** {@code reason} is mandatory for SUSPENDED, BLACKLISTED and reactivation (ACTIVE from SUSPENDED). */
+    public record TransitionRequest(@NotNull BusinessPartner.PartnerStatus target, String reason) {
+    }
+
+    public record UpdatePartnerRequest(
+            @NotBlank String legalName,
+            String taxId,
+            String paymentTerms,
+            String billingAddress) {
     }
 }

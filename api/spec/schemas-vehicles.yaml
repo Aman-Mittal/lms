@@ -23,7 +23,7 @@ Vehicle:
     category: { type: string }
     vehicleType: { type: string }
     axleConfig: { type: string }
-    status: { type: string, enum: [AVAILABLE, ON_TRIP, MAINTENANCE, RETIRED] }
+    status: { type: string, enum: [AVAILABLE, ON_TRIP, MAINTENANCE, RETIRED, INACTIVE] }
     grossWeightKg: { type: number }
     tareWeightKg: { type: number }
     payloadCapacityKg:
@@ -32,6 +32,8 @@ Vehicle:
     maxVolumeM3: { type: number }
     hazmatCertified: { type: boolean }
     reeferCapable: { type: boolean }
+    orgUnitId: { type: string, format: uuid }
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
     ownerPartnerId: { type: string, format: uuid }
     ownerPartnerName: { type: string }
     earliestDocumentExpiry:
@@ -40,6 +42,20 @@ Vehicle:
       description: The soonest certificate to lapse; what a dispatcher must act on.
     expiredDocumentCount: { type: integer }
     createdAt: { type: string, format: date-time }
+
+UpdateVehicleRequest:
+  type: object
+  properties:
+    ownerPartnerId: { type: string, format: uuid }
+    category: { type: string, minLength: 1 }
+    vehicleType: { type: string, minLength: 1 }
+    axleConfig: { type: string }
+    grossWeightKg: { type: number }
+    tareWeightKg: { type: number }
+    maxVolumeM3: { type: number }
+    hazmatCertified: { type: boolean }
+    reeferCapable: { type: boolean }
+  required: [category, vehicleType, grossWeightKg, tareWeightKg, maxVolumeM3]
 
 RegisterVehicleRequest:
   type: object

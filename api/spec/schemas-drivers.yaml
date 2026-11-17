@@ -30,7 +30,22 @@ Driver:
     hosMinutesToday: { type: integer }
     employerPartnerId: { type: string, format: uuid }
     employerPartnerName: { type: string }
+    licenceAuthority: { type: string }
+    orgUnitId: { type: string, format: uuid }
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
     createdAt: { type: string, format: date-time }
+
+UpdateDriverRequest:
+  type: object
+  properties:
+    employerPartnerId: { type: string, format: uuid }
+    fullName: { type: string, minLength: 1 }
+    phone: { type: string, minLength: 1 }
+    licenceClass: { type: string, minLength: 1 }
+    licenceAuthority: { type: string }
+    licenceExpiresOn: { type: string, format: date }
+    hazmatEndorsed: { type: boolean }
+  required: [fullName, phone, licenceClass, licenceExpiresOn]
 
 RegisterDriverRequest:
   type: object

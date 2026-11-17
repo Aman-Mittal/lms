@@ -45,6 +45,8 @@ public record VehicleView(
         BigDecimal maxVolumeM3,
         boolean hazmatCertified,
         boolean reeferCapable,
+        UUID orgUnitId,
+        Long version,
         UUID ownerPartnerId,
         String ownerPartnerName,
         LocalDate earliestDocumentExpiry,

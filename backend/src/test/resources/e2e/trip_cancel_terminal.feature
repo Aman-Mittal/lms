@@ -17,7 +17,7 @@ Feature: Cancelling a trip and maintaining a terminal, over the wire
   The published API only. A trip that has not left the yard can be cancelled
   with a reason, gives its load back and is left alone by a second cancel; one
   that has been dispatched cannot. A terminal can be renamed, resized and
-  moved under optimistic concurrency, and deleted only while nothing refers
+  moved under optimistic concurrency, and switched off only while nothing open refers
   to it.
 
   Background:
@@ -48,10 +48,10 @@ Feature: Cancelling a trip and maintaining a terminal, over the wire
     And moving it onto the second site is refused as an overlap and bad bodies are refused as invalid
     And a caller without TERMINAL_UPDATE is refused as forbidden
 
-  Scenario: A terminal is deleted only while nothing refers to it
+  Scenario: A terminal is switched off only while nothing open refers to it
     Given two sites, a lorry and an assigned trip are registered for the cancellation desk
     And a spare site is registered for the cancellation desk
-    Then deleting the spare site succeeds, and it is then gone and cannot be deleted again
+    Then deleting the spare site switches it off, and it then cannot be switched off again
     And deleting the first site is refused as in use while the trip starts there
     And the first site is still refused after that trip is cancelled
     And a caller without TERMINAL_DELETE is refused as forbidden and another tenant's administrator is told it is not found

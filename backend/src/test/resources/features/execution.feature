@@ -80,6 +80,20 @@ Feature: Getting the lorry out of the yard, and only when it should be
     When trip "TRIP-3" is dispatched at 10:30
     Then trip "TRIP-3" is "DISPATCHED"
 
+  Scenario: An inactive lorry or driver cannot be assigned, and can be once switched back on
+    Given an awarded load "LOAD-E8" of 5000 kg from "ORIGIN" to "CONS-A" at "DEST-A" on lorry "MH-01-EX-0001" for "VENDOR-1"
+    And a trip "TRIP-8" is raised against load "LOAD-E8"
+    When lorry "MH-01-EX-0001" is deactivated because "in for a rebuild"
+    And trip "TRIP-8" is assigned lorry "MH-01-EX-0001" and driver "Ravi"
+    Then assigning the lorry is refused mentioning "is inactive"
+    When lorry "MH-01-EX-0001" is reactivated because "rebuild finished"
+    And driver "Ravi" is deactivated because "on leave"
+    And trip "TRIP-8" is assigned lorry "MH-01-EX-0001" and driver "Ravi"
+    Then assigning the lorry is refused mentioning "Driver Ravi is inactive"
+    When driver "Ravi" is reactivated because "back"
+    And trip "TRIP-8" is assigned lorry "MH-01-EX-0001" and driver "Ravi"
+    Then trip "TRIP-8" is "ASSIGNED"
+
   Scenario: A lorry whose certificate expires before departure cannot be assigned
     # Judged against the departure date, not today. A certificate valid this
     # morning and lapsing this evening is not valid for an evening departure,
@@ -329,9 +343,9 @@ Feature: Getting the lorry out of the yard, and only when it should be
     Then dispatch is refused mentioning "consignment note"
     And the audit trail for trip "TRIP-A2" lists "TRIP_RAISED, TRIP_ASSIGNED"
 
-  Scenario: A terminal a trip starts from cannot be deleted
+  Scenario: A terminal a trip starts from cannot be deactivated
     Given an awarded load "LOAD-T1" of 5000 kg from "ORIGIN" to "CONS-A" at "DEST-A" on lorry "MH-01-EX-0001" for "VENDOR-1"
     And a trip "TRIP-T1" is raised against load "LOAD-T1"
-    When terminal "ORIGIN" is deleted
-    Then deleting the terminal is refused with "terminal-in-use" mentioning "trips"
+    When terminal "ORIGIN" is deactivated
+    Then deactivating the terminal is refused with "terminal-in-use" mentioning "trips"
     And terminal "ORIGIN" still exists

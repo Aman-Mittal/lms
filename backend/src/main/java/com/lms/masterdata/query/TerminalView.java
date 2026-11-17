@@ -41,6 +41,8 @@ public record TerminalView(
         LocalTime opensAt,
         LocalTime closesAt,
         Integer avgDwellMinutes,
+        String status,
+        UUID orgUnitId,
         Long version,
         Instant createdAt) {
 }
