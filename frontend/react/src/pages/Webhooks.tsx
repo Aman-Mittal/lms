@@ -16,12 +16,15 @@
 
 import { useState, type FormEvent } from 'react';
 import {
-  WEBHOOK_EVENT_TYPES, type Row, type WebhookEventType, type WebhookSecret, type WebhookView,
+  ApiProblem, WEBHOOK_EVENT_TYPES, type Row, type WebhookEventType, type WebhookSecret, type WebhookView,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { ConfigActions } from './ConfigActions';
+import { CONFLICT_TEXT } from './MasterDataForm';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { StatusFilter } from './StatusFilter';
 
 /** A subscription as a table row. */
 function rowOf(w: WebhookView): Row {
@@ -40,7 +43,13 @@ export function Webhooks() {
   const [reload, setReload] = useState(0);
   const [picked, setPicked] = useState('');
   const [secret, setSecret] = useState<WebhookSecret | null>(null);
-  const list = useLoad(() => gateway.webhooks(), reload);
+  // Said when somebody else saved the subscription first; the list is read again.
+  const [conflict, setConflict] = useState('');
+  // Bumped on a stale save, so the form starts again from what the other person saved.
+  const [rounds, setRounds] = useState(0);
+  // '' is the server's default, the active subscriptions.
+  const [status, setStatus] = useState('');
+  const list = useLoad(() => gateway.webhooks(status), `${reload}:${status}`);
   const current = list.data?.find((w) => w.id === picked) ?? null;
 
   function issued(s: WebhookSecret) {
@@ -54,7 +63,9 @@ export function Webhooks() {
       <PageHeader title="Webhooks" />
       <p className="muted">Addresses your systems listen on, told about orders, trips, deliveries and claims as they happen.</p>
       {secret && <SecretOnce secret={secret.secret} onDone={() => setSecret(null)} />}
+      <StatusFilter value={status} onChange={setStatus} />
       {list.loading && <p className="muted">Loading…</p>}
+      {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
       {list.error && <p className="error" role="alert">{list.error}</p>}
       {list.data && list.data.length === 0 && <p className="muted" data-testid="no-webhooks">No subscriptions yet.</p>}
       {list.data && list.data.length > 0 && (
@@ -65,8 +76,9 @@ export function Webhooks() {
       )}
       {manage && !current && <Subscribe onIssued={issued} />}
       {current && (
-        <Subscription key={current.id} webhook={current} manage={manage}
-          onIssued={(s) => setSecret(s)} onChanged={() => setReload((n) => n + 1)} onClose={() => setPicked('')} />
+        <Subscription key={`${current.id}:${rounds}`} webhook={current} manage={manage}
+          onIssued={(s) => setSecret(s)} onChanged={() => { setConflict(''); setReload((n) => n + 1); }}
+          onStale={() => { setConflict(CONFLICT_TEXT); setRounds((n) => n + 1); setReload((n) => n + 1); }} onClose={() => setPicked('')} />
       )}
       <SignatureHelp />
     </>
@@ -133,18 +145,18 @@ function Subscribe({ onIssued }: { onIssued: (s: WebhookSecret) => void }) {
   );
 }
 
-function Subscription({ webhook, manage, onIssued, onChanged, onClose }: {
+function Subscription({ webhook, manage, onIssued, onChanged, onStale, onClose }: {
   webhook: WebhookView;
   manage: boolean;
   onIssued: (s: WebhookSecret) => void;
   onChanged: () => void;
+  onStale: () => void;
   onClose: () => void;
 }) {
   const { gateway } = useSession();
   const [name, setName] = useState(webhook.name);
   const [url, setUrl] = useState(webhook.url);
   const [types, setTypes] = useState(webhook.eventTypes as WebhookEventType[]);
-  const [active, setActive] = useState(webhook.active);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [pages, setPages] = useState(0);
@@ -158,14 +170,18 @@ function Subscription({ webhook, manage, onIssued, onChanged, onClose }: {
         setMessage(said);
       }
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        onStale();
+      } else {
+        setError((e as Error).message);
+      }
     }
   }
 
   function save(event: FormEvent) {
     event.preventDefault();
     act(async () => {
-      await gateway.reviseWebhook(webhook.id, { name: name.trim(), url: url.trim(), eventTypes: types, active });
+      await gateway.reviseWebhook(webhook.id, { name: name.trim(), url: url.trim(), eventTypes: types, active: webhook.active }, webhook.version);
       onChanged();
       return 'Saved.';
     });
@@ -178,15 +194,13 @@ function Subscription({ webhook, manage, onIssued, onChanged, onClose }: {
       {webhook.pausedReason && (
         <p className="error" data-testid="paused-reason">Paused: {webhook.pausedReason}</p>
       )}
+      <ConfigActions kind="webhooks" id={webhook.id} active={webhook.active} label={webhook.name} version={webhook.version}
+        onChanged={onChanged} />
       {manage ? (
         <form onSubmit={save} data-testid="revise-form">
           <input aria-label="Name" data-testid="edit-name" value={name} onChange={(e) => setName(e.target.value)} required />
           <input aria-label="Address" data-testid="edit-url" value={url} onChange={(e) => setUrl(e.target.value)} required />
           <EventTypes value={types} onChange={setTypes} />
-          <label>
-            <input type="checkbox" data-testid="edit-active" checked={active} onChange={(e) => setActive(e.target.checked)} />
-            Active
-          </label>
           <button type="submit" data-testid="save-webhook">Save</button>
           <button type="button" data-testid="rotate-secret"
             onClick={() => act(async () => { onIssued(await gateway.rotateWebhookSecret(webhook.id)); })}>

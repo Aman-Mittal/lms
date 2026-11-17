@@ -74,8 +74,8 @@ export function sourcingVerbs(d: GatewayDeps): Pick<LmsGateway,
           strategy: draft.strategy as unknown as DefineGuideRequestStrategyEnum,
         },
       })).id)),
-    routingGuide: (id: string): Promise<RoutingGuideDetail> =>
-      guard(async () => commercialGuideOf(await sourcing.getRoutingGuide({ id }))),
+    routingGuide: (id: string, status?: string): Promise<RoutingGuideDetail> =>
+      guard(async () => commercialGuideOf(await sourcing.getRoutingGuide({ id, status: status || undefined }))),
     addGuideVendor: (guideId: string, draft: GuideVendorDraft) =>
       guard(async () => {
         await sourcing.addRoutingGuideVendor({

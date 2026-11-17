@@ -166,7 +166,8 @@ class WebhookApiTest {
     void revision() {
         UUID id = created(subscribe(a, unique("rev"), TARGET, "[\"TRIP_COMPLETED\"]"));
         String revised = unique("revised");
-        expect("revise", kit.put(a, "/api/v1/webhooks/subscriptions/" + id,
+        expect("revise", kit.putMatching(a, "/api/v1/webhooks/subscriptions/" + id,
+                kit.etagOf(a, "/api/v1/webhooks/subscriptions/" + id, READ),
                 "{\"name\":\"" + revised + "\",\"url\":\"https://203.0.113.20/new\","
                         + "\"eventTypes\":[\"CLAIM_RAISED\",\"CLAIM_STATUS_CHANGED\"],\"active\":false}",
                 MANAGE), 204, null);
@@ -230,7 +231,7 @@ class WebhookApiTest {
         expect("b reads a's subscription", kit.get(b, "/api/v1/webhooks/subscriptions/" + id, READ), 404, "not-found");
         expect("b lists a's deliveries",
                 kit.get(b, "/api/v1/webhooks/subscriptions/" + id + "/deliveries", READ), 404, "not-found");
-        expect("b revises a's subscription", kit.put(b, "/api/v1/webhooks/subscriptions/" + id,
+        expect("b revises a's subscription", kit.putMatching(b, "/api/v1/webhooks/subscriptions/" + id, "\"0\"",
                 "{\"name\":\"x\",\"url\":\"" + TARGET + "\",\"eventTypes\":[\"TRIP_COMPLETED\"],\"active\":true}",
                 MANAGE), 404, "not-found");
         expect("b rotates a's secret",
