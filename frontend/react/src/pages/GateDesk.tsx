@@ -23,6 +23,7 @@ import {
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -228,10 +229,7 @@ export function GateDesk() {
       <PageHeader title="Gate desk" />
       <p className="muted">Vehicles at the gate: who is inside, entries and exits, the register and gate passes.</p>
       {refusal && (
-        <p className="error" role="alert" data-testid="gate-error">
-          {refusal.code && <code data-testid="gate-refusal">{refusal.code}</code>}
-          {' '}{refusal.message}
-        </p>
+        <ErrorBanner message={refusal.message} code={refusal.code} testId="gate-error" codeTestId="gate-refusal" />
       )}
       {message && <p className="ok" role="status" data-testid="gate-message">{message}</p>}
 
