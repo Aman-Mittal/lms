@@ -26,6 +26,7 @@ import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit'
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Quantity } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -115,7 +116,7 @@ export function OrderDesk() {
       {can('ORDER_CREATE') && auth?.orgUnitId && (
         <RaiseOrder orgUnitId={auth.orgUnitId} onRaised={openOrder} />
       )}
-      {desk.error && <p className="error" role="alert">{desk.error}</p>}
+      {desk.error && <ErrorBanner message={desk.error} />}
       {desk.data && desk.data.order.id === orderId && (
         <OrderPanel key={orderId} desk={desk.data} onChanged={() => setReload((n) => n + 1)} />
       )}
@@ -192,7 +193,7 @@ function RaiseOrder({ orgUnitId, onRaised }: { orgUnitId: string; onRaised: (id:
       <input placeholder="Load type (optional)" aria-label="New order load type" value={draft.loadType}
         onChange={(e) => set('loadType')(e.target.value)} />
       <button type="submit">Raise order</button>
-      {error && <span className="error" role="alert"> {error}</span>}
+      {error && <ErrorBanner message={error} />}
     </form>
   );
 }
@@ -342,10 +343,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
       </p>
       {done && <p className="ok" role="status" data-testid="order-done">{done}</p>}
       {refusal && (
-        <p className="error" role="alert" data-testid="order-error">
-          {refusal.code && <><code data-testid="order-refusal">{refusal.code}</code>{' '}</>}
-          {refusal.message}
-        </p>
+        <ErrorBanner message={refusal.message} code={refusal.code} testId="order-error" codeTestId="order-refusal" />
       )}
       {refusal?.code === CREDIT_LIMIT_EXCEEDED && (
         <CreditOverride partnerId={desk.header.customerPartnerId} subjectType="ORDER" orderId={order.id}
@@ -601,7 +599,7 @@ function OrderHistory({ orderId }: { orderId: string }) {
   return (
     <section data-testid="order-history" aria-label="Order history">
       <h3>History</h3>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {!loading && !error && entries.length === 0 && <p className="muted">Nothing recorded yet.</p>}
       {entries.length > 0 && (
         <div className="table-scroll">
