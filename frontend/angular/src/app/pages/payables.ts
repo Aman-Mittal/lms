@@ -18,6 +18,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import {
   ApiProblem, InvoiceBillView, LmsGateway, PAYMENT_MODES, VendorInvoiceView, VendorPaymentView,
 } from '../gateway/lms-gateway';
+import { ConfigActions } from './config-actions';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
@@ -40,7 +41,7 @@ function today(): string {
  */
 @Component({
   selector: 'app-payables',
-  imports: [PageHeader, StatusBadge, Money, When],
+  imports: [ConfigActions, PageHeader, StatusBadge, Money, When],
   template: `
     <app-page-header title="Vendor payables" />
     <p class="muted">Vendor invoices, payments made and what is overdue.</p>
@@ -124,7 +125,10 @@ function today(): string {
               {{ r.message }}
             </p>
           }
-          @if (d.status !== 'PAID') {
+          @if (d.voidReason) { <p class="muted" data-testid="detail-void-reason">Voided: {{ d.voidReason }}</p> }
+          <app-config-actions kind="vendorInvoices" [recordId]="d.id" [active]="d.status === 'OPEN'" [label]="'invoice ' + d.invoiceNo"
+                              [version]="d.version" (changed)="refresh(d.id)" />
+          @if (d.status !== 'PAID' && d.status !== 'VOID') {
             <form data-testid="pay-form" (submit)="pay($event, d.id)">
               <h3>Record a payment</h3>
               <input type="number" min="0" step="any" placeholder="Amount" aria-label="Payment amount" data-testid="pay-amount"
@@ -246,6 +250,14 @@ export class Payables implements OnInit {
     this.payRefusal.set(null);
     await this.attempt(async () => {
       await this.loadDetail(id);
+    });
+  }
+
+  /** An invoice was voided, or found changed by somebody else: the invoice and the list are read again. */
+  async refresh(id: string): Promise<void> {
+    await this.attempt(async () => {
+      await this.loadDetail(id);
+      await this.load(false);
     });
   }
 

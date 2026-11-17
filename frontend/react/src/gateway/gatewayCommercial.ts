@@ -51,6 +51,7 @@ export function commercialGuideOf(g: CommercialRoutingGuide): RoutingGuideDetail
     entries: (g.entries ?? []).map((e) => ({
       rankNo: text(e.rankNo), vendorPartnerId: text(e.vendorPartnerId), vendorName: text(e.vendorName),
       responseSlaMinutes: text(e.responseSlaMinutes), agreedRate: text(e.agreedRate),
+      id: text(e.id), active: e.active === false ? '' : 'Yes', version: text(e.version),
     })),
   };
 }
