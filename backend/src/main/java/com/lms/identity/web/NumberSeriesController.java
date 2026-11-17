@@ -31,6 +31,7 @@ import com.lms.identity.query.NumberVerificationView;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -45,6 +46,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -81,13 +83,18 @@ public class NumberSeriesController {
     }
 
     @GetMapping("/{id}")
-    public NumberSeriesView get(@PathVariable UUID id) {
-        return queries.findById(id).orElseThrow(() -> new ResourceNotFoundException("NumberSeries", id));
+    public ResponseEntity<NumberSeriesView> get(@PathVariable UUID id) {
+        NumberSeriesView view = queries.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("NumberSeries", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Void> revise(@PathVariable UUID id, @Valid @RequestBody ReviseSeriesRequest request) {
-        commands.revise(id, request.format(), request.reuseReleased(), request.description());
+    public ResponseEntity<Void> revise(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @Valid @RequestBody ReviseSeriesRequest request) {
+        commands.revise(id, IfMatch.version(ifMatch, "the series' version"), request.format(),
+                request.reuseReleased(), request.description());
         return ResponseEntity.noContent().build();
     }
 

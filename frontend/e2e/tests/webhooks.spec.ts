@@ -82,10 +82,10 @@ async function deactivate(request: APIRequestContext, salt: string): Promise<voi
   const session = await apiSession(request);
   const headers = { Authorization: `Bearer ${session.token}` };
   const listed = await request.get(`${API}/api/v1/webhooks/subscriptions?limit=200`, { headers });
-  for (const w of (await listed.json()).items as Array<{ id: string; name: string; url: string; eventTypes: string[]; active: boolean }>) {
+  for (const w of (await listed.json()).items as Array<{ id: string; name: string; active: boolean }>) {
     if (w.name.includes(salt) && w.active) {
-      await request.put(`${API}/api/v1/webhooks/subscriptions/${w.id}`, {
-        headers, data: { name: w.name, url: w.url, eventTypes: w.eventTypes, active: false },
+      await request.post(`${API}/api/v1/webhooks/subscriptions/${w.id}/deactivate`, {
+        headers, data: { reason: 'E2E clean-up' },
       });
     }
   }
@@ -192,9 +192,13 @@ test.describe('webhooks', () => {
 
       await page.getByTestId('edit-name').fill(`Edited ${salt}`);
       await page.getByTestId('webhook-detail').getByTestId('type-CLAIM_RAISED').check();
-      await page.getByTestId('edit-active').uncheck();
       await page.getByTestId('save-webhook').click();
       await expect(page.getByTestId('webhook-message')).toHaveText('Saved.');
+      await page.getByTestId('webhook-detail').getByTestId('deactivate-record').click();
+      await page.getByTestId('reason-input').fill('Receiver retired');
+      await page.getByTestId('confirm-action').click();
+      // The default list is the active subscriptions; the filter brings the switched-off one back.
+      await page.getByTestId('status-filter').selectOption('ALL');
       const row = page.getByTestId('webhooks-row').filter({ hasText: `Edited ${salt}` });
       await expect(row).toContainText('Inactive');
       await expect(row).toContainText('CLAIM_RAISED');

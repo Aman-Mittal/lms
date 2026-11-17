@@ -144,6 +144,7 @@ public class InboundCommandService {
         }
 
         List<AsnLine> lines = asnLines.findByAsnIdOrderByLineNo(asnId);
+        lines.stream().map(AsnLine::skuId).distinct().forEach(this::requireSku);
         Set<Integer> known = new HashSet<>();
         lines.forEach(line -> known.add(line.lineNo()));
         for (Integer lineNo : byLine.keySet()) {
@@ -220,7 +221,7 @@ public class InboundCommandService {
                     "Put away at least one unit");
         }
         Bin bin = bins.findById(binId)
-                .orElseThrow(() -> new ResourceNotFoundException("Bin", binId));
+                .orElseThrow(() -> new ResourceNotFoundException("Bin", binId)).requireActive();
         requireSku(skuId);
         String lot = AsnLine.normaliseLot(lotNo);
 
@@ -241,9 +242,11 @@ public class InboundCommandService {
                 Warehouses.currentActor(), Instant.now());
     }
 
+    /** The SKU, which must exist and be switched on: nothing is expected or received for an inactive one. */
     private void requireSku(UUID skuId) {
-        if (skuId == null || !skus.existsById(skuId)) {
+        if (skuId == null) {
             throw new ResourceNotFoundException("SKU", skuId);
         }
+        skus.findById(skuId).orElseThrow(() -> new ResourceNotFoundException("SKU", skuId)).requireActive();
     }
 }

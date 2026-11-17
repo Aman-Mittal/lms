@@ -95,9 +95,11 @@ public class OutboundCommandService {
         orders.save(order);
         int lineNo = 0;
         for (RequestedLine line : requested) {
-            if (line.skuId() == null || !skus.existsById(line.skuId())) {
+            if (line.skuId() == null) {
                 throw new ResourceNotFoundException("SKU", line.skuId());
             }
+            skus.findById(line.skuId()).orElseThrow(() -> new ResourceNotFoundException("SKU", line.skuId()))
+                    .requireActive();
             lines.save(OutboundLine.request(tenantId, order.id(), ++lineNo, line.skuId(),
                     line.quantity()));
         }
