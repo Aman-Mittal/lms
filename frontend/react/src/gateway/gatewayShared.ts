@@ -33,6 +33,7 @@ import {
   type RuleDraft, type GeoPoint, type MapFeature, type WebhookView, type OrderDesk, type OrderHeaderDraft,
   type OrderLineDraft, type HistoryEntryRow, type ListFilter,
 } from './lmsGateway';
+import { beginRequest, endRequest } from '../../../shared/feedback';
 import { commercialNumber } from './gatewayCommercial';
 
 /** What the verb groups share: the generated clients, the token and the cached read. */
@@ -553,6 +554,7 @@ export function keyValues(value: object | null | undefined): string {
 
 /** Runs a call and turns whatever it throws into an ApiProblem. */
 export async function guard<T>(call: () => Promise<T>): Promise<T> {
+  const requestId = beginRequest();
   try {
     return await call();
   } catch (e) {
@@ -576,5 +578,7 @@ export async function guard<T>(call: () => Promise<T>): Promise<T> {
       }
     }
     throw new ApiProblem('Could not reach the API. Try again.');
+  } finally {
+    endRequest(requestId);
   }
 }

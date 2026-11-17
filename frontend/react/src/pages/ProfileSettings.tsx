@@ -25,6 +25,7 @@ import { useSession } from '../session';
 import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settingsForm';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
@@ -210,7 +211,7 @@ export function ProfileSettings() {
       <p className="muted">The most specific profile that sets a value wins: organisation, then unit (country, zone,
         branch: deeper first), then vehicle, customer or vendor, then a combination of those (more conditions first,
         then the deeper unit, then the higher priority). A person's own preferences sit on top, under My profile.</p>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
 
       <label>
         Scope
