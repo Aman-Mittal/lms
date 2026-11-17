@@ -292,6 +292,7 @@ export function definitionOf(d: CustomFieldDefinition): FieldDefinition {
     required: d.required ?? false,
     options: d.options ?? [],
     active: d.active ?? true,
+    version: Number(d.version ?? 0),
   };
 }
 
@@ -302,6 +303,7 @@ export function ruleOf(r: AllocationRule): AllocationRuleView {
     minWeightKg: text(r.minWeightKg), maxWeightKg: text(r.maxWeightKg),
     materialClass: text(r.materialClass), action: (r.action ?? 'PREFER') as RuleAction,
     vendors: (r.vendors ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+    version: Number(r.version ?? 0),
   };
 }
 
@@ -417,6 +419,7 @@ export function webhookOf(w: WebhookSubscription): WebhookView {
   return {
     id: text(w.id), name: text(w.name), url: text(w.url), eventTypes: w.eventTypes ?? [],
     active: w.active ?? false, pausedReason: text(w.pausedReason), consecutiveFailures: w.consecutiveFailures ?? 0,
+    version: Number(w.version ?? 0),
   };
 }
 
