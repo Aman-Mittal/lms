@@ -19,6 +19,8 @@ import { ApiProblem, type MasterKind, type MasterValues } from '../gateway/lmsGa
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { FIELDS, KIND_LABEL, blankValues, validate, type FieldDef } from './masterDataFields';
+import { ErrorBanner } from './ErrorBanner';
+import { showToast } from '../../../shared/feedback';
 
 export const CONFLICT_TEXT = 'Someone else changed this record while you were editing it. '
   + 'It has been reloaded with their changes; check the values and save again.';
@@ -79,7 +81,9 @@ export function MasterDataForm({ kind, recordId, orgUnitId, onSaved, onCancel }:
     if (Object.keys(found).length > 0) { return; }
     setSaving(true);
     try {
-      onSaved(await gateway.saveMasterRecord(kind, orgUnitId, recordId ?? null, values, version));
+      const savedId = await gateway.saveMasterRecord(kind, orgUnitId, recordId ?? null, values, version);
+      showToast('Saved.');
+      onSaved(savedId);
     } catch (e) {
       if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
         setConflict(true);
@@ -145,7 +149,7 @@ export function MasterDataForm({ kind, recordId, orgUnitId, onSaved, onCancel }:
               )}
             </div>
           ))}
-          {problem && <p className="error" role="alert" data-testid="form-error">{problem}</p>}
+          {problem && <ErrorBanner message={problem} testId="form-error" />}
           <div className="actions">
             <button type="submit" data-testid="save-record" disabled={saving}>Save</button>
             <button type="button" className="link" data-testid="cancel-form" onClick={onCancel}>Cancel</button>

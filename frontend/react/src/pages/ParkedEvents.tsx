@@ -21,6 +21,7 @@ import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * Events whose listener failed on every retry and were parked. An operator
@@ -60,7 +61,7 @@ export function ParkedEvents() {
         <button type="submit">Filter</button>
       </form>
       {list.loading && <p className="muted">Loading…</p>}
-      {list.error && <p className="error" role="alert">{list.error}</p>}
+      {list.error && <ErrorBanner message={list.error} />}
       {list.data && list.data.length === 0 && (
         <p className="muted" data-testid="no-parked">Nothing is parked that matches.</p>
       )}
@@ -110,7 +111,7 @@ function Detail({ id, manage, onChanged }: { id: string; manage: boolean; onChan
   }
 
   if (detail.error) {
-    return <p className="error" role="alert">{detail.error}</p>;
+    return <ErrorBanner message={detail.error} />;
   }
   if (!detail.data) {
     return <p className="muted">Loading…</p>;
@@ -129,7 +130,7 @@ function Detail({ id, manage, onChanged }: { id: string; manage: boolean; onChan
       <p className="muted" data-testid="parked-error">{s.lastError}</p>
       <pre data-testid="parked-payload">{detail.data.payload}</pre>
       {outcome && <p data-testid="parked-outcome">{outcome}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {manage && s.status === 'PARKED' && (
         <>
           <button type="button" data-testid="replay" onClick={replay}>Replay</button>

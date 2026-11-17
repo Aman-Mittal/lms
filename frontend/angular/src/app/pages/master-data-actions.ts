@@ -19,6 +19,7 @@ import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import type { MasterAction, MasterKind } from '../gateway/master-data-types';
 import { Session } from '../session';
 import { STALE_MESSAGE } from './master-data-form';
+import { ErrorBanner } from './error-banner';
 
 const UPDATE: Record<MasterKind, string> = {
   partners: 'PARTNER_UPDATE', vehicles: 'VEHICLE_UPDATE', drivers: 'DRIVER_UPDATE', terminals: 'TERMINAL_UPDATE',
@@ -35,6 +36,7 @@ const WORDS: Record<MasterAction, { verb: string; done: string }> = {
  * always required; a refusal from the server is shown in place and the confirmation stays open.
  */
 @Component({
+  imports: [ErrorBanner],
   selector: 'app-master-data-actions',
   template: `
     @if (!pending()) {
@@ -52,7 +54,7 @@ const WORDS: Record<MasterAction, { verb: string; done: string }> = {
                     (input)="reason.set($any($event.target).value)"></textarea>
         </label>
         @if (reasonError()) { <p class="error" role="alert" data-testid="reason-error">A reason is required.</p> }
-        @if (failure()) { <p class="error" role="alert" data-testid="action-error">{{ failure() }}</p> }
+        @if (failure()) { <app-error-banner [message]="failure()" testId="action-error" /> }
         <div class="actions">
           <button type="button" data-testid="confirm-action" [disabled]="busy()" (click)="confirm()">{{ verb() }}</button>
           <button type="button" class="link" data-testid="cancel-action" (click)="cancel()">Cancel</button>
