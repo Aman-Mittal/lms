@@ -21,6 +21,8 @@ import {
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
+import { EntityPicker } from '../EntityPicker';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -189,7 +191,7 @@ export function EwayBillDesk() {
           value={filter.q} onChange={(ev) => setFilter((f) => ({ ...f, q: ev.target.value }))} />
         <button type="submit" data-testid="eway-filter-apply">Show</button>
       </form>
-      {error && <p className="error" role="alert" data-testid="eway-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="eway-error" />}
       {note && <p className="ok" role="status" data-testid="eway-note">{note}</p>}
 
       <div className="table-wrap"><table data-testid="eway-list">
@@ -243,8 +245,8 @@ export function EwayBillDesk() {
 
       <h2>A consignment's bills</h2>
       <form className="inline" data-testid="eway-consignment-form" onSubmit={(ev) => void showConsignment(ev)}>
-        <input name="consignmentId" placeholder="Consignment id" aria-label="Consignment id" data-testid="eway-consignment-id"
-          value={draft.consignmentId} onChange={(ev) => setDraft((d) => ({ ...d, consignmentId: ev.target.value }))} />
+        <EntityPicker kind="consignment" placeholder="Consignment id" ariaLabel="Consignment id" testId="eway-consignment-id"
+          value={draft.consignmentId} onChange={(id) => setDraft((d) => ({ ...d, consignmentId: id }))} />
         <button type="submit" data-testid="eway-consignment-show">Show bills</button>
         {manage && (
           <>
@@ -310,8 +312,8 @@ export function EwayBillDesk() {
         <>
           <h2>Part-B for a trip</h2>
           <form className="inline" data-testid="eway-trip-form" onSubmit={(ev) => void tripPartB(ev)}>
-            <input name="tripId" placeholder="Trip id" aria-label="Trip id" data-testid="eway-trip-id"
-              value={tripId} onChange={(ev) => setTripId(ev.target.value)} />
+            <EntityPicker kind="trip" placeholder="Trip id" ariaLabel="Trip id" testId="eway-trip-id"
+              value={tripId} onChange={setTripId} />
             <input name="tripVehicle" placeholder="Vehicle (blank: the trip's)" aria-label="Trip vehicle number"
               data-testid="eway-trip-vehicle" value={tripVehicle} onChange={(ev) => setTripVehicle(ev.target.value)} />
             <button type="submit" data-testid="eway-trip-part-b">Update Part-B for the trip</button>

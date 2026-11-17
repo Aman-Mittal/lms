@@ -26,6 +26,7 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
@@ -49,13 +50,13 @@ const PICKER: Record<string, PickKind> = {
  */
 @Component({
   selector: 'app-profile-settings',
-  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Profile settings" />
     <p class="muted">The most specific profile that sets a value wins: organisation, then unit (country, zone,
       branch: deeper first), then vehicle, customer or vendor, then a combination of those (more conditions first,
       then the deeper unit, then the higher priority). A person's own preferences sit on top, under My profile.</p>
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
 
     <label>
       Scope
@@ -82,7 +83,7 @@ const PICKER: Record<string, PickKind> = {
 
     @if (manage) {
       <h2>Add a profile</h2>
-      <form class="inline" (ngSubmit)="create()" data-testid="add-profile">
+      <form ngNativeValidate class="inline" (ngSubmit)="create()" data-testid="add-profile">
         <select name="scope" aria-label="Scope" data-testid="new-scope" [(ngModel)]="newScope">
           @for (s of scopes; track s) { <option [value]="s">{{ scopeLabel(s) }}</option> }
         </select>
@@ -115,7 +116,7 @@ const PICKER: Record<string, PickKind> = {
       <section class="panel in-flow" data-testid="profile-panel">
         <header><h2>{{ p.name }}</h2><span class="muted">{{ scopeLabel(p.scopeType) }} {{ p.scopeLabel }}</span></header>
         @if (p.scopeType === 'COMBINATION') {
-          <form class="inline" (ngSubmit)="saveConditions()" data-testid="profile-conditions">
+          <form ngNativeValidate class="inline" (ngSubmit)="saveConditions()" data-testid="profile-conditions">
             <app-entity-picker [kind]="'org-unit'" ariaLabel="Unit condition" testId="edit-cond-unit" placeholder="Unit"
                                [(value)]="editCond.orgUnitId" />
             <app-entity-picker [kind]="'customer'" ariaLabel="Customer condition" testId="edit-cond-customer"
@@ -134,7 +135,7 @@ const PICKER: Record<string, PickKind> = {
             @if (manage) { <button type="submit" data-testid="save-conditions">Save conditions</button> }
           </form>
         }
-        <form (ngSubmit)="saveProfile()" data-testid="profile-values">
+        <form ngNativeValidate (ngSubmit)="saveProfile()" data-testid="profile-values">
           <div class="table-wrap"><table>
             <thead><tr><th>Setting</th><th>Value</th>@if (hasDated()) { <th>From</th> }<th></th></tr></thead>
             <tbody>
@@ -208,7 +209,7 @@ const PICKER: Record<string, PickKind> = {
     }
 
     <h2>In force for</h2>
-    <form class="inline" (ngSubmit)="resolve()" data-testid="effective-form">
+    <form ngNativeValidate class="inline" (ngSubmit)="resolve()" data-testid="effective-form">
       <app-entity-picker [kind]="'org-unit'" ariaLabel="Context unit" testId="ctx-unit" placeholder="Unit" [(value)]="ctxUnit" />
       <app-entity-picker [kind]="'customer'" ariaLabel="Context customer" testId="ctx-customer" placeholder="Customer"
                          [(value)]="ctxCustomer" />
