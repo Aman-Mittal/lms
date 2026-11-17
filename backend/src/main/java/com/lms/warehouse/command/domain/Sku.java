@@ -37,6 +37,7 @@ public record Sku(
         String description,
         UUID ownerPartnerId,
         String uom,
+        boolean active,
         @Version Long version,
         Instant createdAt) {
 
@@ -48,6 +49,20 @@ public record Sku(
         }
         String unit = uom == null || uom.isBlank() ? "EA" : uom.strip();
         return new Sku(UUID.randomUUID(), tenantId, code.strip(), description.strip(),
-                ownerPartnerId, unit, null, at);
+                ownerPartnerId, unit, true, null, at);
+    }
+
+    /** The same SKU switched on or off; its code and unit stay. */
+    public Sku withActive(boolean nowActive) {
+        return new Sku(id, tenantId, code, description, ownerPartnerId, uom, nowActive, version, createdAt);
+    }
+
+    /** This SKU, or {@code sku-inactive} when it has been switched off and may not be ordered or received. */
+    public Sku requireActive() {
+        if (!active) {
+            throw new BusinessRuleViolationException("sku-inactive",
+                    "SKU " + code + " is switched off and cannot be ordered or received");
+        }
+        return this;
     }
 }

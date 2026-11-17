@@ -26,7 +26,8 @@ import org.springframework.data.relational.core.mapping.Table;
 
 /**
  * One vendor's place in a routing guide: their rank, the rate agreed with them,
- * and how long they have to answer an offer.
+ * and how long they have to answer an offer. An entry can be switched off, and
+ * allocation then skips the vendor on this guide while the rank stays theirs.
  */
 @Table("routing_guide_entry")
 public record RoutingGuideEntry(
@@ -37,6 +38,7 @@ public record RoutingGuideEntry(
         UUID vendorPartnerId,
         int responseSlaMinutes,
         BigDecimal agreedRate,
+        boolean active,
         @Version Long version,
         Instant createdAt) {
 
@@ -53,7 +55,13 @@ public record RoutingGuideEntry(
             throw new IllegalArgumentException("Response SLA must be at least one minute");
         }
         return new RoutingGuideEntry(id, tenantId, guideId, rankNo, vendorPartnerId,
-                responseSlaMinutes, agreedRate, null, Instant.now());
+                responseSlaMinutes, agreedRate, true, null, Instant.now());
+    }
+
+    /** The same entry switched on or off; the guide and the vendor's rank and rate stay. */
+    public RoutingGuideEntry withActive(boolean nowActive) {
+        return new RoutingGuideEntry(id, tenantId, guideId, rankNo, vendorPartnerId, responseSlaMinutes,
+                agreedRate, nowActive, version, createdAt);
     }
 
     /** When an offer made now would lapse. */

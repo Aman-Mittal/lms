@@ -19,7 +19,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** A subscription as a screen shows it. Never the secret. */
+/** A subscription as a screen shows it. Never the secret; {@code version} is its ETag. */
 public record WebhookSubscriptionView(
         UUID id,
         String name,
@@ -28,6 +28,7 @@ public record WebhookSubscriptionView(
         boolean active,
         String pausedReason,
         int consecutiveFailures,
+        long version,
         Instant createdAt,
         Instant updatedAt) {
 }

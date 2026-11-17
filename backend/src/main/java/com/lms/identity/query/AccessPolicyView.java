@@ -25,6 +25,7 @@ import java.util.UUID;
  * @param condition the condition as the JSON object it was written as, not a
  *                  string holding JSON -- a client should not have to parse
  *                  twice to read a rule
+ * @param version   the optimistic-lock version, also the {@code ETag}
  */
 public record AccessPolicyView(
         UUID id,
@@ -34,6 +35,7 @@ public record AccessPolicyView(
         String description,
         Map<String, Object> condition,
         boolean enabled,
+        Long version,
         Instant createdAt,
         Instant updatedAt) {
 }

@@ -33,4 +33,12 @@ public interface VendorAdvanceRepository extends CrudRepository<VendorAdvance, U
              ORDER BY paid_on, created_at, id
             """)
     List<VendorAdvance> findPaidOnTrip(@Param("tenantId") UUID tenantId, @Param("tripId") UUID tripId);
+
+    /** The advances an invoice took off, for giving them back when it is voided. */
+    @Query("""
+            SELECT * FROM vendor_advance
+             WHERE tenant_id = :tenantId AND deducted_invoice_id = :invoiceId AND status = 'DEDUCTED'
+             ORDER BY paid_on, created_at, id
+            """)
+    List<VendorAdvance> findDeductedBy(@Param("tenantId") UUID tenantId, @Param("invoiceId") UUID invoiceId);
 }

@@ -20,7 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** An allocation rule as the sourcing desk reads it. */
+/** An allocation rule as the sourcing desk reads it; {@code version} is its ETag. */
 public record AllocationRuleView(
         UUID id,
         String name,
@@ -33,6 +33,7 @@ public record AllocationRuleView(
         String materialClass,
         String action,
         List<VendorRef> vendors,
+        Long version,
         Instant createdAt,
         Instant updatedAt) {
 

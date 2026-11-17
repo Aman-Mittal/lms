@@ -29,6 +29,7 @@ import java.util.UUID;
  * @param lastIssued          the number the counter last gave, or null when none yet
  * @param releasedAvailable   released numbers of that year not issued again
  * @param sample              the first number of the current year, to show the format
+ * @param version             the optimistic-lock version, also the {@code ETag}
  */
 public record NumberSeriesView(
         UUID id,
@@ -51,6 +52,7 @@ public record NumberSeriesView(
         String lastIssued,
         long releasedAvailable,
         String sample,
+        Long version,
         Instant createdAt,
         Instant updatedAt) {
 }
