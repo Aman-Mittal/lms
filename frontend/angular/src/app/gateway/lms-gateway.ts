@@ -55,6 +55,7 @@ export interface ControlTowerSummary {
   openWithoutTrip: number;
 }
 
+import type { ConfigAction, ConfigKind } from './config-types';
 import type { ListFilter, MasterAction, MasterKind, MasterRecord } from './master-data-types';
 
 export const RESOURCE_KEYS = [
@@ -95,6 +96,7 @@ export interface FieldDefinition {
   required: boolean;
   options: string[];
   active: boolean;
+  version: number;
 }
 
 export interface FieldDraft {
@@ -382,6 +384,8 @@ export interface AllocationRuleView {
   action: RuleAction;
   /** In the order the rule names them, which for PREFER is the order they are asked. */
   vendors: Choice[];
+  /** Sent back as If-Match when the rule is edited or switched off. */
+  version: number;
 }
 
 /** A whole rule, as written or revised. Every condition left out is not tested. */
@@ -670,6 +674,7 @@ export interface WebhookView {
   /** Why the platform paused it after deliveries kept failing; empty when it did not. */
   pausedReason: string;
   consecutiveFailures: number;
+  version: number;
 }
 
 export interface WebhookDraft {
@@ -860,6 +865,14 @@ export abstract class LmsGateway {
    */
   abstract resetDemoData(confirm: string): Promise<DemoResetOutcome>;
   abstract list(resource: ResourceKey, filter?: ListFilter): Promise<Row[]>;
+  /**
+   * Switches an allocation rule, organisational unit, catalogue charge, webhook, custom field, bin, SKU or routing-guide
+   * vendor off or on, or voids a vendor invoice, with a reason, conditional on `version` (a stale one is an ApiProblem
+   * `concurrent-modification`). `parentId` is the warehouse of a bin or the guide of a vendor. A refusal names itself in
+   * `code`, such as `bin-not-empty`.
+   */
+  abstract switchConfigRecord(kind: ConfigKind, id: string, action: ConfigAction, reason: string, version: number,
+    parentId?: string): Promise<void>;
   /** One partner, vehicle, driver or terminal as its form shows it, with the version to send as If-Match. */
   abstract masterRecord(kind: MasterKind, id: string): Promise<MasterRecord>;
   /**
@@ -877,9 +890,9 @@ export abstract class LmsGateway {
   abstract registerPartner(orgUnitId: string, draft: PartnerDraft): Promise<void>;
 
   /** Every definition of a kind, retired ones included, or of every kind. */
-  abstract listFields(kind?: CustomFieldKind): Promise<FieldDefinition[]>;
+  abstract listFields(kind?: CustomFieldKind, status?: string): Promise<FieldDefinition[]>;
   abstract defineField(draft: FieldDraft): Promise<void>;
-  abstract reviseField(id: string, changes: FieldChanges): Promise<void>;
+  abstract reviseField(id: string, changes: FieldChanges, version: number): Promise<void>;
   abstract customValues(kind: CustomFieldKind, recordId: string): Promise<CustomValues>;
   /** Replaces the record's values; resolves to what was stored. */
   abstract saveCustomValues(kind: CustomFieldKind, recordId: string, values: CustomValues): Promise<CustomValues>;
@@ -927,11 +940,11 @@ export abstract class LmsGateway {
   abstract publicTracking(token: string): Promise<PublicTrackingView | null>;
 
   /** Every rule, active and retired, in the order they are tried. */
-  abstract allocationRules(): Promise<AllocationRuleView[]>;
+  abstract allocationRules(status?: string): Promise<AllocationRuleView[]>;
   /** Resolves to the new rule's id. */
   abstract createAllocationRule(draft: RuleDraft): Promise<string>;
   /** Replaces the whole rule; `active: false` retires it. */
-  abstract reviseAllocationRule(id: string, draft: RuleDraft): Promise<void>;
+  abstract reviseAllocationRule(id: string, draft: RuleDraft, version: number): Promise<void>;
   abstract evaluateAllocation(loadId: string): Promise<RuleEvaluation>;
   abstract allocation(id: string): Promise<AllocationSummary>;
   /** The vendors a rule may name: active vendors only. */
@@ -1019,11 +1032,11 @@ export abstract class LmsGateway {
   /** Always asks for approval: resolves to the request raised. */
   abstract requestProofReversal(consignmentId: string, reason: string): Promise<ApprovalPending>;
 
-  abstract webhooks(): Promise<WebhookView[]>;
+  abstract webhooks(status?: string): Promise<WebhookView[]>;
   /** Shown once: the secret in the result cannot be read again. */
   abstract subscribeWebhook(draft: WebhookDraft): Promise<WebhookSecret>;
   /** Replaces name, address, types and active; reactivating clears a pause. */
-  abstract reviseWebhook(id: string, changes: WebhookChanges): Promise<void>;
+  abstract reviseWebhook(id: string, changes: WebhookChanges, version: number): Promise<void>;
   /** A new secret, shown once; the old one stops signing at once. */
   abstract rotateWebhookSecret(id: string): Promise<WebhookSecret>;
   /** Queues a test delivery; resolves to its id. */
@@ -1167,11 +1180,11 @@ export abstract class LmsGateway {
   // Warehouse operations
   /** Terminals whose category is WAREHOUSE. */
   abstract warehouseChoices(): Promise<Choice[]>;
-  abstract warehouseBins(warehouseId: string): Promise<Row[]>;
+  abstract warehouseBins(warehouseId: string, status?: string): Promise<Row[]>;
   /** Resolves to the new bin's id. */
   abstract createBin(warehouseId: string, code: string, capacityUnits: number): Promise<string>;
   /** The tenant's SKUs in code order (one page of 200). */
-  abstract skus(): Promise<Row[]>;
+  abstract skus(status?: string): Promise<Row[]>;
   /** Resolves to the new SKU's id. */
   abstract createSku(draft: SkuDraft): Promise<string>;
   /** Newest first. */
@@ -1232,7 +1245,7 @@ export abstract class LmsGateway {
    */
   abstract createAccessPolicy(draft: AccessPolicyDraft): Promise<string>;
   /** The code and the action stay; everything else is replaced. */
-  abstract reviseAccessPolicy(id: string, changes: AccessPolicyChanges): Promise<void>;
+  abstract reviseAccessPolicy(id: string, changes: AccessPolicyChanges, version: number): Promise<void>;
   abstract deleteAccessPolicy(id: string): Promise<void>;
   /** Documents of every partner, vehicle and driver lapsing within `withinDays`, soonest first. */
   abstract expiringDocuments(withinDays: number): Promise<Row[]>;
@@ -1250,7 +1263,7 @@ export abstract class LmsGateway {
   /** Resolves to the new guide's id. */
   abstract defineRoutingGuide(orgUnitId: string, draft: GuideDraft): Promise<string>;
   /** Rejects with a 404 problem for a guide that does not exist. */
-  abstract routingGuide(id: string): Promise<RoutingGuideDetail>;
+  abstract routingGuide(id: string, status?: string): Promise<RoutingGuideDetail>;
   abstract addGuideVendor(guideId: string, draft: GuideVendorDraft): Promise<void>;
   abstract retireRoutingGuide(id: string): Promise<void>;
   /** One page of allocations, only those in `status` when one is given. */
@@ -1380,7 +1393,7 @@ export abstract class LmsGateway {
   abstract updateSettingConditions(id: string, version: string, conditions: SettingConditions): Promise<SettingProfileView>;
   // Organisation units
   /** The caller's unit and every unit beneath it, parents first. */
-  abstract orgUnits(): Promise<OrgUnitView[]>;
+  abstract orgUnits(status?: string): Promise<OrgUnitView[]>;
   abstract orgUnit(id: string): Promise<OrgUnitView>;
   /** Resolves to the new unit's id. Needs ORG_UNIT_MANAGE. */
   abstract createOrgUnit(draft: OrgUnitDraft): Promise<string>;
@@ -1493,6 +1506,7 @@ export interface AccessPolicyView {
   condition: string;
   enabled: boolean;
   updatedAt: string;
+  version: number;
 }
 
 export interface AccessPolicyChanges {
@@ -1624,6 +1638,8 @@ export interface ChargeCatalogueFilter {
   q: string;
   /** Only active entries when true. */
   activeOnly: boolean;
+  /** '' is the server default (the active entries), 'INACTIVE' or 'ALL' the others; wins over activeOnly. */
+  status?: string;
 }
 
 export interface ChargeCataloguePage {
@@ -1700,6 +1716,8 @@ export interface VendorInvoiceView {
   status: string;
   overdue: boolean;
   daysOverdue: number;
+  version: number;
+  voidReason: string;
 }
 
 export interface VendorInvoiceFilter {
@@ -2354,6 +2372,7 @@ export interface OrgUnitView {
   effectiveCountry: string;
   effectiveState: string;
   version: string;
+  active: boolean;
 }
 
 export interface OrgUnitDraft {
