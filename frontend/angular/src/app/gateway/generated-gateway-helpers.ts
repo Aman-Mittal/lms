@@ -63,7 +63,8 @@ export function vendorInvoiceOf(i: ApiVendorInvoice): VendorInvoiceView {
     totalAmount: Number(i.totalAmount ?? 0), currency: text(i.currency), approvedAmount: Number(i.approvedAmount ?? 0),
     advancesDeducted: Number(i.advancesDeducted ?? 0), netPayable: Number(i.netPayable ?? 0),
     paidAmount: Number(i.paidAmount ?? 0), outstanding: Number(i.outstanding ?? 0), status: text(i.status),
-    overdue: i.overdue === true, daysOverdue: Number(i.daysOverdue ?? 0),
+    overdue: i.overdue === true, daysOverdue: Number(i.daysOverdue ?? 0), version: Number(i.version ?? 0),
+    voidReason: text(i.voidReason),
   };
 }
 
@@ -448,6 +449,7 @@ export function webhookOf(w: WebhookSubscription): WebhookView {
   return {
     id: text(w.id), name: text(w.name), url: text(w.url), eventTypes: w.eventTypes ?? [],
     active: w.active ?? false, pausedReason: text(w.pausedReason), consecutiveFailures: w.consecutiveFailures ?? 0,
+    version: Number(w.version ?? 0),
   };
 }
 
@@ -470,6 +472,7 @@ export function definitionOf(d: CustomFieldDefinition): FieldDefinition {
     required: d.required ?? false,
     options: d.options ?? [],
     active: d.active ?? true,
+    version: Number(d.version ?? 0),
   };
 }
 
@@ -480,6 +483,7 @@ export function ruleOf(r: AllocationRule): AllocationRuleView {
     minWeightKg: text(r.minWeightKg), maxWeightKg: text(r.maxWeightKg),
     materialClass: text(r.materialClass), action: (text(r.action) || 'PREFER') as RuleAction,
     vendors: (r.vendors ?? []).map((v) => ({ id: text(v.vendorPartnerId), label: text(v.vendorName) })),
+    version: Number(r.version ?? 0),
   };
 }
 
@@ -661,6 +665,7 @@ export function orgUnitViewOf(u: OrgUnit): OrgUnitView {
     id: text(u.id), parentId: text(u.parentId), slug: text(u.slug), path: text(u.path), name: text(u.name),
     unitType: text(u.unitType), level: u.level, countryCode: text(u.countryCode), stateCode: text(u.stateCode),
     effectiveCountry: text(u.effectiveCountry), effectiveState: text(u.effectiveState), version: text(u.version),
+    active: u.active !== false,
   };
 }
 
