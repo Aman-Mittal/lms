@@ -335,7 +335,9 @@ public class ConsignmentMaintenanceSteps {
     @After("@consignment_maintenance")
     public void switchOff() {
         if (subscriptionId != null) {
-            world.api(WebhooksApi.class).reviseWebhookSubscription(subscriptionId, new WebhookRevisionRequest()
+            world.api(WebhooksApi.class).reviseWebhookSubscription(
+                    String.valueOf(world.api(WebhooksApi.class).getWebhookSubscription(subscriptionId).getVersion()),
+                    subscriptionId, new WebhookRevisionRequest()
                     .name(subscriptionName).url(receiver.url())
                     .eventTypes(List.of(WebhookEventType.CONSIGNMENT_CANCELLED)).active(false), null);
             subscriptionId = null;
