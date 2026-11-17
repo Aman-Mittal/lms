@@ -27,8 +27,9 @@ import java.util.UUID;
  * @param effectiveState   the nearest state at or above the unit and beneath
  *                         that country
  * @param version          the optimistic-lock version, also the {@code ETag}
+ * @param active           false once the unit has been switched off
  */
 public record OrgUnitView(UUID id, UUID parentId, String slug, String path, String name, String unitType,
                           int level, String countryCode, String stateCode, String effectiveCountry,
-                          String effectiveState, long version) {
+                          String effectiveState, long version, boolean active) {
 }

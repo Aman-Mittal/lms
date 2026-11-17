@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.identity.command.domain.OrgUnit;
+import com.lms.shared.query.ActiveFilter;
 import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import com.lms.shared.tenant.TenantContext;
@@ -45,7 +46,7 @@ public class OrgUnitQueryService {
      */
     private static final String SELECT = """
             SELECT u.id, u.parent_id, u.slug, u.path, u.name, u.unit_type, u.country_code, u.state_code,
-                   u.version, c.country_code AS effective_country, s.state_code AS effective_state
+                   u.version, u.active, c.country_code AS effective_country, s.state_code AS effective_state
               FROM org_unit u
               LEFT JOIN LATERAL (
                    SELECT a.country_code, a.path FROM org_unit a
@@ -73,12 +74,14 @@ public class OrgUnitQueryService {
      * {@code org_unit_path_prefix_idx}.
      *
      * @param q part of the unit's name or path, any case
+     * @param status ACTIVE (the default), INACTIVE or ALL
      */
-    public Slice<OrgUnitView> list(String q, String cursor, Integer limit) {
+    public Slice<OrgUnitView> list(String q, String status, String cursor, Integer limit) {
         int pageSize = Slice.clampLimit(limit);
         List<OrgUnitView> rows = jdbc.sql(SELECT + """
                          WHERE u.tenant_id = :tenantId
                            AND u.path LIKE :orgPath || '%'
+                           AND (CAST(:active AS boolean) IS NULL OR u.active = CAST(:active AS boolean))
                            AND (CAST(:after AS text) IS NULL OR u.path > CAST(:after AS text))
                            AND (CAST(:q AS text) IS NULL OR lower(u.name) LIKE CAST(:q AS text)
                                 OR u.path LIKE CAST(:q AS text))
@@ -87,6 +90,7 @@ public class OrgUnitQueryService {
                         """)
                 .param("tenantId", TenantContext.requireTenantId())
                 .param("orgPath", TenantContext.requireOrgPath())
+                .param("active", ActiveFilter.of(status))
                 .param("after", cursor == null || cursor.isBlank() ? null : cursor)
                 .param("q", Search.containsPattern(q))
                 .param("limit", pageSize + 1)
@@ -113,6 +117,6 @@ public class OrgUnitQueryService {
         return new OrgUnitView(rs.getObject("id", UUID.class), rs.getObject("parent_id", UUID.class),
                 rs.getString("slug"), rs.getString("path"), rs.getString("name"), type,
                 OrgUnit.UnitType.valueOf(type).rank(), rs.getString("country_code"), rs.getString("state_code"),
-                rs.getString("effective_country"), rs.getString("effective_state"), rs.getLong("version"));
+                rs.getString("effective_country"), rs.getString("effective_state"), rs.getLong("version"), rs.getBoolean("active"));
     }
 }

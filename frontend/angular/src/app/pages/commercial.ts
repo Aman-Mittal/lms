@@ -23,6 +23,7 @@ import {
 import type { RailTariffDraft, TariffCardDetail, TariffFilter } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { GuideVendors } from './guide-vendors';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
@@ -86,10 +87,6 @@ export class CommercialTable {
 
 const SLAB_COLUMNS: Array<[string, string]> = [
   ['minWeightKg', 'From kg'], ['maxWeightKg', 'To kg'], ['rateBasis', 'Basis'], ['rateAmount', 'Rate'],
-];
-const ENTRY_COLUMNS: Array<[string, string]> = [
-  ['rankNo', 'Rank'], ['vendorName', 'Vendor'], ['responseSlaMinutes', 'Answers within (min)'],
-  ['agreedRate', 'Agreed rate'],
 ];
 const BILL_LINE_COLUMNS: Array<[string, string]> = [
   ['lineNo', '#'], ['chargeType', 'Charge'], ['narrative', 'Narrative'], ['quantity', 'Quantity'],
@@ -275,7 +272,7 @@ export class TariffsPanel {
 /** Routing guides: who is offered a lane's loads, in what order, and how long each has to answer. */
 @Component({
   selector: 'app-guides-panel',
-  imports: [FormsModule, CommercialTable, RefusalNote, EntityPicker, StatusBadge],
+  imports: [FormsModule, RefusalNote, EntityPicker, GuideVendors, StatusBadge],
   template: `
     <section data-testid="guides">
       <h2>Routing guides</h2>
@@ -307,11 +304,7 @@ export class TariffsPanel {
           <h3>{{ d.guide['originTerminalCode'] }} → {{ d.guide['destinationTerminalCode'] }} · {{ d.guide['vehicleType'] }}</h3>
           <p>Strategy {{ d.guide['strategy'] }} ·
             <app-status-badge data-testid="guide-state" [value]="d.guide['active'] ? 'ACTIVE' : 'RETIRED'" /></p>
-          @if (d.entries.length === 0) {
-            <p class="muted" data-testid="no-vendors">No vendor on this guide yet.</p>
-          } @else {
-            <app-commercial-table [rows]="d.entries" [columns]="entryColumns" rowTestId="guide-vendor" />
-          }
+          <app-guide-vendors [guideId]="guideId()" [manage]="manage()" [tick]="tick()" />
           @if (manage() && d.guide['active']) {
             <form class="inline" (ngSubmit)="addVendor()" data-testid="add-vendor">
               <app-entity-picker [kind]="'vendor'" ariaLabel="Vendor" placeholder="Vendor" [required]="true"
@@ -338,7 +331,8 @@ export class GuidesPanel {
 
   readonly manage = input(false);
   readonly strategies = GUIDE_STRATEGIES;
-  readonly entryColumns = ENTRY_COLUMNS;
+  /** Bumped when the guide changes, so its vendor list follows. */
+  readonly tick = signal(0);
   readonly guide = signal<GuideDraft>({ originTerminalId: '', destinationTerminalId: '', vehicleType: '', strategy: 'CONTRACTUAL' });
   readonly defineRefusal = signal<Refusal | null>(null);
   readonly typed = signal('');
@@ -376,6 +370,7 @@ export class GuidesPanel {
     try {
       this.detail.set(await this.gateway.routingGuide(id.trim()));
       this.guideId.set(id.trim());
+      this.tick.update((n) => n + 1);
     } catch (e) {
       this.detail.set(null);
       this.openRefusal.set(refusalOf(e));
@@ -393,6 +388,7 @@ export class GuidesPanel {
       this.agreedRate.set('');
       this.rank.update((r) => String(Number(r) + 1));
       this.detail.set(await this.gateway.routingGuide(this.guideId()));
+      this.tick.update((n) => n + 1);
     } catch (e) {
       this.actRefusal.set(refusalOf(e));
     }

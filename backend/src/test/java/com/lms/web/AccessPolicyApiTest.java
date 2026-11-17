@@ -184,7 +184,7 @@ class AccessPolicyApiTest {
         assertThat(created.getEnabled()).isTrue();
         assertThat(created.getCondition().get("value")).isEqualTo(List.of("SATURDAY", "SUNDAY"));
 
-        api.reviseAccessPolicy(id, new ReviseAccessPolicyRequest()
+        api.reviseAccessPolicy(String.valueOf(created.getVersion()), id, new ReviseAccessPolicyRequest()
                 .effect(ReviseAccessPolicyRequest.EffectEnum.DENY)
                 .description("No approvals on Sunday")
                 .condition(Map.of("attr", "env.dayOfWeek", "op", "eq", "value", "SUNDAY"))

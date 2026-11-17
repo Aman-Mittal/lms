@@ -21,8 +21,11 @@ import java.util.List;
 import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.ActiveFilter;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import com.lms.sourcing.command.AllocationEvaluationService;
 import com.lms.sourcing.command.AllocationRuleService;
 import com.lms.sourcing.command.AllocationRuleService.RuleDraft;
@@ -40,6 +43,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -68,14 +72,17 @@ public class AllocationRuleController {
 
     @GetMapping
     public Slice<AllocationRuleView> list(@RequestParam(required = false) Boolean active,
+                                          @RequestParam(required = false) String status,
                                           @RequestParam(required = false) String cursor,
                                           @RequestParam(required = false) Integer limit) {
-        return queries.list(active, cursor, limit);
+        return queries.list(ActiveFilter.of(status, active), cursor, limit);
     }
 
     @GetMapping("/{id}")
-    public AllocationRuleView get(@PathVariable UUID id) {
-        return queries.find(id).orElseThrow(() -> new ResourceNotFoundException("Allocation rule", id));
+    public ResponseEntity<AllocationRuleView> get(@PathVariable UUID id) {
+        AllocationRuleView view = queries.find(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Allocation rule", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
     }
 
     @PostMapping
@@ -86,9 +93,32 @@ public class AllocationRuleController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Void> revise(@PathVariable UUID id, @Valid @RequestBody RuleRequest request) {
-        service.revise(id, request.toDraft());
+    public ResponseEntity<Void> revise(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @Valid @RequestBody RuleRequest request) {
+        service.revise(id, IfMatch.version(ifMatch, "the rule's version"), request.toDraft());
         return ResponseEntity.noContent().build();
+    }
+
+    /** Takes the rule out of play, with a reason; allocation skips an inactive rule. */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        service.deactivate(id, optionalVersion(ifMatch), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        service.reactivate(id, optionalVersion(ifMatch), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    private static Long optionalVersion(String ifMatch) {
+        return IfMatch.optionalVersion(ifMatch, "the rule's version");
     }
 
     /** A dry run: a POST because it takes a body, though it changes nothing. */

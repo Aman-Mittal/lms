@@ -196,7 +196,8 @@ class CustomFieldApiTest {
 
         // Retire the required field.
         UUID id = idOf("PARTNER", "credit_note");
-        accepted("retire", kit.put(callerA, DEFINITIONS + "/" + id,
+        accepted("retire", kit.putMatching(callerA, DEFINITIONS + "/" + id,
+                kit.etagOf(callerA, DEFINITIONS + "/" + id, everything),
                 "{\"label\":\"Credit note\",\"required\":true,\"active\":false}", everything));
         accepted("no longer required", setValues(callerA, "PARTNER", aPartner, "{\"tier\":\"SILVER\"}"));
         assertThat(valuesOf(callerA, "PARTNER", aPartner).get("credit_note").asString())

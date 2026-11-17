@@ -16,14 +16,17 @@
 
 import { useState, type FormEvent } from 'react';
 import {
-  MATERIAL_CLASSES, RULE_ACTIONS, type AllocationRuleView, type AllocationSummary, type Choice,
+  ApiProblem, MATERIAL_CLASSES, RULE_ACTIONS, type AllocationRuleView, type AllocationSummary, type Choice,
   type RuleAction, type RuleDraft, type RuleEvaluation,
 } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { ConfigActions } from './ConfigActions';
+import { CONFLICT_TEXT } from './MasterDataForm';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { StatusFilter } from './StatusFilter';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 export function AllocationRules() {
@@ -32,9 +35,12 @@ export function AllocationRules() {
   const [editing, setEditing] = useState<AllocationRuleView | null>(null);
   // Bumped on every save, so the form starts empty again even when it was not editing.
   const [saved, setSaved] = useState(0);
-  const [error, setError] = useState('');
+  // Said when somebody else saved the rule first; the rule is read again.
+  const [conflict, setConflict] = useState('');
+  // '' is the server's default, the active rules.
+  const [status, setStatus] = useState('');
 
-  const rules = useLoad(() => gateway.allocationRules(), reload);
+  const rules = useLoad(() => gateway.allocationRules(status), `${reload}:${status}`);
   // The pickers' choices change rarely; they are loaded once for the screen.
   const choices = useLoad(
     () => (can('ALLOCATION_RULE_MANAGE')
@@ -44,16 +50,6 @@ export function AllocationRules() {
   );
   const terminals = choices.data?.[0] ?? [];
   const vendors = choices.data?.[1] ?? [];
-
-  async function setActive(rule: AllocationRuleView, active: boolean) {
-    setError('');
-    try {
-      await gateway.reviseAllocationRule(rule.id, { ...draftOf(rule), active });
-      setReload((n) => n + 1);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
 
   if (!can('ALLOCATION_RULE_READ')) {
     return (
@@ -69,10 +65,11 @@ export function AllocationRules() {
       <PageHeader title="Allocation rules" />
       <p className="muted">
         When a load is offered, the first active rule that matches it decides who is asked: PREFER asks its vendors
-        first, in order; EXCLUDE never asks them. A rule is retired, never deleted.
+        first, in order; EXCLUDE never asks them. A rule is deactivated, never deleted.
       </p>
+      <StatusFilter value={status} onChange={setStatus} />
       {rules.error && <p className="error" role="alert">{rules.error}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
       {rules.loading ? <p className="muted">Loading…</p> : (rules.data ?? []).length === 0 ? (
         <p className="muted" data-testid="no-rules">No rules yet: loads are offered by the routing guide alone.</p>
       ) : (
@@ -93,8 +90,8 @@ export function AllocationRules() {
                   {can('ALLOCATION_RULE_MANAGE') && (
                     <>
                       <button className="link" data-testid="rule-edit" onClick={() => setEditing(r)}>Edit</button>{' '}
-                      <button className="link" data-testid={r.active ? 'rule-retire' : 'rule-reinstate'}
-                        onClick={() => setActive(r, !r.active)}>{r.active ? 'Retire' : 'Reinstate'}</button>
+                      <ConfigActions kind="allocationRules" id={r.id} active={r.active} label={r.name} version={r.version}
+                        onChanged={() => setReload((n) => n + 1)} />
                     </>
                   )}
                 </td>
@@ -106,25 +103,14 @@ export function AllocationRules() {
       {can('ALLOCATION_RULE_MANAGE') && (
         // A key per rule being edited: a fresh form, with its own state, each time.
         <RuleForm key={`${editing?.id ?? 'new'}:${saved}`} editing={editing} terminals={terminals} vendors={vendors}
-          onSaved={() => { setEditing(null); setSaved((n) => n + 1); setReload((n) => n + 1); }}
+          onSaved={() => { setConflict(''); setEditing(null); setSaved((n) => n + 1); setReload((n) => n + 1); }}
+          onStale={() => { setEditing(null); setSaved((n) => n + 1); setReload((n) => n + 1); setConflict(CONFLICT_TEXT); }}
           onCancel={() => setEditing(null)} />
       )}
       <DryRun />
       <AllocationLookUp />
     </>
   );
-}
-
-function draftOf(rule: AllocationRuleView): RuleDraft {
-  return {
-    name: rule.name, priority: rule.priority, active: rule.active,
-    originTerminalId: rule.originTerminalId || undefined,
-    destinationTerminalId: rule.destinationTerminalId || undefined,
-    minWeightKg: rule.minWeightKg ? Number(rule.minWeightKg) : undefined,
-    maxWeightKg: rule.maxWeightKg ? Number(rule.maxWeightKg) : undefined,
-    materialClass: rule.materialClass || undefined,
-    action: rule.action, vendorIds: rule.vendors.map((v) => v.id),
-  };
 }
 
 /** The rule's conditions in words; "Every load" when it has none. */
@@ -143,10 +129,12 @@ interface RuleFormProps {
   terminals: Choice[];
   vendors: Choice[];
   onSaved: () => void;
+  /** Somebody else saved the rule first. */
+  onStale: () => void;
   onCancel: () => void;
 }
 
-function RuleForm({ editing, terminals, vendors, onSaved, onCancel }: RuleFormProps) {
+function RuleForm({ editing, terminals, vendors, onSaved, onStale, onCancel }: RuleFormProps) {
   const { gateway } = useSession();
   const [name, setName] = useState(editing?.name ?? '');
   const [priority, setPriority] = useState(String(editing?.priority ?? 100));
@@ -183,13 +171,17 @@ function RuleForm({ editing, terminals, vendors, onSaved, onCancel }: RuleFormPr
     };
     try {
       if (editing) {
-        await gateway.reviseAllocationRule(editing.id, draft);
+        await gateway.reviseAllocationRule(editing.id, draft, editing.version);
       } else {
         await gateway.createAllocationRule(draft);
       }
       onSaved();
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        onStale();
+      } else {
+        setError((e as Error).message);
+      }
     }
   }
 

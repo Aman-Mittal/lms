@@ -354,7 +354,7 @@ public class AccessSteps {
     @Given("access policy {string} is disabled")
     public void disablePolicy(String code) {
         AccessPolicy policy = policy(code);
-        policies.revise(policy.id(), policy.effect(), policy.description(),
+        policies.revise(policy.id(), policy.version(), policy.effect(), policy.description(),
                 conditionOf(policy.condition().value()), false);
     }
 

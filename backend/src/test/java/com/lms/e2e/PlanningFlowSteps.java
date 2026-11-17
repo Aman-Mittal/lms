@@ -548,7 +548,7 @@ public class PlanningFlowSteps {
 
     @Then("the planning-flow routing guide is active with {string} at rank 1")
     public void guideActive(String vendor) {
-        var guide = world.api(SourcingApi.class).getRoutingGuide(guideId);
+        var guide = world.api(SourcingApi.class).getRoutingGuide(guideId, (String) null);
         assertThat(guide.getActive()).isTrue();
         assertThat(guide.getEntries()).singleElement().satisfies(entry -> {
             assertThat(entry.getRankNo()).isEqualTo(1);
@@ -563,7 +563,7 @@ public class PlanningFlowSteps {
 
     @Then("the planning-flow routing guide is retired but still shows its vendors")
     public void guideRetired() {
-        var guide = world.api(SourcingApi.class).getRoutingGuide(guideId);
+        var guide = world.api(SourcingApi.class).getRoutingGuide(guideId, (String) null);
         assertThat(guide.getActive()).isFalse();
         assertThat(guide.getEntries()).hasSize(1);
         assertThat(guide.getOriginTerminalCode()).isEqualTo(world.code("PF-ORIGIN"));
@@ -573,7 +573,7 @@ public class PlanningFlowSteps {
     @Then("retiring the planning-flow routing guide again changes nothing")
     public void retireAgain() {
         world.api(SourcingApi.class).retireRoutingGuide(guideId, null);
-        assertThat(world.api(SourcingApi.class).getRoutingGuide(guideId).getActive()).isFalse();
+        assertThat(world.api(SourcingApi.class).getRoutingGuide(guideId, (String) null).getActive()).isFalse();
     }
 
     @Then("a new planning-flow load on that lane can no longer be offered, refused with {string}")
@@ -643,7 +643,7 @@ public class PlanningFlowSteps {
         String allocator = support.limitedUserToken("allocator", List.of("LOAD_ALLOCATE"));
         assertProblem(() -> world.client(allocator, SourcingApi.class).retireRoutingGuide(guideId, null),
                 403, "access-denied");
-        assertThat(world.api(SourcingApi.class).getRoutingGuide(guideId).getActive())
+        assertThat(world.api(SourcingApi.class).getRoutingGuide(guideId, (String) null).getActive())
                 .as("the refused retirement changed nothing").isTrue();
         assertThat(world.api(SourcingApi.class).getAllocation(allocationId).getStatus())
                 .isEqualTo("OFFERED");

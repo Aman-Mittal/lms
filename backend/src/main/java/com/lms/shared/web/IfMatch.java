@@ -36,6 +36,11 @@ public final class IfMatch {
         return "\"" + (version == null ? 0 : version) + "\"";
     }
 
+    /** As {@link #version}, for the switch-off and switch-on transitions where the header is optional. */
+    public static Long optionalVersion(String ifMatch, String what) {
+        return ifMatch == null || ifMatch.isBlank() ? null : version(ifMatch, what);
+    }
+
     /**
      * @param what the resource, for the message: "the load's version"
      * @throws IllegalArgumentException when the header is missing or not a version

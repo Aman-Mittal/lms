@@ -33,4 +33,13 @@ public interface RoutingGuideEntryRepository extends CrudRepository<RoutingGuide
             """)
     List<RoutingGuideEntry> findByGuide(@Param("tenantId") UUID tenantId,
                                         @Param("guideId") UUID guideId);
+
+    /** The entries allocation may offer to, in rank order: a switched-off vendor is skipped. */
+    @Query("""
+            SELECT * FROM routing_guide_entry
+             WHERE tenant_id = :tenantId AND guide_id = :guideId AND active
+             ORDER BY rank_no
+            """)
+    List<RoutingGuideEntry> findActiveByGuide(@Param("tenantId") UUID tenantId,
+                                              @Param("guideId") UUID guideId);
 }

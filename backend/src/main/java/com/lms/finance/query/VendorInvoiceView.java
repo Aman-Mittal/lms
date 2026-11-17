@@ -24,7 +24,8 @@ import java.util.UUID;
 /**
  * A vendor invoice with its balance: what it is for, what the platform
  * approved, the advances taken off, what has been paid and what is still
- * outstanding. {@code overdue} is read against today, not stored.
+ * outstanding. {@code overdue} is read against today, not stored. A voided invoice
+ * (status VOID) carries the reason it was voided and is owed nothing.
  */
 public record VendorInvoiceView(
         UUID id,
@@ -52,5 +53,6 @@ public record VendorInvoiceView(
         String documentRef,
         String remarks,
         Long version,
+        String voidReason,
         Instant createdAt) {
 }

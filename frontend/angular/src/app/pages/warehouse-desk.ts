@@ -24,6 +24,7 @@ import { Qr } from './qr';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
+import { WarehouseSetupLists } from './warehouse-setup-lists';
 import { When } from './when';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
@@ -57,8 +58,6 @@ const WAVE_ORDER_COLUMNS: Columns = [
   ['seq', '#'], ['orderNo', 'Order'], ['status', 'Status'], ['orderedUnits', 'Ordered'], ['pickedUnits', 'Picked'],
   ['shortUnits', 'Short'],
 ];
-const BIN_COLUMNS: Columns = [['code', 'Bin'], ['capacityUnits', 'Capacity'], ['occupiedUnits', 'Occupied']];
-const SKU_COLUMNS: Columns = [['code', 'SKU'], ['description', 'Description'], ['uom', 'Unit']];
 
 const blankMove = (): StockMoveDraft => ({ binId: '', skuId: '', lotNo: '', quantity: '', reason: '' });
 const blankAsnLine = (): AsnLineDraft => ({ skuId: '', lotNo: '', quantity: '' });
@@ -106,7 +105,7 @@ export class WhTable {
  */
 @Component({
   selector: 'app-warehouse-floor',
-  imports: [FormsModule, WhTable, Qr, EntityPicker, StatusBadge, When],
+  imports: [FormsModule, WhTable, Qr, EntityPicker, StatusBadge, When, WarehouseSetupLists],
   template: `
     <section data-testid="warehouse-desk">
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
@@ -382,36 +381,34 @@ export class WhTable {
         }
 
         @case ('setup') {
-          <h2>Bins</h2>
-          @if (loaded() && bins().length === 0) {
-            <p class="muted" data-testid="no-bins">This warehouse has no bins yet.</p>
-          } @else {
-            <app-wh-table [rows]="bins()" [columns]="binColumns" rowTestId="bin-row" />
-          }
-          @if (session.can('WAREHOUSE_SETUP')) {
-            <form class="inline" (ngSubmit)="createBin()" data-testid="create-bin">
-              <input name="binCode" aria-label="Bin code" placeholder="Bin code"
-                     [value]="binCode()" (input)="binCode.set($any($event.target).value)" required />
-              <input name="capacity" aria-label="Capacity units" placeholder="Capacity units" inputmode="numeric"
-                     [value]="capacity()" (input)="capacity.set($any($event.target).value)" required />
-              <button type="submit">Create bin</button>
-            </form>
-          }
-          <h2>SKUs</h2>
-          <app-wh-table [rows]="skus()" [columns]="skuColumns" rowTestId="sku-row" />
-          @if (session.can('WAREHOUSE_SETUP')) {
-            <form class="inline" (ngSubmit)="createSku()" data-testid="create-sku">
-              <input name="skuCode" aria-label="SKU code" placeholder="SKU code"
-                     [value]="skuCode()" (input)="skuCode.set($any($event.target).value)" required />
-              <input name="skuDescription" aria-label="SKU description" placeholder="Description"
-                     [value]="skuDescription()" (input)="skuDescription.set($any($event.target).value)" required />
-              <app-entity-picker [kind]="'customer'" ariaLabel="Owner id" placeholder="Owner client (optional)"
-                                 [(value)]="skuOwner" />
-              <input name="skuUom" aria-label="Unit of measure" placeholder="Unit (optional)"
-                     [value]="skuUom()" (input)="skuUom.set($any($event.target).value)" />
-              <button type="submit">Create SKU</button>
-            </form>
-          }
+          <app-wh-setup-lists [warehouseId]="warehouseId()" [tick]="setupTick()">
+            <div bins>
+              @if (session.can('WAREHOUSE_SETUP')) {
+                <form class="inline" (ngSubmit)="createBin()" data-testid="create-bin">
+                  <input name="binCode" aria-label="Bin code" placeholder="Bin code"
+                         [value]="binCode()" (input)="binCode.set($any($event.target).value)" required />
+                  <input name="capacity" aria-label="Capacity units" placeholder="Capacity units" inputmode="numeric"
+                         [value]="capacity()" (input)="capacity.set($any($event.target).value)" required />
+                  <button type="submit">Create bin</button>
+                </form>
+              }
+            </div>
+            <div skus>
+              @if (session.can('WAREHOUSE_SETUP')) {
+                <form class="inline" (ngSubmit)="createSku()" data-testid="create-sku">
+                  <input name="skuCode" aria-label="SKU code" placeholder="SKU code"
+                         [value]="skuCode()" (input)="skuCode.set($any($event.target).value)" required />
+                  <input name="skuDescription" aria-label="SKU description" placeholder="Description"
+                         [value]="skuDescription()" (input)="skuDescription.set($any($event.target).value)" required />
+                  <app-entity-picker [kind]="'customer'" ariaLabel="Owner id" placeholder="Owner client (optional)"
+                                     [(value)]="skuOwner" />
+                  <input name="skuUom" aria-label="Unit of measure" placeholder="Unit (optional)"
+                         [value]="skuUom()" (input)="skuUom.set($any($event.target).value)" />
+                  <button type="submit">Create SKU</button>
+                </form>
+              }
+            </div>
+          </app-wh-setup-lists>
         }
       }
 
@@ -444,8 +441,6 @@ export class WarehouseFloor implements OnInit {
   readonly contentColumns = CONTENT_COLUMNS;
   readonly waveColumns = WAVE_COLUMNS;
   readonly waveOrderColumns = WAVE_ORDER_COLUMNS;
-  readonly binColumns = BIN_COLUMNS;
-  readonly skuColumns = SKU_COLUMNS;
   readonly blankAsnLine = blankAsnLine;
   readonly blankOutLine = blankOutLine;
 
@@ -503,6 +498,8 @@ export class WarehouseFloor implements OnInit {
   readonly wave = signal<WarehouseDocument | null>(null);
   readonly chosen = signal<string[]>([]);
 
+  /** Bumped whenever the warehouse is read again, so the setup lists follow. */
+  readonly setupTick = signal(0);
   readonly binCode = signal('');
   readonly capacity = signal('');
   readonly skuCode = signal('');
@@ -531,6 +528,7 @@ export class WarehouseFloor implements OnInit {
       this.units.set(units);
       this.waves.set(waves);
       this.loaded.set(true);
+      this.setupTick.update((n) => n + 1);
       await this.reopen();
     } catch (e) {
       this.error.set((e as Error).message);

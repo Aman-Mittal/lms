@@ -21,11 +21,14 @@ import java.util.UUID;
 
 import com.lms.masterdata.api.PartnerStandingPort;
 import com.lms.masterdata.api.TerminalCategoryPort;
+import com.lms.shared.audit.TransitionAudit;
+import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import com.lms.sourcing.command.domain.RoutingGuide;
 import com.lms.sourcing.command.domain.RoutingGuideEntry;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -47,11 +50,13 @@ public class RoutingGuideCommandService {
     private final PartnerStandingPort partners;
     private final JdbcClient jdbc;
     private final TerminalCategoryPort terminals;
+    private final TransitionAudit audit;
 
     public RoutingGuideCommandService(RoutingGuideRepository guides,
                                       RoutingGuideEntryRepository entries,
                                       PartnerStandingPort partners, JdbcClient jdbc,
-                                      TerminalCategoryPort terminals) {
+                                      TerminalCategoryPort terminals, TransitionAudit audit) {
+        this.audit = audit;
         this.guides = guides;
         this.entries = entries;
         this.partners = partners;
@@ -149,6 +154,80 @@ public class RoutingGuideCommandService {
     @PreAuthorize("hasAuthority('ROUTING_GUIDE_MANAGE')")
     public void retire(UUID guideId) {
         guides.save(require(guideId).deactivate());
+    }
+
+    /**
+     * Takes a vendor out of play on this guide, with a reason. Allocation skips an
+     * inactive entry and offers to the next rank; the vendor keeps the rank and
+     * the rate for when they come back. Refused with {@code routing-guide-vendor-in-use}
+     * while the vendor holds an offer on this guide that has not been answered.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('ROUTING_GUIDE_MANAGE')")
+    public void deactivateVendor(UUID guideId, UUID entryId, Long expectedVersion, String reason) {
+        requireReason(reason);
+        RoutingGuideEntry before = requireEntry(guideId, entryId, expectedVersion);
+        if (!before.active()) {
+            throw new BusinessRuleViolationException("routing-guide-vendor-already-inactive",
+                    "Vendor " + partners.codeOf(before.vendorPartnerId()) + " is already inactive on this guide");
+        }
+        long pending = jdbc.sql("""
+                        SELECT count(*) FROM allocation_offer o
+                          JOIN allocation a ON a.id = o.allocation_id
+                         WHERE a.guide_id = :guideId AND o.vendor_partner_id = :vendorId
+                           AND o.outcome = 'PENDING'
+                        """)
+                .param("guideId", guideId).param("vendorId", before.vendorPartnerId())
+                .query(Long.class).single();
+        if (pending > 0) {
+            throw new BusinessRuleViolationException("routing-guide-vendor-in-use",
+                    "Vendor " + partners.codeOf(before.vendorPartnerId()) + " holds " + pending
+                            + " open offer(s) on this guide; wait for the answer or withdraw them first");
+        }
+        RoutingGuideEntry saved = entries.save(before.withActive(false));
+        audit.record("ROUTING_GUIDE_VENDOR_DEACTIVATED", "RoutingGuideEntry", entryId, snapshot(before, null),
+                snapshot(saved, reason));
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('ROUTING_GUIDE_MANAGE')")
+    public void reactivateVendor(UUID guideId, UUID entryId, Long expectedVersion, String reason) {
+        requireReason(reason);
+        RoutingGuideEntry before = requireEntry(guideId, entryId, expectedVersion);
+        if (before.active()) {
+            throw new BusinessRuleViolationException("routing-guide-vendor-not-inactive",
+                    "Vendor " + partners.codeOf(before.vendorPartnerId()) + " is active on this guide, not inactive");
+        }
+        if (!partners.canTransact(before.vendorPartnerId())) {
+            throw new BusinessRuleViolationException("vendor-not-active",
+                    "Vendor " + partners.codeOf(before.vendorPartnerId())
+                            + " is not active and cannot be offered freight");
+        }
+        RoutingGuideEntry saved = entries.save(before.withActive(true));
+        audit.record("ROUTING_GUIDE_VENDOR_REACTIVATED", "RoutingGuideEntry", entryId, snapshot(before, null),
+                snapshot(saved, reason));
+    }
+
+    private RoutingGuideEntry requireEntry(UUID guideId, UUID entryId, Long expectedVersion) {
+        RoutingGuide guide = require(guideId);
+        RoutingGuideEntry entry = entries.findById(entryId)
+                .filter(e -> e.guideId().equals(guide.id()))
+                .orElseThrow(() -> new ResourceNotFoundException("Routing guide vendor", entryId));
+        if (expectedVersion != null && (entry.version() == null || !entry.version().equals(expectedVersion))) {
+            throw new OptimisticLockingFailureException("The vendor entry changed since it was read");
+        }
+        return entry;
+    }
+
+    private static void requireReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
+    }
+
+    private static Json snapshot(RoutingGuideEntry e, String reason) {
+        return Json.object("vendorPartnerId", e.vendorPartnerId().toString(), "rankNo", Integer.toString(e.rankNo()),
+                "active", Boolean.toString(e.active()), "reason", reason);
     }
 
     private RoutingGuide require(UUID guideId) {

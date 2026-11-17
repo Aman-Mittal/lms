@@ -25,6 +25,8 @@ Bin:
     occupiedUnits:
       type: integer
       description: Units in the bin now, across every SKU and lot.
+    active: { type: boolean, description: False once switched off; the bin takes no more stock. }
+    version: { type: integer, format: int64, description: Send as `If-Match` when switching the bin off or on. }
 
 BinSlice:
   type: object
@@ -57,6 +59,8 @@ Sku:
     description: { type: string }
     ownerPartnerId: { type: string, format: uuid }
     uom: { type: string }
+    active: { type: boolean, description: False once switched off; it cannot be ordered or received. }
+    version: { type: integer, format: int64, description: Send as `If-Match` when switching the SKU off or on. }
 
 SkuSlice:
   type: object

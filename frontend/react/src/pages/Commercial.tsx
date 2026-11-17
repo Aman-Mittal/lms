@@ -23,6 +23,7 @@ import type { RailTariffDraft, TariffCardDetail, TariffFilter } from '../gateway
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { GuideVendors } from './GuideVendors';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
@@ -74,10 +75,6 @@ function Table({ rows, columns, rowTestId }: { rows: Row[]; columns: Array<[stri
 
 const SLAB_COLUMNS: Array<[string, string]> = [
   ['minWeightKg', 'From kg'], ['maxWeightKg', 'To kg'], ['rateBasis', 'Basis'], ['rateAmount', 'Rate'],
-];
-const ENTRY_COLUMNS: Array<[string, string]> = [
-  ['rankNo', 'Rank'], ['vendorName', 'Vendor'], ['responseSlaMinutes', 'Answers within (min)'],
-  ['agreedRate', 'Agreed rate'],
 ];
 const BILL_LINE_COLUMNS: Array<[string, string]> = [
   ['lineNo', '#'], ['chargeType', 'Charge'], ['narrative', 'Narrative'], ['quantity', 'Quantity'],
@@ -266,6 +263,8 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
   const [sla, setSla] = useState('60');
   const [agreedRate, setAgreedRate] = useState('');
   const [actRefusal, setActRefusal] = useState<Refusal | null>(null);
+  // Bumped when the guide changes, so its vendor list follows.
+  const [tick, setTick] = useState(0);
 
   async function open(id: string) {
     setOpenRefusal(null);
@@ -273,6 +272,7 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
     try {
       setDetail(await gateway.routingGuide(id.trim()));
       setGuideId(id.trim());
+      setTick((n) => n + 1);
     } catch (e) {
       setDetail(null);
       setOpenRefusal(refusalOf(e));
@@ -302,6 +302,7 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
       setAgreedRate('');
       setRank((r) => String(Number(r) + 1));
       setDetail(await gateway.routingGuide(guideId));
+      setTick((n) => n + 1);
     } catch (e) {
       setActRefusal(refusalOf(e));
     }
@@ -352,9 +353,7 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
           <h3>{detail.guide.originTerminalCode} → {detail.guide.destinationTerminalCode} · {detail.guide.vehicleType}</h3>
           <p>Strategy {detail.guide.strategy} ·{' '}
             <StatusBadge data-testid="guide-state" value={detail.guide.active ? 'ACTIVE' : 'RETIRED'} /></p>
-          {detail.entries.length === 0
-            ? <p className="muted" data-testid="no-vendors">No vendor on this guide yet.</p>
-            : <Table rows={detail.entries} columns={ENTRY_COLUMNS} rowTestId="guide-vendor" />}
+          <GuideVendors guideId={guideId} manage={manage} version={tick} />
           {manage && detail.guide.active && (
             <>
               <form className="inline" onSubmit={addVendor} data-testid="add-vendor">

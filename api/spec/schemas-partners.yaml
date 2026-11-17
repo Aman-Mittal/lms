@@ -58,7 +58,7 @@ UpdatePartnerRequest:
 
 ReasonRequest:
   type: object
-  description: Why a record is being switched off or back on; kept in the audit trail.
+  description: Why a record is being switched off, switched back on or voided; kept in the audit trail.
   properties:
     reason: { type: string, minLength: 1 }
   required: [reason]

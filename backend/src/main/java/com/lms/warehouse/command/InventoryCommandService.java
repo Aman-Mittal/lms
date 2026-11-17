@@ -85,6 +85,11 @@ public class InventoryCommandService {
         if (skuId == null || !skus.existsById(skuId)) {
             throw new ResourceNotFoundException("SKU", skuId);
         }
+        if (quantity > 0) {
+            // Stock can leave a switched-off bin or SKU, not arrive in or as one.
+            bin.requireActive();
+            skus.findById(skuId).orElseThrow().requireActive();
+        }
         String lot = AsnLine.normaliseLot(lotNo);
 
         int onHand = ledger.onHand(LocationType.BIN, binId, skuId, lot);
@@ -130,8 +135,9 @@ public class InventoryCommandService {
                                       String reason) {
         requireQuarantineChange(quantity, reason);
         Bin bin = bins.findById(binId)
-                .orElseThrow(() -> new ResourceNotFoundException("Bin", binId));
+                .orElseThrow(() -> new ResourceNotFoundException("Bin", binId)).requireActive();
         requireSku(skuId);
+        skus.findById(skuId).orElseThrow().requireActive();
         String lot = AsnLine.normaliseLot(lotNo);
         int held = requireQuarantined(bin.warehouseId(), skuId, lot, quantity, "release");
         if (ledger.binOccupancy(binId) + quantity > bin.capacityUnits()) {

@@ -26,6 +26,7 @@ import type { ListFilter, LmsGateway, ResourceKey, Row } from './lmsGateway';
 import { GatewayDeps, text } from './gatewayShared';
 import { adminGateway, warehouseVerbs } from './gatewayWarehouseAdmin';
 import { clientBillingVerbs } from './gatewayClientBilling';
+import { configVerbs } from './gatewayConfig';
 import { masterDataVerbs } from './gatewayMasterData';
 import { creditVerbs, gateVerbs } from './gatewayCreditGate';
 import { deliveryVerbs } from './gatewayDelivery';
@@ -156,6 +157,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...ewayVerbs(config),
     ...clientBillingVerbs(deps),
     ...masterDataVerbs(deps),
+    ...configVerbs(config, deps),
 
     // Warehouse operations
     ...warehouseVerbs(new WarehouseApi(config), terminals),

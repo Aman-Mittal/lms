@@ -17,10 +17,13 @@ package com.lms.warehouse.query;
 
 import java.util.UUID;
 
+/** A SKU; {@code version} is the ETag a switch-off may send back as If-Match. */
 public record SkuView(
         UUID id,
         String code,
         String description,
         UUID ownerPartnerId,
-        String uom) {
+        String uom,
+        boolean active,
+        Long version) {
 }

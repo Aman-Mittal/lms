@@ -33,8 +33,8 @@ export function orderVerbs(d: GatewayDeps): Pick<LmsGateway,
   const { orders, loads, webhooks } = d;
 
   return {
-    webhooks: () =>
-      guard(async () => (await webhooks.listWebhookSubscriptions({ limit: 200 })).items.map(webhookOf)),
+    webhooks: (status?: string) =>
+      guard(async () => (await webhooks.listWebhookSubscriptions({ limit: 200, status: status || undefined })).items.map(webhookOf)),
 
     subscribeWebhook: (draft: WebhookDraft): Promise<WebhookSecret> =>
       guard(async () => {
@@ -46,10 +46,10 @@ export function orderVerbs(d: GatewayDeps): Pick<LmsGateway,
         return { id: r.id, secret: r.secret };
       }),
 
-    reviseWebhook: (id: string, changes: WebhookChanges) =>
+    reviseWebhook: (id: string, changes: WebhookChanges, version: number) =>
       guard(async () => {
         await webhooks.reviseWebhookSubscription({
-          id,
+          id, ifMatch: String(version),
           webhookRevisionRequest: {
             name: changes.name, url: changes.url, eventTypes: changes.eventTypes as ApiWebhookEventType[],
             active: changes.active,

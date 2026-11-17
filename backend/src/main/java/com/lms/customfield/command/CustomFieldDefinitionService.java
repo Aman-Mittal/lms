@@ -30,6 +30,7 @@ import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,23 +61,39 @@ public class CustomFieldDefinitionService {
     /** A definition as the API shows it. */
     public record View(UUID id, EntityType entityType, String key, String label,
                        FieldType fieldType, boolean required, List<String> options,
-                       int displayOrder, boolean active) {
+                       int displayOrder, boolean active, Long version) {
 
         static View of(CustomFieldDefinition d) {
             return new View(d.id(), d.entityType(), d.fieldKey(), d.label(), d.fieldType(),
                     d.required(), d.options() == null ? List.of() : List.of(d.options()),
-                    d.displayOrder(), d.active());
+                    d.displayOrder(), d.active(), d.version());
         }
     }
 
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('CUSTOM_FIELD_READ')")
     public List<View> list(EntityType entityType) {
+        return list(entityType, null);
+    }
+
+    /**
+     * @param active true for the definitions in use, false for the switched-off ones, null for every one
+     */
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('CUSTOM_FIELD_READ')")
+    public List<View> list(EntityType entityType, Boolean active) {
         UUID tenantId = TenantContext.requireTenantId();
         List<CustomFieldDefinition> found = entityType == null
                 ? definitions.forTenant(tenantId)
                 : definitions.ofType(tenantId, entityType.name());
-        return found.stream().map(View::of).toList();
+        return found.stream().filter(d -> active == null || d.active() == active).map(View::of).toList();
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('CUSTOM_FIELD_READ')")
+    public View find(UUID id) {
+        return definitions.findById(id).map(View::of)
+                .orElseThrow(() -> new ResourceNotFoundException("CustomFieldDefinition", id));
     }
 
     @Transactional
@@ -116,10 +133,11 @@ public class CustomFieldDefinitionService {
      */
     @Transactional
     @PreAuthorize("hasAuthority('CUSTOM_FIELD_MANAGE')")
-    public void revise(UUID id, String label, boolean required, List<String> options,
+    public void revise(UUID id, long expectedVersion, String label, boolean required, List<String> options,
                        Integer displayOrder, boolean active) {
         CustomFieldDefinition existing = definitions.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("CustomFieldDefinition", id));
+        requireVersion(existing, expectedVersion);
         String cleanLabel = requireLabel(label);
         String[] cleanOptions = cleanOptions(existing.fieldType(), options);
 
@@ -130,6 +148,63 @@ public class CustomFieldDefinitionService {
                         "active", String.valueOf(existing.active())),
                 Json.object("label", cleanLabel, "required", String.valueOf(required),
                         "active", String.valueOf(active)));
+    }
+
+    /**
+     * Switches a field off, with a reason. An inactive definition is not asked for and not
+     * required; the values already stored under it are kept, and come back when it does.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('CUSTOM_FIELD_MANAGE')")
+    public void deactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        CustomFieldDefinition before = definitions.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("CustomFieldDefinition", id));
+        if (expectedVersion != null) {
+            requireVersion(before, expectedVersion);
+        }
+        if (!before.active()) {
+            throw new BusinessRuleViolationException("custom-field-already-inactive",
+                    "Field " + before.fieldKey() + " is already inactive");
+        }
+        CustomFieldDefinition saved = definitions.save(before.withActive(false));
+        audit.record("CUSTOM_FIELD_DEACTIVATED", "CUSTOM_FIELD_DEFINITION", id, snapshot(before, null),
+                snapshot(saved, reason));
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('CUSTOM_FIELD_MANAGE')")
+    public void reactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        CustomFieldDefinition before = definitions.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("CustomFieldDefinition", id));
+        if (expectedVersion != null) {
+            requireVersion(before, expectedVersion);
+        }
+        if (before.active()) {
+            throw new BusinessRuleViolationException("custom-field-not-inactive",
+                    "Field " + before.fieldKey() + " is active, not inactive");
+        }
+        CustomFieldDefinition saved = definitions.save(before.withActive(true));
+        audit.record("CUSTOM_FIELD_REACTIVATED", "CUSTOM_FIELD_DEFINITION", id, snapshot(before, null),
+                snapshot(saved, reason));
+    }
+
+    private static Json snapshot(CustomFieldDefinition d, String reason) {
+        return Json.object("label", d.label(), "required", String.valueOf(d.required()),
+                "active", String.valueOf(d.active()), "reason", reason);
+    }
+
+    private static void requireReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
+    }
+
+    private static void requireVersion(CustomFieldDefinition d, long expected) {
+        if (d.version() == null || d.version() != expected) {
+            throw new OptimisticLockingFailureException("Field " + d.fieldKey() + " changed since it was read");
+        }
     }
 
     private static String requireLabel(String label) {

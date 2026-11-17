@@ -21,6 +21,8 @@ import java.util.UUID;
 
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
+import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import com.lms.webhooks.command.WebhookSubscriptionService;
 import com.lms.webhooks.query.WebhookDeliveryView;
 import com.lms.webhooks.query.WebhookQueryService;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,20 +65,44 @@ public class WebhookController {
     }
 
     @GetMapping("/subscriptions")
-    public Slice<WebhookSubscriptionView> list(@RequestParam(required = false) String cursor,
+    public Slice<WebhookSubscriptionView> list(@RequestParam(required = false) String status,
+                                               @RequestParam(required = false) String cursor,
                                                @RequestParam(required = false) Integer limit) {
-        return queries.subscriptions(cursor, limit);
+        return queries.subscriptions(status, cursor, limit);
     }
 
     @GetMapping("/subscriptions/{id}")
-    public WebhookSubscriptionView get(@PathVariable UUID id) {
-        return queries.subscription(id)
+    public ResponseEntity<WebhookSubscriptionView> get(@PathVariable UUID id) {
+        WebhookSubscriptionView view = queries.subscription(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Webhook subscription", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
     }
 
     @PutMapping("/subscriptions/{id}")
-    public ResponseEntity<Void> revise(@PathVariable UUID id, @Valid @RequestBody RevisionRequest request) {
-        subscriptions.revise(id, request.name(), request.url(), request.eventTypes(), request.active());
+    public ResponseEntity<Void> revise(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @Valid @RequestBody RevisionRequest request) {
+        subscriptions.revise(id, IfMatch.version(ifMatch, "the subscription's version"), request.name(),
+                request.url(), request.eventTypes(), request.active());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Switches the subscription off, with a reason: nothing is queued or sent for it until it is back on. */
+    @PostMapping("/subscriptions/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        subscriptions.deactivate(id, IfMatch.optionalVersion(ifMatch, "the subscription's version"),
+                request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/subscriptions/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        subscriptions.reactivate(id, IfMatch.optionalVersion(ifMatch, "the subscription's version"),
+                request.reason());
         return ResponseEntity.noContent().build();
     }
 

@@ -20,6 +20,8 @@ import java.util.UUID;
 
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import com.lms.warehouse.command.WarehouseSetupCommandService;
 import com.lms.warehouse.query.BinView;
 import com.lms.warehouse.query.SkuView;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -50,10 +53,28 @@ public class WarehouseSetupController {
 
     @GetMapping("/api/v1/warehouses/{warehouseId}/bins")
     public Slice<BinView> bins(@PathVariable UUID warehouseId,
+                               @RequestParam(required = false) String status,
                                @RequestParam(required = false) String cursor,
                                @RequestParam(required = false) Integer limit,
                                @RequestParam(required = false) String q) {
-        return queries.bins(warehouseId, cursor, limit, q);
+        return queries.bins(warehouseId, status, cursor, limit, q);
+    }
+
+    /** Switches the bin off, with a reason; 409 {@code bin-not-empty} while it holds stock. */
+    @PostMapping("/api/v1/warehouses/{warehouseId}/bins/{binId}/deactivate")
+    public ResponseEntity<Void> deactivateBin(@PathVariable UUID warehouseId, @PathVariable UUID binId,
+                                              @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                              @Valid @RequestBody ReasonRequest request) {
+        setup.deactivateBin(binId, IfMatch.optionalVersion(ifMatch, "the bin's version"), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/api/v1/warehouses/{warehouseId}/bins/{binId}/reactivate")
+    public ResponseEntity<Void> reactivateBin(@PathVariable UUID warehouseId, @PathVariable UUID binId,
+                                              @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                              @Valid @RequestBody ReasonRequest request) {
+        setup.reactivateBin(binId, IfMatch.optionalVersion(ifMatch, "the bin's version"), request.reason());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/api/v1/warehouses/{warehouseId}/bins")
@@ -65,10 +86,28 @@ public class WarehouseSetupController {
     }
 
     @GetMapping("/api/v1/skus")
-    public Slice<SkuView> skus(@RequestParam(required = false) String cursor,
+    public Slice<SkuView> skus(@RequestParam(required = false) String status,
+                               @RequestParam(required = false) String cursor,
                                @RequestParam(required = false) Integer limit,
                                @RequestParam(required = false) String q) {
-        return queries.skus(cursor, limit, q);
+        return queries.skus(status, cursor, limit, q);
+    }
+
+    /** Switches the SKU off, with a reason; 409 {@code sku-in-use} while an open ASN, an open order or stock names it. */
+    @PostMapping("/api/v1/skus/{id}/deactivate")
+    public ResponseEntity<Void> deactivateSku(@PathVariable UUID id,
+                                              @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                              @Valid @RequestBody ReasonRequest request) {
+        setup.deactivateSku(id, IfMatch.optionalVersion(ifMatch, "the SKU's version"), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/api/v1/skus/{id}/reactivate")
+    public ResponseEntity<Void> reactivateSku(@PathVariable UUID id,
+                                              @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                              @Valid @RequestBody ReasonRequest request) {
+        setup.reactivateSku(id, IfMatch.optionalVersion(ifMatch, "the SKU's version"), request.reason());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/api/v1/skus")

@@ -26,8 +26,9 @@
     tags: [Warehouse]
     operationId: listBins
     summary: A warehouse's bins by code, with how full each is
-    description: Requires `WAREHOUSE_READ`.
+    description: Requires `WAREHOUSE_READ`. The active bins unless `status` says otherwise.
     parameters:
+      - $ref: "#/components/parameters/activeStatus"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
       - $ref: "#/components/parameters/q"
@@ -67,8 +68,9 @@
     tags: [Warehouse]
     operationId: listSkus
     summary: The tenant's SKUs by code
-    description: Requires `WAREHOUSE_READ`.
+    description: Requires `WAREHOUSE_READ`. The active SKUs unless `status` says otherwise.
     parameters:
+      - $ref: "#/components/parameters/activeStatus"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
       - $ref: "#/components/parameters/q"
@@ -699,6 +701,135 @@
           schema: { $ref: "#/components/schemas/WriteOffQuarantineRequest" }
     responses:
       "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/warehouses/{warehouseId}/bins/{binId}/deactivate:
+  parameters:
+    - name: warehouseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: A terminal whose category is WAREHOUSE.
+    - name: binId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the bin.
+  post:
+    tags: [Warehouse]
+    operationId: deactivateBin
+    summary: Switch a bin off, with a reason
+    description: |
+      Requires `WAREHOUSE_SETUP`. An inactive bin takes no putaway, adjustment or release
+      into it (`bin-inactive`). 409 `bin-not-empty` while it holds stock,
+      `bin-already-inactive` when already off. Audited as `BIN_DEACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/warehouses/{warehouseId}/bins/{binId}/reactivate:
+  parameters:
+    - name: warehouseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: A terminal whose category is WAREHOUSE.
+    - name: binId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the bin.
+  post:
+    tags: [Warehouse]
+    operationId: reactivateBin
+    summary: Switch a bin back on, with a reason
+    description: |
+      Requires `WAREHOUSE_SETUP`. 409 `bin-not-inactive` when already on. Audited as
+      `BIN_REACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/skus/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the SKU.
+  post:
+    tags: [Warehouse]
+    operationId: deactivateSku
+    summary: Switch a SKU off, with a reason
+    description: |
+      Requires `WAREHOUSE_SETUP`. An inactive SKU cannot be expected on an ASN, ordered,
+      received or put away (`sku-inactive`). 409 `sku-in-use` while an open ASN expects it,
+      an outbound order not yet dispatched asks for it, or any stock of it is held,
+      `sku-already-inactive` when already off. Audited as `SKU_DEACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/skus/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the SKU.
+  post:
+    tags: [Warehouse]
+    operationId: reactivateSku
+    summary: Switch a SKU back on, with a reason
+    description: |
+      Requires `WAREHOUSE_SETUP`. 409 `sku-not-inactive` when already on. Audited as
+      `SKU_REACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }

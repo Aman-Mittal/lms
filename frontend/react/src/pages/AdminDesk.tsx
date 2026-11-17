@@ -22,6 +22,7 @@ import {
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { CONFLICT_TEXT } from './MasterDataForm';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
 
@@ -209,6 +210,10 @@ function PoliciesSection() {
   const [extra, setExtra] = useState<{ policies: AccessPolicyView[]; cursor: string | null } | null>(null);
   const [picked, setPicked] = useState('');
   const { refusal, message, act } = useOutcome();
+  // Said when somebody else saved the policy first; the policy is read again.
+  const [conflict, setConflict] = useState('');
+  // Bumped on a stale save, so the form starts again from what the other person saved.
+  const [rounds, setRounds] = useState(0);
   const first = useLoad(() => gateway.accessPolicies(), reload);
 
   const policies = [...(first.data?.policies ?? []), ...(extra?.policies ?? [])];
@@ -236,6 +241,7 @@ function PoliciesSection() {
       <p className="muted">Rules over a permission: a DENY vetoes when its condition holds; when an action has PERMIT
         policies, one of them must hold as well.</p>
       <Outcome refusal={refusal} message={message} />
+      {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
       {first.loading && <p className="muted">Loading…</p>}
       {first.error && <p className="error" role="alert" data-testid="admin-error">{first.error}</p>}
       {first.data && policies.length === 0 && <p className="muted" data-testid="no-policies">No access policies.</p>}
@@ -253,8 +259,9 @@ function PoliciesSection() {
       )}
       {cursor && <button type="button" data-testid="more-policies" onClick={more}>Load more</button>}
       {current
-        ? <PolicyDetail key={current.id} policy={current} onClose={() => setPicked('')}
-            onChanged={refresh} onDeleted={() => { setPicked(''); refresh(); }} />
+        ? <PolicyDetail key={`${current.id}:${rounds}`} policy={current} onClose={() => setPicked('')}
+            onChanged={() => { setConflict(''); refresh(); }} onStale={() => { setConflict(CONFLICT_TEXT); setRounds((n) => n + 1); refresh(); }}
+            onDeleted={() => { setPicked(''); refresh(); }} />
         : <CreatePolicy onCreated={(id) => { setPicked(id); refresh(); }} />}
     </>
   );
@@ -320,10 +327,12 @@ function CreatePolicy({ onCreated }: { onCreated: (id: string) => void }) {
   );
 }
 
-function PolicyDetail({ policy, onClose, onChanged, onDeleted }: {
+function PolicyDetail({ policy, onClose, onChanged, onStale, onDeleted }: {
   policy: AccessPolicyView;
   onClose: () => void;
   onChanged: () => void;
+  /** Somebody else saved the policy first. */
+  onStale: () => void;
   onDeleted: () => void;
 }) {
   const { gateway } = useSession();
@@ -336,7 +345,15 @@ function PolicyDetail({ policy, onClose, onChanged, onDeleted }: {
   function save(event: FormEvent) {
     event.preventDefault();
     void act(async () => {
-      await gateway.reviseAccessPolicy(policy.id, { effect, description, condition, enabled });
+      try {
+        await gateway.reviseAccessPolicy(policy.id, { effect, description, condition, enabled }, policy.version);
+      } catch (e) {
+        if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+          onStale();
+          return undefined;
+        }
+        throw e;
+      }
       onChanged();
       return 'Policy saved.';
     });

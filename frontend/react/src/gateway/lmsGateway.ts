@@ -65,6 +65,12 @@ export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 export type Row = Record<string, string>;
 /** What a list can be narrowed by; an empty status is the server's default, the active records, and ALL is every one. */
 export interface ListFilter { status?: string }
+
+/** The registers, besides the four master-data ones, that are switched off and on from their own screens. */
+export type ConfigKind = 'allocationRules' | 'orgUnits' | 'chargeCatalogue' | 'webhooks' | 'customFields' | 'bins'
+  | 'skus' | 'guideVendors' | 'vendorInvoices';
+/** Void is the vendor invoice's own way of switching off: only before anything is paid. */
+export type ConfigAction = 'deactivate' | 'reactivate' | 'void';
 export type MasterKind = 'partners' | 'vehicles' | 'drivers' | 'terminals';
 export type MasterValues = Record<string, string | boolean>;
 export interface MasterRecord { id: string; version: number; values: Record<string, string | boolean> }
@@ -99,6 +105,7 @@ export interface FieldDefinition {
   required: boolean;
   options: string[];
   active: boolean;
+  version: number;
 }
 
 export interface FieldDraft {
@@ -386,6 +393,8 @@ export interface AllocationRuleView {
   action: RuleAction;
   /** In the order the rule names them, which for PREFER is the order they are asked. */
   vendors: Choice[];
+  /** Sent back as If-Match when the rule is edited or switched off. */
+  version: number;
 }
 
 /** A whole rule, as written or revised. Every condition left out is not tested. */
@@ -674,6 +683,7 @@ export interface WebhookView {
   /** Why the platform paused it after deliveries kept failing; empty when it did not. */
   pausedReason: string;
   consecutiveFailures: number;
+  version: number;
 }
 
 export interface WebhookDraft {
@@ -863,6 +873,13 @@ export interface LmsGateway {
    */
   resetDemoData(confirm: string): Promise<DemoResetOutcome>;
   list(resource: ResourceKey, filter?: ListFilter): Promise<Row[]>;
+  /**
+   * Switches an allocation rule, organisational unit, catalogue charge, webhook, custom field, bin, SKU or routing-guide
+   * vendor off or on, or voids a vendor invoice, with a reason, conditional on `version` (a stale one is an ApiProblem
+   * `concurrent-modification`). `parentId` is the warehouse of a bin or the guide of a vendor.
+   */
+  switchConfigRecord(kind: ConfigKind, id: string, action: ConfigAction, reason: string, version: number,
+    parentId?: string): Promise<void>;
   /** One master-data record read fresh, as the form's strings, with the version to send back as If-Match. */
   masterRecord(kind: MasterKind, id: string): Promise<MasterRecord>;
   /** Creates (id null) or edits (id and the version read) a partner, vehicle, driver or terminal; returns its id. */
@@ -872,9 +889,9 @@ export interface LmsGateway {
   registerPartner(orgUnitId: string, draft: PartnerDraft): Promise<void>;
 
   /** Every definition of a kind, retired ones included, or of every kind. */
-  listFields(kind?: CustomFieldKind): Promise<FieldDefinition[]>;
+  listFields(kind?: CustomFieldKind, status?: string): Promise<FieldDefinition[]>;
   defineField(draft: FieldDraft): Promise<void>;
-  reviseField(id: string, changes: FieldChanges): Promise<void>;
+  reviseField(id: string, changes: FieldChanges, version: number): Promise<void>;
   customValues(kind: CustomFieldKind, recordId: string): Promise<CustomValues>;
   /** Replaces the record's values; resolves to what was stored. */
   saveCustomValues(kind: CustomFieldKind, recordId: string, values: CustomValues): Promise<CustomValues>;
@@ -922,11 +939,11 @@ export interface LmsGateway {
   publicTracking(token: string): Promise<PublicTrackingView | null>;
 
   /** Every rule, active and retired, in the order they are tried. */
-  allocationRules(): Promise<AllocationRuleView[]>;
+  allocationRules(status?: string): Promise<AllocationRuleView[]>;
   /** Resolves to the new rule's id. */
   createAllocationRule(draft: RuleDraft): Promise<string>;
   /** Replaces the whole rule; `active: false` retires it. */
-  reviseAllocationRule(id: string, draft: RuleDraft): Promise<void>;
+  reviseAllocationRule(id: string, draft: RuleDraft, version: number): Promise<void>;
   evaluateAllocation(loadId: string): Promise<RuleEvaluation>;
   allocation(id: string): Promise<AllocationSummary>;
   /** The vendors a rule may name: active vendors only. */
@@ -1016,11 +1033,11 @@ export interface LmsGateway {
   /** Always asks for approval: resolves to the request raised. */
   requestProofReversal(consignmentId: string, reason: string): Promise<ApprovalPending>;
 
-  webhooks(): Promise<WebhookView[]>;
+  webhooks(status?: string): Promise<WebhookView[]>;
   /** Shown once: the secret in the result cannot be read again. */
   subscribeWebhook(draft: WebhookDraft): Promise<WebhookSecret>;
   /** Replaces name, address, types and active; reactivating clears a pause. */
-  reviseWebhook(id: string, changes: WebhookChanges): Promise<void>;
+  reviseWebhook(id: string, changes: WebhookChanges, version: number): Promise<void>;
   /** A new secret, shown once; the old one stops signing at once. */
   rotateWebhookSecret(id: string): Promise<WebhookSecret>;
   /** Queues a test delivery; resolves to its id. */
@@ -1164,11 +1181,11 @@ export interface LmsGateway {
   // Warehouse operations
   /** Terminals whose category is WAREHOUSE. */
   warehouseChoices(): Promise<Choice[]>;
-  warehouseBins(warehouseId: string): Promise<Row[]>;
+  warehouseBins(warehouseId: string, status?: string): Promise<Row[]>;
   /** Resolves to the new bin's id. */
   createBin(warehouseId: string, code: string, capacityUnits: number): Promise<string>;
   /** The tenant's SKUs in code order (one page of 200). */
-  skus(): Promise<Row[]>;
+  skus(status?: string): Promise<Row[]>;
   /** Resolves to the new SKU's id. */
   createSku(draft: SkuDraft): Promise<string>;
   /** Newest first. */
@@ -1229,7 +1246,7 @@ export interface LmsGateway {
    */
   createAccessPolicy(draft: AccessPolicyDraft): Promise<string>;
   /** The code and the action stay; everything else is replaced. */
-  reviseAccessPolicy(id: string, changes: AccessPolicyChanges): Promise<void>;
+  reviseAccessPolicy(id: string, changes: AccessPolicyChanges, version: number): Promise<void>;
   deleteAccessPolicy(id: string): Promise<void>;
   /** Documents of every partner, vehicle and driver lapsing within `withinDays`, soonest first. */
   expiringDocuments(withinDays: number): Promise<Row[]>;
@@ -1247,7 +1264,7 @@ export interface LmsGateway {
   /** Resolves to the new guide's id. */
   defineRoutingGuide(orgUnitId: string, draft: GuideDraft): Promise<string>;
   /** Rejects with a 404 problem for a guide that does not exist. */
-  routingGuide(id: string): Promise<RoutingGuideDetail>;
+  routingGuide(id: string, status?: string): Promise<RoutingGuideDetail>;
   addGuideVendor(guideId: string, draft: GuideVendorDraft): Promise<void>;
   retireRoutingGuide(id: string): Promise<void>;
   /** One page of allocations, only those in `status` when one is given. */
@@ -1377,7 +1394,7 @@ export interface LmsGateway {
   updateSettingConditions(id: string, version: string, conditions: SettingConditions): Promise<SettingProfileView>;
   // Organisation units
   /** The caller's unit and every unit beneath it, parents first. */
-  orgUnits(): Promise<OrgUnitView[]>;
+  orgUnits(status?: string): Promise<OrgUnitView[]>;
   orgUnit(id: string): Promise<OrgUnitView>;
   /** Resolves to the new unit's id. Needs ORG_UNIT_MANAGE. */
   createOrgUnit(draft: OrgUnitDraft): Promise<string>;
@@ -1490,6 +1507,7 @@ export interface AccessPolicyView {
   condition: string;
   enabled: boolean;
   updatedAt: string;
+  version: number;
 }
 
 export interface AccessPolicyChanges {
@@ -2155,6 +2173,7 @@ export interface OrgUnitView {
   effectiveCountry: string;
   effectiveState: string;
   version: string;
+  active: boolean;
 }
 
 export interface OrgUnitDraft {
@@ -2215,6 +2234,8 @@ export interface ChargeCatalogueFilter {
   /** Null reads every entry. */
   active: boolean | null;
   q: string;
+  /** '' is the server default (the active entries), 'INACTIVE' or 'ALL' the others; wins over active. */
+  status?: string;
 }
 
 export interface ManualChargeView {
@@ -2284,6 +2305,8 @@ export interface VendorInvoiceView {
   daysOverdue: number;
   billCount: number;
   currency: string;
+  version: number;
+  voidReason: string;
 }
 
 export interface VendorInvoiceBillView {

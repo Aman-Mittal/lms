@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.lms.masterdata.web;
+package com.lms.shared.web;
 
 import jakarta.validation.constraints.NotBlank;
 
-/** Why a vehicle, driver or terminal is being switched off or back on; kept in the audit trail. */
+/** Why a record is being switched off, switched back on or voided; kept in the audit trail. */
 public record ReasonRequest(@NotBlank String reason) {
 }

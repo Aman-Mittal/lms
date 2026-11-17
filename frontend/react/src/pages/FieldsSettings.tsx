@@ -16,11 +16,13 @@
 
 import { useState, type FormEvent } from 'react';
 import {
-  CUSTOM_FIELD_KINDS, FIELD_TYPES, type CustomFieldKind, type FieldDefinition, type FieldType,
+  CUSTOM_FIELD_KINDS, FIELD_TYPES, type CustomFieldKind, type FieldType,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { ConfigActions } from './ConfigActions';
 import { PageHeader } from './PageHeader';
+import { StatusFilter } from './StatusFilter';
 
 const KIND_LABEL: Record<CustomFieldKind, string> = {
   PARTNER: 'Partners', VEHICLE: 'Vehicles', DRIVER: 'Drivers', TERMINAL: 'Terminals',
@@ -33,32 +35,22 @@ export function FieldsSettings() {
   const manage = can('CUSTOM_FIELD_MANAGE');
   const [kind, setKind] = useState<CustomFieldKind>('PARTNER');
   const [reload, setReload] = useState(0);
-  const [error, setError] = useState('');
-  const { data, error: loadError, loading } = useLoad(() => gateway.listFields(kind), `${kind}:${reload}`);
-
-  async function toggle(d: FieldDefinition) {
-    setError('');
-    try {
-      await gateway.reviseField(d.id, {
-        label: d.label, required: d.required, options: d.options, active: !d.active,
-      });
-      setReload((n) => n + 1);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
+  // '' is the server's default, the active fields.
+  const [status, setStatus] = useState('');
+  const { data, error: loadError, loading } = useLoad(() => gateway.listFields(kind, status), `${kind}:${status}:${reload}`);
 
   return (
     <>
       <PageHeader title="Custom fields" />
-      <p className="muted">Fields your company tracks on its own records. Retiring a field keeps what was recorded under it.</p>
+      <p className="muted">Fields your company tracks on its own records. Deactivating a field keeps what was recorded under it.</p>
       <label>
         Record kind
         <select value={kind} data-testid="kind" onChange={(e) => setKind(e.target.value as CustomFieldKind)}>
           {CUSTOM_FIELD_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
         </select>
       </label>
-      {(error || loadError) && <p className="error" role="alert">{error || loadError}</p>}
+      <StatusFilter value={status} onChange={setStatus} />
+      {loadError && <p className="error" role="alert">{loadError}</p>}
       {loading ? (
         <p>Loading…</p>
       ) : (data ?? []).length === 0 ? (
@@ -76,12 +68,11 @@ export function FieldsSettings() {
                 <td>{d.type}</td>
                 <td>{d.required ? 'Yes' : 'No'}</td>
                 <td>{d.options.join(', ')}</td>
-                <td>{d.active ? 'Active' : 'Retired'}</td>
+                <td>{d.active ? 'Active' : 'Inactive'}</td>
                 <td>
                   {manage && (
-                    <button className="link" data-testid={`toggle-${d.key}`} onClick={() => toggle(d)}>
-                      {d.active ? 'Retire' : 'Restore'}
-                    </button>
+                    <ConfigActions kind="customFields" id={d.id} active={d.active} label={d.label} version={d.version}
+                      onChanged={() => setReload((n) => n + 1)} />
                   )}
                 </td>
               </tr>

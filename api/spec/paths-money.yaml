@@ -19,13 +19,16 @@
     summary: The charge catalogue, by code
     description: |
       Requires `CHARGE_CATALOGUE_MANAGE`, `MANUAL_CHARGE_RECORD` or `MANUAL_CHARGE_APPROVE`.
-      Keyset-paged by code. `direction` RECEIVABLE or PAYABLE also returns the
+      Keyset-paged by code; the active entries unless `status` says otherwise.
+      `direction` RECEIVABLE or PAYABLE also returns the
       entries that are BOTH; `q` matches the code or the name.
     parameters:
       - name: active
         in: query
         required: false
         schema: { type: boolean }
+        description: Only active (or only inactive) entries. `status` wins when both are given.
+      - $ref: "#/components/parameters/activeStatus"
       - name: direction
         in: query
         required: false
@@ -106,6 +109,67 @@
       content:
         application/json:
           schema: { $ref: "#/components/schemas/UpdateChargeCatalogueEntryRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/charge-catalogue/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the catalogue entry.
+  post:
+    tags: [Charges]
+    operationId: deactivateChargeCatalogueEntry
+    summary: Switch a catalogue charge off, with a reason
+    description: |
+      Requires `CHARGE_CATALOGUE_MANAGE`. An inactive entry is not offered and no charge
+      can be raised from it (`charge-inactive`); charges already raised keep their copy.
+      409 `charge-in-use` while a charge raised from it still waits for approval,
+      `charge-already-inactive` when already off. Audited as
+      `CHARGE_CATALOGUE_DEACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/charge-catalogue/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the catalogue entry.
+  post:
+    tags: [Charges]
+    operationId: reactivateChargeCatalogueEntry
+    summary: Switch a catalogue charge back on, with a reason
+    description: |
+      Requires `CHARGE_CATALOGUE_MANAGE`. 409 `charge-not-inactive` when already on.
+      Audited as `CHARGE_CATALOGUE_REACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }
@@ -363,6 +427,40 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+
+/api/v1/vendor-invoices/{id}/void:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the vendor invoice.
+  post:
+    tags: [Vendor payables]
+    operationId: voidVendorInvoice
+    summary: Void a vendor invoice nothing has been paid against, with a reason
+    description: |
+      Requires `PAYABLES_MANAGE`. Allowed only while the invoice is OPEN with no
+      payment recorded: 409 `vendor-invoice-not-voidable` once it is partly paid,
+      paid or settled, `vendor-invoice-already-void` when it already is. In the same
+      transaction the bills it covered are released, so they can be invoiced again,
+      and the advances it took off are paid again, ready for the next invoice. The
+      invoice stays, with status VOID and the reason, and is no longer owed or
+      overdue. Audited as `VENDOR_INVOICE_VOIDED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/vendor-invoices/{id}/bills:
   parameters:

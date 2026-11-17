@@ -87,10 +87,10 @@ public class CustomFieldSteps {
             return;
         }
         CustomFieldsApi api = world.api(CustomFieldsApi.class);
-        for (CustomFieldDefinition d : api.listCustomFieldDefinitions((CustomFieldEntityType) null)
+        for (CustomFieldDefinition d : api.listCustomFieldDefinitions("ALL", null)
                 .getItems()) {
             if (defined.contains(d.getId()) && Boolean.TRUE.equals(d.getActive())) {
-                api.reviseCustomField(d.getId(), new ReviseCustomFieldRequest().label(d.getLabel())
+                api.reviseCustomField(String.valueOf(d.getVersion()), d.getId(), new ReviseCustomFieldRequest().label(d.getLabel())
                         .required(false).options(d.getOptions()).active(false));
             }
         }
@@ -207,7 +207,7 @@ public class CustomFieldSteps {
     @Then("the partner definitions are listed with {string} before {string}")
     public void listedInOrder(String first, String second) {
         List<String> keys = world.api(CustomFieldsApi.class)
-                .listCustomFieldDefinitions(CustomFieldEntityType.PARTNER).getItems().stream()
+                .listCustomFieldDefinitions(null, CustomFieldEntityType.PARTNER).getItems().stream()
                 .map(CustomFieldDefinition::getKey).toList();
         assertThat(keys).contains(key(first), key(second));
         assertThat(keys.indexOf(key(first))).isLessThan(keys.indexOf(key(second)));
@@ -251,9 +251,9 @@ public class CustomFieldSteps {
     @When("the shipper retires the {string} field")
     public void retire(String name) {
         CustomFieldsApi api = world.api(CustomFieldsApi.class);
-        CustomFieldDefinition d = api.listCustomFieldDefinitions(CustomFieldEntityType.DRIVER).getItems()
+        CustomFieldDefinition d = api.listCustomFieldDefinitions("ALL", CustomFieldEntityType.DRIVER).getItems()
                 .stream().filter(x -> key(name).equals(x.getKey())).findFirst().orElseThrow();
-        api.reviseCustomField(d.getId(), new ReviseCustomFieldRequest().label(d.getLabel())
+        api.reviseCustomField(String.valueOf(d.getVersion()), d.getId(), new ReviseCustomFieldRequest().label(d.getLabel())
                 .required(true).options(d.getOptions()).active(false));
     }
 
@@ -286,7 +286,7 @@ public class CustomFieldSteps {
 
     @Then("that caller can list the partner definitions")
     public void readerLists() {
-        assertThat(readerApi.listCustomFieldDefinitions(CustomFieldEntityType.PARTNER).getItems())
+        assertThat(readerApi.listCustomFieldDefinitions(null, CustomFieldEntityType.PARTNER).getItems())
                 .isNotNull();
     }
 
@@ -321,7 +321,7 @@ public class CustomFieldSteps {
 
     @Then("the second company sees no definition named {string} for partners")
     public void secondSeesNone(String name) {
-        assertThat(secondApi.listCustomFieldDefinitions(CustomFieldEntityType.PARTNER).getItems())
+        assertThat(secondApi.listCustomFieldDefinitions(null, CustomFieldEntityType.PARTNER).getItems())
                 .extracting(CustomFieldDefinition::getKey).doesNotContain(key(name));
     }
 

@@ -43,7 +43,7 @@ class OrgUnitTest {
     @DisplayName("a child's path is its parent's and its own slug; a revision keeps slug and path")
     void childAndRevision() {
         OrgUnit root = new OrgUnit(UUID.randomUUID(), UUID.randomUUID(), null, "t", "/t/", "Head Office",
-                UnitType.HQ, null, null, 3L, null, null);
+                UnitType.HQ, null, null, true, 3L, null, null);
         OrgUnit india = OrgUnit.childOf(root, "in", "India", UnitType.COUNTRY, "IN", null);
         assertThat(india.path()).isEqualTo("/t/in/");
         assertThat(india.parentId()).isEqualTo(root.id());

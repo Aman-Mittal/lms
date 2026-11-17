@@ -29,6 +29,7 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -87,9 +88,12 @@ public class AccessPolicyCommandService {
 
     @Transactional
     @PreAuthorize("hasAuthority('ACCESS_POLICY_MANAGE')")
-    public void revise(UUID policyId, AccessPolicy.Effect effect, String description,
+    public void revise(UUID policyId, long expectedVersion, AccessPolicy.Effect effect, String description,
                        Map<String, Object> condition, boolean enabled) {
         AccessPolicy existing = require(policyId);
+        if (existing.version() == null || existing.version() != expectedVersion) {
+            throw new OptimisticLockingFailureException("Policy " + existing.code() + " changed since it was read");
+        }
         AccessPolicy revised = policies.save(
                 existing.revise(effect, description, validated(condition), enabled));
         audit.recordAtomically("ACCESS_POLICY_REVISED", "ACCESS_POLICY", revised.id(),

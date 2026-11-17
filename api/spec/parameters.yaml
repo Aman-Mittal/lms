@@ -57,6 +57,15 @@ idempotencyKey:
     defect, and answering it with the earlier response would hide the defect
     while returning an answer to a question nobody asked.
 
+activeStatus:
+  name: status
+  in: query
+  required: false
+  schema: { type: string }
+  description: |
+    Which records a list of a switch-on-and-off register shows: `ACTIVE` (the
+    default when omitted), `INACTIVE` or `ALL`. Anything else is a 400.
+
 ifMatchOptional:
   name: If-Match
   in: header

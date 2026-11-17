@@ -32,6 +32,7 @@ import com.lms.shared.query.Slice;
 import com.lms.shared.web.ConditionalGet;
 import com.lms.shared.web.IdResponse;
 import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

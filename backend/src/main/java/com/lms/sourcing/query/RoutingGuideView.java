@@ -29,7 +29,9 @@ public record RoutingGuideView(
         boolean active,
         List<Entry> entries) {
 
+    /** One vendor's place; {@code version} is the ETag a switch-off may send back as If-Match. */
     public record Entry(int rankNo, UUID vendorPartnerId, String vendorName,
-                        int responseSlaMinutes, BigDecimal agreedRate) {
+                        int responseSlaMinutes, BigDecimal agreedRate, UUID id, boolean active,
+                        Long version) {
     }
 }

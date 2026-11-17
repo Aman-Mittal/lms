@@ -26,6 +26,7 @@ import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -59,9 +60,10 @@ public class OrgUnitController {
 
     @GetMapping
     public Slice<OrgUnitView> list(@RequestParam(required = false) String q,
+                                   @RequestParam(required = false) String status,
                                    @RequestParam(required = false) String cursor,
                                    @RequestParam(required = false) Integer limit) {
-        return queries.list(q, cursor, limit);
+        return queries.list(q, status, cursor, limit);
     }
 
     @PostMapping
@@ -85,6 +87,23 @@ public class OrgUnitController {
         commands.update(id, IfMatch.version(ifMatch, "the unit's version"), new OrgUnitService.Draft(
                 request.name(), request.unitType(), request.countryCode(), request.stateCode()));
         return get(id);
+    }
+
+    /** Switches the unit off, with a reason; 409 {@code org-unit-in-use} while active units or users remain in it. */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        commands.deactivate(id, IfMatch.optionalVersion(ifMatch, "the unit's version"), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        commands.reactivate(id, IfMatch.optionalVersion(ifMatch, "the unit's version"), request.reason());
+        return ResponseEntity.noContent().build();
     }
 
     public record CreateOrgUnitRequest(@NotNull UUID parentId, @NotNull @Size(max = 63) String slug,

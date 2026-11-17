@@ -52,6 +52,12 @@ public record CustomFieldDefinition(
                 fieldType, required, options, displayOrder, true, null, Instant.now());
     }
 
+    /** The same definition switched on or off; a stored value keeps its meaning either way. */
+    public CustomFieldDefinition withActive(boolean nowActive) {
+        return new CustomFieldDefinition(id, tenantId, entityType, fieldKey, label, fieldType, required, options,
+                displayOrder, nowActive, version, createdAt);
+    }
+
     public CustomFieldDefinition revised(String label, boolean required, String[] options,
                                          int displayOrder, boolean active) {
         return new CustomFieldDefinition(id, tenantId, entityType, fieldKey, label, fieldType,

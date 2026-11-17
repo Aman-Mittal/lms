@@ -77,7 +77,7 @@ public class AllocationEvaluationService {
                 .orElseThrow(() -> new BusinessRuleViolationException("no-routing-guide",
                         "No active routing guide covers this lane for vehicle type "
                                 + load.vehicleType()));
-        List<RoutingGuideEntry> eligible = entries.findByGuide(tenantId, guide.id()).stream()
+        List<RoutingGuideEntry> eligible = entries.findActiveByGuide(tenantId, guide.id()).stream()
                 .filter(entry -> partners.canTransact(entry.vendorPartnerId())).toList();
 
         AllocationRules.Decision decision = allocationRules.decide(tenantId, load);

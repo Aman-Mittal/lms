@@ -26,9 +26,11 @@ import com.lms.finance.command.domain.ChargeDirection;
 import com.lms.finance.query.ChargeCatalogueQueryService;
 import com.lms.finance.query.ChargeCatalogueView;
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.query.ActiveFilter;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -60,11 +62,12 @@ public class ChargeCatalogueController {
 
     @GetMapping
     public Slice<ChargeCatalogueView> list(@RequestParam(required = false) Boolean active,
+                                           @RequestParam(required = false) String status,
                                            @RequestParam(required = false) String direction,
                                            @RequestParam(required = false) String q,
                                            @RequestParam(required = false) String cursor,
                                            @RequestParam(required = false) Integer limit) {
-        return queries.list(active, direction, q, cursor, limit);
+        return queries.list(ActiveFilter.of(status, active), direction, q, cursor, limit);
     }
 
     @PostMapping
@@ -87,6 +90,23 @@ public class ChargeCatalogueController {
                                        @Valid @RequestBody UpdateRequest request) {
         commands.update(id, IfMatch.version(ifMatch, "the charge's version"), request.name(), request.basis(),
                 request.defaultRate(), request.direction(), request.active());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Switches the entry off, with a reason; it is no longer offered and no charge can be raised from it. */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        commands.deactivate(id, IfMatch.optionalVersion(ifMatch, "the charge's version"), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        commands.reactivate(id, IfMatch.optionalVersion(ifMatch, "the charge's version"), request.reason());
         return ResponseEntity.noContent().build();
     }
 

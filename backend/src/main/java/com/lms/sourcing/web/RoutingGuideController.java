@@ -22,6 +22,8 @@ import java.util.UUID;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import com.lms.sourcing.command.RoutingGuideCommandService;
 import com.lms.sourcing.command.domain.RoutingGuide;
 import com.lms.sourcing.query.RoutingGuideView;
@@ -36,6 +38,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -70,15 +73,16 @@ public class RoutingGuideController {
     /** A page of guides without their vendors; {@code q} matches the lane's terminal codes or the vehicle type. */
     @GetMapping
     public Slice<RoutingGuideView> list(@RequestParam(required = false) Boolean active,
+                                        @RequestParam(required = false) String status,
                                         @RequestParam(required = false) String cursor,
                                         @RequestParam(required = false) Integer limit,
                                         @RequestParam(required = false) String q) {
-        return queries.listGuides(active, cursor, limit, q);
+        return queries.listGuides(status, active, cursor, limit, q);
     }
 
     @GetMapping("/{id}")
-    public RoutingGuideView get(@PathVariable UUID id) {
-        return queries.findGuide(id)
+    public RoutingGuideView get(@PathVariable UUID id, @RequestParam(required = false) String status) {
+        return queries.findGuide(id, status)
                 .orElseThrow(() -> new ResourceNotFoundException("Routing guide", id));
     }
 
@@ -94,6 +98,25 @@ public class RoutingGuideController {
     @PostMapping("/{id}/retire")
     public ResponseEntity<Void> retire(@PathVariable UUID id) {
         guides.retire(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Takes a vendor out of play on the guide, with a reason; allocation skips it and offers to the next rank. */
+    @PostMapping("/{id}/vendors/{entryId}/deactivate")
+    public ResponseEntity<Void> deactivateVendor(@PathVariable UUID id, @PathVariable UUID entryId,
+                                                 @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                                 @Valid @RequestBody ReasonRequest request) {
+        guides.deactivateVendor(id, entryId, IfMatch.optionalVersion(ifMatch, "the vendor entry's version"),
+                request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/vendors/{entryId}/reactivate")
+    public ResponseEntity<Void> reactivateVendor(@PathVariable UUID id, @PathVariable UUID entryId,
+                                                 @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                                 @Valid @RequestBody ReasonRequest request) {
+        guides.reactivateVendor(id, entryId, IfMatch.optionalVersion(ifMatch, "the vendor entry's version"),
+                request.reason());
         return ResponseEntity.noContent().build();
     }
 

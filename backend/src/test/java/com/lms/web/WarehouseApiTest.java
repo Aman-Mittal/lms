@@ -51,6 +51,7 @@ import com.lms.client.model.OutboundOrderSummary;
 import com.lms.client.model.PickWave;
 import com.lms.client.model.PickWaveOrder;
 import com.lms.client.model.PutawayRequest;
+import com.lms.client.model.ReasonRequest;
 import com.lms.client.model.ReceiptCount;
 import com.lms.client.model.ReceiveAsnRequest;
 import com.lms.client.model.ReleasePickWaveRequest;
@@ -129,6 +130,8 @@ class WarehouseApiTest {
     private TokenService tokens;
     @Autowired
     private FleetCommandService fleet;
+    @Autowired
+    private org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
     private String salt;
     private String orgPath;
@@ -201,7 +204,7 @@ class WarehouseApiTest {
                                 StockBalance.LocationTypeEnum.BIN, "A-01", 50),
                         org.assertj.core.groups.Tuple.tuple(
                                 StockBalance.LocationTypeEnum.QUARANTINE, null, 5));
-        BinSlice bins = api.listBins(warehouseId, null, null, null);
+        BinSlice bins = api.listBins(warehouseId, null, null, null, null);
         assertThat(bins.getItems().get(0).getOccupiedUnits()).isEqualTo(50);
 
         UUID orderId = api.createOutboundOrder(new CreateOutboundOrderRequest()
@@ -278,6 +281,69 @@ class WarehouseApiTest {
         assertThat(movement).isNotNull();
         assertThat(api.listStock(warehouseId, sku, bin, null, null).getItems())
                 .extracting(StockBalance::getOnHand).containsExactly(3);
+    }
+
+    @Test
+    @DisplayName("a bin or SKU is switched off with a reason once nothing is in it, and an inactive one takes nothing")
+    void switchingBinsAndSkusOff() {
+        WarehouseApi api = client(WAREHOUSE);
+        UUID sku = api.createSku(new CreateSkuRequest().code("SW-" + salt).description("Switchable"), null).getId();
+        UUID spareSku = api.createSku(new CreateSkuRequest().code("SP-" + salt).description("Spare"), null).getId();
+        UUID bin = api.createBin(warehouseId, new CreateBinRequest().code("S-01").capacityUnits(40), null).getId();
+        ReasonRequest why = new ReasonRequest().reason("Racking removed");
+
+        UUID asnId = api.createAsn(new CreateAsnRequest().warehouseId(warehouseId).asnNo("SW-" + salt)
+                .lines(List.of(new AsnExpectedLine().skuId(sku).quantity(10))), null).getId();
+        assertStatus(() -> api.deactivateSku(sku, why, null), 409, "sku-in-use");
+        api.receiveAsn(asnId, new ReceiveAsnRequest().lines(List.of(
+                new ReceiptCount().lineNo(1).receivedQty(10).damagedQty(0))), null);
+        api.putaway(new PutawayRequest().binId(bin).skuId(sku).quantity(10), null);
+
+        assertStatus(() -> api.deactivateBin(warehouseId, bin, why, null), 409, "bin-not-empty");
+        assertStatus(() -> api.deactivateSku(sku, why, null), 409, "sku-in-use");
+        assertStatus(() -> api.deactivateBin(warehouseId, bin, new ReasonRequest().reason(" "), null), 400, null);
+        assertStatus(() -> api.deactivateBin(warehouseId, bin, why, "\"99\""), 409, "concurrent-modification");
+
+        api.adjustStock(new AdjustStockRequest().binId(bin).skuId(sku).quantity(-10).reason("Moved out"), null);
+        api.deactivateBin(warehouseId, bin, why, null);
+        assertStatus(() -> api.deactivateBin(warehouseId, bin, why, null), 409, "bin-already-inactive");
+        assertThat(api.listBins(warehouseId, null, null, null, null).getItems())
+                .extracting(com.lms.client.model.Bin::getId).doesNotContain(bin);
+        assertThat(api.listBins(warehouseId, "INACTIVE", null, null, null).getItems())
+                .extracting(com.lms.client.model.Bin::getId).containsExactly(bin);
+        assertThat(api.listBins(warehouseId, "ALL", null, null, null).getItems())
+                .filteredOn(b -> bin.equals(b.getId())).singleElement()
+                .satisfies(b -> assertThat(b.getActive()).isFalse());
+        assertStatus(() -> api.adjustStock(new AdjustStockRequest().binId(bin).skuId(sku).quantity(1)
+                .reason("Found"), null), 409, "bin-inactive");
+
+        // Stock still on the dock, so the SKU is in use; a second bin cannot take it while the first is off.
+        UUID second = api.createAsn(new CreateAsnRequest().warehouseId(warehouseId).asnNo("SX-" + salt)
+                .lines(List.of(new AsnExpectedLine().skuId(sku).quantity(5))), null).getId();
+        api.receiveAsn(second, new ReceiveAsnRequest().lines(List.of(
+                new ReceiptCount().lineNo(1).receivedQty(5).damagedQty(0))), null);
+        assertStatus(() -> api.putaway(new PutawayRequest().binId(bin).skuId(sku).quantity(5), null),
+                409, "bin-inactive");
+        api.reactivateBin(warehouseId, bin, new ReasonRequest().reason("Racking back"), null);
+        api.putaway(new PutawayRequest().binId(bin).skuId(sku).quantity(5), null);
+        assertStatus(() -> api.reactivateBin(warehouseId, bin, why, null), 409, "bin-not-inactive");
+
+        // A SKU nothing refers to is switched off, and cannot be expected or ordered until it is back.
+        api.deactivateSku(spareSku, why, null);
+        assertStatus(() -> api.deactivateSku(spareSku, why, null), 409, "sku-already-inactive");
+        assertThat(api.listSkus(null, null, 50, null).getItems())
+                .extracting(com.lms.client.model.Sku::getId).contains(sku).doesNotContain(spareSku);
+        assertThat(api.listSkus("INACTIVE", null, 50, null).getItems())
+                .extracting(com.lms.client.model.Sku::getId).containsExactly(spareSku);
+        assertStatus(() -> api.createAsn(new CreateAsnRequest().warehouseId(warehouseId).asnNo("SI-" + salt)
+                .lines(List.of(new AsnExpectedLine().skuId(spareSku).quantity(1))), null), 409, "sku-inactive");
+        assertStatus(() -> order(api, "SO-" + salt, spareSku, 1), 409, "sku-inactive");
+        api.reactivateSku(spareSku, new ReasonRequest().reason("Range extended"), null);
+        api.createAsn(new CreateAsnRequest().warehouseId(warehouseId).asnNo("SI-" + salt)
+                .lines(List.of(new AsnExpectedLine().skuId(spareSku).quantity(1))), null);
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_log WHERE action IN ('BIN_DEACTIVATED', 'BIN_REACTIVATED',"
+                + " 'SKU_DEACTIVATED', 'SKU_REACTIVATED') AND after_state ->> 'reason' IS NOT NULL")
+                .query(Long.class).single()).isGreaterThanOrEqualTo(4);
     }
 
     @Test

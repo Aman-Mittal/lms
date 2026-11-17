@@ -16,11 +16,14 @@
 
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import {
-  LmsGateway, Row, WEBHOOK_EVENT_TYPES, WebhookEventType, WebhookSecret, WebhookView,
+  ApiProblem, LmsGateway, Row, WEBHOOK_EVENT_TYPES, WebhookEventType, WebhookSecret, WebhookView,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { ConfigActions } from './config-actions';
+import { STALE_MESSAGE } from './master-data-form';
 import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { StatusFilter } from './status-filter';
 
 /** A subscription as a table row. */
 function rowOf(w: WebhookView): Row {
@@ -44,7 +47,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-webhooks',
-  imports: [RowTable, PageHeader],
+  imports: [ConfigActions, RowTable, PageHeader, StatusFilter],
   template: `
     <app-page-header title="Webhooks" />
     <p class="muted">Addresses your systems listen on, told about orders, trips, deliveries and claims as they happen.</p>
@@ -57,6 +60,7 @@ function valueOf(event: Event): string {
         <button type="button" data-testid="secret-done" (click)="secret.set(null)">I have stored it</button>
       </section>
     }
+    <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
     @if (loading()) { <p class="muted">Loading…</p> }
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (!loading() && !error() && hooks().length === 0) {
@@ -94,6 +98,9 @@ function valueOf(event: Event): string {
         <h2>{{ w.name }}</h2>
         <button type="button" class="link" (click)="close()">Back to subscribing</button>
         @if (w.pausedReason) { <p class="error" data-testid="paused-reason">Paused: {{ w.pausedReason }}</p> }
+        <app-config-actions kind="webhooks" [recordId]="w.id" [active]="w.active" [label]="w.name" [version]="w.version"
+                            (changed)="load()" />
+        @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
         @if (manage()) {
           <form (submit)="save($event, w.id)" data-testid="revise-form">
             <input aria-label="Name" data-testid="edit-name" required [value]="name()" (input)="name.set(valueOf($event))" />
@@ -108,11 +115,6 @@ function valueOf(event: Event): string {
                 </label>
               }
             </fieldset>
-            <label>
-              <input type="checkbox" data-testid="edit-active" [checked]="active()"
-                     (change)="active.set($any($event.target).checked)" />
-              Active
-            </label>
             <button type="submit" data-testid="save-webhook">Save</button>
             <button type="button" data-testid="rotate-secret" (click)="rotate(w.id)">Rotate secret</button>
             <button type="button" data-testid="ping" (click)="ping(w.id)">Send test ping</button>
@@ -177,9 +179,12 @@ export class Webhooks implements OnInit {
   readonly name = signal('');
   readonly url = signal('');
   readonly types = signal<WebhookEventType[]>([]);
-  readonly active = signal(true);
   readonly message = signal('');
   readonly formError = signal('');
+  /** Said when somebody else saved the subscription first; the list is read again. */
+  readonly conflict = signal('');
+  /** '' is the server's default, the active subscriptions. */
+  readonly status = signal('');
 
   readonly deliveries = signal<Row[]>([]);
   readonly deliveriesLoaded = signal(false);
@@ -205,12 +210,17 @@ export class Webhooks implements OnInit {
     this.loading.set(true);
     this.error.set('');
     try {
-      this.hooks.set(await this.gateway.webhooks());
+      this.hooks.set(await this.gateway.webhooks(this.status()));
     } catch (e) {
       this.error.set((e as Error).message);
     } finally {
       this.loading.set(false);
     }
+  }
+
+  setStatus(value: string): void {
+    this.status.set(value);
+    void this.load();
   }
 
   toggle(type: WebhookEventType, on: boolean): void {
@@ -242,7 +252,6 @@ export class Webhooks implements OnInit {
     this.name.set(w?.name ?? '');
     this.url.set(w?.url ?? '');
     this.types.set((w?.eventTypes ?? []) as WebhookEventType[]);
-    this.active.set(w?.active ?? true);
     this.message.set('');
     this.formError.set('');
     await this.loadDeliveries(id);
@@ -260,8 +269,8 @@ export class Webhooks implements OnInit {
     event.preventDefault();
     await this.act(async () => {
       await this.gateway.reviseWebhook(id, {
-        name: this.name().trim(), url: this.url().trim(), eventTypes: this.types(), active: this.active(),
-      });
+        name: this.name().trim(), url: this.url().trim(), eventTypes: this.types(), active: this.current()?.active ?? true,
+      }, this.current()?.version ?? 0);
       await this.load();
       return 'Saved.';
     });
@@ -321,13 +330,23 @@ export class Webhooks implements OnInit {
   private async act(action: () => Promise<string | void>): Promise<void> {
     this.formError.set('');
     this.message.set('');
+    this.conflict.set('');
     try {
       const said = await action();
       if (said) {
         this.message.set(said);
       }
     } catch (e) {
-      this.formError.set((e as Error).message);
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        await this.load();
+        const w = this.current();
+        this.name.set(w?.name ?? '');
+        this.url.set(w?.url ?? '');
+        this.types.set((w?.eventTypes ?? []) as WebhookEventType[]);
+        this.conflict.set(STALE_MESSAGE);
+      } else {
+        this.formError.set((e as Error).message);
+      }
     }
   }
 }

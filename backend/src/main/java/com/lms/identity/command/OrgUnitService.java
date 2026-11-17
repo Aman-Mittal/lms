@@ -29,6 +29,7 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,10 +55,12 @@ public class OrgUnitService {
 
     private final OrgUnitRepository units;
     private final AuditTrail audit;
+    private final JdbcClient jdbc;
 
-    public OrgUnitService(OrgUnitRepository units, AuditTrail audit) {
+    public OrgUnitService(OrgUnitRepository units, AuditTrail audit, JdbcClient jdbc) {
         this.units = units;
         this.audit = audit;
+        this.jdbc = jdbc;
     }
 
     /** What a unit is called and what it is; the codes are blank or null when absent. */
@@ -78,6 +81,10 @@ public class OrgUnitService {
     @PreAuthorize("hasAuthority('ORG_UNIT_MANAGE') and @abac.permitsIn('ORG_UNIT_MANAGE', #parentId)")
     public UUID create(UUID parentId, String slug, Draft draft) {
         OrgUnit parent = visible(parentId);
+        if (!parent.active()) {
+            throw new BusinessRuleViolationException("org-unit-inactive",
+                    parent.name() + " is switched off; switch it on before adding units beneath it");
+        }
         String cleanSlug = slug == null ? "" : slug.strip();
         if (!OrgUnit.safeSlug(cleanSlug)) {
             throw new BusinessRuleViolationException("org-unit-slug-invalid",
@@ -134,6 +141,70 @@ public class OrgUnitService {
         return saved.version();
     }
 
+    /**
+     * Switches a unit off, with a reason. Refused with {@code org-unit-in-use} while it still
+     * has active units beneath it or active users in it, and with {@code org-unit-root} for the
+     * tenant's top unit. {@code expectedVersion} is optional; a console sends it.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('ORG_UNIT_MANAGE') and @abac.permitsIn('ORG_UNIT_MANAGE', #id)")
+    public void deactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        OrgUnit before = visible(id);
+        requireVersionIfGiven(before, expectedVersion);
+        if (!before.active()) {
+            throw new BusinessRuleViolationException("org-unit-already-inactive",
+                    before.name() + " is already inactive");
+        }
+        if (before.parentId() == null) {
+            throw new BusinessRuleViolationException("org-unit-root",
+                    before.name() + " is the top of the organisation and cannot be switched off");
+        }
+        long children = jdbc.sql("SELECT count(*) FROM org_unit WHERE tenant_id = :t AND parent_id = :id AND active")
+                .param("t", before.tenantId()).param("id", id).query(Long.class).single();
+        long users = jdbc.sql("SELECT count(*) FROM app_user WHERE tenant_id = :t AND org_unit_id = :id "
+                        + "AND status = 'ACTIVE'")
+                .param("t", before.tenantId()).param("id", id).query(Long.class).single();
+        if (children > 0 || users > 0) {
+            throw new BusinessRuleViolationException("org-unit-in-use",
+                    before.name() + " still has " + children + " active unit(s) beneath it and " + users
+                            + " active user(s); move or switch them off first");
+        }
+        OrgUnit saved = units.save(before.withActive(false));
+        audit.recordAtomically("ORG_UNIT_DEACTIVATED", AUDIT_TYPE, id, snapshot(before, null), snapshot(saved, reason));
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('ORG_UNIT_MANAGE') and @abac.permitsIn('ORG_UNIT_MANAGE', #id)")
+    public void reactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        OrgUnit before = visible(id);
+        requireVersionIfGiven(before, expectedVersion);
+        if (before.active()) {
+            throw new BusinessRuleViolationException("org-unit-not-inactive",
+                    before.name() + " is active, not inactive");
+        }
+        if (before.parentId() != null && units.findById(before.parentId()).map(p -> !p.active()).orElse(false)) {
+            throw new BusinessRuleViolationException("org-unit-parent-inactive",
+                    "The unit above " + before.name() + " is switched off; switch it on first");
+        }
+        OrgUnit saved = units.save(before.withActive(true));
+        audit.recordAtomically("ORG_UNIT_REACTIVATED", AUDIT_TYPE, id, snapshot(before, null), snapshot(saved, reason));
+    }
+
+    private static void requireReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
+    }
+
+    private static void requireVersionIfGiven(OrgUnit unit, Long expected) {
+        if (expected != null && (unit.version() == null || !unit.version().equals(expected))) {
+            throw new OptimisticLockingFailureException("Organisational unit " + unit.id()
+                    + " has changed since version " + expected);
+        }
+    }
+
     /** A unit of the tenant's, at or beneath the caller's own; otherwise as if it did not exist. */
     private OrgUnit visible(UUID id) {
         String callerPath = TenantContext.requireOrgPath();
@@ -185,5 +256,12 @@ public class OrgUnitService {
     private static Json snapshot(OrgUnit u) {
         return Json.object("name", u.name(), "unitType", u.unitType().name(), "path", u.path(),
                 "countryCode", u.countryCode(), "stateCode", u.stateCode());
+    }
+
+    /** As {@link #snapshot(OrgUnit)}, for a switch: with whether the unit is active and why it changed. */
+    private static Json snapshot(OrgUnit u, String reason) {
+        return Json.object("name", u.name(), "unitType", u.unitType().name(), "path", u.path(),
+                "countryCode", u.countryCode(), "stateCode", u.stateCode(),
+                "active", String.valueOf(u.active()), "reason", reason);
     }
 }

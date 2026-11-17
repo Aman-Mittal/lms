@@ -79,6 +79,13 @@ public record AllocationRule(
                 Instant.now());
     }
 
+    /** The same rule switched on or off; nothing else about it changes. */
+    public AllocationRule withActive(boolean nowActive) {
+        return new AllocationRule(id, tenantId, name, priority, nowActive, originTerminalId,
+                destinationTerminalId, minWeightKg, maxWeightKg, materialClass, action,
+                vendorPartnerIds, version, createdAt, Instant.now());
+    }
+
     /** Whether every condition this rule states holds for the load. */
     public boolean matches(LoadFacts load) {
         if (originTerminalId != null && !originTerminalId.equals(load.originTerminalId())) {

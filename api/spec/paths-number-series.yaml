@@ -213,9 +213,13 @@
     tags: [Number series]
     operationId: getNumberSeries
     summary: One number series
+    description: The `ETag` is the version `PUT` sends back in `If-Match`.
     responses:
       "200":
         description: The series.
+        headers:
+          ETag:
+            schema: { type: string }
         content:
           application/json:
             schema: { $ref: "#/components/schemas/NumberSeries" }
@@ -232,7 +236,10 @@
       change. The format may change only until the series issues its first
       number (409 `number-series-in-use` after), so that every number it
       issued stays verifiable; a new prefix must be free for the type (409
-      `number-series-prefix-taken`).
+      `number-series-prefix-taken`). A stale `If-Match` is 409
+      `concurrent-modification`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
     requestBody:
       required: true
       content:

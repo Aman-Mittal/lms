@@ -372,7 +372,7 @@ public class AllocationService {
      * that is not ACTIVE, and offering a load is giving work.
      */
     private List<RoutingGuideEntry> eligibleEntries(UUID tenantId, UUID guideId) {
-        return entries.findByGuide(tenantId, guideId).stream()
+        return entries.findActiveByGuide(tenantId, guideId).stream()
                 .filter(entry -> partners.canTransact(entry.vendorPartnerId()))
                 .toList();
     }

@@ -29,6 +29,9 @@ import org.springframework.data.relational.core.mapping.Table;
  * <p>Capacity is a count of units, whatever the SKU. Volume and weight limits
  * are not modelled; a bin that fills by volume first is configured with the
  * unit count that fills it.
+ *
+ * <p>A bin is never deleted. Switched off, it takes no more stock; the stock ledger
+ * keeps pointing at it.
  */
 @Table("warehouse_bin")
 public record Bin(
@@ -37,6 +40,7 @@ public record Bin(
         UUID warehouseId,
         String code,
         int capacityUnits,
+        boolean active,
         @Version Long version,
         Instant createdAt) {
 
@@ -50,6 +54,20 @@ public record Bin(
                     "Bin " + code + " needs a capacity of at least one unit");
         }
         return new Bin(UUID.randomUUID(), tenantId, warehouseId, code.strip(), capacityUnits,
-                null, at);
+                true, null, at);
+    }
+
+    /** The same bin switched on or off; its code and capacity stay. */
+    public Bin withActive(boolean nowActive) {
+        return new Bin(id, tenantId, warehouseId, code, capacityUnits, nowActive, version, createdAt);
+    }
+
+    /** This bin, or {@code bin-inactive} when it has been switched off and may take no stock. */
+    public Bin requireActive() {
+        if (!active) {
+            throw new BusinessRuleViolationException("bin-inactive",
+                    "Bin " + code + " is switched off and cannot take stock");
+        }
+        return this;
     }
 }

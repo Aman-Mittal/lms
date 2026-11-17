@@ -49,13 +49,14 @@ export function warehouseVerbs(warehouse: WarehouseApi, terminals: TerminalsApi)
     warehouseChoices: (): Promise<Choice[]> =>
       guard(async () => (await terminals.listTerminals({ category: ListTerminalsCategoryEnum.Warehouse, limit: 200 }))
         .items.map((t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` }))),
-    warehouseBins: (warehouseId: string) =>
-      guard(async () => (await warehouse.listBins({ warehouseId, limit: 200 })).items.map(flatRow)),
+    warehouseBins: (warehouseId: string, status?: string) =>
+      guard(async () => (await warehouse.listBins({ warehouseId, limit: 200, status: status || undefined })).items.map(flatRow)),
     createBin: (warehouseId: string, code: string, capacityUnits: number) =>
       guard(async () => (await warehouse.createBin({
         warehouseId, createBinRequest: { code: code.trim(), capacityUnits },
       })).id),
-    skus: () => guard(async () => (await warehouse.listSkus({ limit: 200 })).items.map(flatRow)),
+    skus: (status?: string) =>
+      guard(async () => (await warehouse.listSkus({ limit: 200, status: status || undefined })).items.map(flatRow)),
     createSku: (draft: SkuDraft) =>
       guard(async () => (await warehouse.createSku({
         createSkuRequest: {
@@ -193,11 +194,11 @@ export function adminGateway(config: Configuration): AdminVerbs {
         },
       })).id);
     },
-    reviseAccessPolicy: async (id: string, changes: AccessPolicyChanges) => {
+    reviseAccessPolicy: async (id: string, changes: AccessPolicyChanges, version: number) => {
       const condition = adminConditionOf(changes.condition);
       return guard(async () => {
         await policies.reviseAccessPolicy({
-          id,
+          id, ifMatch: String(version),
           reviseAccessPolicyRequest: {
             effect: changes.effect as ReviseAccessPolicyRequestEffectEnum, description: changes.description.trim(),
             condition, enabled: changes.enabled,
@@ -259,7 +260,7 @@ function adminPolicyOf(p: AccessPolicy): AccessPolicyView {
   return {
     id: text(p.id), code: text(p.code), action: text(p.action), effect: text(p.effect) as PolicyEffect,
     description: text(p.description), condition: JSON.stringify(p.condition ?? {}, null, 2),
-    enabled: p.enabled === true, updatedAt: text(p.updatedAt),
+    enabled: p.enabled === true, updatedAt: text(p.updatedAt), version: Number(p.version ?? 0),
   };
 }
 

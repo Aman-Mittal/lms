@@ -72,6 +72,7 @@ function vendorInvoiceOf(i: ApiVendorInvoice): VendorInvoiceView {
     totalAmount: i.totalAmount, approvedAmount: i.approvedAmount, advancesDeducted: i.advancesDeducted,
     netPayable: i.netPayable, paidAmount: i.paidAmount, outstanding: i.outstanding, status: text(i.status),
     overdue: i.overdue, daysOverdue: i.daysOverdue, billCount: i.billCount, currency: text(i.currency),
+    version: Number(i.version ?? 0), voidReason: text(i.voidReason),
   };
 }
 
@@ -114,7 +115,7 @@ export function moneyVerbs(config: Configuration, freightBills: SettlementApi): 
   return {
     listChargeCatalogue: (filter: ChargeCatalogueFilter) =>
       guard(async () => (await charges.listChargeCatalogue({
-        active: filter.active ?? undefined, q: filter.q.trim() || undefined, limit: 200,
+        active: filter.active ?? undefined, status: filter.status || undefined, q: filter.q.trim() || undefined, limit: 200,
       })).items.map(chargeEntryOf)),
     getChargeCatalogueEntry: (id: string) => guard(async () => chargeEntryOf(await charges.getChargeCatalogueEntry({ id }))),
     createChargeCatalogueEntry: (d: ChargeEntryDraft) =>

@@ -76,10 +76,10 @@ export abstract class GeneratedGatewayDelivery extends GeneratedGatewayBase {
     }), () => undefined);
   }
 
-  listFields(kind?: CustomFieldKind): Promise<FieldDefinition[]> {
+  listFields(kind?: CustomFieldKind, status?: string): Promise<FieldDefinition[]> {
     return this.call(
       this.customFields.listCustomFieldDefinitions({
-        entityType: kind as unknown as CustomFieldEntityType | undefined,
+        entityType: kind as unknown as CustomFieldEntityType | undefined, status: status || undefined,
       }),
       (slice) => slice.items.map(definitionOf));
   }
@@ -94,9 +94,9 @@ export abstract class GeneratedGatewayDelivery extends GeneratedGatewayBase {
     }), () => undefined);
   }
 
-  reviseField(id: string, changes: FieldChanges): Promise<void> {
+  reviseField(id: string, changes: FieldChanges, version: number): Promise<void> {
     return this.call(this.customFields.reviseCustomField({
-      id,
+      id, ifMatch: `"${version}"`,
       reviseCustomFieldRequest: {
         label: changes.label, required: changes.required, options: changes.options,
         active: changes.active,
@@ -313,16 +313,17 @@ export abstract class GeneratedGatewayDelivery extends GeneratedGatewayBase {
     }
   }
 
-  allocationRules(): Promise<AllocationRuleView[]> {
-    return this.call(this.rules.listAllocationRules({ limit: 200 }), (s) => s.items.map(ruleOf));
+  allocationRules(status?: string): Promise<AllocationRuleView[]> {
+    return this.call(this.rules.listAllocationRules({ limit: 200, status: status || undefined }), (s) => s.items.map(ruleOf));
   }
 
   createAllocationRule(draft: RuleDraft): Promise<string> {
     return this.call(this.rules.createAllocationRule({ allocationRuleRequest: ruleRequest(draft) }), (made) => made.id ?? '');
   }
 
-  reviseAllocationRule(id: string, draft: RuleDraft): Promise<void> {
-    return this.call(this.rules.reviseAllocationRule({ id, allocationRuleRequest: ruleRequest(draft) }), () => undefined);
+  reviseAllocationRule(id: string, draft: RuleDraft, version: number): Promise<void> {
+    return this.call(this.rules.reviseAllocationRule({ id, ifMatch: `"${version}"`, allocationRuleRequest: ruleRequest(draft) }),
+      () => undefined);
   }
 
   evaluateAllocation(loadId: string): Promise<RuleEvaluation> {

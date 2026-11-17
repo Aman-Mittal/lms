@@ -158,7 +158,9 @@ public class AllocationRuleSteps {
     @Given("the allocation-rule rule {string} is retired")
     public void retire(String name) {
         AllocationRuleRequest request = ruleRequests.get(name).active(false);
-        world.api(AllocationRulesApi.class).reviseAllocationRule(ruleIds.get(name), request, null);
+        AllocationRulesApi api = world.api(AllocationRulesApi.class);
+        api.reviseAllocationRule(String.valueOf(api.getAllocationRule(ruleIds.get(name)).getVersion()),
+                ruleIds.get(name), request, null);
     }
 
     // ----------------------------------------------------------------- load

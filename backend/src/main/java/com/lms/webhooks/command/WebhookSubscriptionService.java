@@ -29,6 +29,7 @@ import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -94,8 +95,10 @@ public class WebhookSubscriptionService {
      */
     @Transactional
     @PreAuthorize("hasAuthority('WEBHOOK_MANAGE')")
-    public void revise(UUID id, String name, String url, List<String> eventTypes, boolean active) {
+    public void revise(UUID id, long expectedVersion, String name, String url, List<String> eventTypes,
+                       boolean active) {
         Current current = current(id);
+        requireVersion(current, expectedVersion);
         String cleanName = requireName(name);
         String target = guard.requireAcceptable(url).toString();
         String[] types = requireTypes(eventTypes);
@@ -119,6 +122,57 @@ public class WebhookSubscriptionService {
                 Json.object("active", Boolean.toString(current.active())),
                 Json.object("name", cleanName, "url", target, "eventTypes", String.join(",", types),
                         "active", Boolean.toString(active)));
+    }
+
+    /**
+     * Switches a subscription off, with a reason. An inactive subscription records and sends nothing:
+     * events are not queued for it and what is already queued waits, untouched, until it is
+     * switched back on. {@code expectedVersion} is optional; a console sends it.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('WEBHOOK_MANAGE')")
+    public void deactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        Current current = current(id);
+        if (expectedVersion != null) {
+            requireVersion(current, expectedVersion);
+        }
+        if (!current.active()) {
+            throw new BusinessRuleViolationException("webhook-already-inactive",
+                    "The subscription is already inactive");
+        }
+        jdbc.sql("""
+                        UPDATE webhook_subscription
+                           SET active = FALSE, paused_reason = NULL, version = version + 1, updated_at = now()
+                         WHERE id = :id
+                        """)
+                .param("id", id).update();
+        audit.record("WEBHOOK_DEACTIVATED", "WEBHOOK_SUBSCRIPTION", id,
+                Json.object("active", "true"), Json.object("active", "false", "reason", reason.strip()));
+    }
+
+    /** Switches a subscription back on, with a reason, clearing a pause and its failure count. */
+    @Transactional
+    @PreAuthorize("hasAuthority('WEBHOOK_MANAGE')")
+    public void reactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        Current current = current(id);
+        if (expectedVersion != null) {
+            requireVersion(current, expectedVersion);
+        }
+        if (current.active()) {
+            throw new BusinessRuleViolationException("webhook-not-inactive",
+                    "The subscription is active, not inactive");
+        }
+        jdbc.sql("""
+                        UPDATE webhook_subscription
+                           SET active = TRUE, paused_reason = NULL, consecutive_failures = 0,
+                               version = version + 1, updated_at = now()
+                         WHERE id = :id
+                        """)
+                .param("id", id).update();
+        audit.record("WEBHOOK_REACTIVATED", "WEBHOOK_SUBSCRIPTION", id,
+                Json.object("active", "false"), Json.object("active", "true", "reason", reason.strip()));
     }
 
     @Transactional
@@ -164,15 +218,27 @@ public class WebhookSubscriptionService {
                 Json.object("status", "PENDING"));
     }
 
-    private record Current(boolean active) {
+    private record Current(boolean active, long version) {
     }
 
     private Current current(UUID id) {
-        return jdbc.sql("SELECT active FROM webhook_subscription WHERE id = :id")
+        return jdbc.sql("SELECT active, version FROM webhook_subscription WHERE id = :id FOR UPDATE")
                 .param("id", id)
-                .query((rs, row) -> new Current(rs.getBoolean("active")))
+                .query((rs, row) -> new Current(rs.getBoolean("active"), rs.getLong("version")))
                 .optional()
                 .orElseThrow(() -> new ResourceNotFoundException("Webhook subscription", id));
+    }
+
+    private static void requireVersion(Current current, long expected) {
+        if (current.version() != expected) {
+            throw new OptimisticLockingFailureException("The subscription changed since it was read");
+        }
+    }
+
+    private static void requireReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
     }
 
     private static void requireActive(Current current) {

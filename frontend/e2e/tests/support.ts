@@ -88,13 +88,10 @@ export async function retireFields(
   });
   const headers = { Authorization: `Bearer ${(await login.json()).accessToken}` };
   const listed = await request.get(`${API}/api/v1/custom-fields/definitions?entityType=${kind}`, { headers });
-  for (const d of (await listed.json()).items as Array<{
-    id: string; key: string; label: string; options: string[]; active: boolean;
-  }>) {
+  for (const d of (await listed.json()).items as Array<{ id: string; key: string; active: boolean }>) {
     if (keys.includes(d.key) && d.active) {
-      await request.put(`${API}/api/v1/custom-fields/definitions/${d.id}`, {
-        headers,
-        data: { label: d.label, required: false, options: d.options, active: false },
+      await request.post(`${API}/api/v1/custom-fields/definitions/${d.id}/deactivate`, {
+        headers, data: { reason: 'E2E clean-up' },
       });
     }
   }
@@ -468,19 +465,10 @@ export async function retireRules(request: APIRequestContext, salt: string): Pro
   const session = await apiSession(request);
   const headers = { Authorization: `Bearer ${session.token}` };
   const listed = await request.get(`${API}/api/v1/allocation-rules?active=true&limit=200`, { headers });
-  for (const r of (await listed.json()).items as Array<{
-    id: string; name: string; priority: number; originTerminalId?: string; destinationTerminalId?: string;
-    minWeightKg?: number; maxWeightKg?: number; materialClass?: string; action: string;
-    vendors: Array<{ vendorPartnerId: string }>;
-  }>) {
+  for (const r of (await listed.json()).items as Array<{ id: string; name: string }>) {
     if (r.name.includes(salt)) {
-      await request.put(`${API}/api/v1/allocation-rules/${r.id}`, {
-        headers,
-        data: {
-          name: r.name, priority: r.priority, active: false, originTerminalId: r.originTerminalId,
-          destinationTerminalId: r.destinationTerminalId, minWeightKg: r.minWeightKg, maxWeightKg: r.maxWeightKg,
-          materialClass: r.materialClass, action: r.action, vendorPartnerIds: r.vendors.map((v) => v.vendorPartnerId),
-        },
+      await request.post(`${API}/api/v1/allocation-rules/${r.id}/deactivate`, {
+        headers, data: { reason: 'E2E clean-up' },
       });
     }
   }

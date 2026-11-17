@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.query.ActiveFilter;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,7 +39,7 @@ public class WebhookQueryService {
 
     private static final String SUBSCRIPTION_SELECT = """
             SELECT id, name, url, event_types, active, paused_reason, consecutive_failures,
-                   created_at, updated_at
+                   version, created_at, updated_at
               FROM webhook_subscription
             """;
 
@@ -48,16 +49,21 @@ public class WebhookQueryService {
         this.jdbc = jdbc;
     }
 
-    /** Ordered by name; the lower-cased name is unique per tenant, so it is the cursor. */
+    /**
+     * Ordered by name; the lower-cased name is unique per tenant, so it is the cursor. The active
+     * subscriptions unless {@code status} says INACTIVE or ALL.
+     */
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('WEBHOOK_READ')")
-    public Slice<WebhookSubscriptionView> subscriptions(String cursor, Integer limit) {
+    public Slice<WebhookSubscriptionView> subscriptions(String status, String cursor, Integer limit) {
         int pageSize = Slice.clampLimit(limit);
         var rows = jdbc.sql(SUBSCRIPTION_SELECT + """
-                         WHERE (CAST(:cursor AS text) IS NULL OR lower(name) > CAST(:cursor AS text))
+                         WHERE (CAST(:active AS boolean) IS NULL OR active = CAST(:active AS boolean))
+                           AND (CAST(:cursor AS text) IS NULL OR lower(name) > CAST(:cursor AS text))
                          ORDER BY lower(name)
                          LIMIT :limit
                         """)
+                .param("active", ActiveFilter.of(status))
                 .param("cursor", cursor).param("limit", pageSize + 1)
                 .query((rs, row) -> subscription(rs))
                 .list();
@@ -123,6 +129,7 @@ public class WebhookQueryService {
                 rs.getBoolean("active"),
                 rs.getString("paused_reason"),
                 rs.getInt("consecutive_failures"),
+                rs.getLong("version"),
                 rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("updated_at").toInstant());
     }

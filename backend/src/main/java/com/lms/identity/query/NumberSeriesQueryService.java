@@ -54,7 +54,7 @@ public class NumberSeriesQueryService {
             SELECT s.id, s.code, s.document_type, s.org_unit_id, u.name AS org_unit_name,
                    u.path AS org_unit_path, s.prefix, s.year_code, s.separator, s.counter_length,
                    s.year_start_month, s.time_zone, s.reuse_released, s.active, s.description,
-                   s.created_at, s.updated_at
+                   s.version, s.created_at, s.updated_at
               FROM number_series s
               LEFT JOIN org_unit u ON u.id = s.org_unit_id
             """;
@@ -301,7 +301,8 @@ public class NumberSeriesQueryService {
     private record Row(UUID id, String code, String documentType, UUID orgUnitId, String orgUnitName,
                        String orgUnitPath, String prefix, String yearCode, String separator,
                        int counterLength, int yearStartMonth, String timeZone, boolean reuseReleased,
-                       boolean active, String description, Instant createdAt, Instant updatedAt) {
+                       boolean active, String description, Long version, Instant createdAt,
+                       Instant updatedAt) {
 
         SeriesFormat format() {
             return new SeriesFormat(prefix, SeriesFormat.YearCode.valueOf(yearCode), separator,
@@ -315,7 +316,8 @@ public class NumberSeriesQueryService {
                 rs.getString("org_unit_path"), rs.getString("prefix"), rs.getString("year_code"),
                 rs.getString("separator"), rs.getInt("counter_length"), rs.getInt("year_start_month"),
                 rs.getString("time_zone"), rs.getBoolean("reuse_released"), rs.getBoolean("active"),
-                rs.getString("description"), rs.getTimestamp("created_at").toInstant(),
+                rs.getString("description"), rs.getObject("version", Long.class),
+                rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("updated_at").toInstant());
     }
 
@@ -360,7 +362,7 @@ public class NumberSeriesQueryService {
                     row.counterLength(), row.yearStartMonth(), row.timeZone(), row.reuseReleased(),
                     row.active(), row.description(), year, issued,
                     issued == 0 ? null : format.format(year, issued), pooled.getOrDefault(key, 0L),
-                    format.format(year, 1), row.createdAt(), row.updatedAt());
+                    format.format(year, 1), row.version(), row.createdAt(), row.updatedAt());
         }).toList();
     }
 

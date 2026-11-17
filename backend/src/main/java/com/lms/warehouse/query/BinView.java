@@ -17,11 +17,13 @@ package com.lms.warehouse.query;
 
 import java.util.UUID;
 
-/** A bin and how full it is. */
+/** A bin and how full it is; {@code version} is the ETag a switch-off may send back as If-Match. */
 public record BinView(
         UUID id,
         UUID warehouseId,
         String code,
         int capacityUnits,
-        int occupiedUnits) {
+        int occupiedUnits,
+        boolean active,
+        Long version) {
 }

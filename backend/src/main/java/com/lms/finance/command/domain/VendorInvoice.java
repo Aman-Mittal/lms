@@ -59,6 +59,8 @@ public record VendorInvoice(
         BigDecimal advancesDeducted,
         BigDecimal paidAmount,
         Status status,
+        Instant voidedAt,
+        String voidReason,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -66,7 +68,9 @@ public record VendorInvoice(
     public enum Status {
         OPEN,
         PARTIALLY_PAID,
-        PAID
+        PAID,
+        /** Cancelled before anything was paid: it is owed nothing and holds no bill. */
+        VOID
     }
 
     public static VendorInvoice capture(UUID id, UUID tenantId, String invoiceNo, UUID orgUnitId, UUID vendorPartnerId,
@@ -95,7 +99,7 @@ public record VendorInvoice(
         VendorInvoice invoice = new VendorInvoice(id, tenantId, invoiceNo, orgUnitId, vendorPartnerId,
                 vendorInvoiceNo.strip(), invoiceDate, amount, tax, total, currency, approvedAmount,
                 amount.subtract(approvedAmount), blankToNull(documentRef), blankToNull(remarks), paymentTermsDays,
-                invoiceDate.plusDays(paymentTermsDays), advances, BigDecimal.ZERO, Status.OPEN, null, now, now);
+                invoiceDate.plusDays(paymentTermsDays), advances, BigDecimal.ZERO, Status.OPEN, null, null, null, now, now);
         return invoice.withStatus();
     }
 
@@ -111,11 +115,15 @@ public record VendorInvoice(
 
     /** Past its due date with something still owed. */
     public boolean overdueOn(LocalDate today) {
-        return status != Status.PAID && dueDate.isBefore(today);
+        return status != Status.PAID && status != Status.VOID && dueDate.isBefore(today);
     }
 
     /** Records a payment of {@code paying}: partial or the whole balance, never more. */
     public VendorInvoice paid(BigDecimal paying) {
+        if (status == Status.VOID) {
+            throw new BusinessRuleViolationException("vendor-invoice-void",
+                    "Invoice " + invoiceNo + " was voided and takes no payment");
+        }
         if (paying == null || paying.signum() <= 0) {
             throw new BusinessRuleViolationException("vendor-payment-amount-invalid",
                     "A payment is an amount above zero");
@@ -127,8 +135,32 @@ public record VendorInvoice(
         }
         return new VendorInvoice(id, tenantId, invoiceNo, orgUnitId, vendorPartnerId, vendorInvoiceNo, invoiceDate,
                 amount, taxAmount, totalAmount, currency, approvedAmount, varianceAmount, documentRef, remarks,
-                paymentTermsDays, dueDate, advancesDeducted, paidAmount.add(paying), status, version, createdAt,
-                Instant.now()).withStatus();
+                paymentTermsDays, dueDate, advancesDeducted, paidAmount.add(paying), status, voidedAt, voidReason, version,
+                createdAt, Instant.now()).withStatus();
+    }
+
+    /**
+     * Cancels the invoice, with a reason. Allowed only while nothing has been paid against it:
+     * the money has not moved, so the invoice can still be withdrawn. Once a payment is recorded,
+     * or it is settled, the books are corrected another way.
+     */
+    public VendorInvoice voided(String reason, Instant at) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
+        if (status == Status.VOID) {
+            throw new BusinessRuleViolationException("vendor-invoice-already-void",
+                    "Invoice " + invoiceNo + " is already void");
+        }
+        if (status != Status.OPEN || paidAmount.signum() > 0) {
+            throw new BusinessRuleViolationException("vendor-invoice-not-voidable",
+                    "Invoice " + invoiceNo + " is " + status + " with " + paidAmount
+                            + " paid; only an invoice nothing has been paid against can be voided");
+        }
+        return new VendorInvoice(id, tenantId, invoiceNo, orgUnitId, vendorPartnerId, vendorInvoiceNo, invoiceDate,
+                amount, taxAmount, totalAmount, currency, approvedAmount, varianceAmount, documentRef, remarks,
+                paymentTermsDays, dueDate, advancesDeducted, paidAmount, Status.VOID, at, reason.strip(), version,
+                createdAt, at);
     }
 
     private VendorInvoice withStatus() {
@@ -137,7 +169,8 @@ public record VendorInvoice(
                 : paidAmount.signum() > 0 ? Status.PARTIALLY_PAID : Status.OPEN;
         return new VendorInvoice(id, tenantId, invoiceNo, orgUnitId, vendorPartnerId, vendorInvoiceNo, invoiceDate,
                 amount, taxAmount, totalAmount, currency, approvedAmount, varianceAmount, documentRef, remarks,
-                paymentTermsDays, dueDate, advancesDeducted, paidAmount, next, version, createdAt, updatedAt);
+                paymentTermsDays, dueDate, advancesDeducted, paidAmount, next, voidedAt, voidReason, version, createdAt,
+                updatedAt);
     }
 
     private static String blankToNull(String text) {

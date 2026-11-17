@@ -191,7 +191,7 @@ CaptureVendorInvoiceRequest:
 
 VendorInvoiceStatus:
   type: string
-  enum: [OPEN, PARTIALLY_PAID, PAID]
+  enum: [OPEN, PARTIALLY_PAID, PAID, VOID]
 
 VendorInvoice:
   type: object
@@ -221,6 +221,7 @@ VendorInvoice:
     documentRef: { type: string }
     remarks: { type: string }
     version: { type: integer, format: int64 }
+    voidReason: { type: string, description: Why it was voided; present only on a VOID invoice. }
     createdAt: { type: string, format: date-time }
   required: [id, invoiceNo, vendorPartnerId, vendorInvoiceNo, invoiceDate, dueDate, paymentTermsDays, amount, taxAmount, totalAmount, currency, approvedAmount, varianceAmount, advancesDeducted, netPayable, paidAmount, outstanding, status, overdue, daysOverdue, billCount, version]
 

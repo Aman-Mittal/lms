@@ -46,6 +46,7 @@ import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -280,6 +281,43 @@ public class VendorPayablesService {
                 after.vendorPartnerId(), saved.amount(), saved.paidOn(), saved.mode().name(), saved.reference(),
                 after.outstanding(), after.status().name(), after.currency(), Instant.now()));
         return saved.id();
+    }
+
+    /**
+     * Voids an invoice, with a reason, while nothing has been paid against it (409
+     * {@code vendor-invoice-not-voidable} otherwise, {@code vendor-invoice-already-void} when it
+     * already is). What it held is released in the same transaction: the bills it covered can be
+     * invoiced again, and the advances it took off are paid again, ready for the next invoice.
+     * {@code expectedVersion} is optional; a console sends it.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('PAYABLES_MANAGE')")
+    public void voidInvoice(UUID invoiceId, Long expectedVersion, String reason) {
+        UUID tenantId = TenantContext.requireTenantId();
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
+        // The same lock a payment takes: a payment racing the void is served first or refused after it.
+        if (jdbc.sql("SELECT id FROM vendor_invoice WHERE id = :id FOR UPDATE").param("id", invoiceId)
+                .query(UUID.class).optional().isEmpty()) {
+            throw new ResourceNotFoundException("VendorInvoice", invoiceId);
+        }
+        VendorInvoice before = invoices.findById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("VendorInvoice", invoiceId));
+        if (expectedVersion != null && (before.version() == null || !before.version().equals(expectedVersion))) {
+            throw new OptimisticLockingFailureException("Invoice " + before.invoiceNo() + " changed since it was read");
+        }
+        VendorInvoice voided = invoices.save(before.voided(reason, Instant.now()));
+        int released = jdbc.sql("DELETE FROM vendor_invoice_bill WHERE tenant_id = :tenantId AND invoice_id = :id")
+                .param("tenantId", tenantId).param("id", invoiceId).update();
+        List<VendorAdvance> restored = advances.findDeductedBy(tenantId, invoiceId);
+        restored.forEach(advance -> advances.save(advance.restored()));
+        audit.record("VENDOR_INVOICE_VOIDED", AUDIT_TYPE, invoiceId,
+                Json.object("status", before.status().name(), "paid", before.paidAmount().toPlainString(),
+                        "outstanding", before.outstanding().toPlainString()),
+                Json.object("status", voided.status().name(), "reason", reason.strip(),
+                        "billsReleased", String.valueOf(released),
+                        "advancesRestored", String.valueOf(restored.size())));
     }
 
     /** What a bill was approved at: the vendor's claim it was approved against, else what the platform computed. */

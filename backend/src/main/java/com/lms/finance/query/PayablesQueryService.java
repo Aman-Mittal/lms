@@ -51,11 +51,11 @@ public class PayablesQueryService {
                    i.currency, i.approved_amount, i.variance_amount, i.advances_deducted,
                    (i.total_amount - i.advances_deducted) AS net_payable, i.paid_amount,
                    (i.total_amount - i.advances_deducted - i.paid_amount) AS outstanding, i.status,
-                   (i.status <> 'PAID' AND i.due_date < CAST(:today AS date)) AS overdue,
-                   CASE WHEN i.status <> 'PAID' AND i.due_date < CAST(:today AS date)
+                   (i.status NOT IN ('PAID', 'VOID') AND i.due_date < CAST(:today AS date)) AS overdue,
+                   CASE WHEN i.status NOT IN ('PAID', 'VOID') AND i.due_date < CAST(:today AS date)
                         THEN (CAST(:today AS date) - i.due_date) ELSE 0 END AS days_overdue,
                    (SELECT count(*) FROM vendor_invoice_bill b WHERE b.invoice_id = i.id) AS bill_count,
-                   i.document_ref, i.remarks, i.version, i.created_at
+                   i.document_ref, i.remarks, i.version, i.void_reason, i.created_at
               FROM vendor_invoice i
               JOIN business_partner vp ON vp.id = i.vendor_partner_id
             """;
@@ -107,7 +107,7 @@ public class PayablesQueryService {
         int pageSize = Slice.clampLimit(limit);
         Keyset after = Keyset.parseDay(cursor);
         List<VendorInvoiceView> rows = jdbc.sql(INVOICE_SELECT + """
-                         WHERE i.status <> 'PAID' AND i.due_date < CAST(:today AS date)
+                         WHERE i.status NOT IN ('PAID', 'VOID') AND i.due_date < CAST(:today AS date)
                            AND (CAST(:vendorId AS uuid) IS NULL OR i.vendor_partner_id = CAST(:vendorId AS uuid))
                            AND (CAST(:dueAfter AS date) IS NULL
                                 OR (i.due_date, i.id) > (CAST(:dueAfter AS date), CAST(:idAfter AS uuid)))

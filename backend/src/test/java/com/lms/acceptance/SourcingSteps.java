@@ -32,6 +32,7 @@ import com.lms.sourcing.command.AllocationOfferRepository;
 import com.lms.sourcing.command.AllocationRepository;
 import com.lms.sourcing.command.AllocationService;
 import com.lms.sourcing.command.AllocationTimeoutSweeper;
+import com.lms.sourcing.command.RoutingGuideCommandService;
 import com.lms.sourcing.command.RoutingGuideEntryRepository;
 import com.lms.sourcing.command.RoutingGuideRepository;
 import com.lms.sourcing.command.VendorAwardTally;
@@ -69,6 +70,8 @@ public class SourcingSteps {
     private RoutingGuideRepository guides;
     @Autowired
     private RoutingGuideEntryRepository guideEntries;
+    @Autowired
+    private RoutingGuideCommandService guideService;
     @Autowired
     private AllocationRepository allocations;
     @Autowired
@@ -193,6 +196,30 @@ public class SourcingSteps {
         });
     }
 
+    @When("{string} is switched off on the guide because {string}")
+    public void vendorSwitchedOff(String vendorCode, String reason) {
+        attempt(() -> {
+            guideService.deactivateVendor(guideId, entryOf(vendorCode), null, reason);
+            return null;
+        });
+    }
+
+    @When("{string} is switched off on the guide without a reason")
+    public void vendorSwitchedOffWithoutReason(String vendorCode) {
+        attempt(() -> {
+            guideService.deactivateVendor(guideId, entryOf(vendorCode), null, " ");
+            return null;
+        });
+    }
+
+    @When("{string} is switched back on on the guide because {string}")
+    public void vendorSwitchedOn(String vendorCode, String reason) {
+        attempt(() -> {
+            guideService.reactivateVendor(guideId, entryOf(vendorCode), null, reason);
+            return null;
+        });
+    }
+
     @When("{string} accepts the offer")
     public void vendorAccepts(String vendorCode) {
         attempt(() -> {
@@ -267,6 +294,29 @@ public class SourcingSteps {
         assertThat(history()).hasSize(expected);
     }
 
+    @Then("the guide lists {string} as inactive at rank {int}")
+    public void guideListsInactive(String vendorCode, int rank) {
+        assertThat(inTransaction(() -> guideEntries.findByGuide(TenantContext.requireTenantId(), guideId)))
+                .filteredOn(e -> e.vendorPartnerId().equals(world.ref(vendorCode)))
+                .singleElement().satisfies(e -> {
+                    assertThat(e.active()).isFalse();
+                    assertThat(e.rankNo()).isEqualTo(rank);
+                });
+    }
+
+    @Then("the guide audit trail records the reason {string}")
+    public void guideAuditReason(String reason) {
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_log WHERE action = 'ROUTING_GUIDE_VENDOR_DEACTIVATED'"
+                + " AND after_state ->> 'reason' = :reason").param("reason", reason).query(Long.class).single())
+                .isPositive();
+    }
+
+    @Then("the guide change is refused for want of a reason")
+    public void guideChangeNeedsReason() {
+        assertThat(failure).isInstanceOf(IllegalArgumentException.class);
+        assertThat(failure.getMessage()).contains("reason");
+    }
+
     @Then("allocation is refused mentioning {string}")
     public void allocationRefused(String fragment) {
         assertRefusal(fragment);
@@ -284,6 +334,11 @@ public class SourcingSteps {
         guideId = inTransaction(() -> guides.save(RoutingGuide.define(UUID.randomUUID(),
                 TenantContext.requireTenantId(), world.orgUnitId(),
                 world.ref(originCode), world.ref(destinationCode), vehicleType, strategy)).id());
+    }
+
+    private UUID entryOf(String vendorCode) {
+        return inTransaction(() -> guideEntries.findByGuide(TenantContext.requireTenantId(), guideId)).stream()
+                .filter(e -> e.vendorPartnerId().equals(world.ref(vendorCode))).findFirst().orElseThrow().id();
     }
 
     private Allocation allocation() {

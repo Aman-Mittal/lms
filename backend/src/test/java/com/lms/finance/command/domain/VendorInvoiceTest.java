@@ -125,4 +125,26 @@ class VendorInvoiceTest {
         assertThat(small.within()).isTrue();
         assertThat(InvoiceMatch.of(new BigDecimal("1000"), new BigDecimal("1101"), two, hundred).within()).isFalse();
     }
+    @Test
+    @DisplayName("an invoice nothing has been paid against is voided with a reason, and is then owed nothing")
+    void voidedBeforeAnyPayment() {
+        VendorInvoice voided = invoice("10000", "0", 30, "0").voided("  Wrong vendor ", java.time.Instant.EPOCH);
+        assertThat(voided.status()).isEqualTo(VendorInvoice.Status.VOID);
+        assertThat(voided.voidReason()).isEqualTo("Wrong vendor");
+        assertThat(voided.voidedAt()).isEqualTo(java.time.Instant.EPOCH);
+        assertThat(voided.overdueOn(DAY.plusDays(90))).as("a void invoice is never overdue").isFalse();
+        refused(() -> voided.voided("Again", java.time.Instant.EPOCH), "vendor-invoice-already-void");
+        refused(() -> voided.paid(new BigDecimal("1")), "vendor-invoice-void");
+        assertThatThrownBy(() -> invoice("10000", "0", 30, "0").voided(" ", java.time.Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("an invoice with a payment against it, or one settled by advances, cannot be voided")
+    void notVoidableOnceMoneyHasMoved() {
+        VendorInvoice partly = invoice("10000", "0", 30, "0").paid(new BigDecimal("1"));
+        refused(() -> partly.voided("Too late", java.time.Instant.EPOCH), "vendor-invoice-not-voidable");
+        VendorInvoice settled = invoice("10000", "0", 30, "10000");
+        refused(() -> settled.voided("Too late", java.time.Instant.EPOCH), "vendor-invoice-not-voidable");
+    }
 }

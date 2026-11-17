@@ -40,8 +40,9 @@ CustomFieldDefinition:
     displayOrder: { type: integer }
     active:
       type: boolean
-      description: False once retired. A retired field keeps its stored values
+      description: False once switched off. An inactive field keeps its stored values
         but is no longer validated or required.
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
 
 CustomFieldDefinitionSlice:
   type: object

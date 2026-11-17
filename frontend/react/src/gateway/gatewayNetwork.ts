@@ -39,15 +39,15 @@ export function networkVerbs(d: GatewayDeps): Pick<LmsGateway,
   const { partners, terminals, trips, telematics, multimodal, milkRuns, ltl, deadLetters, approvalsApi, delivery, rules, sourcing, cachedGet } = d;
 
   return {
-    allocationRules: (): Promise<AllocationRuleView[]> =>
-      guard(async () => (await rules.listAllocationRules({ limit: 200 })).items.map(ruleOf)),
+    allocationRules: (status?: string): Promise<AllocationRuleView[]> =>
+      guard(async () => (await rules.listAllocationRules({ limit: 200, status: status || undefined })).items.map(ruleOf)),
 
     createAllocationRule: (draft: RuleDraft) =>
       guard(async () => (await rules.createAllocationRule({ allocationRuleRequest: ruleRequest(draft) })).id ?? ''),
 
-    reviseAllocationRule: (id: string, draft: RuleDraft) =>
+    reviseAllocationRule: (id: string, draft: RuleDraft, version: number) =>
       guard(async () => {
-        await rules.reviseAllocationRule({ id, allocationRuleRequest: ruleRequest(draft) });
+        await rules.reviseAllocationRule({ id, ifMatch: String(version), allocationRuleRequest: ruleRequest(draft) });
       }),
 
     evaluateAllocation: (loadId: string): Promise<RuleEvaluation> =>

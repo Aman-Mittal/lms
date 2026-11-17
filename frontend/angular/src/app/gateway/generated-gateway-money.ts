@@ -337,7 +337,8 @@ export abstract class GeneratedGatewayMoney extends GeneratedGatewayOrders {
   // Charges, payables and advances
   chargeCatalogue(filter: ChargeCatalogueFilter, cursor?: string): Promise<ChargeCataloguePage> {
     return this.call(this.charges.listChargeCatalogue({
-      q: filter.q.trim() || undefined, active: filter.activeOnly ? true : undefined, cursor: cursor || undefined, limit: 50,
+      q: filter.q.trim() || undefined, active: filter.activeOnly ? true : undefined, status: filter.status || undefined,
+      cursor: cursor || undefined, limit: 50,
     }), (s) => ({ items: s.items.map(chargeEntryOf), nextCursor: s.hasMore ? s.nextCursor ?? null : null }));
   }
 
