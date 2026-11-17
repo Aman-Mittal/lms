@@ -26,6 +26,7 @@ import com.lms.shared.config.Json;
 import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.tenant.TenantContext;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,8 +100,12 @@ public class NumberSeriesService {
      */
     @Transactional
     @PreAuthorize("hasAuthority('NUMBER_SERIES_MANAGE')")
-    public void revise(UUID seriesId, SeriesFormat format, boolean reuseReleased, String description) {
+    public void revise(UUID seriesId, long expectedVersion, SeriesFormat format, boolean reuseReleased,
+                       String description) {
         NumberSeries existing = require(seriesId);
+        if (existing.version() == null || existing.version() != expectedVersion) {
+            throw new OptimisticLockingFailureException("Series " + existing.code() + " changed since it was read");
+        }
         if (existing.formatDiffers(format)) {
             if (series.hasIssued(existing.tenantId(), existing.id())) {
                 throw new BusinessRuleViolationException("number-series-in-use",

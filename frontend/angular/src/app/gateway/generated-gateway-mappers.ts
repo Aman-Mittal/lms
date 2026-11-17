@@ -57,7 +57,7 @@ export function adminPolicyOf(p: AccessPolicy): AccessPolicyView {
   return {
     id: text(p.id), code: text(p.code), action: text(p.action), effect: text(p.effect) as PolicyEffect,
     description: text(p.description), condition: JSON.stringify(p.condition ?? {}, null, 2),
-    enabled: p.enabled === true, updatedAt: text(p.updatedAt),
+    enabled: p.enabled === true, updatedAt: text(p.updatedAt), version: Number(p.version ?? 0),
   };
 }
 
@@ -136,6 +136,7 @@ export function commercialGuideOf(g: CommercialRoutingGuide): RoutingGuideDetail
     entries: (g.entries ?? []).map((e) => ({
       rankNo: text(e.rankNo), vendorPartnerId: text(e.vendorPartnerId), vendorName: text(e.vendorName),
       responseSlaMinutes: text(e.responseSlaMinutes), agreedRate: text(e.agreedRate),
+      id: text(e.id), active: e.active === false ? '' : 'Yes', version: text(e.version),
     })),
   };
 }

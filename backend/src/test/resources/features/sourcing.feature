@@ -169,3 +169,32 @@ Feature: Finding a vendor to move the load
     And a load "LOAD-DRAFT" is left in draft from "ORIGIN" on lorry "MH-01-SR-0001"
     When load "LOAD-DRAFT" is allocated
     Then allocation is refused mentioning "only a PLANNED load"
+
+  Scenario: A vendor switched off on the guide is skipped, and keeps its rank for when it comes back
+    # Issue 247. Switching a vendor off is a decision about the guide, not about the partner:
+    # the offer goes to the next rank, and switching the vendor back on gives the first rank back.
+    Given a routing guide from "ORIGIN" to "DEST-A" for "RIGID"
+    And the guide ranks "VENDOR-1" first with a 60 minute SLA
+    And the guide ranks "VENDOR-2" second with a 60 minute SLA
+    When "VENDOR-1" is switched off on the guide because "contract on hold"
+    And load "LOAD-S" is allocated
+    Then the offer is with "VENDOR-2" at rank 2
+    And the guide lists "VENDOR-1" as inactive at rank 1
+    And the guide audit trail records the reason "contract on hold"
+
+  Scenario: A vendor with an unanswered offer on the guide cannot be switched off
+    Given a routing guide from "ORIGIN" to "DEST-A" for "RIGID"
+    And the guide ranks "VENDOR-1" first with a 60 minute SLA
+    And load "LOAD-S" is allocated
+    When "VENDOR-1" is switched off on the guide because "contract on hold"
+    Then the response is refused mentioning "open offer"
+
+  Scenario: A switched-off vendor needs a reason, and comes back on request
+    Given a routing guide from "ORIGIN" to "DEST-A" for "RIGID"
+    And the guide ranks "VENDOR-1" first with a 60 minute SLA
+    When "VENDOR-1" is switched off on the guide without a reason
+    Then the guide change is refused for want of a reason
+    When "VENDOR-1" is switched off on the guide because "contract on hold"
+    And "VENDOR-1" is switched back on on the guide because "contract signed"
+    And load "LOAD-S" is allocated
+    Then the offer is with "VENDOR-1" at rank 1

@@ -110,9 +110,13 @@ test.describe('allocation rules', () => {
       await expect(page.getByTestId('dry-run-next')).toContainText(b.code);
       await expect(page.getByTestId('dry-run-order')).toHaveCount(2);
 
-      await row(page, name).getByTestId('rule-retire').click();
+      await row(page, name).getByTestId('deactivate-record').click();
+      await page.getByTestId('reason-input').fill('Not needed any more');
+      await page.getByTestId('confirm-action').click();
+      // The default list is the active rules; the filter keeps a switched-off one on screen.
+      await page.getByTestId('status-filter').selectOption('ALL');
       await expect(row(page, name).getByTestId('rule-status')).toHaveText('Retired');
-      await expect(row(page, name).getByTestId('rule-reinstate')).toBeVisible();
+      await expect(row(page, name).getByTestId('reactivate-record')).toBeVisible();
 
       await dryRun(page, lane.loadId);
       await expect(page.getByTestId('dry-run-rule')).toHaveText('No rule fires');
@@ -182,7 +186,7 @@ test.describe('allocation rules', () => {
 
     await expect(page.getByTestId('rule-form')).toHaveCount(0);
     await expect(page.getByTestId('rule-edit')).toHaveCount(0);
-    await expect(page.getByTestId('rule-retire')).toHaveCount(0);
+    await expect(page.getByTestId('deactivate-record')).toHaveCount(0);
     await dryRun(page, lane.loadId);
     await expect(page.getByTestId('dry-run-next')).toContainText(lane.vendors[0].code);
   });

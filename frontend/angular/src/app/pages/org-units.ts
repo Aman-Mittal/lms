@@ -16,9 +16,12 @@
 
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { LmsGateway, ORG_UNIT_RANK, ORG_UNIT_TYPES, ORG_UNIT_WORDS, OrgUnitView } from '../gateway/lms-gateway';
+import { ApiProblem, LmsGateway, ORG_UNIT_RANK, ORG_UNIT_TYPES, ORG_UNIT_WORDS, OrgUnitView } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { ConfigActions } from './config-actions';
+import { STALE_MESSAGE } from './master-data-form';
 import { PageHeader } from './page-header';
+import { StatusFilter } from './status-filter';
 
 /** What the form beneath the tree is doing: adding a child, editing a unit, or nothing. */
 type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 'edit'; unit: OrgUnitView };
@@ -33,13 +36,15 @@ type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 
  */
 @Component({
   selector: 'app-org-units',
-  imports: [FormsModule, PageHeader],
+  imports: [FormsModule, ConfigActions, PageHeader, StatusFilter],
   template: `
     <app-page-header title="Organisation units" />
     <p class="muted">Levels run head office, line of business, country, zone (or region), branch, hub; a unit sits
       below its parent's level. A country carries its ISO code and a zone, branch or hub may carry a state code:
       platform rules for that country and state then apply to everything beneath.</p>
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
+    <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
 
     <div class="table-wrap"><table data-testid="org-units">
       <thead><tr><th>Unit</th><th>Level</th><th>Codes</th><th>Jurisdiction</th><th></th></tr></thead>
@@ -56,6 +61,8 @@ type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 
               }
               @if (manage) {
                 <button type="button" class="link" data-testid="edit-unit" (click)="edit(u)">Edit</button>
+                <app-config-actions kind="orgUnits" [recordId]="u.id" [active]="u.active" [label]="u.name"
+                                    [version]="u.version" (changed)="reload()" />
               }
             </td>
           </tr>
@@ -100,6 +107,10 @@ export class OrgUnitsPage implements OnInit {
   readonly mode = signal<Mode>({ kind: 'none' });
   readonly error = signal('');
   readonly notice = signal('');
+  /** Said when somebody else saved the unit first; the tree is read again. */
+  readonly conflict = signal('');
+  /** '' is the server's default, the active units. */
+  readonly status = signal('');
 
   slug = '';
   name = '';
@@ -113,6 +124,11 @@ export class OrgUnitsPage implements OnInit {
 
   async ngOnInit(): Promise<void> {
     await this.reload();
+  }
+
+  setStatus(value: string): void {
+    this.status.set(value);
+    void this.reload();
   }
 
   word(type: string): string {
@@ -190,6 +206,7 @@ export class OrgUnitsPage implements OnInit {
     const m = this.mode();
     this.error.set('');
     this.notice.set('');
+    this.conflict.set('');
     const codes = {
       countryCode: this.unitType === 'COUNTRY' ? this.countryCode : '',
       stateCode: this.carriesState() ? this.stateCode : '',
@@ -208,13 +225,19 @@ export class OrgUnitsPage implements OnInit {
       this.mode.set({ kind: 'none' });
       await this.reload();
     } catch (e) {
-      this.error.set((e as Error).message);
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        this.mode.set({ kind: 'none' });
+        this.conflict.set(STALE_MESSAGE);
+        await this.reload();
+      } else {
+        this.error.set((e as Error).message);
+      }
     }
   }
 
-  private async reload(): Promise<void> {
+  async reload(): Promise<void> {
     try {
-      this.units.set(await this.gateway.orgUnits());
+      this.units.set(await this.gateway.orgUnits(this.status()));
     } catch (e) {
       this.error.set((e as Error).message);
     }
