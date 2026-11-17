@@ -22,6 +22,7 @@ import { useSession } from '../session';
 import { money, problemText } from './moneyProblem';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * A trip's money: the advances paid to its vendor (requested, paid, cancelled before payment) and the
@@ -79,7 +80,7 @@ export function TripMoney({ tripId }: { tripId: string }) {
   return (
     <section data-testid="trip-money" aria-label="Trip money">
       <h2>Money</h2>
-      {error && <p className="error" role="alert" data-testid="adv-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="adv-error" />}
       {canSee && (
         <>
           <h3>Advances</h3>

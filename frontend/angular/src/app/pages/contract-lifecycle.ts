@@ -25,6 +25,7 @@ import { EntityPicker } from './entity-picker';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -77,7 +78,7 @@ function draftOf(d: ContractDetail): ContractDraft {
  */
 @Component({
   selector: 'app-contract-lifecycle',
-  imports: [FormsModule, EntityPicker, StatusBadge, Money, When],
+  imports: [ErrorBanner, FormsModule, EntityPicker, StatusBadge, Money, When],
   template: `
     <section data-testid="contract-lifecycle" aria-label="Contract lifecycle">
       <h3>Contract versions</h3>
@@ -96,7 +97,7 @@ function draftOf(d: ContractDetail): ContractDraft {
 
       @if (session.can('CLIENT_CONTRACT_MANAGE')) {
         <h3>Draft a contract</h3>
-        <form class="inline" (ngSubmit)="create()" data-testid="new-contract">
+        <form ngNativeValidate class="inline" (ngSubmit)="create()" data-testid="new-contract">
           @for (f of fields; track f[0]) {
             <label>{{ f[1] }}
               <input [name]="'new-' + f[0]" [type]="f[2]" [attr.data-testid]="'new-contract-' + f[0]"
@@ -107,10 +108,7 @@ function draftOf(d: ContractDetail): ContractDraft {
         </form>
       }
       @if (error()) {
-        <p class="error" role="alert" data-testid="contract-error">
-          @if (code()) { <code data-testid="contract-refusal">{{ code() }}</code> }
-          {{ error() }}
-        </p>
+        <app-error-banner [message]="error()" [code]="code()" testId="contract-error" codeTestId="contract-refusal" />
         @if (refused().length) {
           <ul data-testid="contract-refused-rules">
             @for (r of refused(); track r[0]) { <li [attr.data-testid]="'refused-' + r[0]">{{ r[0] }}: {{ r[1] }}</li> }
@@ -168,7 +166,7 @@ function draftOf(d: ContractDetail): ContractDraft {
                 </li>
               }
             </ul>
-            <form class="inline" (ngSubmit)="saveAllowances()" data-testid="edit-allowances">
+            <form ngNativeValidate class="inline" (ngSubmit)="saveAllowances()" data-testid="edit-allowances">
               <label>Direct orders allowed
                 <input type="checkbox" name="direct" data-testid="allow-direct" [checked]="direct()"
                        (change)="direct.set($any($event.target).checked)" />
@@ -177,7 +175,7 @@ function draftOf(d: ContractDetail): ContractDraft {
                      data-testid="allowed-load-types" [value]="loadTypes()" (input)="loadTypes.set($any($event.target).value)" />
               <button type="submit" data-testid="save-allowances">Save allowances</button>
             </form>
-            <form class="inline" (ngSubmit)="addLane()" data-testid="add-lane">
+            <form ngNativeValidate class="inline" (ngSubmit)="addLane()" data-testid="add-lane">
               <input name="laneCode" aria-label="Lane code" placeholder="Lane code" data-testid="lane-form-code"
                      [value]="lane().laneCode" (input)="setLane('laneCode', $any($event.target).value)" required />
               <app-entity-picker [kind]="'terminal'" ariaLabel="Lane origin terminal id" placeholder="Origin terminal"
@@ -215,7 +213,7 @@ function draftOf(d: ContractDetail): ContractDraft {
                      (input)="setLane('consigneeIds', $any($event.target).value)" />
               <button type="submit" data-testid="add-lane-button">Add lane</button>
             </form>
-            <form class="inline" (ngSubmit)="save()" data-testid="edit-contract">
+            <form ngNativeValidate class="inline" (ngSubmit)="save()" data-testid="edit-contract">
               @for (f of fields; track f[0]) {
                 <label>{{ f[1] }}
                   <input [name]="'edit-' + f[0]" [type]="f[2]" [attr.data-testid]="'edit-contract-' + f[0]"
@@ -236,7 +234,7 @@ function draftOf(d: ContractDetail): ContractDraft {
           @if (d.status === 'ACTIVE' && !d.effectiveTo && session.can('CLIENT_CONTRACT_MANAGE')) {
             @if (d.validTill) {
               <h4>Extend</h4>
-              <form class="inline" (ngSubmit)="extend()" data-testid="extend-contract">
+              <form ngNativeValidate class="inline" (ngSubmit)="extend()" data-testid="extend-contract">
                 <input name="extendTill" type="date" aria-label="New end date" data-testid="extend-till"
                        [value]="extendTill()" (input)="extendTill.set($any($event.target).value)" required />
                 <input name="extendReason" aria-label="Reason for the extension" placeholder="Reason"
@@ -246,7 +244,7 @@ function draftOf(d: ContractDetail): ContractDraft {
               </form>
             }
             <h4>Add a charge</h4>
-            <form class="inline" (ngSubmit)="addCharge()" data-testid="add-charge">
+            <form ngNativeValidate class="inline" (ngSubmit)="addCharge()" data-testid="add-charge">
               <input name="chargeCode" aria-label="Service code" placeholder="Service code" data-testid="charge-code"
                      [value]="charge().serviceCode" (input)="setCharge('serviceCode', $any($event.target).value)" required />
               <input name="chargeUnit" aria-label="Unit" placeholder="Unit" data-testid="charge-unit"

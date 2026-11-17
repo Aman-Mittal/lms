@@ -26,6 +26,7 @@ import { Cell } from './cell';
 import { isDateColumn, isNumericColumn } from '../../../../shared/format';
 import { Money } from './figures';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -97,10 +98,10 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
  */
 @Component({
   selector: 'app-client-desk',
-  imports: [FormsModule, BillingTable, ContractLifecycle, CreditPositionPanel, CreditOverride, Money, When],
+  imports: [EntityPicker, ErrorBanner, FormsModule, BillingTable, ContractLifecycle, CreditPositionPanel, CreditOverride, Money, When],
   template: `
     <section data-testid="client-desk">
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
       @if (session.can('PARTNER_READ')) {
         <app-credit-position [partnerId]="clientId()" [refreshKey]="invoices()" />
       }
@@ -128,17 +129,14 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
 
       @if (session.can('CLIENT_BILLING_RUN')) {
         <h2>Billing run</h2>
-        <form class="inline" (ngSubmit)="run()" data-testid="billing-run">
+        <form ngNativeValidate class="inline" (ngSubmit)="run()" data-testid="billing-run">
           <input name="billingMonth" type="month" aria-label="Month to bill" data-testid="billing-month"
                  [value]="billingMonth()" (input)="billingMonth.set($any($event.target).value)" required />
           <button type="submit" data-testid="run-billing">Run billing</button>
         </form>
         @if (billed()) { <p data-testid="billing-result">Billed {{ billed() }}.</p> }
         @if (runError()) {
-          <p class="error" role="alert" data-testid="billing-error">
-            @if (runCode()) { <code data-testid="billing-refusal">{{ runCode() }}</code> }
-            {{ runError() }}
-          </p>
+          <app-error-banner [message]="runError()" [code]="runCode()" testId="billing-error" codeTestId="billing-refusal" />
           @if (runCode() === creditRefused) {
             <app-credit-override [partnerId]="clientId()" [subjectType]="'CLIENT_INVOICE'"
                                  [period]="billingMonth() + '-01'" [errors]="runErrors()" (granted)="run()" />
@@ -146,15 +144,15 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
         }
 
         <h2>Billable without proof</h2>
-        <form class="inline" (ngSubmit)="markBillable()" data-testid="mark-billable">
-          <input name="markConsignment" aria-label="Consignment id" placeholder="Consignment id"
-                 [value]="markConsignment()" (input)="markConsignment.set($any($event.target).value)" required />
+        <form ngNativeValidate class="inline" (ngSubmit)="markBillable()" data-testid="mark-billable">
+          <app-entity-picker [kind]="'consignment'" ariaLabel="Consignment id" placeholder="Consignment id"
+                             [(value)]="markConsignment" [required]="true" />
           <input name="markReason" aria-label="Reason it is billable" placeholder="Reason"
                  [value]="markReason()" (input)="markReason.set($any($event.target).value)" required />
           <button type="submit">Mark billable</button>
         </form>
         @if (marked()) { <p data-testid="marked-billable">Marked billable.</p> }
-        @if (markError()) { <p class="error" role="alert">{{ markError() }}</p> }
+        @if (markError()) { <app-error-banner [message]="markError()" /> }
       }
 
       <h2>Invoices</h2>
@@ -176,7 +174,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
           </tbody>
         </table></div>
       }
-      @if (invoiceError()) { <p class="error" role="alert">{{ invoiceError() }}</p> }
+      @if (invoiceError()) { <app-error-banner [message]="invoiceError()" /> }
       @if (invoice(); as d) {
         <section data-testid="invoice-panel" aria-label="Invoice">
           <header>
@@ -205,7 +203,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
             </section>
           }
           @if (session.can('CLIENT_CREDIT_NOTE_ISSUE')) {
-            <form class="inline" (ngSubmit)="credit()" data-testid="credit-note">
+            <form ngNativeValidate class="inline" (ngSubmit)="credit()" data-testid="credit-note">
               <input name="reason" placeholder="Reason" aria-label="Reason for the credit"
                      [value]="creditReason()" (input)="creditReason.set($any($event.target).value)" required />
               <input name="creditAmount" placeholder="Amount before tax" aria-label="Amount to credit" inputmode="decimal"
@@ -214,7 +212,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
             </form>
           }
           @if (creditIssued()) { <p data-testid="credit-issued">Credit note {{ creditIssued() }} issued.</p> }
-          @if (creditError()) { <p class="error" role="alert">{{ creditError() }}</p> }
+          @if (creditError()) { <app-error-banner [message]="creditError()" /> }
         </section>
       }
 
@@ -227,7 +225,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
       <p>Balance <strong><app-money data-testid="statement-balance" [value]="balance()" /></strong></p>
       @if (session.can('CLIENT_BILLING_RUN')) {
         <h3>Record a payment</h3>
-        <form class="inline" (ngSubmit)="pay()" data-testid="record-payment">
+        <form ngNativeValidate class="inline" (ngSubmit)="pay()" data-testid="record-payment">
           <input name="amount" placeholder="Amount received" aria-label="Amount received" inputmode="decimal"
                  [value]="payAmount()" (input)="payAmount.set($any($event.target).value)" required />
           <input name="receivedOn" type="date" aria-label="Received on"
@@ -237,7 +235,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
           <button type="submit">Record payment</button>
         </form>
         @if (paid()) { <p data-testid="payment-recorded">Payment {{ paid() }} recorded.</p> }
-        @if (payError()) { <p class="error" role="alert">{{ payError() }}</p> }
+        @if (payError()) { <app-error-banner [message]="payError()" /> }
       }
 
       <h2>Ageing</h2>
@@ -451,7 +449,7 @@ export class ClientDesk implements OnInit {
       what it owes.
     </p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-    <form class="inline" (ngSubmit)="open()" data-testid="open-client">
+    <form ngNativeValidate class="inline" (ngSubmit)="open()" data-testid="open-client">
       <app-entity-picker [kind]="'customer'" placeholder="Client" ariaLabel="Client id" testId="client-id"
                          [required]="true" [(value)]="typed" />
       <button type="submit">Open</button>
