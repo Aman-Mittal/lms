@@ -19,6 +19,8 @@ import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import type { MasterKind } from '../gateway/master-data-types';
 import { EntityPicker } from './entity-picker';
 import { KIND_WORD, MASTER_FIELDS, blankValues, validate } from './master-data-fields';
+import { ErrorBanner } from './error-banner';
+import { showToast } from '../../../../shared/feedback';
 
 /** Said when somebody else saved the record first; the raw problem code is never shown. */
 export const STALE_MESSAGE = 'Someone else changed this record while you were editing it. It has been reloaded with '
@@ -30,7 +32,7 @@ export const STALE_MESSAGE = 'Someone else changed this record while you were ed
  */
 @Component({
   selector: 'app-master-data-form',
-  imports: [EntityPicker],
+  imports: [ErrorBanner, EntityPicker],
   template: `
     <form class="record-form" data-testid="record-form" novalidate (submit)="submit($event)" [attr.aria-label]="heading()">
       <header>
@@ -77,7 +79,7 @@ export const STALE_MESSAGE = 'Someone else changed this record while you were ed
           @if (field.hint && !problems()[field.id]) { <p class="muted hint">{{ field.hint }}</p> }
           @if (problems()[field.id]) { <p class="error" role="alert" [attr.data-testid]="field.errorId">{{ problems()[field.id] }}</p> }
         }
-        @if (error()) { <p class="error" role="alert" data-testid="form-error">{{ error() }}</p> }
+        @if (error()) { <app-error-banner [message]="error()" testId="form-error" /> }
         <div class="actions">
           <button type="submit" data-testid="save-record" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save' }}</button>
           <button type="button" class="link" data-testid="cancel-form" (click)="closed.emit()">Cancel</button>
@@ -169,6 +171,7 @@ export class MasterDataForm {
     try {
       const savedId = await this.gateway.saveMasterRecord(this.kind(), this.orgUnitId(), id, this.values(), this.version);
       this.conflict.set('');
+      showToast('Saved.');
       this.saved.emit(savedId);
     } catch (e) {
       if (id && e instanceof ApiProblem && e.code === 'concurrent-modification') {

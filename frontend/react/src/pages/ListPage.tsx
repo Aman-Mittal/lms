@@ -16,7 +16,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { PARTNER_TYPES, type MasterKind, type PartnerType } from '../gateway/lmsGateway';
+import { ApiProblem, PARTNER_TYPES, type MasterKind, type PartnerType } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RecordPanel } from './RecordPanel';
@@ -26,6 +26,8 @@ import { Cell } from './Cell';
 import { MasterDataForm } from './MasterDataForm';
 import { CREATE_PERMISSION, KIND_LABEL, STATUS_OPTIONS } from './masterDataFields';
 import { isDateColumn, isNumericColumn } from '../../../shared/format';
+import { ErrorBanner } from './ErrorBanner';
+import { showToast } from '../../../shared/feedback';
 
 export function ListPage() {
   const { resource: key } = useParams(); // the :resource part of the URL
@@ -88,7 +90,7 @@ export function ListPage() {
           type="search" aria-label="Search" placeholder="Search" data-testid="search"
           value={query} onChange={(e) => setQuery(e.target.value)}
         />
-        {error && <p className="error" role="alert">{error}</p>}
+        {error && <ErrorBanner message={error} />}
         <div className="table-wrap">
           <table>
             <thead>
@@ -146,18 +148,19 @@ function RegisterPartner({ orgUnitId, onDone }: { orgUnitId: string; onDone: () 
   const [code, setCode] = useState('');
   const [legalName, setLegalName] = useState('');
   const [partnerType, setPartnerType] = useState<PartnerType>('CUSTOMER');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ message: string; code: string } | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setError('');
+    setError(null);
     try {
       await gateway.registerPartner(orgUnitId, { code, legalName, partnerType });
+      showToast(`Partner ${code} registered.`);
       setCode('');
       setLegalName('');
       onDone(); // tell the parent to reload its list: data flows down, events flow up
     } catch (e) {
-      setError((e as Error).message);
+      setError({ message: (e as Error).message, code: e instanceof ApiProblem ? e.code : '' });
     }
   }
 
@@ -172,7 +175,7 @@ function RegisterPartner({ orgUnitId, onDone }: { orgUnitId: string; onDone: () 
         </select>
         <button type="submit">Register</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error.message} code={error.code} testId="register-error" />}
     </>
   );
 }

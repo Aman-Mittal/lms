@@ -20,6 +20,7 @@ import { Choice, LmsGateway, RATE_BASES, RateBasis, Row } from '../gateway/lms-g
 import { Session } from '../session';
 import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { ErrorBanner } from './error-banner';
 
 /**
  * Part-load rating: the receivable each docket earned, and the two things a
@@ -29,7 +30,7 @@ import { PageHeader } from './page-header';
  */
 @Component({
   selector: 'app-ltl-rating',
-  imports: [FormsModule, RowTable, PageHeader],
+  imports: [ErrorBanner, FormsModule, RowTable, PageHeader],
   template: `
     <app-page-header title="LTL rating" />
     <p class="muted">Part-load dockets are priced from the zones of their sites and the rate card between them.</p>
@@ -37,7 +38,7 @@ import { PageHeader } from './page-header';
       <section>
         <h2>Docket receivables</h2>
         @if (loading()) { <p class="muted">Loading…</p> }
-        @if (listError()) { <p class="error" role="alert">{{ listError() }}</p> }
+        @if (listError()) { <app-error-banner [message]="listError()" /> }
         @if (!loading() && !listError() && receivables().length === 0) {
           <p class="muted" data-testid="no-receivables">No LTL docket has been priced yet.</p>
         }
@@ -49,7 +50,7 @@ import { PageHeader } from './page-header';
     @if (manage()) {
       <section>
         <h2>Put a site in a zone</h2>
-        <form class="inline" (ngSubmit)="assign()" data-testid="zone-form">
+        <form ngNativeValidate class="inline" (ngSubmit)="assign()" data-testid="zone-form">
           <select name="terminal" aria-label="Site" data-testid="zone-terminal" [(ngModel)]="zone.terminalId" required>
             <option value="">Site…</option>
             @for (t of sites(); track t.id) { <option [value]="t.id">{{ t.label }}</option> }
@@ -62,11 +63,11 @@ import { PageHeader } from './page-header';
           <button type="submit" data-testid="assign-zone">Assign</button>
         </form>
         @if (zoneDone()) { <p data-testid="zone-done">{{ zoneDone() }}</p> }
-        @if (zoneError()) { <p class="error" role="alert">{{ zoneError() }}</p> }
+        @if (zoneError()) { <app-error-banner [message]="zoneError()" /> }
       </section>
       <section>
         <h2>Publish a rate card</h2>
-        <form class="inline" (ngSubmit)="publish()" data-testid="rate-card-form">
+        <form ngNativeValidate class="inline" (ngSubmit)="publish()" data-testid="rate-card-form">
           <input name="code" placeholder="Code" aria-label="Rate card code" data-testid="rc-code" [(ngModel)]="card.code" required />
           <input name="origin" placeholder="From zone" aria-label="From zone" data-testid="rc-origin"
                  [(ngModel)]="card.originZone" required />
@@ -87,7 +88,7 @@ import { PageHeader } from './page-header';
           <button type="submit" data-testid="publish-rate-card">Publish</button>
         </form>
         @if (cardDone()) { <p data-testid="rate-card-done">{{ cardDone() }}</p> }
-        @if (cardError()) { <p class="error" role="alert">{{ cardError() }}</p> }
+        @if (cardError()) { <app-error-banner [message]="cardError()" /> }
       </section>
     } @else {
       <p class="muted" data-testid="no-tariff-rights">You do not have the right to manage tariffs.</p>

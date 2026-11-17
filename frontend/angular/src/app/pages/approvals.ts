@@ -23,6 +23,7 @@ import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -38,11 +39,11 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
  */
 @Component({
   selector: 'app-approvals',
-  imports: [FormsModule, RowTable, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, RowTable, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Approvals" />
     <p class="muted">Requests waiting for somebody to agree before anything happens.</p>
-    <form class="inline" (ngSubmit)="load()" data-testid="approvals-filter">
+    <form ngNativeValidate class="inline" (ngSubmit)="load()" data-testid="approvals-filter">
       <select name="scope" aria-label="Scope" data-testid="approvals-scope" [(ngModel)]="filter.scope">
         @for (s of scopes; track s) { <option [value]="s">{{ labels[s] }}</option> }
       </select>
@@ -55,7 +56,7 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
       <button type="submit">Filter</button>
     </form>
     @if (loading()) { <p class="muted">Loading…</p> }
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (!loading() && !error() && rows().length === 0) {
       <p class="muted" data-testid="no-approvals">Nothing matches.</p>
     }
@@ -86,14 +87,14 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
           <app-row-table testId="approval-trail" [rows]="d.trail" [columns]="trailColumns" />
         }
         @if (outcome()) { <p data-testid="approval-outcome">{{ outcome() }}</p> }
-        @if (actionError()) { <p class="error" role="alert">{{ actionError() }}</p> }
+        @if (actionError()) { <app-error-banner [message]="actionError()" /> }
         @if (d.open && d.mineToDecide) {
-          <form class="inline" (ngSubmit)="approve(d)" data-testid="approve-form">
+          <form ngNativeValidate class="inline" (ngSubmit)="approve(d)" data-testid="approve-form">
             <input name="note" placeholder="Note (optional)" aria-label="Note" data-testid="approve-note"
                    [(ngModel)]="note" />
             <button type="submit" data-testid="approve">Approve</button>
           </form>
-          <form class="inline" (ngSubmit)="reject(d)" data-testid="reject-form">
+          <form ngNativeValidate class="inline" (ngSubmit)="reject(d)" data-testid="reject-form">
             <input name="reason" placeholder="Reason" aria-label="Reason to reject" data-testid="reject-reason"
                    [(ngModel)]="reason" required />
             <button type="submit" data-testid="reject">Reject</button>
