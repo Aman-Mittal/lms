@@ -25,6 +25,7 @@ import { useLoad } from '../useLoad';
 import { RowTable, type RowColumn } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -166,12 +167,9 @@ export function NumberSeries() {
         tenant-wide one. Without a series, a document keeps its built-in numbering.
       </p>
       {refusal && (
-        <p className="error" role="alert" data-testid="series-error">
-          {refusal.code && <><code data-testid="series-refusal">{refusal.code}</code>{' '}</>}
-          {refusal.message}
-        </p>
+        <ErrorBanner message={refusal.message} code={refusal.code} testId="series-error" codeTestId="series-refusal" />
       )}
-      {!refusal && loadError && <p className="error" role="alert" data-testid="series-error">{loadError}</p>}
+      {!refusal && loadError && <ErrorBanner message={loadError} testId="series-error" />}
       {message && <p className="ok" role="status" data-testid="series-message">{message}</p>}
 
       <form data-testid="series-create" onSubmit={create}>

@@ -19,6 +19,7 @@ import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 /** Every site with its geofence, and every vehicle where it last reported. */
 export function NetworkMap() {
@@ -30,7 +31,7 @@ export function NetworkMap() {
       <PageHeader title="Network map" />
       <p className="muted">Sites with their geofences, and each vehicle at its last reported position.</p>
       {network.loading && <p className="muted">Loading…</p>}
-      {network.error && <p className="error" role="alert">{network.error}</p>}
+      {network.error && <ErrorBanner message={network.error} />}
       {network.data && (
         <>
           <MapView features={network.data.features} label="Sites and vehicles" />

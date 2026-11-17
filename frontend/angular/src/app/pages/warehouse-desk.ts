@@ -26,6 +26,7 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { WarehouseSetupLists } from './warehouse-setup-lists';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 type Columns = Array<[string, string]>;
@@ -105,10 +106,10 @@ export class WhTable {
  */
 @Component({
   selector: 'app-warehouse-floor',
-  imports: [FormsModule, WhTable, Qr, EntityPicker, StatusBadge, When, WarehouseSetupLists],
+  imports: [ErrorBanner, FormsModule, WhTable, Qr, EntityPicker, StatusBadge, When, WarehouseSetupLists],
   template: `
     <section data-testid="warehouse-desk">
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
       <nav class="inline" aria-label="Warehouse sections">
         @for (t of tabs; track t[0]) {
           <button [class.link]="tab() !== t[0]" [attr.aria-pressed]="tab() === t[0]"
@@ -130,7 +131,7 @@ export class WhTable {
               <h3>{{ a.header['asnNo'] }} <app-status-badge data-testid="asn-status" [value]="a.header['status']" /></h3>
               <app-wh-table [rows]="a.lines" [columns]="asnLineColumns" rowTestId="asn-line" />
               @if (a.header['status'] === 'EXPECTED' && session.can('WAREHOUSE_OPERATE')) {
-                <form (ngSubmit)="receive()" data-testid="receive-asn">
+                <form ngNativeValidate (ngSubmit)="receive()" data-testid="receive-asn">
                   @for (l of a.lines; track l['lineNo']) {
                     <div class="inline">
                       <span>Line {{ l['lineNo'] }} · {{ l['skuCode'] }}</span>
@@ -151,7 +152,7 @@ export class WhTable {
           }
           @if (session.can('WAREHOUSE_OPERATE')) {
             <h3>Expect a delivery</h3>
-            <form (ngSubmit)="createAsn()" data-testid="create-asn">
+            <form ngNativeValidate (ngSubmit)="createAsn()" data-testid="create-asn">
               <div class="inline">
                 <input name="asnNo" aria-label="ASN number" placeholder="ASN number"
                        [value]="asnNo()" (input)="asnNo.set($any($event.target).value)" required />
@@ -173,7 +174,7 @@ export class WhTable {
               <p><button type="submit">Create ASN</button></p>
             </form>
             <h3>Put away</h3>
-            <form class="inline" (ngSubmit)="putaway()" data-testid="putaway">
+            <form ngNativeValidate class="inline" (ngSubmit)="putaway()" data-testid="putaway">
               <app-entity-picker [kind]="'bin'" [warehouseId]="warehouseId()" ariaLabel="Bin" placeholder="Bin" [required]="true"
                                  [value]="put().binId" (valueChange)="setMove(put, 'binId', $event)" />
               <app-entity-picker [kind]="'sku'" ariaLabel="SKU" placeholder="SKU" [required]="true"
@@ -195,7 +196,7 @@ export class WhTable {
             <app-wh-table [rows]="stock()" [columns]="stockColumns" rowTestId="stock-row" />
           }
           <h3>Movements</h3>
-          <form class="inline" (ngSubmit)="showMovements()" data-testid="movements">
+          <form ngNativeValidate class="inline" (ngSubmit)="showMovements()" data-testid="movements">
             <app-entity-picker [kind]="'sku'" ariaLabel="SKU for movements" placeholder="SKU" [required]="true"
                                [(value)]="movementSku" />
             <button type="submit">Show movements</button>
@@ -206,7 +207,7 @@ export class WhTable {
           @if (session.can('INVENTORY_ADJUST')) {
             @for (m of moves; track m.kind) {
               <h3>{{ m.title }}</h3>
-              <form class="inline" (ngSubmit)="stockMove(m.kind)" [attr.data-testid]="m.testId">
+              <form ngNativeValidate class="inline" (ngSubmit)="stockMove(m.kind)" [attr.data-testid]="m.testId">
                 @if (m.kind !== 'write-off') {
                   <app-entity-picker [kind]="'bin'" [warehouseId]="warehouseId()" ariaLabel="Bin" placeholder="Bin" [required]="true"
                                      [value]="m.draft().binId" (valueChange)="setMove(m.draft, 'binId', $event)" />
@@ -274,7 +275,7 @@ export class WhTable {
           }
           @if (session.can('WAREHOUSE_OPERATE')) {
             <h3>Send goods out</h3>
-            <form (ngSubmit)="createOutbound()" data-testid="create-outbound">
+            <form ngNativeValidate (ngSubmit)="createOutbound()" data-testid="create-outbound">
               <div class="inline">
                 <input name="orderNo" aria-label="Order number" placeholder="Order number"
                        [value]="orderNo()" (input)="orderNo.set($any($event.target).value)" required />
@@ -325,7 +326,7 @@ export class WhTable {
                 </section>
               }
               @if (u.header['status'] === 'PACKED' && session.can('WAREHOUSE_OPERATE')) {
-                <form (ngSubmit)="dispatch()" data-testid="dispatch-unit">
+                <form ngNativeValidate (ngSubmit)="dispatch()" data-testid="dispatch-unit">
                   <div class="inline">
                     <input name="reference" aria-label="Dispatch reference" placeholder="Dispatch reference"
                            [value]="dispatchRef()" (input)="dispatchRef.set($any($event.target).value)" />
@@ -366,7 +367,7 @@ export class WhTable {
             @if (openOrders().length === 0) {
               <p class="muted">No open order is waiting to be picked.</p>
             } @else {
-              <form (ngSubmit)="releaseWave()" data-testid="release-wave">
+              <form ngNativeValidate (ngSubmit)="releaseWave()" data-testid="release-wave">
                 @for (o of openOrders(); track o['id']) {
                   <label class="inline">
                     <input type="checkbox" [name]="'wave' + o['id']" [attr.aria-label]="'Wave ' + o['orderNo']"
@@ -384,7 +385,7 @@ export class WhTable {
           <app-wh-setup-lists [warehouseId]="warehouseId()" [tick]="setupTick()">
             <div bins>
               @if (session.can('WAREHOUSE_SETUP')) {
-                <form class="inline" (ngSubmit)="createBin()" data-testid="create-bin">
+                <form ngNativeValidate class="inline" (ngSubmit)="createBin()" data-testid="create-bin">
                   <input name="binCode" aria-label="Bin code" placeholder="Bin code"
                          [value]="binCode()" (input)="binCode.set($any($event.target).value)" required />
                   <input name="capacity" aria-label="Capacity units" placeholder="Capacity units" inputmode="numeric"
@@ -395,7 +396,7 @@ export class WhTable {
             </div>
             <div skus>
               @if (session.can('WAREHOUSE_SETUP')) {
-                <form class="inline" (ngSubmit)="createSku()" data-testid="create-sku">
+                <form ngNativeValidate class="inline" (ngSubmit)="createSku()" data-testid="create-sku">
                   <input name="skuCode" aria-label="SKU code" placeholder="SKU code"
                          [value]="skuCode()" (input)="skuCode.set($any($event.target).value)" required />
                   <input name="skuDescription" aria-label="SKU description" placeholder="Description"
@@ -414,10 +415,7 @@ export class WhTable {
 
       @if (done()) { <p data-testid="wh-done">{{ done() }}</p> }
       @if (refusal(); as r) {
-        <p class="error" role="alert">
-          @if (r.code) { <code data-testid="wh-refusal">{{ r.code }}</code> }
-          {{ r.message }}
-        </p>
+        <app-error-banner [message]="r.message" [code]="r.code" codeTestId="wh-refusal" />
       }
     </section>
   `,
@@ -786,7 +784,7 @@ export class WarehouseFloor implements OnInit {
     <app-page-header title="Warehouse operations" />
     <p class="muted">Open a warehouse to receive, store, pick, pack and dispatch its goods.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-    <form class="inline" (ngSubmit)="open()" data-testid="open-warehouse">
+    <form ngNativeValidate class="inline" (ngSubmit)="open()" data-testid="open-warehouse">
       <app-entity-picker [kind]="'warehouse'" placeholder="Warehouse" ariaLabel="Warehouse id" testId="warehouse-id"
                          [required]="true" [(value)]="typed" />
       <button type="submit">Open</button>

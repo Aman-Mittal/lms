@@ -23,6 +23,8 @@ import { Session } from '../session';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
+import { EntityPicker } from './entity-picker';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -44,12 +46,12 @@ const ACTION_DONE: Record<EwayAction, string> = {
  */
 @Component({
   selector: 'app-eway-bill-desk',
-  imports: [FormsModule, PageHeader, StatusBadge, When],
+  imports: [EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="E-way bills" />
     <p class="muted">Generate a consignment's bill, put a vehicle on Part-B, extend or cancel it, and watch what is about to lapse.</p>
 
-    <form class="inline" (ngSubmit)="load()" data-testid="eway-filter">
+    <form ngNativeValidate class="inline" (ngSubmit)="load()" data-testid="eway-filter">
       <select aria-label="Status" data-testid="eway-filter-status" [value]="filter().status"
               (change)="setFilter('status', $any($event.target).value)">
         <option value="" [selected]="!filter().status">Any status</option>
@@ -59,7 +61,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
              [value]="filter().q" (input)="setFilter('q', $any($event.target).value)" />
       <button type="submit" data-testid="eway-filter-apply">Show</button>
     </form>
-    @if (error()) { <p class="error" role="alert" data-testid="eway-error">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" testId="eway-error" /> }
     @if (note()) { <p class="ok" role="status" data-testid="eway-note">{{ note() }}</p> }
 
     <div class="table-wrap"><table data-testid="eway-list">
@@ -96,7 +98,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
     @if (expiring().length === 0 && loaded()) { <p class="muted" data-testid="eway-expiring-none">Nothing is about to lapse.</p> }
 
     <h2>Find a consignment by bill number</h2>
-    <form class="inline" (ngSubmit)="lookup()" data-testid="eway-lookup-form">
+    <form ngNativeValidate class="inline" (ngSubmit)="lookup()" data-testid="eway-lookup-form">
       <input name="lookupNo" placeholder="Bill number" aria-label="Bill number" data-testid="eway-lookup-no"
              [value]="lookupNo()" (input)="lookupNo.set($any($event.target).value)" />
       <button type="submit" data-testid="eway-lookup">Find</button>
@@ -112,9 +114,9 @@ const ACTION_DONE: Record<EwayAction, string> = {
     @if (lookupMissing()) { <p class="muted" data-testid="eway-lookup-missing">No bill has that number.</p> }
 
     <h2>A consignment's bills</h2>
-    <form class="inline" (ngSubmit)="showConsignment()" data-testid="eway-consignment-form">
-      <input name="consignmentId" placeholder="Consignment id" aria-label="Consignment id" data-testid="eway-consignment-id"
-             [value]="draft().consignmentId" (input)="setDraft('consignmentId', $any($event.target).value)" />
+    <form ngNativeValidate class="inline" (ngSubmit)="showConsignment()" data-testid="eway-consignment-form">
+      <app-entity-picker [kind]="'consignment'" placeholder="Consignment id" ariaLabel="Consignment id" testId="eway-consignment-id"
+                         [value]="draft().consignmentId" (valueChange)="setDraft('consignmentId', $event)" />
       <button type="submit" data-testid="eway-consignment-show">Show bills</button>
       @if (session.can('EWAY_BILL_MANAGE')) {
         <input name="distance" inputmode="numeric" placeholder="Distance (km)" aria-label="Distance in kilometres"
@@ -153,13 +155,13 @@ const ACTION_DONE: Record<EwayAction, string> = {
           @if (b.cancelReason) { <div><dt>Cancelled because</dt><dd data-testid="eway-detail-cancel-reason">{{ b.cancelReason }}</dd></div> }
         </dl>
         @if (session.can('EWAY_BILL_MANAGE') && (b.status === 'ACTIVE' || b.status === 'EXTENDED')) {
-          <form class="inline" (ngSubmit)="act(b, 'PART_B')" data-testid="eway-vehicle-form">
+          <form ngNativeValidate class="inline" (ngSubmit)="act(b, 'PART_B')" data-testid="eway-vehicle-form">
             <input name="vehicle" placeholder="Vehicle number" aria-label="Vehicle number" data-testid="eway-vehicle"
                    [value]="vehicle()" (input)="vehicle.set($any($event.target).value)" />
             <button type="submit" data-testid="eway-part-b">Update Part-B</button>
             <button type="button" data-testid="eway-change-vehicle" (click)="act(b, 'CHANGE_VEHICLE')">Change vehicle</button>
           </form>
-          <form class="inline" (submit)="$event.preventDefault()" data-testid="eway-reason-form">
+          <form ngNativeValidate class="inline" (submit)="$event.preventDefault()" data-testid="eway-reason-form">
             <input name="reason" placeholder="Reason" aria-label="Reason" data-testid="eway-reason"
                    [value]="reason()" (input)="reason.set($any($event.target).value)" />
             <button type="button" data-testid="eway-extend" (click)="act(b, 'EXTEND')">Extend validity</button>
@@ -171,9 +173,8 @@ const ACTION_DONE: Record<EwayAction, string> = {
 
     @if (session.can('EWAY_BILL_MANAGE')) {
       <h2>Part-B for a trip</h2>
-      <form class="inline" (ngSubmit)="tripPartB()" data-testid="eway-trip-form">
-        <input name="tripId" placeholder="Trip id" aria-label="Trip id" data-testid="eway-trip-id"
-               [value]="tripId()" (input)="tripId.set($any($event.target).value)" />
+      <form ngNativeValidate class="inline" (ngSubmit)="tripPartB()" data-testid="eway-trip-form">
+        <app-entity-picker [kind]="'trip'" placeholder="Trip id" ariaLabel="Trip id" testId="eway-trip-id" [(value)]="tripId" />
         <input name="tripVehicle" placeholder="Vehicle (blank: the trip's)" aria-label="Trip vehicle number"
                data-testid="eway-trip-vehicle" [value]="tripVehicle()" (input)="tripVehicle.set($any($event.target).value)" />
         <button type="submit" data-testid="eway-trip-part-b">Update Part-B for the trip</button>

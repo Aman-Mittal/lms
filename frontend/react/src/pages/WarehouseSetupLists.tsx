@@ -19,6 +19,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { ConfigActions } from './ConfigActions';
 import { StatusFilter } from './StatusFilter';
+import { ErrorBanner } from './ErrorBanner';
 
 const active = (row: Row) => row.active !== 'false';
 
@@ -36,7 +37,7 @@ export function BinList({ warehouseId, version, onChanged }: { warehouseId: stri
   return (
     <>
       <StatusFilter testId="bin-status-filter" value={status} onChange={setStatus} />
-      {bins.error && <p className="error" role="alert">{bins.error}</p>}
+      {bins.error && <ErrorBanner message={bins.error} />}
       {!bins.loading && rows.length === 0 ? (
         <p className="muted" data-testid="no-bins">{status ? 'No bins match.' : 'This warehouse has no bins yet.'}</p>
       ) : (
@@ -73,7 +74,7 @@ export function SkuList({ version, onChanged }: { version: number; onChanged: ()
   return (
     <>
       <StatusFilter testId="sku-status-filter" value={status} onChange={setStatus} />
-      {skus.error && <p className="error" role="alert">{skus.error}</p>}
+      {skus.error && <ErrorBanner message={skus.error} />}
       <div className="table-scroll"><table>
         <thead><tr><th>SKU</th><th>Description</th><th>Unit</th><th>Status</th><th /></tr></thead>
         <tbody>

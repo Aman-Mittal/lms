@@ -19,13 +19,14 @@ import { RouterLink } from '@angular/router';
 import { ControlTowerSummary, LmsGateway } from '../gateway/lms-gateway';
 import { RESOURCES } from './resources';
 import { PageHeader } from './page-header';
+import { ErrorBanner } from './error-banner';
 
 @Component({
   selector: 'app-dashboard',
-  imports: [RouterLink, PageHeader],
+  imports: [ErrorBanner, RouterLink, PageHeader],
   template: `
     <app-page-header title="Control tower" description="What needs attention across your network right now." />
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (summary(); as s) {
       <div class="tiles" data-testid="tiles">
         <div class="tile"><span>{{ s.openP1 }}</span>Open P1</div>

@@ -20,11 +20,12 @@ import { Router } from '@angular/router';
 import { DemoResetOutcome, LmsGateway } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { PageHeader } from './page-header';
+import { ErrorBanner } from './error-banner';
 
 /** Puts the demo back to its seeded state. Two clicks on purpose: the first only asks. */
 @Component({
   selector: 'app-demo-settings',
-  imports: [FormsModule, PageHeader],
+  imports: [ErrorBanner, FormsModule, PageHeader],
   template: `
     @if (!session.can('DEMO_RESET')) {
       <p class="muted" data-testid="demo-reset-forbidden">You cannot reset the demo.</p>
@@ -34,7 +35,7 @@ import { PageHeader } from './page-header';
         Deletes everything in the demo -- orders, trips, partners, custom fields, users -- and seeds it
         again: one administrator with the same password. Anything you built here is lost.
       </p>
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
       @if (step() === 'idle') {
         <p><button data-testid="demo-reset" (click)="step.set('confirming')">
           Reset demo data

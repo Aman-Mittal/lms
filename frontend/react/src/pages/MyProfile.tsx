@@ -22,6 +22,7 @@ import type {
 import { useSession } from '../session';
 import { choicesOf, controlOf, fromInput, toInput } from '../settingsForm';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 /** One notification event and its two channels. */
 interface NotifyRow {
@@ -137,7 +138,7 @@ export function MyProfile() {
   return (
     <>
       <PageHeader title="My profile &amp; preferences" />
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {me && (
         <section className="panel" data-testid="me-identity">
           <dl>

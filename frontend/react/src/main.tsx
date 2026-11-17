@@ -19,6 +19,8 @@ import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import { App } from './App';
 import { SessionProvider } from './session';
+import { ToastHost } from './pages/ToastHost';
+import { installFormHelpers } from '../../shared/fields';
 import '../../shared/tokens.css';
 import '../../shared/styles.css';
 import './print.css';
@@ -33,5 +35,9 @@ createRoot(document.getElementById('root')!).render(
         <App />
       </SessionProvider>
     </HashRouter>
+    <ToastHost />
   </StrictMode>,
 );
+
+// Labels, help and error links for every field, success toasts, and a held submit button: see shared/fields.ts.
+installFormHelpers();

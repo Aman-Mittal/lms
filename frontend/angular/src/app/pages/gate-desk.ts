@@ -24,6 +24,7 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -47,15 +48,12 @@ function listOf(text: string): string[] {
  */
 @Component({
   selector: 'app-gate-desk',
-  imports: [EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Gate desk" />
     <p class="muted">Vehicles at the gate: who is inside, entries and exits, the register and gate passes.</p>
     @if (refusal(); as r) {
-      <p class="error" role="alert" data-testid="gate-error">
-        @if (r.code) { <code data-testid="gate-refusal">{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" testId="gate-error" codeTestId="gate-refusal" />
     }
     @if (message()) { <p class="ok" role="status" data-testid="gate-message">{{ message() }}</p> }
 
@@ -95,7 +93,7 @@ function listOf(text: string): string[] {
                 @if (exiting() === v.id) {
                   <tr data-testid="exit-row">
                     <td colspan="9">
-                      <form class="inline" data-testid="exit-form" (submit)="exit($event, v.id)">
+                      <form ngNativeValidate class="inline" data-testid="exit-form" (submit)="exit($event, v.id)">
                         <input placeholder="Seal numbers, comma separated" aria-label="Exit seal numbers"
                                data-testid="exit-seals" [value]="exitSeals()" (input)="exitSeals.set(valueOf($event))" />
                         <input placeholder="Weight reference" aria-label="Exit weight reference"
@@ -114,7 +112,7 @@ function listOf(text: string): string[] {
         }
 
         @if (session.can('GATE_REGISTER')) {
-          <form data-testid="gate-entry" (submit)="enter($event)">
+          <form ngNativeValidate data-testid="gate-entry" (submit)="enter($event)">
             <h2>Record entry</h2>
             <app-entity-picker [kind]="'terminal'" ariaLabel="Gate site" placeholder="Site" testId="entry-site"
                                [required]="true" [(value)]="entrySite" />
@@ -143,7 +141,7 @@ function listOf(text: string): string[] {
             <button type="submit" data-testid="entry-submit">Record entry</button>
           </form>
 
-          <form class="inline" data-testid="pass-check" (submit)="check($event)">
+          <form ngNativeValidate class="inline" data-testid="pass-check" (submit)="check($event)">
             <h2>Check pass</h2>
             <app-entity-picker [kind]="'terminal'" ariaLabel="Check site" placeholder="Site" testId="check-site"
                                [required]="true" [(value)]="checkSite" />
@@ -174,7 +172,7 @@ function listOf(text: string): string[] {
     @if (tab() === 'register') {
       <section data-testid="gate-register" aria-label="Gate register">
         <h2>Register</h2>
-        <form class="inline" (submit)="searchRegister($event)">
+        <form ngNativeValidate class="inline" (submit)="searchRegister($event)">
           <select aria-label="Visit status" data-testid="register-status" (change)="registerStatus.set(valueOf($event))">
             <option value="" [selected]="registerStatus() === ''">Every visit</option>
             <option value="OPEN" [selected]="registerStatus() === 'OPEN'">Inside</option>
@@ -213,7 +211,7 @@ function listOf(text: string): string[] {
     @if (tab() === 'passes') {
       <section data-testid="gate-passes" aria-label="Gate passes">
         @if (session.can('GATE_PASS_MANAGE')) {
-          <form data-testid="pass-issue" (submit)="issue($event)">
+          <form ngNativeValidate data-testid="pass-issue" (submit)="issue($event)">
             <h2>Issue a pass</h2>
             <app-entity-picker [kind]="'terminal'" ariaLabel="Pass site" placeholder="Site" testId="pass-site"
                                [required]="true" [(value)]="passSite" />
@@ -242,7 +240,7 @@ function listOf(text: string): string[] {
         }
 
         <h2>Passes</h2>
-        <form class="inline" (submit)="searchPasses($event)">
+        <form ngNativeValidate class="inline" (submit)="searchPasses($event)">
           <select aria-label="Pass status" data-testid="pass-status-filter" (change)="passStatus.set(valueOf($event))">
             <option value="" [selected]="passStatus() === ''">Every pass</option>
             <option value="ISSUED" [selected]="passStatus() === 'ISSUED'">Issued</option>
@@ -281,7 +279,7 @@ function listOf(text: string): string[] {
                 @if (cancelling() === p.id) {
                   <tr data-testid="pass-cancel-row">
                     <td colspan="9">
-                      <form class="inline" data-testid="pass-cancel-form" (submit)="cancel($event, p.id)">
+                      <form ngNativeValidate class="inline" data-testid="pass-cancel-form" (submit)="cancel($event, p.id)">
                         <input placeholder="Why" aria-label="Cancellation reason" data-testid="pass-cancel-reason" required
                                [value]="cancelReason()" (input)="cancelReason.set(valueOf($event))" />
                         <button type="submit" data-testid="pass-cancel-confirm">Cancel pass</button>

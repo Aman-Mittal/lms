@@ -20,6 +20,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * Part-load rating: the receivable each docket earned, and the two things a
@@ -53,7 +54,7 @@ function Receivables() {
     <section>
       <h2>Docket receivables</h2>
       {list.loading && <p className="muted">Loading…</p>}
-      {list.error && <p className="error" role="alert">{list.error}</p>}
+      {list.error && <ErrorBanner message={list.error} />}
       {list.data && list.data.length === 0 && (
         <p className="muted" data-testid="no-receivables">No LTL docket has been priced yet.</p>
       )}
@@ -108,7 +109,7 @@ function ZoneForm() {
         <button type="submit" data-testid="assign-zone">Assign</button>
       </form>
       {done && <p data-testid="zone-done">{done}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </section>
   );
 }
@@ -171,7 +172,7 @@ function RateCardForm() {
         <button type="submit" data-testid="publish-rate-card">Publish</button>
       </form>
       {done && <p data-testid="rate-card-done">{done}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </section>
   );
 }

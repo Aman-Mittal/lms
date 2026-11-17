@@ -19,6 +19,7 @@ import { ActivatedRoute } from '@angular/router';
 import { LmsGateway, PublicTrackingView } from '../gateway/lms-gateway';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /**
  * Where a customer lands from a tracking link. It needs no sign-in, shows the
@@ -27,12 +28,12 @@ import { When } from './when';
  */
 @Component({
   selector: 'app-track',
-  imports: [StatusBadge, When],
+  imports: [ErrorBanner, StatusBadge, When],
   template: `
     <main class="public">
       <h1>Track your shipment</h1>
       @if (loading()) { <p class="muted">Loading…</p> }
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
       @if (!loading() && !error() && view() === null) {
         <p data-testid="track-not-found" role="alert">
           This tracking link is not valid. It may have expired or been withdrawn.

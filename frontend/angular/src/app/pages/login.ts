@@ -22,21 +22,22 @@ import { DEMO_TENANT } from '../config';
 import { Session } from '../session';
 import { applyDisplay, displayPreferences, landingRoute, resetDisplay } from '../display';
 import { activateClientCache } from '../client-cache';
+import { ErrorBanner } from './error-banner';
 
 @Component({
   selector: 'app-login',
-  imports: [FormsModule],
+  imports: [ErrorBanner, FormsModule],
   template: `
     <main class="card narrow">
       <h1>LMS demo console</h1>
       <p class="muted">Angular · signs in to the demo tenant on Render.</p>
-      <form (ngSubmit)="submit()">
+      <form ngNativeValidate (ngSubmit)="submit()">
         <label>Tenant <input name="tenant" [(ngModel)]="tenantCode" required /></label>
         <label>Email <input name="email" type="email" [(ngModel)]="email" required /></label>
         <label>Password <input name="password" type="password" [(ngModel)]="password" required /></label>
         <button type="submit" [disabled]="busy()">{{ busy() ? 'Signing in…' : 'Sign in' }}</button>
       </form>
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
     </main>
   `,
 })

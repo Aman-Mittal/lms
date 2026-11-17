@@ -17,6 +17,7 @@ import {
   Component, ElementRef, OnDestroy, afterNextRender, effect, inject, input, model, signal, untracked, viewChild,
 } from '@angular/core';
 import { Choice, LmsGateway, PickKind } from '../gateway/lms-gateway';
+import { ErrorBanner } from './error-banner';
 
 /** A pasted id is taken as it is, without a search. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,6 +34,7 @@ const UNMATCHED = 'Choose one of the suggestions, or paste an id.';
  * id typed or pasted before it.
  */
 @Component({
+  imports: [ErrorBanner],
   selector: 'app-entity-picker',
   template: `
     <span class="picker" [attr.data-testid]="testId() ? testId() + '-picker' : null">
@@ -40,7 +42,7 @@ const UNMATCHED = 'Choose one of the suggestions, or paste an id.';
              [attr.data-testid]="testId() || null" [value]="text()" autocomplete="off" role="combobox"
              [attr.aria-expanded]="open()"
              (input)="typed($any($event.target).value)" (focus)="focused()" (keydown.escape)="open.set(false)"
-             (blur)="closeSoon()" />
+             (blur)="closeSoon()" (invalid)="refuseUnmatched($event)" />
       @if (open()) {
         <ul class="picker-options" role="listbox" aria-label="Suggestions">
           @if (options().length === 0) { <li class="muted">Nothing matches.</li> }
@@ -53,8 +55,8 @@ const UNMATCHED = 'Choose one of the suggestions, or paste an id.';
           }
         </ul>
       }
-      @if (error()) { <span class="error" role="alert">{{ error() }}</span> }
-      @if (refusal()) { <span class="error" role="alert">{{ refusal() }}</span> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
+      @if (refusal()) { <app-error-banner [message]="refusal()" /> }
     </span>
   `,
 })
@@ -104,8 +106,9 @@ export class EntityPicker implements OnDestroy {
       this.box().nativeElement.setCustomValidity(
         shown.trim() && !this.chosen ? UNMATCHED : '');
     });
-    // FormsModule marks forms novalidate, so the browser would send text that
-    // names nothing; stop that submit here and say why, before ngSubmit runs.
+    // In a novalidate form the browser would send text that names nothing; stop
+    // that submit here and say why, before ngSubmit runs. In a validating form
+    // (ngNativeValidate) the browser refuses it first, and (invalid) says why.
     afterNextRender(() => {
       this.form = this.box().nativeElement.form;
       this.form?.addEventListener('submit', this.refuseUnmatched, true);
@@ -117,7 +120,7 @@ export class EntityPicker implements OnDestroy {
     this.form?.removeEventListener('submit', this.refuseUnmatched, true);
   }
 
-  private readonly refuseUnmatched = (event: Event): void => {
+  readonly refuseUnmatched = (event: Event): void => {
     if (this.text().trim() && !this.chosen) {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -175,7 +178,8 @@ export class EntityPicker implements OnDestroy {
       this.error.set('');
       this.open.set(true);
     } catch (e) {
-      this.error.set((e as Error).message);
+      // Opening an empty box only offers suggestions; its failure is not worth an alert.
+      if (q.trim() || cursor) { this.error.set((e as Error).message); }
     }
   }
 }

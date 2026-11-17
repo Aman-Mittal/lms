@@ -23,6 +23,7 @@ import { useLoad } from '../useLoad';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -71,7 +72,7 @@ export function ApprovalsPage() {
         <button type="submit">Filter</button>
       </form>
       {list.loading && <p className="muted">Loading…</p>}
-      {list.error && <p className="error" role="alert">{list.error}</p>}
+      {list.error && <ErrorBanner message={list.error} />}
       {list.data && list.data.length === 0 && (
         <p className="muted" data-testid="no-approvals">Nothing matches.</p>
       )}
@@ -108,7 +109,7 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
   }
 
   if (detail.error) {
-    return <p className="error" role="alert">{detail.error}</p>;
+    return <ErrorBanner message={detail.error} />;
   }
   if (!detail.data) {
     return <p className="muted">Loading…</p>;
@@ -138,7 +139,7 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
         ]} />
       )}
       {outcome && <p data-testid="approval-outcome">{outcome}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {d.open && d.mineToDecide && (
         <>
           <form className="inline" data-testid="approve-form"

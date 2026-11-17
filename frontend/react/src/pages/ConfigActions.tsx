@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiProblem, type ConfigAction, type ConfigKind } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { CONFLICT_TEXT } from './MasterDataForm';
+import { ErrorBanner } from './ErrorBanner';
 
 const MANAGE: Record<ConfigKind, string> = {
   allocationRules: 'ALLOCATION_RULE_MANAGE', orgUnits: 'ORG_UNIT_MANAGE', chargeCatalogue: 'CHARGE_CATALOGUE_MANAGE',
@@ -118,7 +119,7 @@ export function ConfigActions({ kind, id, parentId, active, label, version, onCh
         <textarea ref={box} rows={2} data-testid="reason-input" value={reason} onChange={(e) => setReason(e.target.value)} />
       </label>
       {reasonError && <small className="error" role="alert" data-testid="reason-error">A reason is required.</small>}
-      {refusal && <p className="error" role="alert" data-testid="action-error">{refusal}</p>}
+      {refusal && <ErrorBanner message={refusal} testId="action-error" />}
       <div className="actions">
         <button type="button" data-testid="confirm-action" disabled={busy} onClick={confirm}>{WORDS[pending].verb}</button>
         <button type="button" className="link" data-testid="cancel-action" onClick={cancel}>Cancel</button>

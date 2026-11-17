@@ -25,6 +25,7 @@ import { PageHeader } from './PageHeader';
 import { Cell } from './Cell';
 import { isDateColumn, isNumericColumn } from '../../../shared/format';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -87,7 +88,7 @@ function ClientDesk({ clientId }: { clientId: string }) {
 
   return (
     <section data-testid="client-desk">
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {can('PARTNER_READ') && <CreditPosition partnerId={clientId} refreshKey={reload} />}
 
       <h2>Contracts</h2>
@@ -238,10 +239,7 @@ function RunBilling({ clientId, onBilled }: { clientId: string; onBilled: (invoi
       </form>
       {billed && <p data-testid="billing-result">Billed {billed}.</p>}
       {error && (
-        <p className="error" role="alert" data-testid="billing-error">
-          {code && <><code data-testid="billing-refusal">{code}</code>{' '}</>}
-          {error}
-        </p>
+        <ErrorBanner message={error} code={code} testId="billing-error" codeTestId="billing-refusal" />
       )}
       {code === CREDIT_LIMIT_EXCEEDED && (
         <CreditOverride partnerId={clientId} subjectType="CLIENT_INVOICE" period={`${month}-01`} errors={errors}
@@ -280,14 +278,14 @@ function MarkBillable({ onMarked }: { onMarked: () => void }) {
     <>
       <h2>Billable without proof</h2>
       <form className="inline" onSubmit={mark} data-testid="mark-billable">
-        <input aria-label="Consignment id" placeholder="Consignment id" value={consignmentId}
-          onChange={(e) => setConsignmentId(e.target.value)} required />
+        <EntityPicker kind="consignment" ariaLabel="Consignment id" placeholder="Consignment id" value={consignmentId}
+          onChange={setConsignmentId} required />
         <input aria-label="Reason it is billable" placeholder="Reason" value={reason}
           onChange={(e) => setReason(e.target.value)} required />
         <button type="submit">Mark billable</button>
       </form>
       {marked && <p data-testid="marked-billable">Marked billable.</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </>
   );
 }
@@ -323,7 +321,7 @@ function InvoicePanel({ invoiceId, version, onChanged, onClose }: InvoicePanelPr
   }
 
   if (detail.error) {
-    return <p className="error" role="alert">{detail.error}</p>;
+    return <ErrorBanner message={detail.error} />;
   }
   if (!detail.data) {
     return null;
@@ -372,7 +370,7 @@ function InvoicePanel({ invoiceId, version, onChanged, onClose }: InvoicePanelPr
         </form>
       )}
       {issued && <p data-testid="credit-issued">Credit note {issued} issued.</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </section>
   );
 }
@@ -413,7 +411,7 @@ function RecordPayment({ clientId, onRecorded }: { clientId: string; onRecorded:
         <button type="submit">Record payment</button>
       </form>
       {recorded && <p data-testid="payment-recorded">Payment {recorded} recorded.</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </>
   );
 }

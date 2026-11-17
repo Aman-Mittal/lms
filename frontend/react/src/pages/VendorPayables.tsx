@@ -24,6 +24,7 @@ import { money, problemText, today } from './moneyProblem';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 type Tab = 'invoices' | 'payments' | 'overdue';
 
@@ -165,7 +166,7 @@ export function VendorPayables() {
                 </div>
                 {can('PAYABLES_MANAGE') && i.status !== 'PAID' && i.status !== 'VOID' && (
                   <form className="inline" data-testid="pay-form" onSubmit={pay} onClick={(e) => e.stopPropagation()}>
-                    {payError && <p className="error" role="alert" data-testid="pay-error">{payError}</p>}
+                    {payError && <ErrorBanner message={payError} testId="pay-error" />}
                     <input type="number" min="0" step="0.01" placeholder="Amount" aria-label="Payment amount"
                       data-testid="pay-amount" required value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
                     <input type="date" aria-label="Paid on" data-testid="pay-date" required value={payDate}
@@ -197,7 +198,7 @@ export function VendorPayables() {
     <>
       <PageHeader title="Vendor payables" />
       <p className="muted">What vendors have invoiced against approved freight bills, what has been paid and what is overdue.</p>
-      {error && <p className="error" role="alert" data-testid="pay-desk-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="pay-desk-error" />}
 
       <p className="actions" role="tablist" aria-label="Payables views">
         <button type="button" role="tab" className={tab === 'invoices' ? '' : 'link'} data-testid="pay-tab-invoices"
@@ -213,7 +214,7 @@ export function VendorPayables() {
           {can('PAYABLES_MANAGE') && (
             <form data-testid="inv-form" onSubmit={capture}>
               <h2>Capture an invoice</h2>
-              {captureError && <p className="error" role="alert" data-testid="inv-error">{captureError}</p>}
+              {captureError && <ErrorBanner message={captureError} testId="inv-error" />}
               {captured && <p className="ok" role="status" data-testid="inv-result">{captured}</p>}
               <input placeholder="Freight bill numbers, comma separated" aria-label="Freight bill numbers"
                 data-testid="inv-bills" required value={bills} onChange={(e) => setBills(e.target.value)} />

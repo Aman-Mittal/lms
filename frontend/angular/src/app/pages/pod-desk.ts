@@ -22,6 +22,8 @@ import { Session } from '../session';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
+import { EntityPicker } from './entity-picker';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -45,16 +47,16 @@ interface LineFields {
  */
 @Component({
   selector: 'app-pod-desk',
-  imports: [FormsModule, PageHeader, StatusBadge, When],
+  imports: [EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Proof of delivery desk" />
     <p class="muted">Start the proof, feed it line by line, list the documents and times, then submit it.</p>
-    <form class="inline" (ngSubmit)="lookUp()" data-testid="pod-lookup">
-      <input name="consignment" placeholder="Consignment id" aria-label="Consignment id" data-testid="pod-consignment-id"
-             [ngModel]="typed()" (ngModelChange)="typed.set($event)" required />
+    <form ngNativeValidate class="inline" (ngSubmit)="lookUp()" data-testid="pod-lookup">
+      <app-entity-picker [kind]="'consignment'" placeholder="Consignment id" ariaLabel="Consignment id" testId="pod-consignment-id"
+                         [(value)]="typed" [required]="true" />
       <button type="submit">Look up</button>
     </form>
-    @if (error()) { <p class="error" role="alert" data-testid="pod-error">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" testId="pod-error" /> }
     @if (consignmentId() && loaded()) {
       @if (proof() === null) {
         <p class="muted" data-testid="pod-none">No proof has been started for this consignment.</p>
@@ -101,7 +103,7 @@ interface LineFields {
             }
           </ul>
           @if (editable()) {
-            <form class="inline" (ngSubmit)="addDocument()" data-testid="pod-doc-form">
+            <form ngNativeValidate class="inline" (ngSubmit)="addDocument()" data-testid="pod-doc-form">
               <select aria-label="Document type" data-testid="pod-doc-type" [value]="docType()"
                       (change)="docType.set($any($event.target).value)">
                 @for (t of documentTypes; track t) { <option [value]="t" [selected]="t === docType()">{{ t }}</option> }
@@ -114,7 +116,7 @@ interface LineFields {
 
           <h2>Times</h2>
           @if (editable()) {
-            <form class="inline" (ngSubmit)="saveTimings()" data-testid="pod-timings">
+            <form ngNativeValidate class="inline" (ngSubmit)="saveTimings()" data-testid="pod-timings">
               <label>Reported <input type="datetime-local" data-testid="pod-reported-at" [value]="reportedAt()"
                                      (input)="reportedAt.set($any($event.target).value)" /></label>
               <label>Unloading started <input type="datetime-local" data-testid="pod-unloading-start" [value]="startedAt()"
@@ -132,7 +134,7 @@ interface LineFields {
             <h2>Submit</h2>
             <p><button data-testid="pod-issue-otp" (click)="issue()">Issue a code</button>
               @if (otpShown()) { <span data-testid="pod-otp-code">{{ otpShown() }}</span> }</p>
-            <form class="inline" (ngSubmit)="submit()" data-testid="pod-submit-form">
+            <form ngNativeValidate class="inline" (ngSubmit)="submit()" data-testid="pod-submit-form">
               <input name="otp" placeholder="Code" aria-label="Code" data-testid="pod-otp" [ngModel]="otp()" (ngModelChange)="otp.set($event)" required />
               <input name="recipient" placeholder="Recipient name" aria-label="Recipient name" data-testid="pod-recipient"
                      [ngModel]="recipient()" (ngModelChange)="recipient.set($event)" required />
@@ -141,7 +143,7 @@ interface LineFields {
               <button type="submit" data-testid="pod-submit">Submit proof</button>
             </form>
             @if (paperKey()) {
-              <form class="inline" (ngSubmit)="keyPaper()" data-testid="pod-paper-form">
+              <form ngNativeValidate class="inline" (ngSubmit)="keyPaper()" data-testid="pod-paper-form">
                 <input name="paperRecipient" placeholder="Recipient name on the paper" aria-label="Paper recipient name" data-testid="pod-paper-recipient"
                        [ngModel]="paperRecipient()" (ngModelChange)="paperRecipient.set($event)" required />
                 <input name="paperRemark" placeholder="Remark" aria-label="Paper remark" data-testid="pod-paper-remark"
@@ -149,7 +151,7 @@ interface LineFields {
                 <button type="submit" data-testid="pod-paper-submit">Key from paper</button>
               </form>
             }
-            <form class="inline" (ngSubmit)="notReceived()" data-testid="pod-not-received-form">
+            <form ngNativeValidate class="inline" (ngSubmit)="notReceived()" data-testid="pod-not-received-form">
               <input name="notReceivedRemark" placeholder="Why nothing was received" aria-label="Not received remark"
                      data-testid="pod-not-received-remark" [ngModel]="notReceivedRemark()" (ngModelChange)="notReceivedRemark.set($event)" required />
               <button type="submit" data-testid="pod-not-received">Not received</button>
@@ -157,7 +159,7 @@ interface LineFields {
           }
 
           @if (proves() && reverse()) {
-            <form class="inline" (ngSubmit)="askReversal()" data-testid="pod-reverse-form">
+            <form ngNativeValidate class="inline" (ngSubmit)="askReversal()" data-testid="pod-reverse-form">
               <input name="reversalReason" placeholder="Why the proof is wrong" aria-label="Reason to reverse" data-testid="pod-reversal-reason"
                      [ngModel]="reversalReason()" (ngModelChange)="reversalReason.set($event)" required />
               <button type="submit" data-testid="pod-request-reversal">Request reversal</button>

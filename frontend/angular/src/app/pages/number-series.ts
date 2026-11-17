@@ -22,6 +22,7 @@ import {
 import { RowColumn, RowTable } from './row-table';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
+import { ErrorBanner } from './error-banner';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -59,7 +60,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-number-series',
-  imports: [RowTable, PageHeader, StatusBadge],
+  imports: [ErrorBanner, RowTable, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Number series" />
     <p class="muted">
@@ -67,14 +68,11 @@ function valueOf(event: Event): string {
       tenant-wide one. Without a series, a document keeps its built-in numbering.
     </p>
     @if (refusal(); as r) {
-      <p class="error" role="alert" data-testid="series-error">
-        @if (r.code) { <code data-testid="series-refusal">{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" testId="series-error" codeTestId="series-refusal" />
     }
     @if (message()) { <p class="ok" role="status" data-testid="series-message">{{ message() }}</p> }
 
-    <form data-testid="series-create" (submit)="create($event)">
+    <form ngNativeValidate data-testid="series-create" (submit)="create($event)">
       <h2>New series</h2>
       <input placeholder="Code" aria-label="Series code" data-testid="series-code" required
              [value]="code()" (input)="code.set(valueOf($event))" />
@@ -154,7 +152,7 @@ function valueOf(event: Event): string {
         }
         <button type="button" class="link" data-testid="series-delete" (click)="remove(s.id)">Delete</button>
 
-        <form class="inline" data-testid="series-release" (submit)="release($event, s.id)">
+        <form ngNativeValidate class="inline" data-testid="series-release" (submit)="release($event, s.id)">
           <h3>Give a number back</h3>
           <input placeholder="Number" aria-label="Number to release" data-testid="release-number" required
                  [value]="releaseNo()" (input)="releaseNo.set(valueOf($event))" />
@@ -170,7 +168,7 @@ function valueOf(event: Event): string {
       </section>
     }
 
-    <form class="inline" data-testid="series-verify" (submit)="verify($event)">
+    <form ngNativeValidate class="inline" data-testid="series-verify" (submit)="verify($event)">
       <h2>Check a number</h2>
       <select aria-label="Document type to check" data-testid="verify-type"
               (change)="verifyType.set($any(valueOf($event)))">

@@ -20,6 +20,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEMO_TENANT } from '../config';
 import { useSession } from '../session';
+import { ErrorBanner } from './ErrorBanner';
 
 export function Login() {
   const { gateway, start } = useSession();
@@ -77,7 +78,7 @@ export function Login() {
         <label>Password <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
         <button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </main>
   );
 }

@@ -25,6 +25,7 @@ import { RowTable } from './row-table';
 import { EntityPicker } from './entity-picker';
 import { STALE_MESSAGE } from './master-data-form';
 import { PageHeader } from './page-header';
+import { ErrorBanner } from './error-banner';
 
 const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
 
@@ -64,14 +65,11 @@ function inDays(days: number): string {
  */
 @Component({
   selector: 'app-admin-desk',
-  imports: [RowTable, EntityPicker, PageHeader],
+  imports: [ErrorBanner, RowTable, EntityPicker, PageHeader],
   template: `
     <app-page-header [title]="title" />
     @if (refusal(); as r) {
-      <p class="error" role="alert" data-testid="admin-error">
-        @if (r.code) { <code data-testid="admin-refusal">{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" testId="admin-error" codeTestId="admin-refusal" />
     }
     @if (message()) { <p data-testid="admin-message">{{ message() }}</p> }
     @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
@@ -91,7 +89,7 @@ function inDays(days: number): string {
             <summary>{{ permissions().length }} permissions</summary>
             <ul>@for (p of permissions(); track p) { <li>{{ p }}</li> }</ul>
           </details>
-          <form (submit)="saveAttributes($event, u.id)" data-testid="access-attributes">
+          <form ngNativeValidate (submit)="saveAttributes($event, u.id)" data-testid="access-attributes">
             <h3>Access attributes</h3>
             <p class="muted">Leave a field blank for no restriction along it.</p>
             <input placeholder="Region" aria-label="Region" data-testid="attr-region"
@@ -133,7 +131,7 @@ function inDays(days: number): string {
           <h2>{{ p.code }}</h2>
           <button type="button" class="link" data-testid="close-policy" (click)="closePolicy()">Back to creating</button>
           <dl class="facts"><div><dt>Action</dt><dd data-testid="policy-action-shown">{{ p.action }}</dd></div></dl>
-          <form (submit)="savePolicy($event, p.id)" data-testid="policy-revise">
+          <form ngNativeValidate (submit)="savePolicy($event, p.id)" data-testid="policy-revise">
             <select aria-label="Effect" data-testid="policy-effect" [value]="effect()"
                     (change)="effect.set($any(valueOf($event)))">
               <option value="DENY">DENY</option>
@@ -153,7 +151,7 @@ function inDays(days: number): string {
           </form>
         </section>
       } @else {
-        <form (submit)="createPolicy($event)" data-testid="policy-create">
+        <form ngNativeValidate (submit)="createPolicy($event)" data-testid="policy-create">
           <h2>New access policy</h2>
           <input placeholder="Code" aria-label="Code" data-testid="policy-code" required
                  [value]="code()" (input)="code.set(valueOf($event))" />
@@ -180,7 +178,7 @@ function inDays(days: number): string {
     }
 
     @if (section === 'compliance') {
-      <form (submit)="showExpiring($event)" data-testid="expiring-filter">
+      <form ngNativeValidate (submit)="showExpiring($event)" data-testid="expiring-filter">
         <label>Expiring within
           <input type="number" min="0" max="3650" aria-label="Days" data-testid="expiring-days"
                  [value]="withinDays()" (input)="withinDays.set(valueOf($event))" /> days
@@ -197,7 +195,7 @@ function inDays(days: number): string {
 
       <section data-testid="owner-documents-panel">
         <h2>Documents of one record</h2>
-        <form (submit)="openOwner($event)" data-testid="owner-form">
+        <form ngNativeValidate (submit)="openOwner($event)" data-testid="owner-form">
           <select aria-label="Kind" data-testid="owner-type" [value]="ownerType()"
                   (change)="ownerType.set($any(valueOf($event)))">
             @for (t of ownerTypes; track t) { <option [value]="t">{{ t }}</option> }
@@ -210,7 +208,7 @@ function inDays(days: number): string {
           @if (ownerDocuments().length === 0) { <p class="muted" data-testid="no-documents">No documents on file.</p> }
           @else { <app-row-table testId="owner-documents" [rows]="ownerDocuments()" [columns]="documentColumns" /> }
           @if (canAttach()) {
-            <form (submit)="attach($event)" data-testid="attach-document">
+            <form ngNativeValidate (submit)="attach($event)" data-testid="attach-document">
               <h3>Attach a document</h3>
               <input placeholder="Type, such as INSURANCE" aria-label="Document type" data-testid="doc-type" required
                      [value]="docType()" (input)="docType.set(valueOf($event))" />

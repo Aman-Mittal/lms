@@ -24,11 +24,16 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { Cell } from './cell';
+import { ErrorBanner } from './error-banner';
+import { EmptyState, LoadingState } from './empty-state';
+
+/** The most consignments looked up by name at once; a longer page falls back on a short id for the rest. */
+const NAME_LOOKUPS = 25;
 
 /** The panel beside the list: one claim, what may be done to it, and its slip. */
 @Component({
   selector: 'app-claim-panel',
-  imports: [FormsModule, Qr, StatusBadge, Money],
+  imports: [ErrorBanner, FormsModule, Qr, StatusBadge, Money],
   template: `
     <aside class="panel" data-testid="claim-panel" aria-label="Claim details">
       <header>
@@ -42,7 +47,7 @@ import { Cell } from './cell';
         <div><dt>Approved</dt><dd><app-money data-testid="claim-approved" [value]="row()['approvedAmount']" empty="—" /></dd></div>
         <div><dt>Note</dt><dd>{{ row()['resolutionNote'] || '—' }}</dd></div>
       </dl>
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
       @if (decide()) {
         @if (row()['status'] === 'OPEN') {
           <p><button data-testid="act-review" (click)="move('UNDER_REVIEW')">Take under review</button></p>
@@ -73,7 +78,7 @@ import { Cell } from './cell';
               <div><dt>Type</dt><dd>{{ row()['claimType'] }}</dd></div>
               <div><dt>Claimed</dt><dd><app-money [value]="row()['amount']" /></dd></div>
               <div><dt>Status</dt><dd><app-status-badge [value]="row()['status']" /></dd></div>
-              <div><dt>Consignment</dt><dd>{{ row()['consignmentId'] }}</dd></div>
+              <div><dt>Consignment</dt><dd><span>{{ names()[row()['consignmentId']] ?? '…' }}</span><span class="sr-only" aria-hidden="true">{{ row()['consignmentId'] }}</span></dd></div>
               <div><dt>Description</dt><dd>{{ row()['description'] }}</dd></div>
             </dl>
             <app-qr [payload]="'LMS:CLAIM:' + row()['claimNo']" />
@@ -91,6 +96,8 @@ export class ClaimPanel {
   private readonly session = inject(Session);
 
   readonly row = input.required<Row>();
+  /** Tracking references by consignment id, for the slip. */
+  readonly names = input<Record<string, string>>({});
   readonly closed = output<void>();
   readonly changed = output<void>();
 
@@ -122,20 +129,20 @@ export class ClaimPanel {
 /** Claims: the list, a form to raise one, and a panel to decide and print it. */
 @Component({
   selector: 'app-claims',
-  imports: [FormsModule, ClaimPanel, EntityPicker, PageHeader, Cell],
+  imports: [EmptyState, LoadingState, ErrorBanner, FormsModule, ClaimPanel, EntityPicker, PageHeader, Cell],
   template: `
     <div [class.with-panel]="selected()">
       <div class="list">
         <app-page-header title="Claims" />
         <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-        <form class="inline" (ngSubmit)="filter()" data-testid="claims-filter">
+        <form ngNativeValidate class="inline" (ngSubmit)="filter()" data-testid="claims-filter">
           <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Filter by consignment" testId="claims-filter-consignment"
                              [(value)]="typed" />
           <button type="submit">Filter</button>
         </form>
-        @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-        @if (loading() && rows().length === 0) { <p>Loading…</p> }
-        @else if (rows().length === 0 && !error()) { <p class="muted">{{ filteredBy() ? 'No claims against that consignment.' : 'Nothing here yet.' }}</p> }
+        @if (error()) { <app-error-banner [message]="error()" /> }
+        @if (loading() && rows().length === 0) { <app-loading-state /> }
+        @else if (rows().length === 0 && !error()) { <app-empty-state [message]="filteredBy() ? 'No claims against that consignment.' : 'Nothing here yet.'" /> }
         @else if (rows().length > 0) {
           <div class="table-wrap"><table>
             <thead><tr>@for (c of columns; track c.field) { <th>{{ c.header }}</th> }</tr></thead>
@@ -143,7 +150,15 @@ export class ClaimPanel {
               @for (row of rows(); track row['id']) {
                 <tr data-testid="row" tabindex="0" [class.selected]="row['id'] === selectedId()"
                     (click)="selectedId.set(row['id'])" (keydown.enter)="selectedId.set(row['id'])">
-                  @for (c of columns; track c.field) { <td><app-cell [field]="c.field" [value]="row[c.field]" /></td> }
+                  @for (c of columns; track c.field) {
+                    <td>
+                      @if (c.field === 'consignmentId') {
+                        <span>{{ names()[row['consignmentId']] ?? '…' }}</span><span class="sr-only" aria-hidden="true">{{ row['consignmentId'] }}</span>
+                      } @else {
+                        <app-cell [field]="c.field" [value]="row[c.field]" />
+                      }
+                    </td>
+                  }
                 </tr>
               }
             </tbody>
@@ -152,7 +167,7 @@ export class ClaimPanel {
 
         @if (session.can('CLAIM_RAISE')) {
           <h2>Raise a claim</h2>
-          <form class="inline" (ngSubmit)="raise()" data-testid="raise-claim">
+          <form ngNativeValidate class="inline" (ngSubmit)="raise()" data-testid="raise-claim">
             <app-entity-picker [kind]="'consignment'" placeholder="Consignment" ariaLabel="Consignment id" [required]="true"
                                [value]="consignmentId" (valueChange)="consignmentId = $event" />
             <select name="claimType" aria-label="Claim type" [(ngModel)]="claimType">
@@ -164,13 +179,13 @@ export class ClaimPanel {
                    [(ngModel)]="description" required />
             <button type="submit">Raise claim</button>
           </form>
-          @if (formError()) { <p class="error" role="alert">{{ formError() }}</p> }
+          @if (formError()) { <app-error-banner [message]="formError()" /> }
         }
       </div>
       @if (selected(); as row) {
         <!-- One panel per claim: a different id builds a fresh panel, with empty fields. -->
         @for (r of [row]; track r['id']) {
-          <app-claim-panel [row]="r" (closed)="selectedId.set(null)" (changed)="load()" />
+          <app-claim-panel [row]="r" [names]="names()" (closed)="selectedId.set(null)" (changed)="load()" />
         }
       }
     </div>
@@ -189,6 +204,8 @@ export class ClaimsPage {
   readonly selected = computed(() => this.rows().find((row) => row['id'] === this.selectedId()) ?? null);
   readonly typed = signal('');
   readonly filteredBy = signal('');
+  /** The tracking reference of each consignment the claims name, read once each. */
+  readonly names = signal<Record<string, string>>({});
 
   consignmentId = '';
   claimType: ClaimType = 'LOSS';
@@ -227,11 +244,28 @@ export class ClaimsPage {
     this.error.set('');
     try {
       // Untracked, so the effect that first loads the list does not also re-run on every filter.
-      this.rows.set(await this.gateway.claims(untracked(this.filteredBy) || undefined));
+      const rows = await this.gateway.claims(untracked(this.filteredBy) || undefined);
+      this.rows.set(rows);
+      void this.nameConsignments(rows);
     } catch (e) {
       this.error.set((e as Error).message);
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** Reads the consignments the rows name, up to a page of them; one that cannot be read keeps a short id. */
+  private async nameConsignments(rows: Row[]): Promise<void> {
+    const known = this.names();
+    const wanted = [...new Set(rows.map((r) => r['consignmentId']))].filter((id) => id && !(id in known)).slice(0, NAME_LOOKUPS);
+    await Promise.all(wanted.map(async (id) => {
+      let label: string;
+      try {
+        label = (await this.gateway.consignment(id)).trackingRef;
+      } catch {
+        label = id.slice(0, 8) + '…';
+      }
+      this.names.update((n) => ({ ...n, [id]: label }));
+    }));
   }
 }

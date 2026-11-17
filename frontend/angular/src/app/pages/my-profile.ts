@@ -22,6 +22,7 @@ import {
 } from '../gateway/lms-gateway';
 import { choicesOf, controlOf, fromInput, toInput } from '../settings-form';
 import { PageHeader } from './page-header';
+import { ErrorBanner } from './error-banner';
 
 /** One notification event and its two channels. */
 interface NotifyRow {
@@ -38,10 +39,10 @@ interface NotifyRow {
  */
 @Component({
   selector: 'app-my-profile',
-  imports: [FormsModule, PageHeader],
+  imports: [ErrorBanner, FormsModule, PageHeader],
   template: `
     <app-page-header title="My profile &amp; preferences" />
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (me(); as m) {
       <section class="panel" data-testid="me-identity">
         <dl>
@@ -56,7 +57,7 @@ interface NotifyRow {
     }
 
     <h2>Display</h2>
-    <form (ngSubmit)="save()" data-testid="preferences">
+    <form ngNativeValidate (ngSubmit)="save()" data-testid="preferences">
       @for (p of display(); track p.key) {
         <label>
           {{ p.label }}

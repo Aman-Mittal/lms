@@ -21,6 +21,7 @@ import {
 import { Session } from '../session';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
+import { ErrorBanner } from './error-banner';
 
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -38,19 +39,16 @@ function today(): string {
  */
 @Component({
   selector: 'app-trip-money',
-  imports: [StatusBadge, Money],
+  imports: [ErrorBanner, StatusBadge, Money],
   template: `
     <section data-testid="trip-money" aria-label="Trip money">
       <h2>Advances and charges</h2>
       @if (refusal(); as r) {
-        <p class="error" role="alert" data-testid="adv-error">
-          @if (r.code) { <code>{{ r.code }}</code> }
-          {{ r.message }}
-        </p>
+        <app-error-banner [message]="r.message" [code]="r.code" testId="adv-error" />
       }
       @if (result()) { <p class="ok" role="status" data-testid="adv-result">{{ result() }}</p> }
       @if (session.can('ADVANCE_REQUEST')) {
-        <form data-testid="adv-form" (submit)="request($event)">
+        <form ngNativeValidate data-testid="adv-form" (submit)="request($event)">
           <select aria-label="Advance mode" data-testid="adv-mode" (change)="mode.set(valueOf($event))">
             @for (m of modes; track m) { <option [value]="m" [selected]="m === mode()">{{ m }}</option> }
           </select>
@@ -86,7 +84,7 @@ function today(): string {
               </tr>
               @if (acting() === a.id && action() === 'pay') {
                 <tr><td colspan="6">
-                  <form class="inline" (submit)="pay($event, a.id)">
+                  <form ngNativeValidate class="inline" (submit)="pay($event, a.id)">
                     <input placeholder="Reference" aria-label="Payment reference" data-testid="adv-pay-reference" required
                            [value]="text()" (input)="text.set(valueOf($event))" />
                     <button type="submit" data-testid="adv-pay-confirm">Record payment</button>
@@ -96,7 +94,7 @@ function today(): string {
               }
               @if (acting() === a.id && action() === 'cancel') {
                 <tr><td colspan="6">
-                  <form class="inline" (submit)="cancel($event, a.id)">
+                  <form ngNativeValidate class="inline" (submit)="cancel($event, a.id)">
                     <input placeholder="Why" aria-label="Cancel reason" data-testid="adv-cancel-reason" required
                            [value]="text()" (input)="text.set(valueOf($event))" />
                     <button type="submit" data-testid="adv-cancel-confirm">Cancel advance</button>

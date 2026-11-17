@@ -23,6 +23,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -282,9 +283,7 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
       )}
       {error && (
         <>
-          <p className="error" role="alert" data-testid="contract-error">
-            {code && <code data-testid="contract-refusal">{code}</code>} {error}
-          </p>
+          <ErrorBanner message={error} code={code} testId="contract-error" codeTestId="contract-refusal" />
           {refused.length > 0 && (
             <ul data-testid="contract-refused-rules">
               {refused.map(([rule, why]) => <li key={rule} data-testid={`refused-${rule}`}>{rule}: {why}</li>)}

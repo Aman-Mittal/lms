@@ -20,6 +20,7 @@ import {
   CustomFieldKind, CustomValues, FieldDefinition, LmsGateway,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { ErrorBanner } from './error-banner';
 
 /** Everything a form field holds is text until it is saved. */
 type Draft = Record<string, string>;
@@ -47,16 +48,16 @@ function valueOf(d: FieldDefinition, text: string): string | number | boolean | 
 
 @Component({
   selector: 'app-custom-fields-form',
-  imports: [FormsModule],
+  imports: [ErrorBanner, FormsModule],
   template: `
     @if (error()) {
-      <p class="error" role="alert">{{ error() }}</p>
+      <app-error-banner [message]="error()" />
     } @else if (!ready()) {
       <p>Loading custom fields…</p>
     } @else if (definitions().length === 0) {
       <p class="muted" data-testid="no-custom-fields">No custom fields are defined for this kind of record.</p>
     } @else {
-      <form (ngSubmit)="save()" data-testid="custom-fields">
+      <form ngNativeValidate (ngSubmit)="save()" data-testid="custom-fields">
         <h3>Custom fields</h3>
         @for (d of definitions(); track d.key) {
           <label>
@@ -90,7 +91,7 @@ function valueOf(d: FieldDefinition, text: string): string | number | boolean | 
           <button type="submit" [disabled]="busy()" data-testid="save-custom-fields">Save</button>
         }
         @if (message()) { <p class="ok" role="status" data-testid="custom-fields-saved">{{ message() }}</p> }
-        @if (saveError()) { <p class="error" role="alert">{{ saveError() }}</p> }
+        @if (saveError()) { <app-error-banner [message]="saveError()" /> }
       </form>
     }
   `,

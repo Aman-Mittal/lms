@@ -18,6 +18,7 @@ import type { ConfigAction, ConfigKind } from '../gateway/config-types';
 import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { STALE_MESSAGE } from './master-data-form';
+import { ErrorBanner } from './error-banner';
 
 const MANAGE: Record<ConfigKind, string> = {
   allocationRules: 'ALLOCATION_RULE_MANAGE', orgUnits: 'ORG_UNIT_MANAGE', chargeCatalogue: 'CHARGE_CATALOGUE_MANAGE',
@@ -37,6 +38,7 @@ const WORDS: Record<ConfigAction, { verb: string; line: string }> = {
  * the confirmation stays open. The version is the one the list read, so a row somebody else changed says so.
  */
 @Component({
+  imports: [ErrorBanner],
   selector: 'app-config-actions',
   template: `
     @if (!pending()) {
@@ -58,7 +60,7 @@ const WORDS: Record<ConfigAction, { verb: string; line: string }> = {
           <textarea rows="2" data-testid="reason-input" [value]="reason()" (input)="reason.set($any($event.target).value)"></textarea>
         </label>
         @if (reasonError()) { <p class="error" role="alert" data-testid="reason-error">A reason is required.</p> }
-        @if (failure()) { <p class="error" role="alert" data-testid="action-error">{{ failure() }}</p> }
+        @if (failure()) { <app-error-banner [message]="failure()" testId="action-error" /> }
         <div class="actions">
           <button type="button" data-testid="confirm-action" [disabled]="busy()" (click)="confirm()">{{ verb() }}</button>
           <button type="button" class="link" data-testid="cancel-action" (click)="cancel()">Cancel</button>

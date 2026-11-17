@@ -19,7 +19,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { map } from 'rxjs';
-import { LmsGateway, PARTNER_TYPES, PartnerType, ResourceKey, Row } from '../gateway/lms-gateway';
+import { ApiProblem, LmsGateway, PARTNER_TYPES, PartnerType, ResourceKey, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { RecordPanel } from './record-panel';
 import { CREATE_RIGHTS, RESOURCES, STATUS_FILTERS } from './resources';
@@ -27,10 +27,12 @@ import { MasterDataForm } from './master-data-form';
 import { PageHeader } from './page-header';
 import { Cell } from './cell';
 import { isDateColumn, isNumericColumn } from '../../../../shared/format';
+import { ErrorBanner } from './error-banner';
+import { showToast } from '../../../../shared/feedback';
 
 @Component({
   selector: 'app-list',
-  imports: [FormsModule, RecordPanel, PageHeader, Cell, MasterDataForm],
+  imports: [ErrorBanner, FormsModule, RecordPanel, PageHeader, Cell, MasterDataForm],
   template: `
     @if (resource(); as r) {
       <div [class.with-panel]="selected() || creating()">
@@ -51,7 +53,7 @@ import { isDateColumn, isNumericColumn } from '../../../../shared/format';
               </select>
             </label>
           }
-          @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+          @if (error()) { <app-error-banner [message]="error()" /> }
           <div class="table-wrap">
             <table>
               <thead><tr>@for (c of r.columns; track c.field) { <th [class.num]="numeric(c.field)">{{ c.header }}</th> }</tr></thead>
@@ -78,7 +80,7 @@ import { isDateColumn, isNumericColumn } from '../../../../shared/format';
 
           @if (r.key === 'partners' && session.orgUnitId()) {
             <h2>Register a partner</h2>
-            <form class="inline" (ngSubmit)="register()" data-testid="register-partner">
+            <form ngNativeValidate class="inline" (ngSubmit)="register()" data-testid="register-partner">
               <input name="code" placeholder="Code" [(ngModel)]="code" required />
               <input name="legalName" placeholder="Legal name" [(ngModel)]="legalName" required />
               <select name="partnerType" aria-label="Partner type" [(ngModel)]="partnerType">
@@ -86,7 +88,7 @@ import { isDateColumn, isNumericColumn } from '../../../../shared/format';
               </select>
               <button type="submit">Register</button>
             </form>
-            @if (formError()) { <p class="error" role="alert">{{ formError() }}</p> }
+            @if (formError()) { <app-error-banner [message]="formError()" [code]="formCode()" testId="register-error" /> }
           }
         </div>
         @if (creating() && session.orgUnitId(); as unit) {
@@ -138,6 +140,7 @@ export class ListPage {
   legalName = '';
   partnerType: PartnerType = 'CUSTOMER';
   readonly formError = signal('');
+  readonly formCode = signal('');
 
   constructor() {
     // Re-fetch whenever the route's :resource changes.
@@ -183,14 +186,17 @@ export class ListPage {
       return;
     }
     this.formError.set('');
+    this.formCode.set('');
     try {
       await this.gateway.registerPartner(orgUnitId,
         { code: this.code, legalName: this.legalName, partnerType: this.partnerType });
+      showToast(`Partner ${this.code} registered.`);
       this.code = '';
       this.legalName = '';
       await this.load('partners');
     } catch (e) {
       this.formError.set((e as Error).message);
+      this.formCode.set(e instanceof ApiProblem ? e.code : '');
     }
   }
 

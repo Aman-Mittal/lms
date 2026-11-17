@@ -25,6 +25,7 @@ import { CONFLICT_TEXT } from './MasterDataForm';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { StatusFilter } from './StatusFilter';
+import { ErrorBanner } from './ErrorBanner';
 
 /** A subscription as a table row. */
 function rowOf(w: WebhookView): Row {
@@ -66,7 +67,7 @@ export function Webhooks() {
       <StatusFilter value={status} onChange={setStatus} />
       {list.loading && <p className="muted">Loading…</p>}
       {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
-      {list.error && <p className="error" role="alert">{list.error}</p>}
+      {list.error && <ErrorBanner message={list.error} />}
       {list.data && list.data.length === 0 && <p className="muted" data-testid="no-webhooks">No subscriptions yet.</p>}
       {list.data && list.data.length > 0 && (
         <RowTable testId="webhooks" rows={list.data.map(rowOf)} picked={picked} onPick={(r) => setPicked(r.id)} columns={[
@@ -139,7 +140,7 @@ function Subscribe({ onIssued }: { onIssued: (s: WebhookSecret) => void }) {
       <input placeholder="https://…" aria-label="Address" data-testid="webhook-url" value={url}
         onChange={(e) => setUrl(e.target.value)} required />
       <EventTypes value={types} onChange={setTypes} />
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       <button type="submit" data-testid="subscribe">Subscribe</button>
     </form>
   );
@@ -219,7 +220,7 @@ function Subscription({ webhook, manage, onIssued, onChanged, onStale, onClose }
         </dl>
       )}
       {message && <p data-testid="webhook-message">{message}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       <Deliveries key={pages} webhookId={webhook.id} manage={manage} />
     </section>
   );
@@ -266,8 +267,8 @@ function Deliveries({ webhookId, manage }: { webhookId: string; manage: boolean 
     <section data-testid="webhook-deliveries">
       <h3>Deliveries</h3>
       <button type="button" data-testid="refresh-deliveries" onClick={() => setReload((n) => n + 1)}>Refresh</button>
-      {first.error && <p className="error" role="alert">{first.error}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {first.error && <ErrorBanner message={first.error} />}
+      {error && <ErrorBanner message={error} />}
       {!first.loading && rows.length === 0 && <p className="muted" data-testid="no-deliveries">Nothing sent yet.</p>}
       {rows.length > 0 && (
         <RowTable testId="deliveries" rows={rows} picked={picked} onPick={(r) => setPicked(r.id)} columns={[

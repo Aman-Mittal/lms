@@ -25,6 +25,7 @@ import { Qr } from './Qr';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { BinList, SkuList } from './WarehouseSetupLists';
+import { ErrorBanner } from './ErrorBanner';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 const TABS: Array<[Tab, string]> = [
@@ -46,10 +47,7 @@ function Refusal({ outcome }: { outcome: Outcome | null }) {
     return null;
   }
   return (
-    <p className="error" role="alert">
-      {outcome.code && <><code data-testid="wh-refusal">{outcome.code}</code>{' '}</>}
-      {outcome.message}
-    </p>
+    <ErrorBanner message={outcome.message} code={outcome.code} codeTestId="wh-refusal" />
   );
 }
 
@@ -105,7 +103,7 @@ function Warehouse({ warehouseId }: { warehouseId: string }) {
 
   return (
     <section data-testid="warehouse-desk">
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       <nav className="inline" aria-label="Warehouse sections">
         {TABS.map(([key, title]) => (
           <button key={key} className={tab === key ? undefined : 'link'} aria-pressed={tab === key}
@@ -187,7 +185,7 @@ function Inbound(context: Context) {
   return (
     <>
       <h2>Advance shipping notices</h2>
-      {asns.error && <p className="error" role="alert">{asns.error}</p>}
+      {asns.error && <ErrorBanner message={asns.error} />}
       {asns.data && asns.data.length === 0 ? (
         <p className="muted" data-testid="no-asns">Nothing is expected at this warehouse.</p>
       ) : (
@@ -274,7 +272,7 @@ function AsnPanel({ asnId, version, onChanged }: { asnId: string; version: numbe
   const { run, report } = useAction();
 
   if (detail.error) {
-    return <p className="error" role="alert">{detail.error}</p>;
+    return <ErrorBanner message={detail.error} />;
   }
   if (!detail.data) {
     return null;
@@ -394,7 +392,7 @@ function Stock(context: Context) {
           onChange={setSkuId} required />
         <button type="submit">Show movements</button>
       </form>
-      {movements.error && <p className="error" role="alert">{movements.error}</p>}
+      {movements.error && <ErrorBanner message={movements.error} />}
       {shown && movements.data && (
         <Table rows={movements.data} rowTestId="movement-row" columns={[
           ['occurredAt', 'When'], ['movementType', 'Movement'], ['locationType', 'Where'], ['lotNo', 'Lot'],
@@ -460,7 +458,7 @@ function Outbound(context: Context) {
   return (
     <>
       <h2>Outbound orders</h2>
-      {orders.error && <p className="error" role="alert">{orders.error}</p>}
+      {orders.error && <ErrorBanner message={orders.error} />}
       {orders.data && orders.data.length === 0 ? (
         <p className="muted" data-testid="no-orders">No order is going out of this warehouse.</p>
       ) : (
@@ -476,7 +474,7 @@ function Outbound(context: Context) {
       {can('WAREHOUSE_OPERATE') && <CreateOutbound warehouseId={warehouseId} onCreated={(id) => { setOrderId(id); changed(); }} />}
 
       <h2>Handling units</h2>
-      {units.error && <p className="error" role="alert">{units.error}</p>}
+      {units.error && <ErrorBanner message={units.error} />}
       {units.data && units.data.length === 0 ? (
         <p className="muted" data-testid="no-units">Nothing has been packed here yet.</p>
       ) : (
@@ -550,7 +548,7 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
   const { run, report } = useAction();
 
   if (detail.error) {
-    return <p className="error" role="alert">{detail.error}</p>;
+    return <ErrorBanner message={detail.error} />;
   }
   if (!detail.data) {
     return null;
@@ -627,7 +625,7 @@ function UnitPanel({ unitId, version, onChanged }: { unitId: string; version: nu
   const { run, report } = useAction();
 
   if (detail.error) {
-    return <p className="error" role="alert">{detail.error}</p>;
+    return <ErrorBanner message={detail.error} />;
   }
   if (!detail.data) {
     return null;
@@ -711,7 +709,7 @@ function Waves({ warehouseId, version, changed }: Context) {
   return (
     <>
       <h2>Pick waves</h2>
-      {waves.error && <p className="error" role="alert">{waves.error}</p>}
+      {waves.error && <ErrorBanner message={waves.error} />}
       {waves.data && waves.data.length === 0 ? (
         <p className="muted" data-testid="no-waves">No wave has been released here.</p>
       ) : (
@@ -750,7 +748,7 @@ function WavePanel({ waveId, version, onChanged }: { waveId: string; version: nu
   const { run, report } = useAction();
 
   if (detail.error) {
-    return <p className="error" role="alert">{detail.error}</p>;
+    return <ErrorBanner message={detail.error} />;
   }
   if (!detail.data) {
     return null;

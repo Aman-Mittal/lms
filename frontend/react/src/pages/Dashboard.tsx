@@ -19,6 +19,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { RESOURCES } from './resources';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 export function Dashboard() {
   const { gateway } = useSession();
@@ -27,7 +28,7 @@ export function Dashboard() {
   return (
     <>
       <PageHeader title="Control tower" description="What needs attention across your network right now." />
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {s ? (
         <div className="tiles" data-testid="tiles">
           <Tile n={s.openP1} label="Open P1" />

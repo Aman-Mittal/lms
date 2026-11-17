@@ -24,6 +24,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -180,7 +181,7 @@ export function EnquiryDeskPage() {
           value={filter.q} onChange={(ev) => setFilter({ ...filter, q: ev.target.value })} />
         <button type="submit" data-testid="enquiry-filter-apply">Show</button>
       </form>
-      {error && <p className="error" role="alert" data-testid="enquiry-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="enquiry-error" />}
 
       <div className="table-wrap"><table data-testid="enquiry-list">
         <thead><tr><th>Enquiry</th><th>Customer</th><th>Status</th><th>Respond by</th><th>Lines won</th><th /></tr></thead>

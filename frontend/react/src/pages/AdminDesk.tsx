@@ -25,6 +25,7 @@ import { useLoad } from '../useLoad';
 import { CONFLICT_TEXT } from './MasterDataForm';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 /** The picker each kind of document owner is chosen with. */
 const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
@@ -78,10 +79,7 @@ function Outcome({ refusal, message }: { refusal: Refusal | null; message: strin
   return (
     <>
       {refusal && (
-        <p className="error" role="alert" data-testid="admin-error">
-          {refusal.code && <><code data-testid="admin-refusal">{refusal.code}</code>{' '}</>}
-          {refusal.message}
-        </p>
+        <ErrorBanner message={refusal.message} code={refusal.code} testId="admin-error" codeTestId="admin-refusal" />
       )}
       {message && <p data-testid="admin-message">{message}</p>}
     </>
@@ -117,7 +115,7 @@ function UsersSection() {
     <>
       <p className="muted">Everyone in your organisational unit and below. Access attributes take effect at the user's next sign-in.</p>
       {list.loading && <p className="muted">Loading…</p>}
-      {list.error && <p className="error" role="alert" data-testid="admin-error">{list.error}</p>}
+      {list.error && <ErrorBanner message={list.error} testId="admin-error" />}
       {list.data && list.data.length > 0 && (
         <RowTable testId="users" picked={picked} onPick={(r) => setPicked(r.id)}
           rows={list.data.map((u): Row => ({
@@ -148,7 +146,7 @@ function UserDetail({ user }: { user: AdminUser }) {
         <summary>{permissions.data?.length ?? 0} permissions</summary>
         <ul>{(permissions.data ?? []).map((p) => <li key={p}>{p}</li>)}</ul>
       </details>
-      {attributes.error && <p className="error" role="alert" data-testid="admin-error">{attributes.error}</p>}
+      {attributes.error && <ErrorBanner message={attributes.error} testId="admin-error" />}
       {/* Mounted once the attributes are read, so the form starts from what the user carries now. */}
       {attributes.data && <AttributesForm userId={user.id} initial={attributes.data} />}
     </section>
@@ -243,7 +241,7 @@ function PoliciesSection() {
       <Outcome refusal={refusal} message={message} />
       {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
       {first.loading && <p className="muted">Loading…</p>}
-      {first.error && <p className="error" role="alert" data-testid="admin-error">{first.error}</p>}
+      {first.error && <ErrorBanner message={first.error} testId="admin-error" />}
       {first.data && policies.length === 0 && <p className="muted" data-testid="no-policies">No access policies.</p>}
       {policies.length > 0 && (
         <RowTable testId="policies" picked={picked} onPick={(r) => setPicked(r.id)}
@@ -448,7 +446,7 @@ function ComplianceSection() {
         <button type="submit" data-testid="show-expiring">Show</button>
       </form>
       {expiring.loading && <p className="muted">Loading…</p>}
-      {expiring.error && <p className="error" role="alert" data-testid="admin-error">{expiring.error}</p>}
+      {expiring.error && <ErrorBanner message={expiring.error} testId="admin-error" />}
       {expiring.data && expiring.data.length === 0 && (
         <p className="muted" data-testid="nothing-expiring">Nothing lapses in that time.</p>
       )}

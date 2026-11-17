@@ -28,6 +28,7 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 export interface Refusal {
@@ -46,13 +47,11 @@ function today(): string {
 
 /** A refusal, named by its code so the fix can be looked up. */
 @Component({
+  imports: [ErrorBanner],
   selector: 'app-refusal',
   template: `
     @if (refusal(); as r) {
-      <p class="error" role="alert" [attr.data-testid]="testId()">
-        @if (r.code) { <code data-testid="refusal-code">{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" [testId]="testId()" codeTestId="refusal-code" />
     }
   `,
 })
@@ -115,7 +114,7 @@ function blankSlab(): SlabDraft {
   template: `
     <section data-testid="tariffs">
       <h2>Rate cards</h2>
-      <form class="card" (ngSubmit)="publish()" data-testid="publish-tariff">
+      <form ngNativeValidate class="card" (ngSubmit)="publish()" data-testid="publish-tariff">
         <label>Code <input name="code" [value]="draft().code" (input)="set('code', $any($event.target).value)" required /></label>
         <label>Vendor
           <input name="vendor" list="commercial-vendors" [value]="draft().vendorPartnerId"
@@ -167,7 +166,7 @@ function blankSlab(): SlabDraft {
           } @else {
             <app-commercial-table [rows]="slabs()" [columns]="slabColumns" rowTestId="slab-row" />
           }
-          <form class="inline" (ngSubmit)="addSlab()" data-testid="add-slab">
+          <form ngNativeValidate class="inline" (ngSubmit)="addSlab()" data-testid="add-slab">
             <input name="minWeightKg" aria-label="From kg" placeholder="From kg" inputmode="decimal"
                    [value]="slab().minWeightKg" (input)="setSlab('minWeightKg', $any($event.target).value)" required />
             <input name="maxWeightKg" aria-label="To kg" placeholder="To kg (blank: no limit)" inputmode="decimal"
@@ -185,7 +184,7 @@ function blankSlab(): SlabDraft {
       }
 
       <h3>Fuel surcharge</h3>
-      <form class="inline" (ngSubmit)="fuel()" data-testid="fuel-surcharge">
+      <form ngNativeValidate class="inline" (ngSubmit)="fuel()" data-testid="fuel-surcharge">
         <input name="fuelMonth" type="month" aria-label="Month" [value]="fuelMonth()"
                (input)="fuelMonth.set($any($event.target).value)" required />
         <input name="fuelPct" aria-label="Surcharge %" placeholder="Surcharge %" inputmode="decimal"
@@ -277,7 +276,7 @@ export class TariffsPanel {
     <section data-testid="guides">
       <h2>Routing guides</h2>
       @if (manage()) {
-        <form class="inline" (ngSubmit)="define()" data-testid="define-guide">
+        <form ngNativeValidate class="inline" (ngSubmit)="define()" data-testid="define-guide">
           <input name="guideOrigin" aria-label="Guide origin" placeholder="Origin" list="commercial-terminals"
                  [value]="guide().originTerminalId" (input)="setGuide('originTerminalId', $any($event.target).value)" required />
           <input name="guideDestination" aria-label="Guide destination" placeholder="Destination" list="commercial-terminals"
@@ -292,7 +291,7 @@ export class TariffsPanel {
         </form>
         <app-refusal [refusal]="defineRefusal()" testId="guide-refusal" />
       }
-      <form class="inline" (ngSubmit)="open(typed())" data-testid="open-guide">
+      <form ngNativeValidate class="inline" (ngSubmit)="open(typed())" data-testid="open-guide">
         <app-entity-picker [kind]="'routing-guide'" ariaLabel="Guide id" placeholder="Guide (lane or vehicle type)"
                            [required]="true" [(value)]="typed" />
         <button type="submit">Open</button>
@@ -306,7 +305,7 @@ export class TariffsPanel {
             <app-status-badge data-testid="guide-state" [value]="d.guide['active'] ? 'ACTIVE' : 'RETIRED'" /></p>
           <app-guide-vendors [guideId]="guideId()" [manage]="manage()" [tick]="tick()" />
           @if (manage() && d.guide['active']) {
-            <form class="inline" (ngSubmit)="addVendor()" data-testid="add-vendor">
+            <form ngNativeValidate class="inline" (ngSubmit)="addVendor()" data-testid="add-vendor">
               <app-entity-picker [kind]="'vendor'" ariaLabel="Vendor" placeholder="Vendor" [required]="true"
                                  [(value)]="vendorId" />
               <input name="rankNo" aria-label="Rank" placeholder="Rank" inputmode="numeric"
@@ -413,19 +412,19 @@ export class GuidesPanel {
     <section data-testid="allocations">
       <h2>Allocations</h2>
       @if (act()) {
-        <form class="inline" (ngSubmit)="allocate()" data-testid="allocate-load">
+        <form ngNativeValidate class="inline" (ngSubmit)="allocate()" data-testid="allocate-load">
           <app-entity-picker [kind]="'load'" ariaLabel="Load id to allocate" placeholder="Load" [required]="true"
                              [(value)]="loadId" />
           <button type="submit">Allocate load</button>
         </form>
         <app-refusal [refusal]="allocateRefusal()" testId="allocate-refusal" />
       }
-      <form class="inline" (ngSubmit)="refresh()" data-testid="allocation-filter">
+      <form ngNativeValidate class="inline" (ngSubmit)="refresh()" data-testid="allocation-filter">
         <input name="allocationStatus" aria-label="Status" placeholder="Status (blank: all)" [value]="status()"
                (input)="status.set($any($event.target).value)" />
         <button type="submit">List</button>
       </form>
-      <form class="inline" (ngSubmit)="open(typed().trim())" data-testid="open-allocation">
+      <form ngNativeValidate class="inline" (ngSubmit)="open(typed().trim())" data-testid="open-allocation">
         <app-entity-picker [kind]="'allocation'" ariaLabel="Allocation id" placeholder="Allocation (load no)"
                            [required]="true" [(value)]="typed" />
         <button type="submit">Open</button>
@@ -576,12 +575,12 @@ export class AllocationsPanel implements OnInit {
   template: `
     <section data-testid="freight-bills">
       <h2>Freight bills</h2>
-      <form class="inline" (ngSubmit)="refresh()" data-testid="bill-filter">
+      <form ngNativeValidate class="inline" (ngSubmit)="refresh()" data-testid="bill-filter">
         <input name="billStatus" aria-label="Bill status" placeholder="Status (blank: all)" [value]="status()"
                (input)="status.set($any($event.target).value)" />
         <button type="submit">List</button>
       </form>
-      <form class="inline" (ngSubmit)="open(typed())" data-testid="open-bill">
+      <form ngNativeValidate class="inline" (ngSubmit)="open(typed())" data-testid="open-bill">
         <app-entity-picker [kind]="'bill'" ariaLabel="Bill id" placeholder="Bill" [required]="true" [(value)]="typed" />
         <button type="submit">Open</button>
       </form>
@@ -648,14 +647,14 @@ export class AllocationsPanel implements OnInit {
           }
           @if (approve()) {
             @if (d.bill['status'] === 'DRAFT') {
-              <form class="inline" (ngSubmit)="match()" data-testid="match-bill">
+              <form ngNativeValidate class="inline" (ngSubmit)="match()" data-testid="match-bill">
                 <input name="claimedAmount" aria-label="Vendor's claimed amount" placeholder="Claimed amount" inputmode="decimal"
                        [value]="claimed()" (input)="claimed.set($any($event.target).value)" required />
                 <button type="submit">Match claim</button>
               </form>
             }
             @if (d.bill['status'] === 'DISPUTED') {
-              <form class="inline" (ngSubmit)="resolve()" data-testid="resolve-bill">
+              <form ngNativeValidate class="inline" (ngSubmit)="resolve()" data-testid="resolve-bill">
                 <input name="reason" aria-label="Reason for settling" placeholder="Reason" [value]="reason()"
                        (input)="reason.set($any($event.target).value)" required />
                 <button type="submit">Settle in the vendor's favour</button>
@@ -663,7 +662,7 @@ export class AllocationsPanel implements OnInit {
             }
           }
           @if (release() && d.bill['awaitingProof']) {
-            <form class="inline" (ngSubmit)="releaseHold()" data-testid="release-proof-hold">
+            <form ngNativeValidate class="inline" (ngSubmit)="releaseHold()" data-testid="release-proof-hold">
               <input name="releaseReason" aria-label="Reason for releasing the proof hold"
                      placeholder="Why it may be paid without clean proofs" [value]="releaseReason()"
                      (input)="releaseReason.set($any($event.target).value)" required />
@@ -805,14 +804,14 @@ const RATE_CARD_STATES: Array<[TariffFilter['state'], string]> = [
   template: `
     <section data-testid="rate-cards">
       <h2>Published rate cards</h2>
-      <form class="inline" (ngSubmit)="refresh()" data-testid="rate-card-filter">
+      <form ngNativeValidate class="inline" (ngSubmit)="refresh()" data-testid="rate-card-filter">
         <app-entity-picker [kind]="'vendor'" ariaLabel="Vendor filter" placeholder="Vendor (blank: all)" [(value)]="vendor" />
         <select name="rateCardState" aria-label="Versions" [value]="state()" (change)="state.set($any($event.target).value)">
           @for (s of states; track s[0]) { <option [value]="s[0]">{{ s[1] }}</option> }
         </select>
         <button type="submit">List</button>
       </form>
-      <form class="inline" (ngSubmit)="open(typed())" data-testid="open-rate-card">
+      <form ngNativeValidate class="inline" (ngSubmit)="open(typed())" data-testid="open-rate-card">
         <input name="rateCardId" aria-label="Rate card id" placeholder="Rate card id" [value]="typed()"
                (input)="typed.set($any($event.target).value)" required />
         <button type="submit">Open</button>
@@ -942,7 +941,7 @@ function blankRailTariff(): RailTariffDraft {
     <section data-testid="rail-tariffs">
       <h2>Rail rate cards</h2>
       @if (manage()) {
-        <form class="card" (ngSubmit)="publish()" data-testid="publish-rail-tariff">
+        <form ngNativeValidate class="card" (ngSubmit)="publish()" data-testid="publish-rail-tariff">
           <label>Code <input name="railCode" [value]="draft().code" (input)="set('code', $any($event.target).value)" required /></label>
           <label>Rail carrier
             <input name="railCarrier" list="commercial-vendors" [value]="draft().carrierPartnerId"

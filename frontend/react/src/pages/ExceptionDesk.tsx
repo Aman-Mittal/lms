@@ -24,6 +24,7 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 // The map is Leaflet, the console's largest dependency: loaded only when the fleet is shown.
 const MapView = lazy(() => import('./MapView').then((m) => ({ default: m.MapView })));
@@ -43,9 +44,7 @@ function RefusalNote({ refusal }: { refusal: Refusal | null }) {
     return null;
   }
   return (
-    <p className="error" role="alert">
-      {refusal.code && <code data-testid="exception-refusal">{refusal.code}</code>} {refusal.message}
-    </p>
+    <ErrorBanner message={refusal.message} code={refusal.code} codeTestId="exception-refusal" />
   );
 }
 
@@ -149,7 +148,7 @@ function TicketList({ onOpen, reload }: { onOpen: (id: string) => void; reload: 
           </select>
         </label>
       </div>
-      {tickets.error && <p className="error" role="alert">{tickets.error}</p>}
+      {tickets.error && <ErrorBanner message={tickets.error} />}
       {tickets.data && tickets.data.length === 0 ? (
         <p className="muted" data-testid="no-tickets">No ticket matches.</p>
       ) : (
@@ -254,7 +253,7 @@ function TicketPanel({ ticketId, onChanged, onClose, onTrip }: TicketPanelProps)
   }
 
   if (ticket.error) {
-    return <p className="error" role="alert">{ticket.error}</p>;
+    return <ErrorBanner message={ticket.error} />;
   }
   if (!ticket.data) {
     return null;
@@ -333,7 +332,7 @@ function TicketPanel({ ticketId, onChanged, onClose, onTrip }: TicketPanelProps)
       )}
 
       <h4>History</h4>
-      {history.error && <p className="error" role="alert">{history.error}</p>}
+      {history.error && <ErrorBanner message={history.error} />}
       <Table rows={history.data ?? []} rowTestId="history-row" columns={[
         ['occurredAt', 'When'], ['action', 'Step'], ['fromStatus', 'From'], ['toStatus', 'To'], ['actor', 'By'],
         ['note', 'Note'],
@@ -382,7 +381,7 @@ function DetectorSettings() {
   return (
     <section data-testid="detector-settings">
       <h2>Detectors</h2>
-      {settings.error && <p className="error" role="alert">{settings.error}</p>}
+      {settings.error && <ErrorBanner message={settings.error} />}
       {settings.data && (
         <dl className="facts">
           <div><dt>ETA slip allowed</dt><dd data-testid="eta-slip">{settings.data.etaSlipMinutes} min</dd></div>
@@ -456,7 +455,7 @@ function TripPanel({ tripId }: { tripId: string }) {
   const progress = activity.data?.progress;
   return (
     <section data-testid="trip-panel" aria-label="Trip">
-      {activity.error && <p className="error" role="alert">{activity.error}</p>}
+      {activity.error && <ErrorBanner message={activity.error} />}
       {activity.data && !progress?.lastFixAt && (
         <p className="muted" data-testid="no-progress">No position has been reported for this trip yet.</p>
       )}
@@ -478,7 +477,7 @@ function TripPanel({ tripId }: { tripId: string }) {
       )}
 
       <h3>Watch</h3>
-      {watch.error && <p className="error" role="alert">{watch.error}</p>}
+      {watch.error && <ErrorBanner message={watch.error} />}
       {watch.data === null && !watch.loading && !watch.error && (
         <p className="muted" data-testid="no-watch">This trip is not watched.</p>
       )}
@@ -530,7 +529,7 @@ function Fleet({ onTrip }: { onTrip: (tripId: string) => void }) {
       <h2>Fleet</h2>
       <p><button className="link" data-testid="fleet-reload" onClick={() => setVersion((n) => n + 1)}>Refresh</button></p>
       <h3>Off route</h3>
-      {deviations.error && <p className="error" role="alert">{deviations.error}</p>}
+      {deviations.error && <ErrorBanner message={deviations.error} />}
       {deviations.data && deviations.data.length === 0 ? (
         <p className="muted" data-testid="no-deviations">No trip is off its route.</p>
       ) : (
@@ -549,7 +548,7 @@ function Fleet({ onTrip }: { onTrip: (tripId: string) => void }) {
         </table></div>
       )}
       <h3>Positions</h3>
-      {positions.error && <p className="error" role="alert">{positions.error}</p>}
+      {positions.error && <ErrorBanner message={positions.error} />}
       {positions.data && (
         <>
           <p className="muted" data-testid="position-count">{positions.data.rows.length} vehicles reporting</p>

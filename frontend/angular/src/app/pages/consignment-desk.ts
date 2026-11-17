@@ -22,6 +22,7 @@ import { compareWithWhole, PlannedPart, splitByCapacity } from './split-plan';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Quantity } from './figures';
+import { ErrorBanner } from './error-banner';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -34,16 +35,16 @@ import { Quantity } from './figures';
  */
 @Component({
   selector: 'app-consignment-desk',
-  imports: [FormsModule, Qr, PageHeader, StatusBadge, Quantity],
+  imports: [ErrorBanner, FormsModule, Qr, PageHeader, StatusBadge, Quantity],
   template: `
     <app-page-header title="Consignments" />
     <p class="muted">Look a consignment up by its lorry receipt or docket number.</p>
-    <form class="inline" (ngSubmit)="lookUp()" data-testid="consignment-lookup">
+    <form ngNativeValidate class="inline" (ngSubmit)="lookUp()" data-testid="consignment-lookup">
       <input name="reference" placeholder="Reference" aria-label="Reference" data-testid="consignment-ref"
              [value]="typed()" (input)="typed.set($any($event.target).value)" required />
       <button type="submit">Look up</button>
     </form>
-    @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
+    @if (loadError()) { <app-error-banner [message]="loadError()" /> }
     @if (card(); as c) {
       <section data-testid="consignment">
         <h2>{{ c.trackingRef }}</h2>
@@ -73,7 +74,7 @@ import { Quantity } from './figures';
           <section data-testid="particulars-form">
             <h3>Particulars</h3>
             <p class="muted">What it carries is fixed; who to call, the references, the delivery window and remarks can be corrected until it is on a load. Times are ISO-8601, such as 2026-12-01T06:00:00Z.</p>
-            <form (ngSubmit)="saveParticulars()">
+            <form ngNativeValidate (ngSubmit)="saveParticulars()">
               @for (f of particularFields; track f.key) {
                 <label>{{ f.label }}
                   <input [name]="f.key" [attr.data-testid]="'particular-' + f.key" [attr.aria-label]="f.label"
@@ -83,9 +84,7 @@ import { Quantity } from './figures';
               <button type="submit" data-testid="save-particulars" [disabled]="busy()">Save particulars</button>
             </form>
             @if (particularsRefusal(); as r) {
-              <p class="error" role="alert" data-testid="particulars-error">
-                @if (r.code) { <code data-testid="particulars-refusal">{{ r.code }}</code> } {{ r.message }}
-              </p>
+              <app-error-banner [message]="r.message" [code]="r.code" testId="particulars-error" codeTestId="particulars-refusal" />
             }
           </section>
         }
@@ -94,7 +93,7 @@ import { Quantity } from './figures';
           <section data-testid="cancel-form">
             <h3>Cancel this consignment</h3>
             <p class="muted">Takes it off its load first; its order lines go back to be planned again.</p>
-            <form class="inline" (ngSubmit)="cancelConsignment()">
+            <form ngNativeValidate class="inline" (ngSubmit)="cancelConsignment()">
               <input name="reason" placeholder="Reason" aria-label="Reason for cancelling" data-testid="cancel-reason"
                      [value]="reason()" (input)="reason.set($any($event.target).value)" />
               <button type="submit" data-testid="cancel-consignment" [disabled]="busy()">Cancel consignment</button>
@@ -102,9 +101,7 @@ import { Quantity } from './figures';
           </section>
         }
         @if (cancelRefusal(); as r) {
-          <p class="error" role="alert" data-testid="cancel-error">
-            @if (r.code) { <code data-testid="cancel-refusal">{{ r.code }}</code> } {{ r.message }}
-          </p>
+          <app-error-banner [message]="r.message" [code]="r.code" testId="cancel-error" codeTestId="cancel-refusal" />
         }
 
         @if (c.status === 'SPLIT' && c.partCount !== null) {
@@ -115,7 +112,7 @@ import { Quantity } from './figures';
             </p>
             <progress [max]="c.partCount" [value]="c.partsDelivered ?? 0" aria-label="Parts delivered"></progress>
           </div>
-          @if (partsError()) { <p class="error" role="alert">{{ partsError() }}</p> }
+          @if (partsError()) { <app-error-banner [message]="partsError()" /> }
           @if (parts().length) {
             <div class="table-wrap"><table data-testid="parts">
               <thead><tr><th>Part</th><th>Status</th><th>Weight kg</th><th>Load</th></tr></thead>
@@ -135,13 +132,13 @@ import { Quantity } from './figures';
           <section data-testid="split-form">
             <h3>Split across vehicles</h3>
             <p class="muted">Too big for one vehicle? Plan equal parts that each fit one, adjust them if you need to, then split.</p>
-            <form class="inline" (ngSubmit)="plan()">
+            <form ngNativeValidate class="inline" (ngSubmit)="plan()">
               <input name="capacity" placeholder="Vehicle capacity kg" aria-label="Vehicle capacity kg"
                      data-testid="split-capacity" inputmode="decimal" required
                      [value]="capacity()" (input)="capacity.set($any($event.target).value)" />
               <button type="submit" data-testid="plan-parts">Plan parts</button>
             </form>
-            @if (splitError()) { <p class="error" role="alert">{{ splitError() }}</p> }
+            @if (splitError()) { <app-error-banner [message]="splitError()" /> }
             @if (planned().length) {
               <div class="table-wrap"><table data-testid="planned-parts">
                 <thead><tr><th>Part</th><th>Weight kg</th><th>Volume m³</th></tr></thead>

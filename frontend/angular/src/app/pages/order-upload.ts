@@ -22,6 +22,7 @@ import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
+import { ErrorBanner } from './error-banner';
 
 /**
  * Orders from a spreadsheet: choose a customer and a CSV or XLSX file, and see what became of every row.
@@ -30,7 +31,7 @@ import { StatusBadge } from './status-badge';
  */
 @Component({
   selector: 'app-order-upload',
-  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge],
+  imports: [ErrorBanner, FormsModule, EntityPicker, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Bulk order upload" />
     <p class="muted">
@@ -38,14 +39,14 @@ import { StatusBadge } from './status-badge';
       order_ref, origin, destination, pickup_date, delivery_date, load_type, material_code, material, quantity,
       uom, weight_kg and consignee.
     </p>
-    <form class="inline" (ngSubmit)="send()" data-testid="upload-form">
+    <form ngNativeValidate class="inline" (ngSubmit)="send()" data-testid="upload-form">
       <app-entity-picker [kind]="'customer'" placeholder="Customer" ariaLabel="Customer of the file" testId="upload-customer"
                          [(value)]="customer" [required]="true" />
       <input type="file" name="file" accept=".csv,.xlsx" aria-label="Order file" data-testid="upload-file"
              (change)="choose($any($event.target).files)" />
       <button type="submit" data-testid="upload-submit" [disabled]="busy()">Upload</button>
     </form>
-    @if (error()) { <p class="error" role="alert" data-testid="upload-error">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" testId="upload-error" /> }
     @if (outcome(); as o) {
       <p role="status" data-testid="upload-summary">
         <span data-testid="upload-created">{{ o.created }}</span> created,

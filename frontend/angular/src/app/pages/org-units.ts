@@ -22,6 +22,7 @@ import { ConfigActions } from './config-actions';
 import { STALE_MESSAGE } from './master-data-form';
 import { PageHeader } from './page-header';
 import { StatusFilter } from './status-filter';
+import { ErrorBanner } from './error-banner';
 
 /** What the form beneath the tree is doing: adding a child, editing a unit, or nothing. */
 type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 'edit'; unit: OrgUnitView };
@@ -36,13 +37,13 @@ type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 
  */
 @Component({
   selector: 'app-org-units',
-  imports: [FormsModule, ConfigActions, PageHeader, StatusFilter],
+  imports: [ErrorBanner, FormsModule, ConfigActions, PageHeader, StatusFilter],
   template: `
     <app-page-header title="Organisation units" />
     <p class="muted">Levels run head office, line of business, country, zone (or region), branch, hub; a unit sits
       below its parent's level. A country carries its ISO code and a zone, branch or hub may carry a state code:
       platform rules for that country and state then apply to everything beneath.</p>
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
     <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
 
@@ -75,7 +76,7 @@ type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 
     @if (mode().kind !== 'none') {
       <section class="panel in-flow" data-testid="unit-panel">
         <header><h2>{{ heading() }}</h2></header>
-        <form class="inline" (ngSubmit)="save()" data-testid="unit-form">
+        <form ngNativeValidate class="inline" (ngSubmit)="save()" data-testid="unit-form">
           @if (mode().kind === 'child') {
             <input name="slug" aria-label="Slug" placeholder="slug" data-testid="unit-slug" [(ngModel)]="slug" required />
           }

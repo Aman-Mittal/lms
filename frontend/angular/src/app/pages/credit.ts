@@ -24,6 +24,7 @@ import { RowColumn, RowTable } from './row-table';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
+import { ErrorBanner } from './error-banner';
 
 /** The problem a hard credit limit refuses an action with. */
 export const CREDIT_LIMIT_EXCEEDED = 'credit-limit-exceeded';
@@ -41,11 +42,11 @@ function amountOrAbsent(value: string): number | undefined {
  */
 @Component({
   selector: 'app-credit-position',
-  imports: [StatusBadge, Money],
+  imports: [ErrorBanner, StatusBadge, Money],
   template: `
     <section class="credit" data-testid="credit-position" aria-label="Credit position">
       <h3>Credit position</h3>
-      @if (error()) { <p class="error" role="alert" data-testid="credit-position-error">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" testId="credit-position-error" /> }
       @if (position(); as p) {
         <dl>
           <div><dt>Customer</dt><dd data-testid="credit-partner">{{ p.partnerCode }} · {{ p.partnerStatus }}</dd></div>
@@ -118,6 +119,7 @@ export class CreditPositionPanel {
  * on record, so the desk can try the refused action again.
  */
 @Component({
+  imports: [ErrorBanner],
   selector: 'app-credit-override',
   template: `
     <section class="credit" data-testid="credit-refusal">
@@ -125,17 +127,14 @@ export class CreditPositionPanel {
         Exposure {{ errors()['exposure'] || '?' }} against a credit limit of {{ errors()['creditLimit'] || '?' }}.
       </p>
       @if (session.can('CREDIT_OVERRIDE')) {
-        <form class="inline" data-testid="credit-override" (submit)="grant($event)">
+        <form ngNativeValidate class="inline" data-testid="credit-override" (submit)="grant($event)">
           <input aria-label="Override reason" placeholder="Why it may go through" [value]="reason()"
                  (input)="reason.set($any($event.target).value)" required />
           <input aria-label="Override up to" placeholder="Exposure allowed" inputmode="decimal" [value]="upTo()"
                  (input)="upTo.set($any($event.target).value)" required />
           <button type="submit" data-testid="credit-override-submit">Override and retry</button>
           @if (failure()) {
-            <span class="error" role="alert" data-testid="credit-override-error">
-              @if (failureCode()) { <code>{{ failureCode() }}</code> }
-              {{ failure() }}
-            </span>
+            <app-error-banner [message]="failure()" [code]="failureCode()" testId="credit-override-error" />
           }
         </form>
       } @else {
@@ -199,21 +198,18 @@ const CHANGE_COLUMNS: RowColumn[] = [
  */
 @Component({
   selector: 'app-credit-limits',
-  imports: [EntityPicker, RowTable, CreditPositionPanel, PageHeader, Money, StatusBadge],
+  imports: [ErrorBanner, EntityPicker, RowTable, CreditPositionPanel, PageHeader, Money, StatusBadge],
   template: `
     <app-page-header title="Credit limits" />
     <p class="muted">
       A new credit limit applies only once someone other than the person who asked for it approves it.
     </p>
     @if (refusal(); as r) {
-      <p class="error" role="alert" data-testid="credit-admin-error">
-        @if (r.code) { <code data-testid="credit-admin-refusal">{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" testId="credit-admin-error" codeTestId="credit-admin-refusal" />
     }
     @if (message()) { <p class="ok" role="status" data-testid="credit-admin-message">{{ message() }}</p> }
 
-    <form class="inline" data-testid="credit-partner-form" (submit)="pickPartner($event)">
+    <form ngNativeValidate class="inline" data-testid="credit-partner-form" (submit)="pickPartner($event)">
       <app-entity-picker [kind]="'customer'" placeholder="Customer" ariaLabel="Credit customer id" testId="credit-customer"
                          [required]="true" [(value)]="typed" />
       <button type="submit">Open</button>
@@ -222,7 +218,7 @@ const CHANGE_COLUMNS: RowColumn[] = [
     @if (partnerId(); as id) {
       <app-credit-position [partnerId]="id" [refreshKey]="history()" />
       @if (session.can('CREDIT_LIMIT_REQUEST')) {
-        <form class="inline" data-testid="credit-change-request" (submit)="request($event, id)">
+        <form ngNativeValidate class="inline" data-testid="credit-change-request" (submit)="request($event, id)">
           <h2>Ask for a new limit</h2>
           <input aria-label="New credit limit" placeholder="Credit limit" inputmode="decimal" [value]="limit()"
                  (input)="limit.set($any($event.target).value)" required />

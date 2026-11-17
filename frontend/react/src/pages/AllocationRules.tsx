@@ -27,6 +27,8 @@ import { CONFLICT_TEXT } from './MasterDataForm';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { StatusFilter } from './StatusFilter';
+import { ErrorBanner } from './ErrorBanner';
+import { EmptyState, LoadingState } from './EmptyState';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 export function AllocationRules() {
@@ -43,9 +45,11 @@ export function AllocationRules() {
   const rules = useLoad(() => gateway.allocationRules(status), `${reload}:${status}`);
   // The pickers' choices change rarely; they are loaded once for the screen.
   const choices = useLoad(
-    () => (can('ALLOCATION_RULE_MANAGE')
-      ? Promise.all([gateway.terminalChoices(), gateway.activeVendors()])
-      : Promise.resolve([[], []] as Choice[][])),
+    // Terminals are named for everyone who reads rules, so no condition falls back on a raw id.
+    () => Promise.all([
+      gateway.terminalChoices().catch(() => [] as Choice[]),
+      can('ALLOCATION_RULE_MANAGE') ? gateway.activeVendors() : Promise.resolve([] as Choice[]),
+    ]),
     'once',
   );
   const terminals = choices.data?.[0] ?? [];
@@ -68,10 +72,10 @@ export function AllocationRules() {
         first, in order; EXCLUDE never asks them. A rule is deactivated, never deleted.
       </p>
       <StatusFilter value={status} onChange={setStatus} />
-      {rules.error && <p className="error" role="alert">{rules.error}</p>}
+      {rules.error && <ErrorBanner message={rules.error} />}
       {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
-      {rules.loading ? <p className="muted">Loading…</p> : (rules.data ?? []).length === 0 ? (
-        <p className="muted" data-testid="no-rules">No rules yet: loads are offered by the routing guide alone.</p>
+      {rules.loading ? <LoadingState /> : (rules.data ?? []).length === 0 ? (
+        <EmptyState testId="no-rules" message="No rules yet: loads are offered by the routing guide alone." />
       ) : (
         <div className="table-wrap"><table data-testid="rules-table">
           <thead>
@@ -115,7 +119,7 @@ export function AllocationRules() {
 
 /** The rule's conditions in words; "Every load" when it has none. */
 function conditions(rule: AllocationRuleView, terminals: Choice[]): string {
-  const name = (id: string) => terminals.find((t) => t.id === id)?.label ?? id;
+  const name = (id: string) => terminals.find((t) => t.id === id)?.label ?? 'a terminal no longer listed';
   const parts: string[] = [];
   if (rule.originTerminalId) parts.push(`from ${name(rule.originTerminalId)}`);
   if (rule.destinationTerminalId) parts.push(`to ${name(rule.destinationTerminalId)}`);
@@ -241,7 +245,7 @@ function RuleForm({ editing, terminals, vendors, onSaved, onStale, onCancel }: R
         </select>{' '}
         <button type="button" data-testid="rule-vendor-add" onClick={add} disabled={!pick}>Add</button>
       </div>
-      {error && <p className="error" role="alert" data-testid="rule-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="rule-error" />}
       <p className="actions">
         <button type="submit" data-testid="rule-save">{editing ? 'Save changes' : 'Save rule'}</button>
         {editing && <button type="button" className="link" onClick={onCancel}>Cancel</button>}
@@ -276,7 +280,7 @@ function DryRun() {
           value={loadId} onChange={setLoadId} required />
         <button type="submit" data-testid="dry-run-go">Evaluate</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {result && (
         <dl data-testid="dry-run-result">
           <div><dt>Load</dt><dd>{result.loadNo}</dd></div>
@@ -318,7 +322,7 @@ function AllocationLookUp() {
           value={id} onChange={setId} required />
         <button type="submit" data-testid="allocation-go">Look up</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {found && (
         <dl data-testid="allocation-result">
           <div><dt>Load</dt><dd>{found.loadNo}</dd></div>

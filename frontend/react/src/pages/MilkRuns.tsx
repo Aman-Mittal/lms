@@ -20,6 +20,7 @@ import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 /** Milk-run routes, one route's circuit on the map, and the runs generated from it. */
 export function MilkRuns() {
@@ -34,7 +35,7 @@ export function MilkRuns() {
       <PageHeader title="Milk runs" />
       <p className="muted">Scheduled pickup circuits: from the plant, round the suppliers in order, and back.</p>
       {list.loading && <p className="muted">Loading…</p>}
-      {list.error && <p className="error" role="alert">{list.error}</p>}
+      {list.error && <ErrorBanner message={list.error} />}
       {list.data && list.data.length === 0 && <p className="muted" data-testid="no-routes">No milk-run routes yet.</p>}
       {list.data && list.data.length > 0 && (
         <RowTable testId="routes" rows={list.data} picked={picked?.id}
@@ -44,7 +45,7 @@ export function MilkRuns() {
             { header: 'From', field: 'effectiveFrom' },
           ]} />
       )}
-      {detail.error && <p className="error" role="alert">{detail.error}</p>}
+      {detail.error && <ErrorBanner message={detail.error} />}
       {detail.data && (
         <section data-testid="route-detail">
           <h2>{detail.data.header.code} · {detail.data.header.name}</h2>

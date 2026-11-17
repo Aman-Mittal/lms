@@ -23,6 +23,7 @@ import { Session } from '../session';
 import { ConfigActions } from './config-actions';
 import { PageHeader } from './page-header';
 import { StatusFilter } from './status-filter';
+import { ErrorBanner } from './error-banner';
 
 const KIND_LABEL: Record<CustomFieldKind, string> = {
   PARTNER: 'Partners', VEHICLE: 'Vehicles', DRIVER: 'Drivers', TERMINAL: 'Terminals',
@@ -32,7 +33,7 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
 /** Settings: which custom fields exist on each kind of record. */
 @Component({
   selector: 'app-fields-settings',
-  imports: [FormsModule, ConfigActions, PageHeader, StatusFilter],
+  imports: [ErrorBanner, FormsModule, ConfigActions, PageHeader, StatusFilter],
   template: `
     <app-page-header title="Custom fields" />
     <p class="muted">Fields your company tracks on its own records. Deactivating a field keeps what was recorded under it.</p>
@@ -43,7 +44,7 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
       </select>
     </label>
     <app-status-filter [value]="status()" (valueChange)="status.set($event)" />
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (loading()) { <p>Loading…</p> }
     @else if (definitions().length === 0) {
       <p class="muted">No custom fields yet for {{ label(kind()).toLowerCase() }}.</p>
@@ -75,7 +76,7 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
 
     @if (manage) {
       <h2>Add a field</h2>
-      <form class="inline" (ngSubmit)="add()" data-testid="add-field">
+      <form ngNativeValidate class="inline" (ngSubmit)="add()" data-testid="add-field">
         <input name="key" placeholder="Key" aria-label="Key" [(ngModel)]="key" required />
         <input name="label" placeholder="Label" aria-label="Label" [(ngModel)]="fieldLabel" required />
         <select name="type" aria-label="Type" [(ngModel)]="type">
@@ -90,7 +91,7 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
         </label>
         <button type="submit">Add field</button>
       </form>
-      @if (addError()) { <p class="error" role="alert">{{ addError() }}</p> }
+      @if (addError()) { <app-error-banner [message]="addError()" /> }
     }
   `,
 })

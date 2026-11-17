@@ -22,6 +22,7 @@ import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /**
  * Events whose listener failed on every retry and were parked. An operator
@@ -30,11 +31,11 @@ import { When } from './when';
  */
 @Component({
   selector: 'app-parked-events',
-  imports: [FormsModule, RowTable, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, RowTable, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Parked events" />
     <p class="muted">Events whose listener kept failing after every retry. Replay one once its cause is fixed.</p>
-    <form class="inline" (ngSubmit)="load()" data-testid="parked-filter">
+    <form ngNativeValidate class="inline" (ngSubmit)="load()" data-testid="parked-filter">
       <select name="status" aria-label="Status" data-testid="parked-status" [(ngModel)]="filter.status">
         <option value="">Any status</option>
         @for (s of statuses; track s) { <option [value]="s">{{ s }}</option> }
@@ -46,7 +47,7 @@ import { When } from './when';
       <button type="submit">Filter</button>
     </form>
     @if (loading()) { <p class="muted">Loading…</p> }
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (!loading() && !error() && rows().length === 0) {
       <p class="muted" data-testid="no-parked">Nothing is parked that matches.</p>
     }
@@ -67,10 +68,10 @@ import { When } from './when';
         <p class="muted" data-testid="parked-error">{{ d.summary['lastError'] }}</p>
         <pre data-testid="parked-payload">{{ d.payload }}</pre>
         @if (outcome()) { <p data-testid="parked-outcome">{{ outcome() }}</p> }
-        @if (actionError()) { <p class="error" role="alert">{{ actionError() }}</p> }
+        @if (actionError()) { <app-error-banner [message]="actionError()" /> }
         @if (manage() && d.summary['status'] === 'PARKED') {
           <button type="button" data-testid="replay" (click)="replay(d.summary['id'])">Replay</button>
-          <form class="inline" (ngSubmit)="discard(d.summary['id'])" data-testid="discard-form">
+          <form ngNativeValidate class="inline" (ngSubmit)="discard(d.summary['id'])" data-testid="discard-form">
             <input name="reason" placeholder="Reason" aria-label="Reason to discard" data-testid="discard-reason"
                    [(ngModel)]="reason" required />
             <button type="submit" data-testid="discard">Discard</button>

@@ -21,6 +21,7 @@ import { ConfigActions } from './ConfigActions';
 import { CONFLICT_TEXT } from './MasterDataForm';
 import { PageHeader } from './PageHeader';
 import { StatusFilter } from './StatusFilter';
+import { ErrorBanner } from './ErrorBanner';
 
 /** What the form beneath the tree is doing: adding a child, editing a unit, or nothing. */
 type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 'edit'; unit: OrgUnitView };
@@ -137,7 +138,7 @@ export function OrgUnits() {
       <p className="muted">Levels run head office, line of business, country, zone (or region), branch, hub; a unit
         sits below its parent's level. A country carries its ISO code and a zone, branch or hub may carry a state
         code: platform rules for that country and state then apply to everything beneath.</p>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
       <StatusFilter value={status} onChange={setStatus} />
 

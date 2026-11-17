@@ -22,6 +22,7 @@ import { useLoad } from '../useLoad';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Quantity } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -67,7 +68,7 @@ export function LoadBuilding() {
           value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
-      {build.error && <p className="error" role="alert">{build.error}</p>}
+      {build.error && <ErrorBanner message={build.error} />}
       {/* Keyed by the load alone, and kept on screen while it refreshes: what was just
           added, and the queue it was picked from, outlive the reload that follows. */}
       {build.data && build.data.load.id === loadId && (
@@ -147,10 +148,7 @@ function LoadPanel({ load, aboard, onChanged }: LoadPanelProps) {
       )}
       {done && <p className="ok" role="status" data-testid="load-done">{done}</p>}
       {refusal && (
-        <p className="error" role="alert" data-testid="load-error">
-          {refusal.code && <><code data-testid="load-refusal">{refusal.code}</code>{' '}</>}
-          {refusal.message}
-        </p>
+        <ErrorBanner message={refusal.message} code={refusal.code} testId="load-error" codeTestId="load-refusal" />
       )}
       <p>
         <button type="button" className="link" data-testid="print-manifest" onClick={() => setManifest(true)}
@@ -302,7 +300,7 @@ function AddPanel({ loadId, onAdded }: { loadId: string; onAdded: () => void }) 
         <button type="submit">Find waiting consignments</button>
       </form>
       {added > 0 && <p className="ok" data-testid="bulk-added">Added {added} consignments to the load.</p>}
-      {error && <p className="error" role="alert" data-testid="bulk-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="bulk-error" />}
       {refusals.length > 0 && (
         <ul data-testid="bulk-refusals">
           {refusals.map(([ref, why]) => (

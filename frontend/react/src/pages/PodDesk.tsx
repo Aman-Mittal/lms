@@ -21,6 +21,8 @@ import {
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
+import { EntityPicker } from '../EntityPicker';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -192,11 +194,11 @@ export function PodDesk() {
       <PageHeader title="Proof of delivery desk" />
       <p className="muted">Start the proof, feed it line by line, list the documents and times, then submit it.</p>
       <form className="inline" onSubmit={lookUp} data-testid="pod-lookup">
-        <input name="consignment" placeholder="Consignment id" aria-label="Consignment id" data-testid="pod-consignment-id"
-          value={typed} onChange={(e) => setTyped(e.target.value)} required />
+        <EntityPicker kind="consignment" placeholder="Consignment id" ariaLabel="Consignment id" testId="pod-consignment-id"
+          value={typed} onChange={setTyped} required />
         <button type="submit">Look up</button>
       </form>
-      {error && <p className="error" role="alert" data-testid="pod-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="pod-error" />}
       {consignmentId && loaded && proof === null && (
         <>
           <p className="muted" data-testid="pod-none">No proof has been started for this consignment.</p>

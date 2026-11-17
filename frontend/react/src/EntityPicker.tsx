@@ -90,7 +90,8 @@ export function EntityPicker({
       setError('');
       setOpen(true);
     } catch (e) {
-      setError((e as Error).message);
+      // Opening an empty box only offers suggestions; its failure is not worth an alert.
+      if (q.trim() || cursor) { setError((e as Error).message); }
     }
   }
 

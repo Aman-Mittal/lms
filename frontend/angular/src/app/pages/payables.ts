@@ -23,6 +23,7 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 type Tab = 'invoices' | 'payments' | 'overdue';
 
@@ -41,7 +42,7 @@ function today(): string {
  */
 @Component({
   selector: 'app-payables',
-  imports: [ConfigActions, PageHeader, StatusBadge, Money, When],
+  imports: [ErrorBanner, ConfigActions, PageHeader, StatusBadge, Money, When],
   template: `
     <app-page-header title="Vendor payables" />
     <p class="muted">Vendor invoices, payments made and what is overdue.</p>
@@ -56,13 +57,10 @@ function today(): string {
 
     @if (tab() === 'invoices') {
       @if (refusal(); as r) {
-        <p class="error" role="alert" data-testid="inv-error">
-          @if (r.code) { <code>{{ r.code }}</code> }
-          {{ r.message }}
-        </p>
+        <app-error-banner [message]="r.message" [code]="r.code" testId="inv-error" />
       }
       @if (captured()) { <p class="ok" role="status" data-testid="inv-result">{{ captured() }}</p> }
-      <form data-testid="inv-form" (submit)="capture($event)">
+      <form ngNativeValidate data-testid="inv-form" (submit)="capture($event)">
         <h2>Capture an invoice</h2>
         <input placeholder="Freight bill numbers, comma separated" aria-label="Freight bills" data-testid="inv-bills"
                required [value]="bills()" (input)="bills.set(valueOf($event))" />
@@ -120,16 +118,13 @@ function today(): string {
             @for (p of detailPayments(); track p.id) { <li>{{ (p.paidOn) | when }} {{ p.amount }} {{ p.mode }} {{ p.reference }}</li> }
           </ul>
           @if (payRefusal(); as r) {
-            <p class="error" role="alert" data-testid="pay-error">
-              @if (r.code) { <code>{{ r.code }}</code> }
-              {{ r.message }}
-            </p>
+            <app-error-banner [message]="r.message" [code]="r.code" testId="pay-error" />
           }
           @if (d.voidReason) { <p class="muted" data-testid="detail-void-reason">Voided: {{ d.voidReason }}</p> }
           <app-config-actions kind="vendorInvoices" [recordId]="d.id" [active]="d.status === 'OPEN'" [label]="'invoice ' + d.invoiceNo"
                               [version]="d.version" (changed)="refresh(d.id)" />
           @if (d.status !== 'PAID' && d.status !== 'VOID') {
-            <form data-testid="pay-form" (submit)="pay($event, d.id)">
+            <form ngNativeValidate data-testid="pay-form" (submit)="pay($event, d.id)">
               <h3>Record a payment</h3>
               <input type="number" min="0" step="any" placeholder="Amount" aria-label="Payment amount" data-testid="pay-amount"
                      required [value]="payAmount()" (input)="payAmount.set(valueOf($event))" />
@@ -148,7 +143,7 @@ function today(): string {
     }
 
     @if (tab() === 'payments') {
-      @if (refusal(); as r) { <p class="error" role="alert">{{ r.message }}</p> }
+      @if (refusal(); as r) { <app-error-banner [message]="r.message" /> }
       @if (payments().length === 0) {
         <p class="muted" data-testid="payments-empty">No payments.</p>
       } @else {
@@ -168,7 +163,7 @@ function today(): string {
     }
 
     @if (tab() === 'overdue') {
-      @if (refusal(); as r) { <p class="error" role="alert">{{ r.message }}</p> }
+      @if (refusal(); as r) { <app-error-banner [message]="r.message" /> }
       @if (invoices().length === 0) {
         <p class="muted" data-testid="overdue-empty">Nothing is overdue.</p>
       } @else {

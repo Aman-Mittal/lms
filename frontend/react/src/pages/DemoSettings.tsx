@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import type { DemoResetOutcome } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * Puts the demo back to its seeded state.
@@ -63,7 +64,7 @@ export function DemoSettings() {
         Deletes everything in the demo -- orders, trips, partners, custom fields, users -- and seeds it
         again: one administrator with the same password. Anything you built here is lost.
       </p>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {step === 'idle' && (
         <p><button data-testid="demo-reset" onClick={() => setStep('confirming')}>
           Reset demo data

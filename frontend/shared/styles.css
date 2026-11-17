@@ -183,3 +183,41 @@ form.inline input, form.inline select { width:auto; margin:0; }
 label.filter { display:inline-flex; align-items:center; gap:var(--space-2); margin:var(--space-2) 0; }
 label.filter select { width:auto; margin:0; }
 /* end master-data CRUD (angular) */
+
+/* ---------------------------------------------------------------- forms and feedback (phase 3) */
+/* A label added above a field that had only a placeholder; the placeholder stays as the hint inside it. */
+.field-label { display:block; margin:var(--space-3) 0 var(--space-1); font-size:var(--text-sm); font-weight:var(--weight-semibold); color:var(--ink); }
+.field-label[data-required]::after { content:" *"; color:var(--err); }
+.field-help { display:block; margin:var(--space-1) 0 var(--space-2); font-size:var(--text-xs); }
+[aria-invalid=true]:where(input, select, textarea) { border-color:var(--err); }
+/* In a row of fields the label sits right before its field, because the row is one line. */
+form.inline > .field-label, .filter-bar > .field-label { margin:0; white-space:nowrap; color:var(--muted); }
+form.inline > .field-help { display:inline; margin:0; max-width:16rem; }
+.picker + .field-help, .field-label + .picker { margin-top:0; }
+button[aria-busy=true] { cursor:progress; }
+
+/* Error banner: the plain sentence first, the server's own words under it, the code in small print for support. */
+.banner { display:flex; align-items:flex-start; gap:var(--space-3); margin:var(--space-3) 0; padding:var(--space-3) var(--space-4); border:1px solid var(--tone-danger-line); border-left-width:4px; border-radius:var(--radius-md); background:var(--tone-danger-bg); color:var(--tone-danger-ink); }
+.banner .icon { margin-top:.1rem; }
+.banner__body { min-width:0; flex:1; }
+.banner__headline { margin:0; font-weight:var(--weight-semibold); }
+.banner__detail { margin:var(--space-1) 0 0; }
+.banner__code { margin:var(--space-1) 0 0; font-size:var(--text-xs); opacity:.85; }
+.banner__code code { font-size:inherit; }
+
+/* Empty and loading states: one look for "nothing here" and "working on it". */
+.empty-state, .loading-state { display:flex; flex-direction:column; align-items:center; gap:var(--space-2); margin:var(--space-4) 0; padding:var(--space-6) var(--space-4); border:1px dashed var(--line); border-radius:var(--radius-lg); color:var(--muted); text-align:center; }
+.empty-state .icon { width:1.75rem; height:1.75rem; }
+.empty-state p, .loading-state p { margin:0; }
+.loading-state { border-style:solid; flex-direction:row; justify-content:center; }
+.loading-state::before { content:""; width:1em; height:1em; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .loading-state::before { animation:none; } }
+
+/* Toast: a short confirmation after a save. It is a polite live region, not an alert, so it never interrupts. */
+.toasts { position:fixed; z-index:60; right:var(--space-4); bottom:var(--space-4); display:flex; flex-direction:column; gap:var(--space-2); max-width:min(24rem, calc(100vw - 2 * var(--space-4))); pointer-events:none; }
+.toast { display:flex; align-items:flex-start; gap:var(--space-2); padding:var(--space-3) var(--space-4); border:1px solid var(--tone-success-line); border-radius:var(--radius-md); background:var(--tone-success-bg); color:var(--tone-success-ink); box-shadow:var(--shadow-md); pointer-events:auto; animation:toast-in .18s ease-out; }
+.toast span { flex:1; }
+.toast button { padding:0 var(--space-1); background:none; color:inherit; line-height:1; }
+.toast button:hover:not(:disabled) { background:none; opacity:.7; }
+@keyframes toast-in { from { opacity:0; transform:translateY(.5rem); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation:none; } }

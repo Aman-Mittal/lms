@@ -24,6 +24,7 @@ import { STALE_MESSAGE } from './master-data-form';
 import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
 import { StatusFilter } from './status-filter';
+import { ErrorBanner } from './error-banner';
 
 /** A subscription as a table row. */
 function rowOf(w: WebhookView): Row {
@@ -47,7 +48,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-webhooks',
-  imports: [ConfigActions, RowTable, PageHeader, StatusFilter],
+  imports: [ErrorBanner, ConfigActions, RowTable, PageHeader, StatusFilter],
   template: `
     <app-page-header title="Webhooks" />
     <p class="muted">Addresses your systems listen on, told about orders, trips, deliveries and claims as they happen.</p>
@@ -62,7 +63,7 @@ function valueOf(event: Event): string {
     }
     <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
     @if (loading()) { <p class="muted">Loading…</p> }
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (!loading() && !error() && hooks().length === 0) {
       <p class="muted" data-testid="no-webhooks">No subscriptions yet.</p>
     }
@@ -72,7 +73,7 @@ function valueOf(event: Event): string {
     }
 
     @if (manage() && !current()) {
-      <form (submit)="subscribe($event)" data-testid="subscribe-form">
+      <form ngNativeValidate (submit)="subscribe($event)" data-testid="subscribe-form">
         <h2>Subscribe an address</h2>
         <input placeholder="Name" aria-label="Name" data-testid="webhook-name" required
                [value]="name()" (input)="name.set(valueOf($event))" />
@@ -88,7 +89,7 @@ function valueOf(event: Event): string {
             </label>
           }
         </fieldset>
-        @if (formError()) { <p class="error" role="alert">{{ formError() }}</p> }
+        @if (formError()) { <app-error-banner [message]="formError()" /> }
         <button type="submit" data-testid="subscribe">Subscribe</button>
       </form>
     }
@@ -102,7 +103,7 @@ function valueOf(event: Event): string {
                             (changed)="load()" />
         @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
         @if (manage()) {
-          <form (submit)="save($event, w.id)" data-testid="revise-form">
+          <form ngNativeValidate (submit)="save($event, w.id)" data-testid="revise-form">
             <input aria-label="Name" data-testid="edit-name" required [value]="name()" (input)="name.set(valueOf($event))" />
             <input aria-label="Address" data-testid="edit-url" required [value]="url()" (input)="url.set(valueOf($event))" />
             <fieldset data-testid="event-types">
@@ -127,12 +128,12 @@ function valueOf(event: Event): string {
           </dl>
         }
         @if (message()) { <p data-testid="webhook-message">{{ message() }}</p> }
-        @if (formError()) { <p class="error" role="alert">{{ formError() }}</p> }
+        @if (formError()) { <app-error-banner [message]="formError()" /> }
 
         <section data-testid="webhook-deliveries">
           <h3>Deliveries</h3>
           <button type="button" data-testid="refresh-deliveries" (click)="loadDeliveries(w.id)">Refresh</button>
-          @if (deliveryError()) { <p class="error" role="alert">{{ deliveryError() }}</p> }
+          @if (deliveryError()) { <app-error-banner [message]="deliveryError()" /> }
           @if (deliveriesLoaded() && deliveries().length === 0) {
             <p class="muted" data-testid="no-deliveries">Nothing sent yet.</p>
           }

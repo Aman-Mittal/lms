@@ -17,7 +17,8 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { tap } from 'rxjs';
+import { finalize, tap } from 'rxjs';
+import { beginRequest, endRequest } from '../../../shared/feedback';
 import { Session } from './session';
 
 /** Adds the bearer token to every request once someone is signed in. */
@@ -29,7 +30,10 @@ export const bearerToken: HttpInterceptorFn = (req, next) => {
   // customer has none, and a token sent to a route that ignores it is only exposure.
   const publicRoute = req.url.includes('/api/v1/public/');
   const authorised = token && !publicRoute ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
+  // Counted while it runs, so a form can keep its submit button disabled meanwhile (shared/fields.ts).
+  const requestId = beginRequest();
   return next(authorised).pipe(
+    finalize(() => endRequest(requestId)),
     tap({
       error: (e) => {
         // An expired token is the one error every screen would otherwise handle alike.

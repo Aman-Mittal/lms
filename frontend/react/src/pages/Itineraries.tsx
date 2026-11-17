@@ -20,6 +20,7 @@ import { useLoad } from '../useLoad';
 import { MapView } from './MapView';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
+import { ErrorBanner } from './ErrorBanner';
 
 /** Road-rail-road itineraries, and one itinerary's legs on the map. */
 export function Itineraries() {
@@ -33,7 +34,7 @@ export function Itineraries() {
       <PageHeader title="Itineraries" />
       <p className="muted">Multimodal movements leg by leg: road to the railhead, rail between railheads, road to the customer.</p>
       {list.loading && <p className="muted">Loading…</p>}
-      {list.error && <p className="error" role="alert">{list.error}</p>}
+      {list.error && <ErrorBanner message={list.error} />}
       {list.data && list.data.length === 0 && <p className="muted" data-testid="no-itineraries">No itineraries yet.</p>}
       {list.data && list.data.length > 0 && (
         <RowTable testId="itineraries" rows={list.data} picked={picked} onPick={(r) => setPicked(r.id)} columns={[
@@ -42,7 +43,7 @@ export function Itineraries() {
           { header: 'Cost', field: 'totalCost' }, { header: 'Connection', field: 'connectionMissed' },
         ]} />
       )}
-      {detail.error && <p className="error" role="alert">{detail.error}</p>}
+      {detail.error && <ErrorBanner message={detail.error} />}
       {detail.data && (
         <section data-testid="itinerary-detail">
           <h2>{detail.data.header.itineraryNo} · {detail.data.header.shipmentRef}</h2>

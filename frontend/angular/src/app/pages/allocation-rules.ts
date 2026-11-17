@@ -27,11 +27,13 @@ import { STALE_MESSAGE } from './master-data-form';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { StatusFilter } from './status-filter';
+import { ErrorBanner } from './error-banner';
+import { EmptyState, LoadingState } from './empty-state';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 @Component({
   selector: 'app-allocation-rules',
-  imports: [FormsModule, ConfigActions, EntityPicker, PageHeader, StatusBadge, StatusFilter],
+  imports: [EmptyState, LoadingState, ErrorBanner, FormsModule, ConfigActions, EntityPicker, PageHeader, StatusBadge, StatusFilter],
   template: `
     <app-page-header title="Allocation rules" />
     @if (!read()) {
@@ -42,12 +44,12 @@ import { StatusFilter } from './status-filter';
         first, in order; EXCLUDE never asks them. A rule is deactivated, never deleted.
       </p>
       <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
-      @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (loadError()) { <app-error-banner [message]="loadError()" /> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
       @if (loading()) {
-        <p class="muted">Loading…</p>
+        <app-loading-state />
       } @else if (rules().length === 0) {
-        <p class="muted" data-testid="no-rules">No rules yet: loads are offered by the routing guide alone.</p>
+        <app-empty-state testId="no-rules" message="No rules yet: loads are offered by the routing guide alone." />
       } @else {
         <div class="table-wrap"><table data-testid="rules-table">
           <thead>
@@ -76,7 +78,7 @@ import { StatusFilter } from './status-filter';
       }
 
       @if (manage()) {
-        <form class="card" (ngSubmit)="save()" data-testid="rule-form">
+        <form ngNativeValidate class="card" (ngSubmit)="save()" data-testid="rule-form">
           <h2>{{ editing() ? 'Edit ' + editing()!.name : 'New rule' }}</h2>
           <label>Name <input name="name" data-testid="rule-name-input" [(ngModel)]="form.name" required /></label>
           <label>Priority (lowest first)
@@ -129,7 +131,7 @@ import { StatusFilter } from './status-filter';
             <button type="button" data-testid="rule-vendor-add" (click)="add()" [disabled]="!pick">Add</button>
           </div>
           @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
-          @if (formError()) { <p class="error" role="alert" data-testid="rule-error">{{ formError() }}</p> }
+          @if (formError()) { <app-error-banner [message]="formError()" testId="rule-error" /> }
           <p class="actions">
             <button type="submit" data-testid="rule-save">{{ editing() ? 'Save changes' : 'Save rule' }}</button>
             @if (editing()) { <button type="button" class="link" (click)="reset()">Cancel</button> }
@@ -140,12 +142,12 @@ import { StatusFilter } from './status-filter';
       <section data-testid="dry-run">
         <h2>Dry run</h2>
         <p class="muted">Which rule would fire for a load, and who would be asked first. Nothing is offered.</p>
-        <form class="inline" (ngSubmit)="evaluate()">
+        <form ngNativeValidate class="inline" (ngSubmit)="evaluate()">
           <app-entity-picker [kind]="'load'" placeholder="Load" ariaLabel="Load id" testId="dry-run-load" [required]="true"
                              [value]="loadId" (valueChange)="loadId = $event" />
           <button type="submit" data-testid="dry-run-go">Evaluate</button>
         </form>
-        @if (dryRunError()) { <p class="error" role="alert">{{ dryRunError() }}</p> }
+        @if (dryRunError()) { <app-error-banner [message]="dryRunError()" /> }
         @if (evaluation(); as e) {
           <dl data-testid="dry-run-result">
             <div><dt>Load</dt><dd>{{ e.loadNo }}</dd></div>
@@ -164,12 +166,12 @@ import { StatusFilter } from './status-filter';
 
       <section data-testid="allocation-lookup">
         <h2>What decided an allocation</h2>
-        <form class="inline" (ngSubmit)="lookUp()">
+        <form ngNativeValidate class="inline" (ngSubmit)="lookUp()">
           <app-entity-picker [kind]="'allocation'" placeholder="Allocation" ariaLabel="Allocation id" testId="allocation-id" [required]="true"
                              [value]="allocationId" (valueChange)="allocationId = $event" />
           <button type="submit" data-testid="allocation-go">Look up</button>
         </form>
-        @if (lookUpError()) { <p class="error" role="alert">{{ lookUpError() }}</p> }
+        @if (lookUpError()) { <app-error-banner [message]="lookUpError()" /> }
         @if (found(); as a) {
           <dl data-testid="allocation-result">
             <div><dt>Load</dt><dd>{{ a.loadNo }}</dd></div>
@@ -224,11 +226,15 @@ export class AllocationRules implements OnInit {
       return;
     }
     await this.refresh();
+    // Terminals are named for everyone who reads rules, so no condition falls back on a raw id.
+    try {
+      this.terminals.set(await this.gateway.terminalChoices());
+    } catch {
+      this.terminals.set([]);
+    }
     if (this.manage()) {
       try {
-        const [terminals, vendors] = await Promise.all([this.gateway.terminalChoices(), this.gateway.activeVendors()]);
-        this.terminals.set(terminals);
-        this.vendors.set(vendors);
+        this.vendors.set(await this.gateway.activeVendors());
       } catch (e) {
         this.loadError.set((e as Error).message);
       }
@@ -236,7 +242,7 @@ export class AllocationRules implements OnInit {
   }
 
   conditions(rule: AllocationRuleView): string {
-    const name = (id: string) => this.terminals().find((t) => t.id === id)?.label ?? id;
+    const name = (id: string) => this.terminals().find((t) => t.id === id)?.label ?? 'a terminal no longer listed';
     const parts: string[] = [];
     if (rule.originTerminalId) parts.push(`from ${name(rule.originTerminalId)}`);
     if (rule.destinationTerminalId) parts.push(`to ${name(rule.destinationTerminalId)}`);

@@ -18,6 +18,7 @@ import { useParams } from 'react-router-dom';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * Where a customer lands from a tracking link. It needs no sign-in, shows the
@@ -33,7 +34,7 @@ export function TrackPage() {
     <main className="public">
       <h1>Track your shipment</h1>
       {view.loading && <p className="muted">Loading…</p>}
-      {view.error && <p className="error" role="alert">{view.error}</p>}
+      {view.error && <ErrorBanner message={view.error} />}
       {!view.loading && !view.error && view.data === null && (
         <p data-testid="track-not-found" role="alert">
           This tracking link is not valid. It may have expired or been withdrawn.

@@ -23,6 +23,7 @@ import { Qr } from './Qr';
 import { trackingUrl } from './trackingUrl';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 export function TrackingLinks() {
@@ -61,7 +62,7 @@ export function TrackingLinks() {
           value={typed} onChange={setTyped} required />
             <button type="submit">Look up</button>
           </form>
-          {links.error && <p className="error" role="alert">{links.error}</p>}
+          {links.error && <ErrorBanner message={links.error} />}
           {consignmentId && !links.loading && !links.error && (
             <Panel key={`${consignmentId}:${reload}`} consignmentId={consignmentId}
               links={links.data ?? []} issued={issued} onIssued={setIssued}
@@ -128,7 +129,7 @@ function Panel({ consignmentId, links, issued, onIssued, onChanged }: PanelProps
         </label>
         <button type="submit" data-testid="issue-link">Issue a link</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {issued && (
         <section data-testid="issued-link">
           <p>
