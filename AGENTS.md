@@ -171,7 +171,7 @@ controltower  milkrun  multimodal  warehouse  clientbilling  approvals  statutor
 
 | Module | Role |
 |---|---|
-| `identity` | Tenants, org hierarchy (typed levels HQ < LOB < COUNTRY < ZONE/REGION < BRANCH < HUB, created and edited through `/org-units`), users, authentication, RBAC, audit log, and attribute-based access control (policies as per-tenant data, decided by the `@abac` bean). Depends on nothing. |
+| `identity` | Tenants, org hierarchy (typed levels HQ < LOB < COUNTRY < ZONE/REGION < BRANCH < HUB, created, edited and switched off through `/org-units`), users, authentication, RBAC, audit log, and attribute-based access control (policies as per-tenant data, decided by the `@abac` bean). Depends on nothing. |
 | `masterdata` | Business partners and KYC, vehicles, drivers, dispatch readiness, terminals as geofences (including HUB, WAREHOUSE and RAILHEAD categories). |
 | `order` | Demand ingestion and validation: orders, lines, chargeable weight, dangerous goods, freight mode (FTL or LTL with hubs). |
 | `planning` | Consignment generation (lorry receipts and LTL dockets), load building, consolidation; turns a warehouse hand-off into a consignment. |
@@ -316,6 +316,26 @@ Rules that make the split worth having:
   planning (`vehicle-inactive`, `driver-inactive`); a terminal with an open
   order, load or trip refuses to switch off (`terminal-in-use`). The default
   list of each register is its active records, `status=ALL` lists every one.
+  Configuration is switched the same way (V65, issue #247): allocation rules,
+  organisational units, charge catalogue entries, webhooks, custom field
+  definitions, warehouse bins, SKUs and routing-guide vendors take
+  `POST /{id}/deactivate` and `/reactivate` with a reason (audited, `If-Match`
+  optional), reuse the `active` flag a record already had (units, bins, SKUs and
+  guide vendors gained one) and list the active ones unless `status` says
+  `INACTIVE` or `ALL` (`shared.query.ActiveFilter`; the older `active` query
+  parameter still answers). An inactive record stops doing its job: a rule never
+  fires, a guide vendor is skipped for the next rank, a catalogue entry cannot be
+  charged (`charge-inactive`), a webhook queues and sends nothing, a bin or SKU
+  takes no stock and cannot be expected, ordered or received (`bin-inactive`,
+  `sku-inactive`). The refusals to switch off: `bin-not-empty`, `sku-in-use` (an
+  open ASN or order, or stock), `org-unit-in-use` (active child units or users;
+  `org-unit-root` for the top unit), `charge-in-use` (a raised charge awaiting
+  approval), `routing-guide-vendor-in-use` (an unanswered offer on the guide). A
+  vendor invoice is voided with `POST /vendor-invoices/{id}/void` only while OPEN
+  with nothing paid (`vendor-invoice-not-voidable`); the status becomes VOID, its
+  bills are released to be invoiced again and the advances it took off are paid
+  again. The edits of allocation rules, custom fields, webhooks, access policies
+  and number series take `If-Match` too, and their reads carry the `ETag`.
 - **Events are past-tense facts** carrying identifiers and values, never
   aggregates or entities. A shared mutable object graph across a boundary
   defeats the point of having one.
