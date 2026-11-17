@@ -25,6 +25,7 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -51,12 +52,12 @@ interface LineInputs {
  */
 @Component({
   selector: 'app-enquiry-desk',
-  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Enquiry desk" />
     <p class="muted">Quote each line, record who won it, and convert what was won into a draft order.</p>
 
-    <form class="inline" (ngSubmit)="load()" data-testid="enquiry-filter">
+    <form ngNativeValidate class="inline" (ngSubmit)="load()" data-testid="enquiry-filter">
       <select aria-label="Status" data-testid="enquiry-filter-status" [value]="filter().status"
               (change)="setFilter('status', $any($event.target).value)">
         <option value="" [selected]="!filter().status">Any status</option>
@@ -66,7 +67,7 @@ interface LineInputs {
              [value]="filter().q" (input)="setFilter('q', $any($event.target).value)" />
       <button type="submit" data-testid="enquiry-filter-apply">Show</button>
     </form>
-    @if (error()) { <p class="error" role="alert" data-testid="enquiry-error">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" testId="enquiry-error" /> }
 
     <div class="table-wrap"><table data-testid="enquiry-list">
       <thead><tr><th>Enquiry</th><th>Customer</th><th>Status</th><th>Respond by</th><th>Lines won</th><th></th></tr></thead>
@@ -87,7 +88,7 @@ interface LineInputs {
 
     @if (session.can('ORDER_CREATE') && session.orgUnitId()) {
       <h2>New enquiry</h2>
-      <form (ngSubmit)="create()" data-testid="enquiry-create-form">
+      <form ngNativeValidate (ngSubmit)="create()" data-testid="enquiry-create-form">
         <div class="inline">
           <app-entity-picker [kind]="'customer'" placeholder="Customer" ariaLabel="Enquiry customer" testId="enquiry-customer"
                              [(value)]="customer" />
@@ -189,7 +190,7 @@ interface LineInputs {
         @if (session.can('ORDER_UPDATE')) {
           @if (e.status === 'OPEN') {
             <p><button type="button" data-testid="enquiry-rediscover" (click)="rediscover(e)">Look for contract rates again</button></p>
-            <form class="inline" (ngSubmit)="cancel(e)" data-testid="enquiry-cancel-form">
+            <form ngNativeValidate class="inline" (ngSubmit)="cancel(e)" data-testid="enquiry-cancel-form">
               <input name="cancelReason" placeholder="Why cancel" aria-label="Cancel reason" data-testid="enquiry-cancel-reason"
                      [value]="cancelReason()" (input)="cancelReason.set($any($event.target).value)" />
               <button type="submit" data-testid="enquiry-cancel">Cancel enquiry</button>
