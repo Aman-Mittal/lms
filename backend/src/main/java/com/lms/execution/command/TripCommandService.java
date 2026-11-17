@@ -155,6 +155,9 @@ public class TripCommandService {
     public void assign(UUID tripId, UUID vehicleId, UUID driverId) {
         Trip trip = require(tripId);
 
+        // A switched-off vehicle or driver gets its own code, ahead of the compliance sweep.
+        compliance.requireActive(vehicleId, driverId);
+
         LocalDate departsOn = trip.plannedStartAt() == null
                 ? LocalDate.now(ZoneOffset.UTC)
                 : trip.plannedStartAt().atZone(ZoneOffset.UTC).toLocalDate();
@@ -311,6 +314,7 @@ public class TripCommandService {
         // hold back a lorry leaving today.
         TripSettings.Checklist checklist = tripSettings.checklistFor(trip,
                 at == null ? null : when.atZone(ZoneOffset.UTC).toLocalDate());
+        compliance.requireActive(trip.vehicleId(), trip.driverId());
         List<String> blockers = new ArrayList<>();
         blockers.addAll(missingDocuments(tenantId, tripId, checklist));
         blockers.addAll(fleetBlockers(trip, when));

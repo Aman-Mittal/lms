@@ -62,6 +62,8 @@ public record Terminal(
         LocalTime closesAt,
         Integer avgDwellMinutes,
         String[] permittedVehicleTypes,
+        /** ACTIVE or INACTIVE; an inactive terminal is kept for the records that name it. */
+        String status,
         /*
          * Required for correctness, not just concurrency. Spring Data JDBC
          * treats a record with a pre-assigned @Id as an existing row and issues
@@ -102,7 +104,7 @@ public record Terminal(
                 Json.of(toGeoJsonRing(ring)), null, null, null,
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
-                null, Instant.now(), Instant.now());
+                "ACTIVE", null, Instant.now(), Instant.now());
     }
 
     /** Creates a point-radius terminal, deriving a box that encloses the circle. */
@@ -120,7 +122,7 @@ public record Terminal(
                 null, bd(centre.lat()), bd(centre.lon()), BigDecimal.valueOf(radiusMetres),
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
-                null, Instant.now(), Instant.now());
+                "ACTIVE", null, Instant.now(), Instant.now());
     }
 
     /**
@@ -141,7 +143,23 @@ public record Terminal(
                 geofenceType, polygon, centreLat, centreLon, radiusM,
                 minLat, maxLat, minLon, maxLon,
                 newDockCount, newOpensAt, newClosesAt, newAvgDwellMinutes,
-                newPermittedVehicleTypes, expectedVersion, createdAt, Instant.now());
+                newPermittedVehicleTypes, status, expectedVersion, createdAt, Instant.now());
+    }
+
+    public static final String ACTIVE = "ACTIVE";
+    public static final String INACTIVE = "INACTIVE";
+
+    public boolean isActive() {
+        return ACTIVE.equals(status);
+    }
+
+    /** The terminal switched to {@code newStatus}; everything else, the version included, as it was. */
+    public Terminal withStatus(String newStatus) {
+        return new Terminal(id, tenantId, orgUnitId, code, name, functionalCategory,
+                geofenceType, polygon, centreLat, centreLon, radiusM,
+                minLat, maxLat, minLon, maxLon,
+                dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
+                newStatus, version, createdAt, Instant.now());
     }
 
     /** The same terminal with a polygon geofence, validated and boxed as on creation. */
@@ -152,7 +170,7 @@ public record Terminal(
                 GeofenceType.POLYGON, Json.of(toGeoJsonRing(ring)), null, null, null,
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
-                version, createdAt, Instant.now());
+                status, version, createdAt, Instant.now());
     }
 
     /** The same terminal with a point-radius geofence, boxed as on creation. */
@@ -167,7 +185,7 @@ public record Terminal(
                 BigDecimal.valueOf(radiusMetres),
                 bd(box.minLat()), bd(box.maxLat()), bd(box.minLon()), bd(box.maxLon()),
                 dockCount, opensAt, closesAt, avgDwellMinutes, permittedVehicleTypes,
-                version, createdAt, Instant.now());
+                status, version, createdAt, Instant.now());
     }
 
     /** The stored bounding box, for candidate filtering. */

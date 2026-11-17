@@ -47,7 +47,8 @@ export const RESOURCES: Resource[] = [
     { header: 'Licence expires', field: 'licenceExpiresOn' }, { header: 'Status', field: 'status' } ] },
   { key: 'terminals', title: 'Terminals', group: 'Master data', customKind: 'TERMINAL', columns: [
     { header: 'Code', field: 'code' }, { header: 'Name', field: 'name' },
-    { header: 'Category', field: 'functionalCategory' }, { header: 'Docks', field: 'dockCount' } ] },
+    { header: 'Category', field: 'functionalCategory' }, { header: 'Docks', field: 'dockCount' },
+    { header: 'Status', field: 'status' } ] },
   { key: 'orders', title: 'Orders', group: 'Operations', customKind: 'ORDER', columns: [
     { header: 'Order', field: 'orderNo' }, { header: 'Status', field: 'status' },
     { header: 'Customer', field: 'customerName' }, { header: 'Origin', field: 'originTerminalCode' } ] },
@@ -73,3 +74,19 @@ export const RESOURCES: Resource[] = [
 
 /** The sidebar's sections, in order. */
 export const GROUPS = ['Master data', 'Operations', 'Multimodal', 'Finance', 'Control tower', 'Delivery'];
+
+/** The statuses each maintainable register can be filtered to, after the default (active) and all. */
+export const STATUS_FILTERS: Partial<Record<ResourceKey, readonly string[]>> = {
+  partners: ['DRAFT', 'PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'BLACKLISTED'],
+  vehicles: ['AVAILABLE', 'ON_TRIP', 'MAINTENANCE', 'RETIRED', 'INACTIVE'],
+  drivers: ['AVAILABLE', 'ON_TRIP', 'REST', 'INACTIVE'],
+  terminals: ['ACTIVE', 'INACTIVE'],
+};
+
+/** What may create each maintainable register, and what a new one is called on its button. */
+export const CREATE_RIGHTS: Partial<Record<ResourceKey, { permission: string; word: string }>> = {
+  partners: { permission: 'PARTNER_CREATE', word: 'partner' },
+  vehicles: { permission: 'VEHICLE_CREATE', word: 'vehicle' },
+  drivers: { permission: 'DRIVER_CREATE', word: 'driver' },
+  terminals: { permission: 'TERMINAL_CREATE', word: 'terminal' },
+};

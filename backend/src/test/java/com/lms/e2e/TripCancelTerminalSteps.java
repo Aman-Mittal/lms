@@ -16,10 +16,6 @@
 package com.lms.e2e;
 
 import java.math.BigDecimal;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -37,7 +33,6 @@ import com.lms.client.model.RegisterPointRadiusTerminalRequest;
 import com.lms.client.model.Terminal;
 import com.lms.client.model.Trip;
 import com.lms.client.model.UpdateTerminalRequest;
-import feign.FeignException;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
@@ -255,18 +250,18 @@ public class TripCancelTerminalSteps {
                 403, "access-denied");
     }
 
-    @Then("deleting the spare site succeeds, and it is then gone and cannot be deleted again")
+    @Then("deleting the spare site switches it off, and it then cannot be switched off again")
     public void deleteSpare() {
         TerminalsApi terminals = world.api(TerminalsApi.class);
-        terminals.deleteTerminal(spare);
-        assertRefused(() -> terminals.getTerminal(spare), 404, "not-found");
-        assertRefused(() -> terminals.deleteTerminal(spare), 404, "not-found");
+        terminals.deleteTerminal(spare, (String) null);
+        assertThat(terminals.getTerminal(spare).getStatus().getValue()).isEqualTo("INACTIVE");
+        assertRefused(() -> terminals.deleteTerminal(spare, (String) null), 409, "terminal-already-inactive");
     }
 
     @Then("deleting the first site is refused as in use while the trip starts there")
     public void deleteInUse() {
         TerminalsApi terminals = world.api(TerminalsApi.class);
-        assertRefused(() -> terminals.deleteTerminal(origin), 409, "terminal-in-use");
+        assertRefused(() -> terminals.deleteTerminal(origin, (String) null), 409, "terminal-in-use");
         assertThat(terminals.getTerminal(origin).getId()).isEqualTo(origin);
     }
 
@@ -276,18 +271,18 @@ public class TripCancelTerminalSteps {
                 new CancelTripRequest().reason("stood down"), null);
         // A cancelled trip still names its origin, and so do the order and the
         // load: the record of what happened is not the terminal's to erase.
-        assertRefused(() -> world.api(TerminalsApi.class).deleteTerminal(origin),
+        assertRefused(() -> world.api(TerminalsApi.class).deleteTerminal(origin, (String) null),
                 409, "terminal-in-use");
     }
 
     @Then("a caller without TERMINAL_DELETE is refused as forbidden and another tenant's administrator is told it is not found")
     public void deleteGuards() {
         AuthResult noDelete = support.callerWith("tcdel", "TERMINAL_READ", "TERMINAL_UPDATE");
-        assertRefused(() -> support.as(noDelete, TerminalsApi.class).deleteTerminal(destination),
+        assertRefused(() -> support.as(noDelete, TerminalsApi.class).deleteTerminal(destination, (String) null),
                 403, "access-denied");
 
         AuthResult stranger = support.otherTenantAdministrator();
-        assertRefused(() -> support.as(stranger, TerminalsApi.class).deleteTerminal(destination),
+        assertRefused(() -> support.as(stranger, TerminalsApi.class).deleteTerminal(destination, (String) null),
                 404, "not-found");
         assertRefused(() -> support.as(stranger, TerminalsApi.class).updateTerminal(destination,
                 new UpdateTerminalRequest().name("x").version(0L)), 404, "not-found");

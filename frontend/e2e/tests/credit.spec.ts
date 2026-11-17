@@ -55,7 +55,7 @@ async function captureOverrides(page: Page): Promise<Array<Record<string, unknow
 async function moveTo(request: APIRequestContext, session: Session, partnerId: string, targets: string[]): Promise<void> {
   for (const target of targets) {
     const response = await request.post(`${API}/api/v1/partners/${partnerId}/transitions`, {
-      headers: { Authorization: `Bearer ${session.token}` }, data: { target },
+      headers: { Authorization: `Bearer ${session.token}` }, data: { target, reason: `e2e credit check ${target}` },
     });
     expect(response.ok(), `transition to ${target}: ${response.status()}`).toBeTruthy();
   }

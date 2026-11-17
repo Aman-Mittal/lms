@@ -295,6 +295,10 @@ public class PlanningCommandService {
             throw new ResourceNotFoundException("Terminal", originTerminalId);
         }
 
+        if (fleetCapacity.isInactive(vehicleId)) {
+            throw new BusinessRuleViolationException("vehicle-inactive",
+                    "Vehicle " + vehicleId + " is inactive and cannot be planned against");
+        }
         FleetCapacityPort.VehicleCapacity capacity = fleetCapacity.capacityOf(vehicleId)
                 .orElseThrow(() -> new BusinessRuleViolationException("vehicle-unavailable",
                         "Vehicle " + vehicleId + " does not exist or is not available to plan against"));

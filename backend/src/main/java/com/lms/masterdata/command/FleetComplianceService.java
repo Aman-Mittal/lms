@@ -24,6 +24,7 @@ import com.lms.masterdata.api.FleetCompliancePort;
 import com.lms.masterdata.command.domain.ComplianceDocument;
 import com.lms.masterdata.command.domain.Driver;
 import com.lms.masterdata.command.domain.Vehicle;
+import com.lms.shared.error.BusinessRuleViolationException;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -79,6 +80,22 @@ public class FleetComplianceService implements FleetCompliancePort {
     }
 
     @Override
+    public void requireActive(UUID vehicleId, UUID driverId) {
+        if (vehicleId != null) {
+            vehicles.findById(vehicleId).filter(Vehicle::isInactive).ifPresent(vehicle -> {
+                throw new BusinessRuleViolationException("vehicle-inactive",
+                        "Vehicle " + vehicle.registrationNo() + " is inactive and cannot be assigned");
+            });
+        }
+        if (driverId != null) {
+            drivers.findById(driverId).filter(Driver::isInactive).ifPresent(driver -> {
+                throw new BusinessRuleViolationException("driver-inactive",
+                        "Driver " + driver.fullName() + " is inactive and cannot be assigned");
+            });
+        }
+    }
+
+    @Override
     public ComplianceVerdict checkDispatchReadiness(UUID vehicleId, UUID driverId, LocalDate dispatchOn) {
         UUID tenantId = TenantContext.requireTenantId();
         List<String> reasons = new ArrayList<>();
@@ -90,6 +107,7 @@ public class FleetComplianceService implements FleetCompliancePort {
             reasons.add("Vehicle " + vehicleId + " does not exist");
         } else {
             if (vehicle.status() == Vehicle.VehicleStatus.RETIRED
+                    || vehicle.status() == Vehicle.VehicleStatus.INACTIVE
                     || vehicle.status() == Vehicle.VehicleStatus.MAINTENANCE) {
                 reasons.add("Vehicle " + vehicle.registrationNo() + " is " + vehicle.status());
             }

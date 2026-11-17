@@ -31,7 +31,10 @@ Partner:
     onTimePct: { type: number }
     claimsRatio: { type: number }
     scorecardAt: { type: string, format: date-time }
+    billingAddress: { type: string }
+    orgUnitId: { type: string, format: uuid }
     expiredDocumentCount: { type: integer }
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
     createdAt: { type: string, format: date-time }
 
 RegisterPartnerRequest:
@@ -44,6 +47,22 @@ RegisterPartnerRequest:
     taxId: { type: string }
   required: [orgUnitId, code, legalName, partnerType]
 
+UpdatePartnerRequest:
+  type: object
+  properties:
+    legalName: { type: string, minLength: 1 }
+    taxId: { type: string }
+    paymentTerms: { type: string }
+    billingAddress: { type: string }
+  required: [legalName]
+
+ReasonRequest:
+  type: object
+  description: Why a record is being switched off or back on; kept in the audit trail.
+  properties:
+    reason: { type: string, minLength: 1 }
+  required: [reason]
+
 PartnerTransitionRequest:
   type: object
   description: |
@@ -54,6 +73,9 @@ PartnerTransitionRequest:
     target:
       type: string
       enum: [DRAFT, PENDING_VERIFICATION, ACTIVE, SUSPENDED, BLACKLISTED]
+    reason:
+      type: string
+      description: Required for SUSPENDED, BLACKLISTED and reactivation (ACTIVE from SUSPENDED).
   required: [target]
 
 PartnerSlice:

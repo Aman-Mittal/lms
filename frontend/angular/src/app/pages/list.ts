@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -22,21 +22,35 @@ import { map } from 'rxjs';
 import { LmsGateway, PARTNER_TYPES, PartnerType, ResourceKey, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { RecordPanel } from './record-panel';
-import { RESOURCES } from './resources';
+import { CREATE_RIGHTS, RESOURCES, STATUS_FILTERS } from './resources';
+import { MasterDataForm } from './master-data-form';
 import { PageHeader } from './page-header';
 import { Cell } from './cell';
 import { isDateColumn, isNumericColumn } from '../../../../shared/format';
 
 @Component({
   selector: 'app-list',
-  imports: [FormsModule, RecordPanel, PageHeader, Cell],
+  imports: [FormsModule, RecordPanel, PageHeader, Cell, MasterDataForm],
   template: `
     @if (resource(); as r) {
-      <div [class.with-panel]="selected()">
+      <div [class.with-panel]="selected() || creating()">
         <div class="list">
-          <app-page-header [title]="r.title" />
+          <app-page-header [title]="r.title">
+            @if (createRight(); as right) {
+              <button type="button" data-testid="new-record" (click)="startCreate()">New {{ right.word }}</button>
+            }
+          </app-page-header>
           <input type="search" aria-label="Search" placeholder="Search" data-testid="search"
                  name="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
+          @if (statuses(); as statuses) {
+            <label class="filter">Status
+              <select data-testid="status-filter" name="status" [ngModel]="status()" (ngModelChange)="setStatus($event)">
+                <option value="">Active</option>
+                <option value="ALL">All</option>
+                @for (s of statuses; track s) { <option [value]="s">{{ s }}</option> }
+              </select>
+            </label>
+          }
           @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
           <div class="table-wrap">
             <table>
@@ -50,7 +64,7 @@ import { isDateColumn, isNumericColumn } from '../../../../shared/format';
                   </tr>
                 } @else {
                   @for (row of visible(); track row['id']) {
-                    <tr data-testid="row" tabindex="0" [class.selected]="row['id'] === selectedId()"
+                    <tr data-testid="row" [attr.data-id]="row['id']" tabindex="0" [class.selected]="row['id'] === selectedId()"
                         (click)="selectedId.set(row['id'])" (keydown.enter)="selectedId.set(row['id'])">
                       @for (c of r.columns; track c.field) {
                         <td [class.num]="numeric(c.field)" [class.nowrap]="date(c.field)"><app-cell [field]="c.field" [value]="row[c.field]" /></td>
@@ -75,8 +89,14 @@ import { isDateColumn, isNumericColumn } from '../../../../shared/format';
             @if (formError()) { <p class="error" role="alert">{{ formError() }}</p> }
           }
         </div>
-        @if (selected(); as row) {
-          <app-record-panel [resource]="r" [row]="row" (closed)="selectedId.set(null)" />
+        @if (creating() && session.orgUnitId(); as unit) {
+          <aside class="panel" aria-label="New record">
+            @defer (on immediate) {
+              <app-master-data-form [kind]="$any(r.key)" [orgUnitId]="unit" (saved)="created($event)" (closed)="creating.set(false)" />
+            }
+          </aside>
+        } @else if (selected(); as row) {
+          <app-record-panel [resource]="r" [row]="row" (closed)="selectedId.set(null)" (changed)="reload()" />
         }
       </div>
     }
@@ -91,6 +111,14 @@ export class ListPage {
   readonly rows = signal<Row[]>([]);
   readonly query = signal('');
   readonly selectedId = signal<string | null>(null);
+  readonly status = signal('');
+  readonly creating = signal(false);
+  readonly statuses = computed(() => STATUS_FILTERS[this.resource()?.key as keyof typeof STATUS_FILTERS] ?? null);
+  /** The button that opens a blank form, for those who may create and a register that can be created. */
+  readonly createRight = computed(() => {
+    const right = CREATE_RIGHTS[this.resource()?.key as keyof typeof CREATE_RIGHTS];
+    return right && this.session.can(right.permission) && this.session.orgUnitId() ? right : null;
+  });
   readonly loading = signal(false);
   readonly error = signal('');
 
@@ -116,10 +144,37 @@ export class ListPage {
     effect(() => {
       const r = this.resource();
       if (r) {
-        this.selectedId.set(null);
-        void this.load(r.key);
+        // Only the route's resource re-runs this; the status the load reads is the filter's own to change.
+        untracked(() => {
+          this.selectedId.set(null);
+          this.creating.set(false);
+          this.status.set('');
+          void this.load(r.key);
+        });
       }
     });
+  }
+
+  setStatus(value: string): void {
+    this.status.set(value);
+    this.selectedId.set(null);
+    void this.load(this.resource()!.key);
+  }
+
+  startCreate(): void {
+    this.selectedId.set(null);
+    this.creating.set(true);
+  }
+
+  /** A record was created: the list is read again and the new record opened. */
+  async created(id: string): Promise<void> {
+    this.creating.set(false);
+    await this.load(this.resource()!.key);
+    this.selectedId.set(id);
+  }
+
+  reload(): void {
+    void this.load(this.resource()!.key, false);
   }
 
   async register(): Promise<void> {
@@ -139,12 +194,14 @@ export class ListPage {
     }
   }
 
-  private async load(key: ResourceKey): Promise<void> {
-    this.loading.set(true);
+  private async load(key: ResourceKey, clear = true): Promise<void> {
+    this.loading.set(clear);
     this.error.set('');
-    this.rows.set([]);
+    if (clear) {
+      this.rows.set([]);
+    }
     try {
-      this.rows.set(await this.gateway.list(key));
+      this.rows.set(await this.gateway.list(key, { status: this.status() }));
     } catch (e) {
       this.error.set((e as Error).message);
     } finally {

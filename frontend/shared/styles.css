@@ -165,3 +165,21 @@ form.inline input, form.inline select { width:auto; margin:0; }
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .nav-backdrop, .sidebar .group-toggle .icon { transition:none; }
 }
+
+/* Master-data forms, the status filter and the deactivate confirmation. */
+.field { display:flex; flex-direction:column; gap:var(--space-1); margin-bottom:var(--space-3); }
+.field label { font-weight:600; }
+.field--inline select { width:auto; margin:0; flex:none; }
+.confirm textarea, .field textarea, .record-form textarea { font-weight:400; }
+.field--check { flex-direction:row; align-items:center; gap:var(--space-2); }
+.field--inline { flex-direction:row; align-items:center; gap:var(--space-2); margin:var(--space-2) 0; }
+.master-form .actions, .panel .actions { display:flex; gap:var(--space-3); align-items:center; margin-top:var(--space-3); flex-wrap:wrap; }
+.notice { padding:var(--space-2) var(--space-3); border:1px solid var(--line); border-radius:var(--radius-lg); background:var(--card); }
+.confirm { margin-top:var(--space-3); padding:var(--space-3); border:1px solid var(--line); border-radius:var(--radius-lg); display:flex; flex-direction:column; gap:var(--space-2); }
+
+/* master-data CRUD (angular) */
+.record-form .hint { margin:calc(-1 * var(--space-2)) 0 var(--space-2); font-size:var(--text-xs); }
+.record-form textarea { width:100%; }
+label.filter { display:inline-flex; align-items:center; gap:var(--space-2); margin:var(--space-2) 0; }
+label.filter select { width:auto; margin:0; }
+/* end master-data CRUD (angular) */

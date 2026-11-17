@@ -334,6 +334,52 @@ class QueryPlanTest {
     }
 
     @Test
+    @DisplayName("the default (active) listings of partners, vehicles, drivers and terminals page on their code index")
+    void masterDataActiveListings() {
+        assertIndexed("""
+                SELECT * FROM business_partner
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status NOT IN ('SUSPENDED', 'BLACKLISTED') AND code > 'A'
+                 ORDER BY code LIMIT 51
+                """, "business_partner");
+        assertIndexed("""
+                SELECT * FROM vehicle
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status NOT IN ('INACTIVE', 'RETIRED') AND registration_no > 'A'
+                 ORDER BY registration_no LIMIT 51
+                """, "vehicle");
+        assertIndexed("""
+                SELECT * FROM driver
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status <> 'INACTIVE' AND licence_no > 'A'
+                 ORDER BY licence_no LIMIT 51
+                """, "driver");
+        assertIndexed("""
+                SELECT * FROM terminal
+                 WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
+                   AND status = 'ACTIVE' AND code > 'A'
+                 ORDER BY code LIMIT 51
+                """, "terminal");
+    }
+
+    @Test
+    @DisplayName("is any open work pointed at a terminal: an index probe per kind of work")
+    void terminalOpenUse() {
+        String tenant = "'00000000-0000-0000-0000-000000000001'";
+        String terminal = "'00000000-0000-0000-0000-000000000002'";
+        assertIndexed("SELECT 1 FROM sales_order WHERE tenant_id = " + tenant + " AND origin_terminal_id = "
+                + terminal + " AND status NOT IN ('FULFILLED', 'CANCELLED', 'CLOSED')", "sales_order");
+        assertIndexed("SELECT 1 FROM order_line WHERE tenant_id = " + tenant + " AND destination_terminal_id = "
+                + terminal, "order_line");
+        assertIndexed("SELECT 1 FROM load_unit WHERE tenant_id = " + tenant + " AND origin_terminal_id = "
+                + terminal + " AND status NOT IN ('COMPLETED', 'CANCELLED')", "load_unit");
+        assertIndexed("SELECT 1 FROM trip WHERE tenant_id = " + tenant + " AND origin_terminal_id = "
+                + terminal + " AND status NOT IN ('COMPLETED', 'CANCELLED')", "trip");
+        assertIndexed("SELECT 1 FROM trip WHERE tenant_id = " + tenant + " AND destination_terminal_id = "
+                + terminal + " AND status NOT IN ('COMPLETED', 'CANCELLED')", "trip");
+    }
+
+    @Test
     @DisplayName("the itinerary listing pages newest first without a sort")
     void itineraryListing() {
         assertIndexed("""

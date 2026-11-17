@@ -29,6 +29,7 @@ import {
   TrackingLinkView, TripRoute, ParkedEventDetail, ParkedFilter, RateCardDraft,
 } from './lms-gateway';
 import { GeneratedGatewayBase } from './generated-gateway-base';
+import type { ListFilter } from './master-data-types';
 import {
   anchorOf, approvalRow, blankAsAbsent, consignmentCard, definitionOf, instant, instantOf, keyValues, parkedRow,
   particularsRequest, proofStatus, quantityOrAbsent, ruleOf, ruleRequest, terminalFeature, text,
@@ -53,8 +54,8 @@ export abstract class GeneratedGatewayDelivery extends GeneratedGatewayBase {
       tenantCode: r.tenantCode, rowsDeleted: r.rowsDeleted, signInAgain: r.signInAgain }));
   }
 
-  list(resource: ResourceKey): Promise<Row[]> {
-    return this.listers[resource]();
+  list(resource: ResourceKey, filter?: ListFilter): Promise<Row[]> {
+    return this.listers[resource](filter);
   }
 
   claims(consignmentId?: string): Promise<Row[]> {

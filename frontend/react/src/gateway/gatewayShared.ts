@@ -31,7 +31,7 @@ import {
   ApiProblem, type AllocationRuleView, type ConsignmentCard, type ConsignmentParticularsDraft,
   type CustomFieldKind, type FieldDefinition, type FieldType, type ResourceKey, type Row, type RuleAction,
   type RuleDraft, type GeoPoint, type MapFeature, type WebhookView, type OrderDesk, type OrderHeaderDraft,
-  type OrderLineDraft, type HistoryEntryRow,
+  type OrderLineDraft, type HistoryEntryRow, type ListFilter,
 } from './lmsGateway';
 import { commercialNumber } from './gatewayCommercial';
 
@@ -66,7 +66,7 @@ export interface GatewayDeps {
   publicTracking: PublicTrackingApi;
   cachedGet: <T>(key: string, path: string, load: () => Promise<T>) => Promise<T>;
   listClaims: (consignmentId?: string) => Promise<Row[]>;
-  listers: Record<ResourceKey, () => Promise<Row[]>>;
+  listers: Record<ResourceKey, (filter?: ListFilter) => Promise<Row[]>>;
 }
 
 /** A ticket as the exception desk lists and opens it. */

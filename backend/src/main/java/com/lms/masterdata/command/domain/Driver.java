@@ -79,6 +79,26 @@ public record Driver(
         return licenceExpiresOn == null || !licenceExpiresOn.isBefore(on);
     }
 
+    public boolean isInactive() {
+        return status == DriverStatus.INACTIVE;
+    }
+
+    public Driver withStatus(DriverStatus newStatus) {
+        return new Driver(id, tenantId, orgUnitId, employerPartnerId, fullName, phone, licenceNo,
+                licenceClass, licenceAuthority, licenceExpiresOn, hazmatEndorsed, newStatus,
+                hosMinutesToday, hosResetAt, version, createdAt, Instant.now());
+    }
+
+    /** The driver with descriptive fields replaced; the licence number is identity and stays. */
+    public Driver edited(UUID newEmployerPartnerId, String newFullName, String newPhone,
+                         String newLicenceClass, String newLicenceAuthority,
+                         LocalDate newLicenceExpiresOn, boolean newHazmatEndorsed,
+                         Long expectedVersion) {
+        return new Driver(id, tenantId, orgUnitId, newEmployerPartnerId, newFullName, newPhone, licenceNo,
+                newLicenceClass, newLicenceAuthority, newLicenceExpiresOn, newHazmatEndorsed, status,
+                hosMinutesToday, hosResetAt, expectedVersion, createdAt, Instant.now());
+    }
+
     public Driver withHoursOfService(int minutes) {
         return new Driver(id, tenantId, orgUnitId, employerPartnerId, fullName, phone, licenceNo,
                 licenceClass, licenceAuthority, licenceExpiresOn, hazmatEndorsed, status,

@@ -154,10 +154,16 @@ public class MasterDataSteps {
                 terminal.avgDwellMinutes(), List.of())));
     }
 
-    @When("terminal {string} is deleted")
-    public void delete(String code) {
+    @When("terminal {string} is deactivated")
+    public void deactivate(String code) {
         UUID id = idOf(code);
-        maintain(() -> terminals.delete(id));
+        maintain(() -> terminals.deactivate(id, "acceptance test"));
+    }
+
+    @When("terminal {string} is reactivated")
+    public void reactivate(String code) {
+        UUID id = idOf(code);
+        maintain(() -> terminals.reactivate(id, "acceptance test"));
     }
 
     // ----------------------------------------------------------------- then
@@ -201,18 +207,18 @@ public class MasterDataSteps {
         assertThat(codeOf(failure)).isEqualTo(code);
     }
 
-    @Then("the terminal is deleted")
+    @Then("the terminal is deactivated")
     public void terminalDeleted() {
-        assertThat(failure).as("the delete should have succeeded").isNull();
+        assertThat(failure).as("the deactivation should have succeeded").isNull();
     }
 
-    @Then("deleting the terminal is refused with {string} mentioning {string}")
+    @Then("deactivating the terminal is refused with {string} mentioning {string}")
     public void deleteRefused(String code, String fragment) {
         assertThat(codeOf(failure)).isEqualTo(code);
         assertThat(failure.getMessage()).contains(fragment);
     }
 
-    @Then("deleting the terminal is refused as not found")
+    @Then("deactivating the terminal is refused as not found")
     public void deleteRefusedAsAbsent() {
         assertThat(failure).isInstanceOf(ResourceNotFoundException.class);
     }
@@ -229,9 +235,9 @@ public class MasterDataSteps {
         assertThat(count(idOf(code))).isOne();
     }
 
-    @Then("terminal {string} no longer exists")
-    public void terminalGone(String code) {
-        assertThat(count(idOf(code))).isZero();
+    @Then("terminal {string} is inactive")
+    public void terminalInactive(String code) {
+        assertThat(find(code).status()).isEqualTo("INACTIVE");
     }
 
     @Then("the audit trail has {int} {string} entry for terminal {string}")
