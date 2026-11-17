@@ -23,6 +23,7 @@ import {
 import { Session } from '../session';
 import { RowTable } from './row-table';
 import { EntityPicker } from './entity-picker';
+import { STALE_MESSAGE } from './master-data-form';
 import { PageHeader } from './page-header';
 
 const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
@@ -73,6 +74,7 @@ function inDays(days: number): string {
       </p>
     }
     @if (message()) { <p data-testid="admin-message">{{ message() }}</p> }
+    @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
 
     @if (section === 'users') {
       <p class="muted">Everyone in your organisational unit and below. Access attributes take effect at the user's next sign-in.</p>
@@ -240,6 +242,8 @@ export class AdminDesk implements OnInit {
   readonly loading = signal(true);
   readonly refusal = signal<Refusal | null>(null);
   readonly message = signal('');
+  /** Said when somebody else saved the policy first; the policy is read again. */
+  readonly conflict = signal('');
 
   // users
   readonly users = signal<AdminUser[]>([]);
@@ -406,7 +410,7 @@ export class AdminDesk implements OnInit {
     await this.act(async () => {
       await this.gateway.reviseAccessPolicy(id, {
         effect: this.effect(), description: this.description(), condition: this.condition(), enabled: this.enabled(),
-      });
+      }, this.currentPolicy()?.version ?? 0);
       await this.reloadPolicies();
       return 'Policy saved.';
     });
@@ -487,13 +491,24 @@ export class AdminDesk implements OnInit {
   private async act(action: () => Promise<string | void>): Promise<void> {
     this.refusal.set(null);
     this.message.set('');
+    this.conflict.set('');
     try {
       const said = await action();
       if (said) {
         this.message.set(said);
       }
     } catch (e) {
-      this.refusal.set(refusalOf(e));
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        // Somebody else saved first: the policy is read again into the form, and the person is told.
+        await this.reloadPolicies().catch(() => undefined);
+        const open = this.pickedPolicy();
+        if (open) {
+          this.openPolicy(open);
+        }
+        this.conflict.set(STALE_MESSAGE);
+      } else {
+        this.refusal.set(refusalOf(e));
+      }
     }
   }
 }

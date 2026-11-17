@@ -32,8 +32,8 @@ import { documentOf, flatRow, stockMove } from './generated-gateway-mappers';
 
 /** The webhooks, load building, the order desk, client billing and the warehouse. */
 export abstract class GeneratedGatewayOrders extends GeneratedGatewayDelivery {
-  webhooks(): Promise<WebhookView[]> {
-    return this.call(this.hooks.listWebhookSubscriptions({ limit: 200 }), (s) => s.items.map(webhookOf));
+  webhooks(status?: string): Promise<WebhookView[]> {
+    return this.call(this.hooks.listWebhookSubscriptions({ limit: 200, status: status || undefined }), (s) => s.items.map(webhookOf));
   }
 
   subscribeWebhook(draft: WebhookDraft): Promise<WebhookSecret> {
@@ -42,9 +42,9 @@ export abstract class GeneratedGatewayOrders extends GeneratedGatewayDelivery {
     }), (r) => ({ id: r.id, secret: r.secret }));
   }
 
-  reviseWebhook(id: string, changes: WebhookChanges): Promise<void> {
+  reviseWebhook(id: string, changes: WebhookChanges, version: number): Promise<void> {
     return this.call(this.hooks.reviseWebhookSubscription({
-      id,
+      id, ifMatch: `"${version}"`,
       webhookRevisionRequest: {
         name: changes.name, url: changes.url, eventTypes: changes.eventTypes as ApiWebhookEventType[],
         active: changes.active,
@@ -334,8 +334,8 @@ export abstract class GeneratedGatewayOrders extends GeneratedGatewayDelivery {
       (s) => s.items.map((t) => ({ id: text(t.id), label: `${text(t.code)} · ${text(t.name)}` })));
   }
 
-  warehouseBins(warehouseId: string): Promise<Row[]> {
-    return this.call(this.warehouse.listBins({ warehouseId, limit: 200 }), (s) => s.items.map(flatRow));
+  warehouseBins(warehouseId: string, status?: string): Promise<Row[]> {
+    return this.call(this.warehouse.listBins({ warehouseId, limit: 200, status: status || undefined }), (s) => s.items.map(flatRow));
   }
 
   createBin(warehouseId: string, code: string, capacityUnits: number): Promise<string> {
@@ -343,8 +343,8 @@ export abstract class GeneratedGatewayOrders extends GeneratedGatewayDelivery {
       (r) => r.id);
   }
 
-  skus(): Promise<Row[]> {
-    return this.call(this.warehouse.listSkus({ limit: 200 }), (s) => s.items.map(flatRow));
+  skus(status?: string): Promise<Row[]> {
+    return this.call(this.warehouse.listSkus({ limit: 200, status: status || undefined }), (s) => s.items.map(flatRow));
   }
 
   createSku(draft: SkuDraft): Promise<string> {
