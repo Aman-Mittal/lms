@@ -76,6 +76,7 @@ function orgUnitViewOf(u: OrgUnit): OrgUnitView {
     id: text(u.id), parentId: text(u.parentId), slug: text(u.slug), path: text(u.path), name: text(u.name),
     unitType: text(u.unitType), level: u.level, countryCode: text(u.countryCode), stateCode: text(u.stateCode),
     effectiveCountry: text(u.effectiveCountry), effectiveState: text(u.effectiveState), version: text(u.version),
+    active: u.active !== false,
   };
 }
 
@@ -183,7 +184,8 @@ export function settingsVerbs(config: Configuration): SettingsVerbs {
       guard(async () => profileViewOf(await settings.updateSettingProfile({
         id, ifMatch: `"${version}"`, updateSettingProfileRequest: { conditions: conditionsRequest(conditions) },
       }))),
-    orgUnits: () => guard(async () => (await units.listOrgUnits({ limit: 200 })).items.map(orgUnitViewOf)),
+    orgUnits: (status?: string) =>
+      guard(async () => (await units.listOrgUnits({ limit: 200, status: status || undefined })).items.map(orgUnitViewOf)),
     orgUnit: (id: string) => guard(async () => orgUnitViewOf(await units.getOrgUnit({ id }))),
     createOrgUnit: (draft: OrgUnitDraft) =>
       guard(async () => text((await units.createOrgUnit({

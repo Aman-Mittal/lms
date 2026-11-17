@@ -54,8 +54,11 @@
     tags: [Webhooks]
     operationId: listWebhookSubscriptions
     summary: A page of webhook subscriptions
-    description: Requires `WEBHOOK_READ`. Ordered by name. Never includes a secret.
+    description: |
+      Requires `WEBHOOK_READ`. Ordered by name; the active subscriptions unless
+      `status` says otherwise. Never includes a secret.
     parameters:
+      - $ref: "#/components/parameters/activeStatus"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
     responses:
@@ -78,10 +81,13 @@
     tags: [Webhooks]
     operationId: getWebhookSubscription
     summary: One webhook subscription
-    description: Requires `WEBHOOK_READ`.
+    description: Requires `WEBHOOK_READ`. The `ETag` is the version `PUT` sends back in `If-Match`.
     responses:
       "200":
         description: The subscription.
+        headers:
+          ETag:
+            schema: { type: string }
         content:
           application/json:
             schema: { $ref: "#/components/schemas/WebhookSubscription" }
@@ -95,14 +101,77 @@
     description: |
       Requires `WEBHOOK_MANAGE`. Setting `active: false` stops new deliveries
       and pauses pending ones; setting it back to true clears a pause the
-      platform applied and its failure count.
+      platform applied and its failure count. A stale `If-Match` is 409
+      `concurrent-modification`.
     parameters:
+      - $ref: "#/components/parameters/ifMatch"
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
       required: true
       content:
         application/json:
           schema: { $ref: "#/components/schemas/WebhookRevisionRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/webhooks/subscriptions/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the subscription.
+  post:
+    tags: [Webhooks]
+    operationId: deactivateWebhookSubscription
+    summary: Switch a webhook subscription off, with a reason
+    description: |
+      Requires `WEBHOOK_MANAGE`. An inactive subscription records and sends nothing:
+      events are not queued for it, and what is already queued waits until it is
+      switched back on. 409 `webhook-already-inactive` when already off. Audited as
+      `WEBHOOK_DEACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/webhooks/subscriptions/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the subscription.
+  post:
+    tags: [Webhooks]
+    operationId: reactivateWebhookSubscription
+    summary: Switch a webhook subscription back on, with a reason
+    description: |
+      Requires `WEBHOOK_MANAGE`. Clears a pause the platform applied and its failure
+      count. 409 `webhook-not-inactive` when already on. Audited as `WEBHOOK_REACTIVATED`
+      with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }

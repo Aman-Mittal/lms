@@ -31,6 +31,7 @@ import com.lms.shared.tenant.TenantContext;
 import com.lms.sourcing.command.domain.AllocationRule;
 import com.lms.sourcing.command.domain.AllocationRule.RuleAction;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,14 +88,67 @@ public class AllocationRuleService {
 
     @Transactional
     @PreAuthorize("hasAuthority('ALLOCATION_RULE_MANAGE')")
-    public void revise(UUID id, RuleDraft draft) {
+    public void revise(UUID id, long expectedVersion, RuleDraft draft) {
         AllocationRule current = rules.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Allocation rule", id));
+        requireVersion(current, expectedVersion);
         Checked c = check(draft);
         AllocationRule saved = save(current.revised(c.name, c.priority, c.active,
                 draft.originTerminalId(), draft.destinationTerminalId(), c.min, c.max,
                 c.materialClass, draft.action(), c.vendors));
         audit.record("ALLOCATION_RULE_REVISED", AUDIT_TYPE, id, snapshot(current), snapshot(saved));
+    }
+
+    /**
+     * Takes the rule out of play, with a reason. An inactive rule never fires, so
+     * allocation skips it; the allocations it already decided keep their record of
+     * it. {@code expectedVersion} is optional: a console sends it so a switch is
+     * not applied to a rule somebody else has just changed.
+     */
+    @Transactional
+    @PreAuthorize("hasAuthority('ALLOCATION_RULE_MANAGE')")
+    public void deactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        AllocationRule current = rules.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Allocation rule", id));
+        if (expectedVersion != null) {
+            requireVersion(current, expectedVersion);
+        }
+        if (!current.active()) {
+            throw new BusinessRuleViolationException("allocation-rule-already-inactive",
+                    "Rule " + current.name() + " is already inactive");
+        }
+        AllocationRule saved = rules.save(current.withActive(false));
+        audit.record("ALLOCATION_RULE_DEACTIVATED", AUDIT_TYPE, id, snapshot(current), snapshot(saved, reason));
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('ALLOCATION_RULE_MANAGE')")
+    public void reactivate(UUID id, Long expectedVersion, String reason) {
+        requireReason(reason);
+        AllocationRule current = rules.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Allocation rule", id));
+        if (expectedVersion != null) {
+            requireVersion(current, expectedVersion);
+        }
+        if (current.active()) {
+            throw new BusinessRuleViolationException("allocation-rule-not-inactive",
+                    "Rule " + current.name() + " is active, not inactive");
+        }
+        AllocationRule saved = rules.save(current.withActive(true));
+        audit.record("ALLOCATION_RULE_REACTIVATED", AUDIT_TYPE, id, snapshot(current), snapshot(saved, reason));
+    }
+
+    private static void requireReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("A reason is required");
+        }
+    }
+
+    private static void requireVersion(AllocationRule rule, long expected) {
+        if (rule.version() == null || rule.version() != expected) {
+            throw new OptimisticLockingFailureException("Rule " + rule.name() + " changed since it was read");
+        }
     }
 
     /** The unique name index is the arbiter, so two writers racing on one name cannot both win. */
@@ -167,7 +221,11 @@ public class AllocationRuleService {
     }
 
     private static Json snapshot(AllocationRule r) {
-        return Json.object("name", r.name(), "priority", Integer.toString(r.priority()),
+        return snapshot(r, null);
+    }
+
+    private static Json snapshot(AllocationRule r, String reason) {
+        return Json.object("reason", reason, "name", r.name(), "priority", Integer.toString(r.priority()),
                 "active", Boolean.toString(r.active()), "action", r.action().name(),
                 "originTerminalId", r.originTerminalId() == null ? null : r.originTerminalId().toString(),
                 "destinationTerminalId",
