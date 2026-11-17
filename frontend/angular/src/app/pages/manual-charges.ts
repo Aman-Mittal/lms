@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import {
-  ApiProblem, CHARGE_SUBJECT_TYPES, ChargeEntryView, LmsGateway, ManualChargeView,
+  ApiProblem, CHARGE_SUBJECT_TYPES, ChargeEntryView, LmsGateway, ManualChargeView, PickKind,
 } from '../gateway/lms-gateway';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
+import { ErrorBanner } from './error-banner';
+import { EntityPicker } from './entity-picker';
 
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -33,19 +35,16 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-manual-charges',
-  imports: [PageHeader, StatusBadge, Money],
+  imports: [EntityPicker, ErrorBanner, PageHeader, StatusBadge, Money],
   template: `
     <app-page-header title="Manual charges" />
     <p class="muted">Detention, loading, tolls and penalties raised by hand against a trip, consignment or order.</p>
     @if (refusal(); as r) {
-      <p class="error" role="alert" data-testid="mc-error">
-        @if (r.code) { <code>{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" testId="mc-error" />
     }
     @if (result()) { <p class="ok" role="status" data-testid="mc-result">{{ result() }}</p> }
 
-    <form data-testid="mc-form" (submit)="submit($event)">
+    <form ngNativeValidate data-testid="mc-form" (submit)="submit($event)">
       <h2>Raise a charge</h2>
       <select aria-label="Charge" data-testid="mc-catalogue" (change)="catalogue.set(valueOf($event))">
         <option value="">Choose a charge</option>
@@ -53,18 +52,18 @@ function valueOf(event: Event): string {
           <option [value]="e.id" [selected]="e.id === catalogue()">{{ e.code }} - {{ e.name }}</option>
         }
       </select>
-      <select aria-label="Subject type" data-testid="mc-subject-type" (change)="subjectType.set(valueOf($event))">
+      <select aria-label="Subject type" data-testid="mc-subject-type" (change)="subjectType.set(valueOf($event)); subject.set('')">
         @for (t of subjectTypes; track t) { <option [value]="t" [selected]="t === subjectType()">{{ t }}</option> }
       </select>
-      <input placeholder="Trip, consignment or order id" aria-label="Subject id" data-testid="mc-subject" required
-             [value]="subject()" (input)="subject.set(valueOf($event))" />
+      <app-entity-picker [kind]="subjectKind()" placeholder="Trip, consignment or order id" ariaLabel="Subject id"
+                         testId="mc-subject" [required]="true" [(value)]="subject" />
       <select aria-label="Direction" data-testid="mc-direction" (change)="direction.set(valueOf($event))">
         <option value="">Direction (from the charge)</option>
         <option value="RECEIVABLE">RECEIVABLE</option>
         <option value="PAYABLE">PAYABLE</option>
       </select>
-      <input placeholder="Customer id (several customers aboard)" aria-label="Customer id" data-testid="mc-customer"
-             [value]="customer()" (input)="customer.set(valueOf($event))" />
+      <app-entity-picker [kind]="'customer'" placeholder="Customer id (several customers aboard)" ariaLabel="Customer id"
+                         testId="mc-customer" [(value)]="customer" />
       <input type="number" min="0" step="any" placeholder="Quantity" aria-label="Quantity" data-testid="mc-quantity"
              required [value]="quantity()" (input)="quantity.set(valueOf($event))" />
       <input type="number" min="0" step="any" [placeholder]="ratePlaceholder()" aria-label="Rate" data-testid="mc-rate"
@@ -106,7 +105,7 @@ function valueOf(event: Event): string {
             @if (cancelling() === c.id) {
               <tr data-testid="mc-cancel-row">
                 <td colspan="8">
-                  <form class="inline" (submit)="cancel($event, c.id)">
+                  <form ngNativeValidate class="inline" (submit)="cancel($event, c.id)">
                     <input placeholder="Why" aria-label="Cancel reason" data-testid="mc-cancel-reason" required
                            [value]="cancelReason()" (input)="cancelReason.set(valueOf($event))" />
                     <button type="submit" data-testid="mc-cancel-confirm">Cancel charge</button>
@@ -138,6 +137,9 @@ export class ManualCharges implements OnInit {
   readonly catalogue = signal('');
   readonly subjectType = signal<string>('TRIP');
   readonly subject = signal('');
+  /** What the subject picker offers for the chosen kind of subject. */
+  readonly subjectKind = computed<PickKind>(() => (
+    { TRIP: 'trip', CONSIGNMENT: 'consignment', ORDER: 'order' } as Record<string, PickKind>)[this.subjectType()] ?? 'trip');
   readonly direction = signal('');
   readonly customer = signal('');
   readonly quantity = signal('1');
