@@ -19,16 +19,17 @@ import { LmsGateway, MappedDetail, Row } from '../gateway/lms-gateway';
 import { MapView } from './map-view';
 import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { ErrorBanner } from './error-banner';
 
 /** Milk-run routes, one route's circuit on the map, and the runs generated from it. */
 @Component({
   selector: 'app-milk-runs',
-  imports: [MapView, RowTable, PageHeader],
+  imports: [ErrorBanner, MapView, RowTable, PageHeader],
   template: `
     <app-page-header title="Milk runs" />
     <p class="muted">Scheduled pickup circuits: from the plant, round the suppliers in order, and back.</p>
     @if (loading()) { <p class="muted">Loading…</p> }
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (!loading() && !error() && list().length === 0) {
       <p class="muted" data-testid="no-routes">No milk-run routes yet.</p>
     }
@@ -36,7 +37,7 @@ import { PageHeader } from './page-header';
       <app-row-table testId="routes" [rows]="list()" [columns]="columns" [pickable]="true"
                      [picked]="picked()" (pick)="open($event)" />
     }
-    @if (detailError()) { <p class="error" role="alert">{{ detailError() }}</p> }
+    @if (detailError()) { <app-error-banner [message]="detailError()" /> }
     @if (detail(); as d) {
       <section data-testid="route-detail">
         <h2>{{ d.header['code'] }} · {{ d.header['name'] }}</h2>

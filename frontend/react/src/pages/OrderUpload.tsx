@@ -21,6 +21,7 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * Orders from a spreadsheet: choose a customer and a CSV or XLSX file, and see what became of every row.
@@ -70,7 +71,7 @@ export function OrderUpload() {
           onChange={(ev) => setFile(ev.target.files && ev.target.files.length > 0 ? ev.target.files[0] : null)} />
         <button type="submit" data-testid="upload-submit" disabled={busy}>Upload</button>
       </form>
-      {error && <p className="error" role="alert" data-testid="upload-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="upload-error" />}
       {outcome && (
         <>
           <p role="status" data-testid="upload-summary">

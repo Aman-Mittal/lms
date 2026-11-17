@@ -20,6 +20,7 @@ import { useSession } from '../session';
 import { CONFLICT_TEXT } from './MasterDataForm';
 import { EDIT_PERMISSION, KIND_LABEL } from './masterDataFields';
 import { ApiProblem } from '../gateway/lmsGateway';
+import { ErrorBanner } from './ErrorBanner';
 
 interface Props {
   kind: MasterKind;
@@ -106,7 +107,7 @@ export function MasterDataActions({ kind, id, name, status, version, onEdit, onS
             aria-invalid={reasonError ? true : undefined} aria-describedby={reasonError ? 'md-reason-error' : undefined}
             onChange={(e) => setReason(e.target.value)} />
           {reasonError && <small id="md-reason-error" className="error" role="alert" data-testid="reason-error">{reasonError}</small>}
-          {refusal && <p className="error" role="alert" data-testid="action-error">{refusal}</p>}
+          {refusal && <ErrorBanner message={refusal} testId="action-error" />}
           <div className="actions">
             <button type="button" data-testid="confirm-action" disabled={busy} onClick={confirm}>{VERB[pending]}</button>
             <button type="button" className="link" data-testid="cancel-action" onClick={() => setPending(null)}>Cancel</button>

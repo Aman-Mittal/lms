@@ -23,6 +23,7 @@ import { useLoad } from '../useLoad';
 import { ConfigActions } from './ConfigActions';
 import { PageHeader } from './PageHeader';
 import { StatusFilter } from './StatusFilter';
+import { ErrorBanner } from './ErrorBanner';
 
 const KIND_LABEL: Record<CustomFieldKind, string> = {
   PARTNER: 'Partners', VEHICLE: 'Vehicles', DRIVER: 'Drivers', TERMINAL: 'Terminals',
@@ -50,7 +51,7 @@ export function FieldsSettings() {
         </select>
       </label>
       <StatusFilter value={status} onChange={setStatus} />
-      {loadError && <p className="error" role="alert">{loadError}</p>}
+      {loadError && <ErrorBanner message={loadError} />}
       {loading ? (
         <p>Loading…</p>
       ) : (data ?? []).length === 0 ? (
@@ -133,7 +134,7 @@ function AddField({ kind, onDone }: { kind: CustomFieldKind; onDone: () => void 
         </label>
         <button type="submit">Add field</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </>
   );
 }

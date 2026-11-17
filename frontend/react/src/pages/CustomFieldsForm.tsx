@@ -20,6 +20,7 @@ import type {
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { ErrorBanner } from './ErrorBanner';
 
 /** Everything a form field holds is text until it is saved. */
 type Draft = Record<string, string>;
@@ -52,7 +53,7 @@ export function CustomFieldsForm({ kind, recordId }: { kind: CustomFieldKind; re
 
   const failed = definitions.error || stored.error;
   if (failed) {
-    return <p className="error" role="alert">{failed}</p>;
+    return <ErrorBanner message={failed} />;
   }
   if (!definitions.data || !stored.data) {
     return <p>Loading custom fields…</p>;
@@ -153,7 +154,7 @@ function Editor({ kind, recordId, definitions, initial, canWrite }: EditorProps)
       })}
       {canWrite && <button type="submit" disabled={busy} data-testid="save-custom-fields">Save</button>}
       {message && <p className="ok" role="status" data-testid="custom-fields-saved">{message}</p>}
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </form>
   );
 }
