@@ -22,6 +22,7 @@ import { compareWithWhole, splitByCapacity, type PlannedPart } from './splitPlan
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Quantity } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -56,7 +57,7 @@ export function ConsignmentDesk() {
           value={typed} onChange={(e) => setTyped(e.target.value)} required />
         <button type="submit">Look up</button>
       </form>
-      {card.error && <p className="error" role="alert">{card.error}</p>}
+      {card.error && <ErrorBanner message={card.error} />}
       {card.data && !card.loading && (
         <Detail key={`${card.data.id}:${reload}`} consignment={card.data}
           onOpen={(id) => { setTarget({ id }); setReload((n) => n + 1); }}
@@ -128,7 +129,7 @@ function Detail({ consignment: c, onOpen, onChanged }: DetailProps) {
           <progress max={c.partCount} value={c.partsDelivered ?? 0} aria-label="Parts delivered" />
         </div>
       )}
-      {split && parts.error && <p className="error" role="alert">{parts.error}</p>}
+      {split && parts.error && <ErrorBanner message={parts.error} />}
       {split && parts.data && (
         <div className="table-wrap"><table data-testid="parts">
           <thead><tr><th>Part</th><th>Status</th><th>Weight kg</th><th>Load</th></tr></thead>
@@ -219,7 +220,7 @@ function SplitForm({ consignment: c, onSplit }: { consignment: ConsignmentCard; 
           inputMode="decimal" value={capacity} onChange={(e) => setCapacity(e.target.value)} required />
         <button type="submit" data-testid="plan-parts">Plan parts</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {parts.length > 0 && (
         <>
           <div className="table-wrap"><table data-testid="planned-parts">
@@ -273,10 +274,7 @@ function refusalOf(e: unknown): Refusal {
 
 function RefusalNote({ refusal, testId }: { refusal: Refusal; testId: string }) {
   return (
-    <p className="error" role="alert" data-testid={`${testId}-error`}>
-      {refusal.code && <><code data-testid={`${testId}-refusal`}>{refusal.code}</code>{' '}</>}
-      {refusal.message}
-    </p>
+    <ErrorBanner message={refusal.message} code={refusal.code} testId={`${testId}-error`} codeTestId={`${testId}-refusal`} />
   );
 }
 

@@ -22,6 +22,7 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Quantity } from './figures';
+import { ErrorBanner } from './error-banner';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -80,18 +81,18 @@ export class ConsignmentTable {
 /** Finds waiting consignments, picks them, and puts them on the load together. */
 @Component({
   selector: 'app-add-consignments',
-  imports: [FormsModule, EntityPicker, Quantity],
+  imports: [ErrorBanner, FormsModule, EntityPicker, Quantity],
   template: `
     <section data-testid="add-panel">
       <h3>Add consignments</h3>
       <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-      <form class="inline" (ngSubmit)="find()" data-testid="find-unassigned">
+      <form ngNativeValidate class="inline" (ngSubmit)="find()" data-testid="find-unassigned">
         <app-entity-picker [kind]="'order'" placeholder="Order (optional)" ariaLabel="Order id" testId="order-filter"
                            [(value)]="orderTyped" />
         <button type="submit">Find waiting consignments</button>
       </form>
       @if (added() > 0) { <p class="ok" data-testid="bulk-added">Added {{ added() }} consignments to the load.</p> }
-      @if (error()) { <p class="error" role="alert" data-testid="bulk-error">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" testId="bulk-error" /> }
       @if (refusals().length > 0) {
         <ul data-testid="bulk-refusals">
           @for (r of refusals(); track r[0]) {
@@ -230,7 +231,7 @@ export class AddConsignments {
  */
 @Component({
   selector: 'app-load-building',
-  imports: [FormsModule, ConsignmentTable, AddConsignments, EntityPicker, PageHeader, StatusBadge],
+  imports: [ErrorBanner, FormsModule, ConsignmentTable, AddConsignments, EntityPicker, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Load building" />
     <p class="muted">
@@ -238,12 +239,12 @@ export class AddConsignments {
       up to {{ max }} at a time.
     </p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-    <form class="inline" (ngSubmit)="open()" data-testid="open-load">
+    <form ngNativeValidate class="inline" (ngSubmit)="open()" data-testid="open-load">
       <app-entity-picker [kind]="'load'" placeholder="Load" ariaLabel="Load id" testId="load-id" [required]="true"
                          [(value)]="typed" />
       <button type="submit">Open</button>
     </form>
-    @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
+    @if (loadError()) { <app-error-banner [message]="loadError()" /> }
     @if (build(); as b) {
       <section data-testid="load-panel">
         <h2>{{ b.load['loadNo'] }}</h2>
@@ -277,10 +278,7 @@ export class AddConsignments {
         }
         @if (done()) { <p class="ok" role="status" data-testid="load-done">{{ done() }}</p> }
         @if (refusal(); as r) {
-          <p class="error" role="alert" data-testid="load-error">
-            @if (r.code) { <code data-testid="load-refusal">{{ r.code }}</code> }
-            {{ r.message }}
-          </p>
+          <app-error-banner [message]="r.message" [code]="r.code" testId="load-error" codeTestId="load-refusal" />
         }
         <p>
           <button type="button" class="link" data-testid="print-manifest" (click)="manifest.set(true)"

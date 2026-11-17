@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { CLAIM_TYPES, type ClaimTarget, type ClaimType } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
@@ -25,8 +25,35 @@ import { PageHeader } from './PageHeader';
 import { Cell } from './Cell';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
+import { EmptyState, LoadingState } from './EmptyState';
 
 const resource = RESOURCES.find((r) => r.key === 'claims')!;
+/** The most consignments looked up by name at once; a longer page falls back on a short id for the rest. */
+const NAME_LOOKUPS = 25;
+
+/** The tracking reference of each consignment the claims name, read once each; failures leave the short id. */
+function useConsignmentNames(ids: string[]): Record<string, string> {
+  const { gateway } = useSession();
+  const [names, setNames] = useState<Record<string, string>>({});
+  const wanted = [...new Set(ids)].filter((id) => id && !(id in names)).slice(0, NAME_LOOKUPS);
+  const key = wanted.join(',');
+  useEffect(() => {
+    let ignore = false;
+    wanted.forEach((id) => {
+      gateway.consignment(id).then((c) => { if (!ignore) { setNames((n) => ({ ...n, [id]: c.trackingRef })); } })
+        .catch(() => { if (!ignore) { setNames((n) => ({ ...n, [id]: id.slice(0, 8) + '…' })); } });
+    });
+    return () => { ignore = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return names;
+}
+
+/** A consignment by its tracking reference. The id stays in the text, unseen, so a row can still be found by it. */
+function ConsignmentRef({ id, names }: { id: string; names: Record<string, string> }) {
+  return <><span>{names[id] ?? '…'}</span><span className="sr-only" aria-hidden="true">{id}</span></>;
+}
 
 /** Claims: the list, a form to raise one, and a panel to decide and print it. */
 export function ClaimsPage() {
@@ -45,6 +72,7 @@ export function ClaimsPage() {
   }
 
   const rows = data ?? [];
+  const names = useConsignmentNames(rows.map((r) => r.consignmentId));
   const selected = rows.find((row) => row.id === selectedId) ?? null;
 
   return (
@@ -56,11 +84,11 @@ export function ClaimsPage() {
           value={typed} onChange={setTyped} />
           <button type="submit">Filter</button>
         </form>
-        {error && <p className="error" role="alert">{error}</p>}
+        {error && <ErrorBanner message={error} />}
         {loading ? (
-          <p>Loading…</p>
+          <LoadingState />
         ) : rows.length === 0 && !error ? (
-          <p className="muted">{consignmentId ? 'No claims against that consignment.' : 'Nothing here yet.'}</p>
+          <EmptyState message={consignmentId ? 'No claims against that consignment.' : 'Nothing here yet.'} />
         ) : (
           rows.length > 0 && (
             <div className="table-wrap"><table>
@@ -75,7 +103,13 @@ export function ClaimsPage() {
                     onClick={() => setSelectedId(row.id)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { setSelectedId(row.id); } }}
                   >
-                    {resource.columns.map((c) => <td key={c.field}><Cell field={c.field} value={row[c.field]} /></td>)}
+                    {resource.columns.map((c) => (
+                      <td key={c.field}>
+                        {c.field === 'consignmentId'
+                          ? <ConsignmentRef id={row.consignmentId} names={names} />
+                          : <Cell field={c.field} value={row[c.field]} />}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -85,7 +119,7 @@ export function ClaimsPage() {
         {can('CLAIM_RAISE') && <RaiseClaim onDone={() => setReload((n) => n + 1)} />}
       </div>
       {selected && (
-        <ClaimPanel key={selected.id} row={selected} onClose={() => setSelectedId(null)}
+        <ClaimPanel key={selected.id} row={selected} names={names} onClose={() => setSelectedId(null)}
           onChanged={() => setReload((n) => n + 1)} />
       )}
     </div>
@@ -132,18 +166,19 @@ function RaiseClaim({ onDone }: { onDone: () => void }) {
           onChange={(e) => setDescription(e.target.value)} required />
         <button type="submit">Raise claim</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
     </>
   );
 }
 
 interface PanelProps {
   row: Record<string, string>;
+  names: Record<string, string>;
   onClose: () => void;
   onChanged: () => void;
 }
 
-function ClaimPanel({ row, onClose, onChanged }: PanelProps) {
+function ClaimPanel({ row, names, onClose, onChanged }: PanelProps) {
   const { gateway, can } = useSession();
   const [approved, setApproved] = useState('');
   const [note, setNote] = useState('');
@@ -178,7 +213,7 @@ function ClaimPanel({ row, onClose, onChanged }: PanelProps) {
         <div><dt>Approved</dt><dd><Money data-testid="claim-approved" value={row.approvedAmount} empty="—" /></dd></div>
         <div><dt>Note</dt><dd>{row.resolutionNote || '—'}</dd></div>
       </dl>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <ErrorBanner message={error} />}
       {decide && row.status === 'OPEN' && (
         <p><button data-testid="act-review" onClick={() => move('UNDER_REVIEW')}>Take under review</button></p>
       )}
@@ -210,7 +245,7 @@ function ClaimPanel({ row, onClose, onChanged }: PanelProps) {
               <div><dt>Type</dt><dd>{row.claimType}</dd></div>
               <div><dt>Claimed</dt><dd><Money value={row.amount} /></dd></div>
               <div><dt>Status</dt><dd><StatusBadge value={row.status} /></dd></div>
-              <div><dt>Consignment</dt><dd>{row.consignmentId}</dd></div>
+              <div><dt>Consignment</dt><dd><ConsignmentRef id={row.consignmentId} names={names} /></dd></div>
               <div><dt>Description</dt><dd>{row.description}</dd></div>
             </dl>
             <Qr payload={`LMS:CLAIM:${row.claimNo}`} />
