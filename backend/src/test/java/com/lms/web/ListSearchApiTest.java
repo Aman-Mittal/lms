@@ -262,11 +262,15 @@ class ListSearchApiTest {
 
         assertThat(lanes(rights, "/api/v1/routing-guides?q=pnq"))
                 .containsExactlyInAnyOrder("PNQ-DC>BOM-HUB", "PNQ-DC>DEL-HUB");
-        assertThat(lanes(rights, "/api/v1/routing-guides?q=del-"))
+        assertThat(lanes(rights, "/api/v1/routing-guides?status=ALL&q=del-"))
                 .containsExactlyInAnyOrder("PNQ-DC>DEL-HUB", "BOM-HUB>DEL-HUB");
-        assertThat(lanes(rights, "/api/v1/routing-guides?q=32ft"))
+        assertThat(lanes(rights, "/api/v1/routing-guides?status=ALL&q=32ft"))
+                .as("status ALL lists a retired guide too")
                 .containsExactlyInAnyOrder("PNQ-DC>BOM-HUB", "BOM-HUB>DEL-HUB");
         assertThat(lanes(rights, "/api/v1/routing-guides?q=32ft&active=true")).containsExactly("PNQ-DC>BOM-HUB");
+        assertThat(lanes(rights, "/api/v1/routing-guides?q=32ft")).as("the default list is the live guides")
+                .containsExactly("PNQ-DC>BOM-HUB");
+        assertThat(lanes(rights, "/api/v1/routing-guides?q=32ft&status=INACTIVE")).containsExactly("BOM-HUB>DEL-HUB");
         assertThat(lanes(rights, "/api/v1/routing-guides?q=%25")).isEmpty();
         assertThat(kit.parse(ok(rights, "/api/v1/routing-guides?q=pnq")).get("items").get(0).get("entries"))
                 .isEmpty();
@@ -274,7 +278,7 @@ class ListSearchApiTest {
         List<String> seen = new ArrayList<>();
         String cursor = null;
         do {
-            JsonNode page = kit.parse(ok(rights, "/api/v1/routing-guides?limit=1"
+            JsonNode page = kit.parse(ok(rights, "/api/v1/routing-guides?status=ALL&limit=1"
                     + (cursor == null ? "" : "&cursor=" + cursor)));
             page.get("items").forEach(item -> seen.add(item.get("id").asString()));
             cursor = page.hasNonNull("nextCursor") ? page.get("nextCursor").asString() : null;

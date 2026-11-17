@@ -31,7 +31,7 @@ import {
   type NumberFormatSample, type NumberSeriesDraft, type NumberSeriesScope, type NumberSeriesView,
   type NumberVerdict,
 } from './lms-gateway';
-import { GeneratedGatewayMaster } from './generated-gateway-master';
+import { GeneratedGatewayConfig } from './generated-gateway-config';
 import {
   adminAttributesOf, adminAttributesRequest, adminConditionOf, adminDocumentRequest, adminDocumentRow,
   adminPolicyOf, adminUserOf, commercialAllocationRow, commercialBillLineRow, commercialBillRow, commercialBlank,
@@ -43,7 +43,7 @@ import {
 } from './generated-gateway-helpers';
 
 @Injectable()
-export class GeneratedLmsGateway extends GeneratedGatewayMaster {
+export class GeneratedLmsGateway extends GeneratedGatewayConfig {
   // Number series
   numberSeries(documentType?: NumberedDocumentType): Promise<NumberSeriesView[]> {
     return this.call(this.numbering.listNumberSeries({
@@ -175,8 +175,8 @@ export class GeneratedLmsGateway extends GeneratedGatewayMaster {
   }
 
   // Organisation units
-  orgUnits(): Promise<OrgUnitView[]> {
-    return this.call(this.orgUnitsApi.listOrgUnits({ limit: 200 }), (s) => s.items.map(orgUnitViewOf));
+  orgUnits(status?: string): Promise<OrgUnitView[]> {
+    return this.call(this.orgUnitsApi.listOrgUnits({ limit: 200, status: status || undefined }), (s) => s.items.map(orgUnitViewOf));
   }
 
   orgUnit(id: string): Promise<OrgUnitView> {
@@ -333,10 +333,10 @@ export class GeneratedLmsGateway extends GeneratedGatewayMaster {
     }), (made) => text(made.id));
   }
 
-  async reviseAccessPolicy(id: string, changes: AccessPolicyChanges): Promise<void> {
+  async reviseAccessPolicy(id: string, changes: AccessPolicyChanges, version: number): Promise<void> {
     const condition = adminConditionOf(changes.condition);
     return this.call(this.accessPolicyApi.reviseAccessPolicy({
-      id,
+      id, ifMatch: `"${version}"`,
       reviseAccessPolicyRequest: {
         effect: changes.effect as ReviseAccessPolicyRequestEffectEnum, description: changes.description.trim(),
         condition, enabled: changes.enabled,
@@ -409,8 +409,8 @@ export class GeneratedLmsGateway extends GeneratedGatewayMaster {
     }), (r) => text(r.id));
   }
 
-  routingGuide(id: string): Promise<RoutingGuideDetail> {
-    return this.call(this.sourcing.getRoutingGuide({ id }), commercialGuideOf);
+  routingGuide(id: string, status?: string): Promise<RoutingGuideDetail> {
+    return this.call(this.sourcing.getRoutingGuide({ id, status: status || undefined }), commercialGuideOf);
   }
 
   addGuideVendor(guideId: string, draft: GuideVendorDraft): Promise<void> {
