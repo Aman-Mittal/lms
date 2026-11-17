@@ -25,6 +25,7 @@ import { RowTable, type RowColumn } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /** The problem a hard credit limit refuses an action with. */
 export const CREDIT_LIMIT_EXCEEDED = 'credit-limit-exceeded';
@@ -52,7 +53,7 @@ export function CreditPosition({ partnerId, refreshKey }: { partnerId: string; r
   return (
     <section className="credit" data-testid="credit-position" aria-label="Credit position">
       <h3>Credit position</h3>
-      {position.error && <p className="error" role="alert" data-testid="credit-position-error">{position.error}</p>}
+      {position.error && <ErrorBanner message={position.error} testId="credit-position-error" />}
       {p && (
         <>
           <dl>
@@ -140,10 +141,7 @@ export function CreditOverride({ partnerId, subjectType, orderId, period, errors
             onChange={(e) => setUpTo(e.target.value)} required />
           <button type="submit" data-testid="credit-override-submit">Override and retry</button>
           {failure && (
-            <span className="error" role="alert" data-testid="credit-override-error">
-              {failure.code && <><code>{failure.code}</code>{' '}</>}
-              {failure.message}
-            </span>
+            <ErrorBanner message={failure.message} code={failure.code} testId="credit-override-error" />
           )}
         </form>
       ) : (
@@ -228,12 +226,9 @@ export function CreditLimits() {
         A new credit limit applies only once someone other than the person who asked for it approves it.
       </p>
       {refusal && (
-        <p className="error" role="alert" data-testid="credit-admin-error">
-          {refusal.code && <><code data-testid="credit-admin-refusal">{refusal.code}</code>{' '}</>}
-          {refusal.message}
-        </p>
+        <ErrorBanner message={refusal.message} code={refusal.code} testId="credit-admin-error" codeTestId="credit-admin-refusal" />
       )}
-      {!refusal && loadError && <p className="error" role="alert" data-testid="credit-admin-error">{loadError}</p>}
+      {!refusal && loadError && <ErrorBanner message={loadError} testId="credit-admin-error" />}
       {message && <p className="ok" role="status" data-testid="credit-admin-message">{message}</p>}
 
       <form className="inline" data-testid="credit-partner-form"
