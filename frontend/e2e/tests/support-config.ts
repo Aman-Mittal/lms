@@ -163,8 +163,16 @@ export async function stubConfig(page: Page): Promise<ConfigStub> {
     refuse: new Map(),
   };
 
-  // Everything else the screens read on the way in is an empty page.
-  await page.route('**/api/v1/**', (route) => handle(route, () => json({ items: [], hasMore: false })));
+  // Everything else the screens read on the way in is an empty page, except the sign-in and the session: those go
+  // to the real backend (or to stubConfigSession's routes, registered later and so matched first), or the console
+  // signs in with no permissions and hides the screens these specs open.
+  await page.route('**/api/v1/**', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (/^\/api\/v1\/(auth\/|me(\/|$))/.test(path)) {
+      return route.fallback();
+    }
+    return handle(route, () => json({ items: [], hasMore: false }));
+  });
 
   const entries = () => stub.records.guideVendors;
 
