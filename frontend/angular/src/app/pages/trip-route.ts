@@ -25,22 +25,23 @@ import { TripMoney } from './trip-money';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** A trip's track so far and where it is now. */
 @Component({
   selector: 'app-trip-route',
-  imports: [FormsModule, MapView, EntityPicker, TripMoney, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, MapView, EntityPicker, TripMoney, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Trip route" />
     <p class="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
-    <form class="inline" (ngSubmit)="lookUp()" data-testid="trip-lookup">
+    <form ngNativeValidate class="inline" (ngSubmit)="lookUp()" data-testid="trip-lookup">
       <app-entity-picker [kind]="'trip'" placeholder="Trip" ariaLabel="Trip id" testId="trip-id" [required]="true"
                          [(value)]="typed" />
       <button type="submit">Show route</button>
     </form>
     @if (loading()) { <p class="muted">Loading…</p> }
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (route(); as r) {
       <section data-testid="trip-route">
         <dl class="facts">
@@ -59,7 +60,7 @@ import { When } from './when';
       <section data-testid="trip-stops" aria-label="Trip stops">
         <h2>Stops</h2>
         @if (stopError()) {
-          <p class="error" role="alert" data-testid="stop-error">{{ stopError() }}</p>
+          <app-error-banner [message]="stopError()" testId="stop-error" />
         }
         @if (stops().length === 0) {
           <p class="muted" data-testid="stops-empty">This trip has no planned stops.</p>
@@ -99,7 +100,7 @@ import { When } from './when';
                 @if (skipping() === s.id) {
                   <tr data-testid="stop-skip-row">
                     <td colspan="9">
-                      <form class="inline" data-testid="stop-skip-form" (submit)="skip($event, s)">
+                      <form ngNativeValidate class="inline" data-testid="stop-skip-form" (submit)="skip($event, s)">
                         <input placeholder="Why" aria-label="Skip reason" data-testid="stop-skip-reason" required
                                [value]="skipReason()" (input)="skipReason.set($any($event.target).value)" />
                         <button type="submit" data-testid="stop-skip-confirm">Skip stop</button>
