@@ -17,18 +17,21 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
-  AllocationRuleView, AllocationSummary, Choice, LmsGateway, MATERIAL_CLASSES, RULE_ACTIONS, RuleAction,
+  AllocationRuleView, AllocationSummary, ApiProblem, Choice, LmsGateway, MATERIAL_CLASSES, RULE_ACTIONS, RuleAction,
   RuleDraft, RuleEvaluation,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { ConfigActions } from './config-actions';
 import { EntityPicker } from './entity-picker';
+import { STALE_MESSAGE } from './master-data-form';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
+import { StatusFilter } from './status-filter';
 
 /** Who a load is offered to first: the rules that decide it, a dry run, and what decided an allocation. */
 @Component({
   selector: 'app-allocation-rules',
-  imports: [FormsModule, EntityPicker, PageHeader, StatusBadge],
+  imports: [FormsModule, ConfigActions, EntityPicker, PageHeader, StatusBadge, StatusFilter],
   template: `
     <app-page-header title="Allocation rules" />
     @if (!read()) {
@@ -36,8 +39,9 @@ import { StatusBadge } from './status-badge';
     } @else {
       <p class="muted">
         When a load is offered, the first active rule that matches it decides who is asked: PREFER asks its vendors
-        first, in order; EXCLUDE never asks them. A rule is retired, never deleted.
+        first, in order; EXCLUDE never asks them. A rule is deactivated, never deleted.
       </p>
+      <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
       @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
       @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
       @if (loading()) {
@@ -61,8 +65,8 @@ import { StatusBadge } from './status-badge';
                 <td>
                   @if (manage()) {
                     <button class="link" data-testid="rule-edit" (click)="edit(r)">Edit</button>
-                    <button class="link" [attr.data-testid]="r.active ? 'rule-retire' : 'rule-reinstate'"
-                            (click)="setActive(r, !r.active)">{{ r.active ? 'Retire' : 'Reinstate' }}</button>
+                    <app-config-actions kind="allocationRules" [recordId]="r.id" [active]="r.active" [label]="r.name"
+                                        [version]="r.version" (changed)="refresh()" />
                   }
                 </td>
               </tr>
@@ -124,6 +128,7 @@ import { StatusBadge } from './status-badge';
             </select>
             <button type="button" data-testid="rule-vendor-add" (click)="add()" [disabled]="!pick">Add</button>
           </div>
+          @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
           @if (formError()) { <p class="error" role="alert" data-testid="rule-error">{{ formError() }}</p> }
           <p class="actions">
             <button type="submit" data-testid="rule-save">{{ editing() ? 'Save changes' : 'Save rule' }}</button>
@@ -199,6 +204,10 @@ export class AllocationRules implements OnInit {
   // Derived, not stored: the vendors still free to add.
   readonly free = computed(() => this.vendors().filter((v) => !this.chosen().some((c) => c.id === v.id)));
   readonly formError = signal('');
+  /** Said when somebody else saved the rule first; the rule is read again. */
+  readonly conflict = signal('');
+  /** '' is the server's default, the active rules. */
+  readonly status = signal('');
   form = this.blank();
   pick = '';
 
@@ -249,6 +258,7 @@ export class AllocationRules implements OnInit {
     this.chosen.set([...rule.vendors]);
     this.pick = '';
     this.formError.set('');
+    this.conflict.set('');
   }
 
   reset(): void {
@@ -257,6 +267,7 @@ export class AllocationRules implements OnInit {
     this.chosen.set([]);
     this.pick = '';
     this.formError.set('');
+    this.conflict.set('');
   }
 
   add(): void {
@@ -271,8 +282,14 @@ export class AllocationRules implements OnInit {
     this.chosen.set(this.chosen().filter((c) => c.id !== id));
   }
 
+  setStatus(value: string): void {
+    this.status.set(value);
+    void this.refresh();
+  }
+
   async save(): Promise<void> {
     this.formError.set('');
+    this.conflict.set('');
     const editing = this.editing();
     const draft: RuleDraft = {
       name: String(this.form.name).trim(), priority: Number(this.form.priority), active: editing?.active ?? true,
@@ -283,24 +300,20 @@ export class AllocationRules implements OnInit {
     };
     try {
       if (editing) {
-        await this.gateway.reviseAllocationRule(editing.id, draft);
+        await this.gateway.reviseAllocationRule(editing.id, draft, editing.version);
       } else {
         await this.gateway.createAllocationRule(draft);
       }
       this.reset();
       await this.refresh();
     } catch (e) {
-      this.formError.set((e as Error).message);
-    }
-  }
-
-  async setActive(rule: AllocationRuleView, active: boolean): Promise<void> {
-    this.error.set('');
-    try {
-      await this.gateway.reviseAllocationRule(rule.id, { ...draftOf(rule), active });
-      await this.refresh();
-    } catch (e) {
-      this.error.set((e as Error).message);
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        this.reset();
+        this.conflict.set(STALE_MESSAGE);
+        await this.refresh();
+      } else {
+        this.formError.set((e as Error).message);
+      }
     }
   }
 
@@ -331,10 +344,10 @@ export class AllocationRules implements OnInit {
     };
   }
 
-  private async refresh(): Promise<void> {
+  async refresh(): Promise<void> {
     this.loadError.set('');
     try {
-      this.rules.set(await this.gateway.allocationRules());
+      this.rules.set(await this.gateway.allocationRules(this.status()));
     } catch (e) {
       this.loadError.set((e as Error).message);
     } finally {
@@ -346,16 +359,4 @@ export class AllocationRules implements OnInit {
 /** An empty input means "not tested"; ngModel hands a number input back as a number or null. */
 function weight(value: number | string | null): number | undefined {
   return value === '' || value === null ? undefined : Number(value);
-}
-
-function draftOf(rule: AllocationRuleView): RuleDraft {
-  return {
-    name: rule.name, priority: rule.priority, active: rule.active,
-    originTerminalId: rule.originTerminalId || undefined,
-    destinationTerminalId: rule.destinationTerminalId || undefined,
-    minWeightKg: rule.minWeightKg ? Number(rule.minWeightKg) : undefined,
-    maxWeightKg: rule.maxWeightKg ? Number(rule.maxWeightKg) : undefined,
-    materialClass: rule.materialClass || undefined,
-    action: rule.action, vendorIds: rule.vendors.map((v) => v.id),
-  };
 }

@@ -228,7 +228,8 @@ class AllocationRuleApiTest {
     void revisingAndRetiring() {
         UUID id = create(rule("Original", 10, ",\"materialClass\":\"FOOD\"", "PREFER", vendorA));
 
-        expect("revise", kit.put(callerA, "/api/v1/allocation-rules/" + id,
+        expect("revise", kit.putMatching(callerA, "/api/v1/allocation-rules/" + id,
+                kit.etagOf(callerA, "/api/v1/allocation-rules/" + id, everything),
                 rule("Renamed", 3, ",\"maxWeightKg\":800", "EXCLUDE", vendorA), everything), 204, null);
         JsonNode got = kit.parse(kit.get(callerA, "/api/v1/allocation-rules/" + id, everything));
         assertThat(got.get("name").asString()).isEqualTo("Renamed");
@@ -238,17 +239,19 @@ class AllocationRuleApiTest {
         assertThat(got.has("materialClass") && !got.get("materialClass").isNull())
                 .as("a condition left out of the revision is gone").isFalse();
 
-        expect("retire", kit.put(callerA, "/api/v1/allocation-rules/" + id,
+        expect("retire", kit.putMatching(callerA, "/api/v1/allocation-rules/" + id,
+                kit.etagOf(callerA, "/api/v1/allocation-rules/" + id, everything),
                 rule("Renamed", 3, ",\"active\":false", "EXCLUDE", vendorA), everything), 204, null);
         assertThat(kit.parse(kit.get(callerA, "/api/v1/allocation-rules?active=true", everything))
                 .get("items")).isEmpty();
         assertThat(kit.parse(kit.get(callerA, "/api/v1/allocation-rules?active=false", everything))
                 .get("items")).hasSize(1);
 
-        expect("no such rule", kit.put(callerA, "/api/v1/allocation-rules/" + UUID.randomUUID(),
+        expect("no such rule", kit.putMatching(callerA, "/api/v1/allocation-rules/" + UUID.randomUUID(), "\"0\"",
                 rule("x", 1, "", "PREFER", vendorA), everything), 404, null);
         create(rule("Other", 9, "", "PREFER", vendorA));
-        expect("renaming onto another rule's name", kit.put(callerA, "/api/v1/allocation-rules/" + id,
+        expect("renaming onto another rule's name", kit.putMatching(callerA, "/api/v1/allocation-rules/" + id,
+                kit.etagOf(callerA, "/api/v1/allocation-rules/" + id, everything),
                 rule("other", 3, "", "EXCLUDE", vendorA), everything), 409, "allocation-rule-name-taken");
     }
 
@@ -260,7 +263,7 @@ class AllocationRuleApiTest {
 
         expect("create with READ only", kit.post(callerA, "/api/v1/allocation-rules", body,
                 "ALLOCATION_RULE_READ"), 403, null);
-        expect("revise with READ only", kit.put(callerA, "/api/v1/allocation-rules/" + id, body,
+        expect("revise with READ only", kit.putMatching(callerA, "/api/v1/allocation-rules/" + id, "\"0\"", body,
                 "ALLOCATION_RULE_READ"), 403, null);
         expect("list with MANAGE only", kit.get(callerA, "/api/v1/allocation-rules",
                 "ALLOCATION_RULE_MANAGE"), 403, null);
@@ -278,7 +281,7 @@ class AllocationRuleApiTest {
         UUID id = create(rule("Mine", 10, "", "PREFER", vendorA));
 
         expect("b reads a's rule", kit.get(callerB, "/api/v1/allocation-rules/" + id, everything), 404, null);
-        expect("b revises a's rule", kit.put(callerB, "/api/v1/allocation-rules/" + id,
+        expect("b revises a's rule", kit.putMatching(callerB, "/api/v1/allocation-rules/" + id, "\"0\"",
                 rule("Mine", 10, "", "PREFER", vendorB), everything), 404, null);
         assertThat(kit.parse(kit.get(callerB, "/api/v1/allocation-rules", everything)).get("items")).isEmpty();
         expect("b names a's vendor", kit.post(callerB, "/api/v1/allocation-rules",
