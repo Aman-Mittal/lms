@@ -26,6 +26,7 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** A refusal's message, and its problem code when it had one. */
 interface Refusal {
@@ -39,13 +40,11 @@ function refusalOf(e: unknown): Refusal {
 
 /** A refusal, with its problem code first so the reason can be named. */
 @Component({
+  imports: [ErrorBanner],
   selector: 'app-refusal',
   template: `
     @if (refusal(); as r) {
-      <p class="error" role="alert">
-        @if (r.code) { <code data-testid="exception-refusal">{{ r.code }}</code> }
-        {{ r.message }}
-      </p>
+      <app-error-banner [message]="r.message" [code]="r.code" codeTestId="exception-refusal" />
     }
   `,
 })
@@ -60,9 +59,9 @@ const HISTORY_COLUMNS: Array<[string, string]> = [
 /** One ticket, its history, and the step its status and the caller's rights allow next. */
 @Component({
   selector: 'app-ticket-panel',
-  imports: [FormsModule, RouterLink, RefusalNote, StatusBadge],
+  imports: [ErrorBanner, FormsModule, RouterLink, RefusalNote, StatusBadge],
   template: `
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (ticket(); as t) {
       <section data-testid="ticket-panel" aria-label="Ticket">
         <header>
@@ -90,7 +89,7 @@ const HISTORY_COLUMNS: Array<[string, string]> = [
         }
 
         @if (session.can('EXCEPTION_MANAGE') && (t['status'] === 'RAISED' || t['status'] === 'ASSIGNED')) {
-          <form class="inline" data-testid="assign-ticket" (ngSubmit)="assign()">
+          <form ngNativeValidate class="inline" data-testid="assign-ticket" (ngSubmit)="assign()">
             <select name="assignee" aria-label="Assignee" data-testid="assignee" required
                     [value]="assignee()" (change)="assignee.set($any($event.target).value)">
               <option value="">Choose who takes it</option>
@@ -105,19 +104,19 @@ const HISTORY_COLUMNS: Array<[string, string]> = [
           <p><button data-testid="act-investigate" (click)="investigate()">Start investigating</button></p>
         }
         @if (session.can('EXCEPTION_MANAGE') && t['status'] === 'UNDER_INVESTIGATION') {
-          <form class="inline" data-testid="resolve-ticket" (ngSubmit)="resolve()">
+          <form ngNativeValidate class="inline" data-testid="resolve-ticket" (ngSubmit)="resolve()">
             <input name="resolution" placeholder="How it was resolved" aria-label="Resolution" required
                    [value]="note()" (input)="note.set($any($event.target).value)" />
             <button type="submit">Resolve</button>
           </form>
         }
         @if (session.can('EXCEPTION_CLOSE') && t['status'] === 'RESOLVED') {
-          <form class="inline" data-testid="close-ticket" (ngSubmit)="close()">
+          <form ngNativeValidate class="inline" data-testid="close-ticket" (ngSubmit)="close()">
             <input name="closeNote" placeholder="Closing note" aria-label="Closing note"
                    [value]="note()" (input)="note.set($any($event.target).value)" />
             <button type="submit">Close ticket</button>
           </form>
-          <form class="inline" data-testid="reopen-ticket" (ngSubmit)="reopen()">
+          <form ngNativeValidate class="inline" data-testid="reopen-ticket" (ngSubmit)="reopen()">
             <input name="reopenReason" placeholder="Why it is not resolved" aria-label="Reason to reopen" required
                    [value]="reason()" (input)="reason.set($any($event.target).value)" />
             <button type="submit">Reopen</button>
@@ -229,10 +228,10 @@ export class TicketPanel {
 /** One trip: how far it has got, the geofences it crossed, and the watch it is held to. */
 @Component({
   selector: 'app-trip-panel',
-  imports: [FormsModule, RouterLink, RefusalNote, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, RouterLink, RefusalNote, StatusBadge, When],
   template: `
     <section data-testid="trip-panel" aria-label="Trip">
-      @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+      @if (error()) { <app-error-banner [message]="error()" /> }
       @if (activity(); as a) {
         @if (a.progress; as p) {
           <dl class="facts">
@@ -274,7 +273,7 @@ export class TicketPanel {
         }
       }
       @if (session.can('EXCEPTION_MANAGE')) {
-        <form class="inline" data-testid="set-watch" (ngSubmit)="saveWatch()">
+        <form ngNativeValidate class="inline" data-testid="set-watch" (ngSubmit)="saveWatch()">
           <input name="arrival" type="datetime-local" aria-label="Committed arrival" data-testid="watch-arrival-input"
                  [value]="arrival()" (input)="arrival.set($any($event.target).value)" />
           <input name="tempMin" inputmode="decimal" placeholder="Min °C" aria-label="Minimum temperature"
@@ -359,7 +358,7 @@ export class TripPanel {
  */
 @Component({
   selector: 'app-exception-desk',
-  imports: [FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ErrorBanner, FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Exception desk" />
     <p class="muted">
@@ -369,7 +368,7 @@ export class TripPanel {
 
     <section data-testid="ticket-list">
       <h2>Tickets</h2>
-      <form class="inline" (ngSubmit)="openTicket(typedTicket())" data-testid="open-ticket">
+      <form ngNativeValidate class="inline" (ngSubmit)="openTicket(typedTicket())" data-testid="open-ticket">
         <app-entity-picker [kind]="'ticket'" placeholder="Ticket" ariaLabel="Ticket id" testId="ticket-id" [required]="true"
                            [(value)]="typedTicket" />
         <button type="submit">Open</button>
@@ -390,7 +389,7 @@ export class TripPanel {
           </select>
         </label>
       </div>
-      @if (listError()) { <p class="error" role="alert">{{ listError() }}</p> }
+      @if (listError()) { <app-error-banner [message]="listError()" /> }
       @if (listed() && tickets().length === 0) {
         <p class="muted" data-testid="no-tickets">No ticket matches.</p>
       } @else {
@@ -418,7 +417,7 @@ export class TripPanel {
     @if (session.can('EXCEPTION_RAISE')) {
       <section>
         <h2>Raise a ticket</h2>
-        <form class="inline" (ngSubmit)="raise()" data-testid="raise-ticket">
+        <form ngNativeValidate class="inline" (ngSubmit)="raise()" data-testid="raise-ticket">
           <app-entity-picker [kind]="'trip'" placeholder="Trip" ariaLabel="Trip id of the ticket" [required]="true"
                              [(value)]="raiseTrip" />
           <select name="category" aria-label="Category" [value]="category()" (change)="category.set($any($event.target).value)">
@@ -445,7 +444,7 @@ export class TripPanel {
           <div><dt>Settings</dt><dd data-testid="detector-customised">{{ d.customised ? 'Set for this tenant' : 'Platform defaults' }}</dd></div>
         </dl>
         @if (session.can('EXCEPTION_MANAGE')) {
-          <form class="inline" (ngSubmit)="saveDetectors()" data-testid="save-detectors">
+          <form ngNativeValidate class="inline" (ngSubmit)="saveDetectors()" data-testid="save-detectors">
             <input name="eta" type="number" min="1" max="10080" aria-label="ETA slip minutes" data-testid="eta-slip-input"
                    [placeholder]="d.etaSlipMinutes" [value]="eta()" (input)="eta.set($any($event.target).value)" />
             <input name="excursion" type="number" min="1" max="10080" aria-label="Temperature excursion minutes"
@@ -461,7 +460,7 @@ export class TripPanel {
 
     <section data-testid="trip-desk">
       <h2>Trip watch</h2>
-      <form class="inline" (ngSubmit)="tripId.set(typedTrip().trim().toLowerCase())" data-testid="open-trip">
+      <form ngNativeValidate class="inline" (ngSubmit)="tripId.set(typedTrip().trim().toLowerCase())" data-testid="open-trip">
         <app-entity-picker [kind]="'trip'" placeholder="Trip" ariaLabel="Trip id to watch" testId="watch-trip-id" [required]="true"
                            [(value)]="typedTrip" />
         <button type="submit">Open trip</button>
@@ -473,7 +472,7 @@ export class TripPanel {
       <h2>Fleet</h2>
       <p><button class="link" data-testid="fleet-reload" (click)="readFleet()">Refresh</button></p>
       <h3>Off route</h3>
-      @if (fleetError()) { <p class="error" role="alert">{{ fleetError() }}</p> }
+      @if (fleetError()) { <app-error-banner [message]="fleetError()" /> }
       @if (deviationsRead() && deviations().length === 0) {
         <p class="muted" data-testid="no-deviations">No trip is off its route.</p>
       } @else {

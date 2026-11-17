@@ -27,6 +27,7 @@ import { GuideVendors } from './GuideVendors';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
+import { ErrorBanner } from './ErrorBanner';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 interface Refusal {
@@ -49,9 +50,7 @@ function RefusalNote({ refusal, testId }: { refusal: Refusal | null; testId: str
     return null;
   }
   return (
-    <p className="error" role="alert" data-testid={testId}>
-      {refusal.code && <code data-testid="refusal-code">{refusal.code}</code>} {refusal.message}
-    </p>
+    <ErrorBanner message={refusal.message} code={refusal.code} testId={testId} codeTestId="refusal-code" />
   );
 }
 
