@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.query.ActiveFilter;
 import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -84,6 +85,11 @@ public class WarehouseQueryService {
 
     /** As {@link #bins(UUID, String, Integer)}, narrowed to bin codes containing {@code q}. */
     public Slice<BinView> bins(UUID warehouseId, String cursor, Integer limit, String q) {
+        return bins(warehouseId, null, cursor, limit, q);
+    }
+
+    /** As above, narrowed by {@code status}: the active bins by default, INACTIVE or ALL on request. */
+    public Slice<BinView> bins(UUID warehouseId, String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
         List<BinView> rows = jdbc.sql("""
                         SELECT w.id, w.warehouse_id, w.code, w.capacity_units,
@@ -91,15 +97,18 @@ public class WarehouseQueryService {
                                            FROM stock_balance b
                                           WHERE b.tenant_id = w.tenant_id
                                             AND b.location_type = 'BIN'
-                                            AND b.location_id = w.id), 0)::int AS occupied_units
+                                            AND b.location_id = w.id), 0)::int AS occupied_units,
+                               w.active, w.version
                           FROM warehouse_bin w
                          WHERE w.warehouse_id = :warehouseId
+                           AND (CAST(:active AS boolean) IS NULL OR w.active = CAST(:active AS boolean))
                            AND (CAST(:q AS text) IS NULL OR lower(w.code) LIKE CAST(:q AS text))
                            AND (CAST(:after AS text) IS NULL OR w.code > CAST(:after AS text))
                          ORDER BY w.code
                          LIMIT :limit
                         """)
                 .param("warehouseId", warehouseId)
+                .param("active", ActiveFilter.of(status))
                 .param("q", Search.containsPattern(q))
                 .param("after", blankToNull(cursor))
                 .param("limit", pageSize + 1)
@@ -114,11 +123,17 @@ public class WarehouseQueryService {
 
     /** As {@link #skus(String, Integer)}, narrowed to SKUs whose code or description contains {@code q}. */
     public Slice<SkuView> skus(String cursor, Integer limit, String q) {
+        return skus(null, cursor, limit, q);
+    }
+
+    /** As above, narrowed by {@code status}: the active SKUs by default, INACTIVE or ALL on request. */
+    public Slice<SkuView> skus(String status, String cursor, Integer limit, String q) {
         int pageSize = Slice.clampLimit(limit);
         List<SkuView> rows = jdbc.sql("""
-                        SELECT s.id, s.code, s.description, s.owner_partner_id, s.uom
+                        SELECT s.id, s.code, s.description, s.owner_partner_id, s.uom, s.active, s.version
                           FROM sku s
                          WHERE (CAST(:after AS text) IS NULL OR s.code > CAST(:after AS text))
+                           AND (CAST(:active AS boolean) IS NULL OR s.active = CAST(:active AS boolean))
                            AND (CAST(:q AS text) IS NULL OR lower(s.code) LIKE CAST(:q AS text)
                                 OR lower(s.description) LIKE CAST(:q AS text))
                         """ + OWNER_SCOPE + """
@@ -126,6 +141,7 @@ public class WarehouseQueryService {
                          LIMIT :limit
                         """)
                 .param("after", blankToNull(cursor))
+                .param("active", ActiveFilter.of(status))
                 .param("q", Search.containsPattern(q))
                 .param("partner", AccessSubject.current().partnerScope())
                 .param("limit", pageSize + 1)
