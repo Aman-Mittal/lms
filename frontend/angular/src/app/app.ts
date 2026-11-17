@@ -16,10 +16,12 @@
 
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { ToastHost } from './pages/toast-host';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet],
-  template: '<router-outlet />',
+  imports: [RouterOutlet, ToastHost],
+  // The toasts are loaded when the browser is idle: nothing needs them until a save has been made.
+  template: '<router-outlet />@defer (on idle) { <app-toast-host /> }',
 })
 export class App {}

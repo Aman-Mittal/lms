@@ -19,16 +19,17 @@ import { LmsGateway, Mapped } from '../gateway/lms-gateway';
 import { MapView } from './map-view';
 import { RowTable } from './row-table';
 import { PageHeader } from './page-header';
+import { ErrorBanner } from './error-banner';
 
 /** Every site with its geofence, and every vehicle where it last reported. */
 @Component({
   selector: 'app-network-map',
-  imports: [MapView, RowTable, PageHeader],
+  imports: [ErrorBanner, MapView, RowTable, PageHeader],
   template: `
     <app-page-header title="Network map" />
     <p class="muted">Sites with their geofences, and each vehicle at its last reported position.</p>
     @if (loading()) { <p class="muted">Loading…</p> }
-    @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+    @if (error()) { <app-error-banner [message]="error()" /> }
     @if (network(); as n) {
       <app-map [features]="n.features" label="Sites and vehicles" />
       <app-row-table testId="sites" [rows]="n.rows" [columns]="columns" />
