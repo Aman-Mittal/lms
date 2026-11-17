@@ -42,7 +42,7 @@ const UNMATCHED = 'Choose one of the suggestions, or paste an id.';
              [attr.data-testid]="testId() || null" [value]="text()" autocomplete="off" role="combobox"
              [attr.aria-expanded]="open()"
              (input)="typed($any($event.target).value)" (focus)="focused()" (keydown.escape)="open.set(false)"
-             (blur)="closeSoon()" />
+             (blur)="closeSoon()" (invalid)="refuseUnmatched($event)" />
       @if (open()) {
         <ul class="picker-options" role="listbox" aria-label="Suggestions">
           @if (options().length === 0) { <li class="muted">Nothing matches.</li> }
@@ -106,8 +106,9 @@ export class EntityPicker implements OnDestroy {
       this.box().nativeElement.setCustomValidity(
         shown.trim() && !this.chosen ? UNMATCHED : '');
     });
-    // FormsModule marks forms novalidate, so the browser would send text that
-    // names nothing; stop that submit here and say why, before ngSubmit runs.
+    // In a novalidate form the browser would send text that names nothing; stop
+    // that submit here and say why, before ngSubmit runs. In a validating form
+    // (ngNativeValidate) the browser refuses it first, and (invalid) says why.
     afterNextRender(() => {
       this.form = this.box().nativeElement.form;
       this.form?.addEventListener('submit', this.refuseUnmatched, true);
@@ -119,7 +120,7 @@ export class EntityPicker implements OnDestroy {
     this.form?.removeEventListener('submit', this.refuseUnmatched, true);
   }
 
-  private readonly refuseUnmatched = (event: Event): void => {
+  readonly refuseUnmatched = (event: Event): void => {
     if (this.text().trim() && !this.chosen) {
       event.preventDefault();
       event.stopImmediatePropagation();
