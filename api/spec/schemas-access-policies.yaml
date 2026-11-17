@@ -49,6 +49,7 @@ AccessPolicy:
     description: { type: string }
     condition: { $ref: "#/components/schemas/AccessCondition" }
     enabled: { type: boolean }
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
     createdAt: { type: string, format: date-time }
     updatedAt: { type: string, format: date-time }
   required: [id, code, action, effect, description, condition, enabled]

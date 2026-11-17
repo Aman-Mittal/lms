@@ -49,6 +49,7 @@ public class ChargeCatalogueQueryService {
     }
 
     /**
+     * @param active true for the entries on, false for those switched off, null for every one
      * @param direction when given, entries usable for that side: RECEIVABLE or PAYABLE also match BOTH
      */
     public Slice<ChargeCatalogueView> list(Boolean active, String direction, String q, String cursor, Integer limit) {

@@ -90,7 +90,7 @@ public class AccessPolicySteps {
     @When("the rule is switched off")
     public void switchOff() {
         var rule = world.api(AccessPoliciesApi.class).getAccessPolicy(policyId);
-        world.api(AccessPoliciesApi.class).reviseAccessPolicy(policyId,
+        world.api(AccessPoliciesApi.class).reviseAccessPolicy(String.valueOf(rule.getVersion()), policyId,
                 new ReviseAccessPolicyRequest()
                         .effect(ReviseAccessPolicyRequest.EffectEnum.DENY)
                         .description(rule.getDescription())

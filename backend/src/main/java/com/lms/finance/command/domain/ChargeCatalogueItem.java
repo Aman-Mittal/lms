@@ -65,6 +65,12 @@ public record ChargeCatalogueItem(
                 createdAt, Instant.now());
     }
 
+    /** The same entry switched on or off. */
+    public ChargeCatalogueItem withActive(boolean nowActive) {
+        return new ChargeCatalogueItem(id, tenantId, code, name, basis, defaultRate, currency, direction, nowActive,
+                version, createdAt, Instant.now());
+    }
+
     /** Upper case, no surrounding blanks; at most 40 characters of letters, digits, dash and underscore. */
     public static String normaliseCode(String code) {
         String normal = code == null ? "" : code.strip().toUpperCase(Locale.ROOT);

@@ -67,6 +67,7 @@ AllocationRule:
     vendors:
       type: array
       items: { $ref: "#/components/schemas/AllocationRuleVendor" }
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
     createdAt: { type: string, format: date-time }
     updatedAt: { type: string, format: date-time }
 

@@ -44,7 +44,7 @@ public class AccessQueryService {
 
     private static final String SELECT = """
             SELECT id, code, action, effect, description, condition::text AS condition,
-                   enabled, created_at, updated_at
+                   enabled, version, created_at, updated_at
               FROM access_policy
             """;
 
@@ -114,6 +114,7 @@ public class AccessQueryService {
                 rs.getString("description"),
                 json.readValue(rs.getString("condition"), Map.class),
                 rs.getBoolean("enabled"),
+                rs.getObject("version", Long.class),
                 rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("updated_at").toInstant());
     }

@@ -55,6 +55,9 @@ OrgUnit:
       type: integer
       format: int64
       description: The optimistic-lock version, also the `ETag`.
+    active:
+      type: boolean
+      description: False once the unit has been switched off; it keeps its place in the tree.
   required: [id, slug, path, name, unitType, level, version]
 
 OrgUnitSlice:
