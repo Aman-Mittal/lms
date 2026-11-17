@@ -19,6 +19,7 @@ import {
   PAYMENT_MODES, type PaymentModeChoice, type VendorInvoiceBillView, type VendorInvoiceView, type VendorPaymentView,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
+import { ConfigActions } from './ConfigActions';
 import { money, problemText, today } from './moneyProblem';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
@@ -157,7 +158,12 @@ export function VendorPayables() {
                     <li key={p.id}>{`${p.paidOn} ${money(p.amount)} by ${p.mode}, ${p.reference}`}</li>
                   ))}</ul>
                 )}
-                {can('PAYABLES_MANAGE') && i.status !== 'PAID' && (
+                {i.voidReason && <p className="muted" data-testid="detail-void-reason">Voided: {i.voidReason}</p>}
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ConfigActions kind="vendorInvoices" id={i.id} active={i.status === 'OPEN'} label={`invoice ${i.invoiceNo}`}
+                    version={i.version} onChanged={() => setReload((n) => n + 1)} />
+                </div>
+                {can('PAYABLES_MANAGE') && i.status !== 'PAID' && i.status !== 'VOID' && (
                   <form className="inline" data-testid="pay-form" onSubmit={pay} onClick={(e) => e.stopPropagation()}>
                     {payError && <p className="error" role="alert" data-testid="pay-error">{payError}</p>}
                     <input type="number" min="0" step="0.01" placeholder="Amount" aria-label="Payment amount"

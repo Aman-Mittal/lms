@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import com.lms.identity.access.AccessSubject;
 import com.lms.shared.error.BusinessRuleViolationException;
+import com.lms.shared.query.ActiveFilter;
 import com.lms.shared.query.Search;
 import com.lms.shared.query.Slice;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -152,18 +153,31 @@ public class SourcingQueryService {
      */
     @PreAuthorize("hasAnyAuthority('ROUTING_GUIDE_MANAGE', 'LOAD_ALLOCATE')")
     public Optional<RoutingGuideView> findGuide(UUID guideId) {
+        return findGuide(guideId, null);
+    }
+
+    /**
+     * As {@link #findGuide(UUID)}, with the vendors narrowed by {@code status}: the active ones
+     * by default, the switched-off ones for INACTIVE, every one for ALL.
+     */
+    @PreAuthorize("hasAnyAuthority('ROUTING_GUIDE_MANAGE', 'LOAD_ALLOCATE')")
+    public Optional<RoutingGuideView> findGuide(UUID guideId, String status) {
         List<RoutingGuideView.Entry> entries = jdbc.sql("""
                         SELECT e.rank_no, e.vendor_partner_id, p.legal_name AS vendor_name,
-                               e.response_sla_minutes, e.agreed_rate
+                               e.response_sla_minutes, e.agreed_rate, e.id, e.active, e.version
                           FROM routing_guide_entry e
                           JOIN business_partner p ON p.id = e.vendor_partner_id
                          WHERE e.guide_id = :guideId
+                           AND (CAST(:active AS boolean) IS NULL OR e.active = CAST(:active AS boolean))
                          ORDER BY e.rank_no
                         """)
                 .param("guideId", guideId)
+                .param("active", ActiveFilter.of(status))
                 .query((rs, row) -> new RoutingGuideView.Entry(rs.getInt("rank_no"),
                         rs.getObject("vendor_partner_id", UUID.class), rs.getString("vendor_name"),
-                        rs.getInt("response_sla_minutes"), rs.getBigDecimal("agreed_rate")))
+                        rs.getInt("response_sla_minutes"), rs.getBigDecimal("agreed_rate"),
+                        rs.getObject("id", UUID.class), rs.getBoolean("active"),
+                        rs.getObject("version", Long.class)))
                 .list();
 
         return jdbc.sql("""
@@ -192,7 +206,8 @@ public class SourcingQueryService {
      * than meaningful, which is all a picker paging through matches needs.
      */
     @PreAuthorize("hasAnyAuthority('ROUTING_GUIDE_MANAGE', 'LOAD_ALLOCATE')")
-    public Slice<RoutingGuideView> listGuides(Boolean active, String cursor, Integer limit, String q) {
+    public Slice<RoutingGuideView> listGuides(String status, Boolean active, String cursor, Integer limit,
+                                              String q) {
         int pageSize = Slice.clampLimit(limit);
 
         List<RoutingGuideView> rows = jdbc.sql("""
@@ -209,7 +224,7 @@ public class SourcingQueryService {
                          ORDER BY g.id
                          LIMIT :limit
                         """)
-                .param("active", active)
+                .param("active", ActiveFilter.of(status, active))
                 .param("cursor", guideCursor(cursor))
                 .param("q", Search.containsPattern(q))
                 .param("limit", pageSize + 1)
