@@ -22,7 +22,8 @@
       - name: active
         in: query
         schema: { type: boolean }
-        description: Only active (or only retired) rules.
+        description: Only active (or only inactive) rules. `status` wins when both are given.
+      - $ref: "#/components/parameters/activeStatus"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
     responses:
@@ -69,10 +70,13 @@
     tags: [Allocation rules]
     operationId: getAllocationRule
     summary: One allocation rule
-    description: Requires `ALLOCATION_RULE_READ`.
+    description: Requires `ALLOCATION_RULE_READ`. The `ETag` is the version `PUT` sends back in `If-Match`.
     responses:
       "200":
         description: The rule.
+        headers:
+          ETag:
+            schema: { type: string }
         content:
           application/json:
             schema: { $ref: "#/components/schemas/AllocationRule" }
@@ -82,18 +86,80 @@
   put:
     tags: [Allocation rules]
     operationId: reviseAllocationRule
-    summary: Replace a rule's conditions, action and vendors, or retire it
+    summary: Replace a rule's conditions, action and vendors
     description: |
       Requires `ALLOCATION_RULE_MANAGE`. Carries the whole rule. A rule is never
-      deleted: send `active: false` to retire it. Allocations already decided
-      under it keep the rule's name as it was.
+      deleted: switch it off with `POST /{id}/deactivate`. Allocations already decided
+      under it keep the rule's name as it was. A stale `If-Match` is 409
+      `concurrent-modification`.
     parameters:
+      - $ref: "#/components/parameters/ifMatch"
       - $ref: "#/components/parameters/idempotencyKey"
     requestBody:
       required: true
       content:
         application/json:
           schema: { $ref: "#/components/schemas/AllocationRuleRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/allocation-rules/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the rule.
+  post:
+    tags: [Allocation rules]
+    operationId: deactivateAllocationRule
+    summary: Switch an allocation rule off, with a reason
+    description: |
+      Requires `ALLOCATION_RULE_MANAGE`. An inactive rule never fires, so allocation
+      skips it; allocations already decided under it keep its name. Audited as
+      `ALLOCATION_RULE_DEACTIVATED` with the reason. 409 `allocation-rule-already-inactive`
+      when it is already off.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/allocation-rules/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the rule.
+  post:
+    tags: [Allocation rules]
+    operationId: reactivateAllocationRule
+    summary: Switch an allocation rule back on, with a reason
+    description: |
+      Requires `ALLOCATION_RULE_MANAGE`. Audited as `ALLOCATION_RULE_REACTIVATED` with
+      the reason. 409 `allocation-rule-not-inactive` when it is already on.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }

@@ -96,7 +96,9 @@ public class WebhookSteps {
     @After("@webhooks")
     public void switchOff() {
         if (subscriptionId != null) {
-            webhooks().reviseWebhookSubscription(subscriptionId, new WebhookRevisionRequest()
+            webhooks().reviseWebhookSubscription(
+                    String.valueOf(webhooks().getWebhookSubscription(subscriptionId).getVersion()),
+                    subscriptionId, new WebhookRevisionRequest()
                     .name(subscriptionName).url(receiver.url())
                     .eventTypes(List.of(WebhookEventType.TRIP_DISPATCHED)).active(false), null);
         }

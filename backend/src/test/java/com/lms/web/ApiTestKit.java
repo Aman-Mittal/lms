@@ -119,6 +119,20 @@ public final class ApiTestKit {
                 .PUT(HttpRequest.BodyPublishers.ofString(body)).build());
     }
 
+    /** A PUT carrying {@code If-Match}, for the edits that refuse to run without the version that was read. */
+    public Outcome putMatching(Tenant tenant, String path, String ifMatch, String body, String... permissions) {
+        return send(HttpRequest.newBuilder(uri(path))
+                .header("Content-Type", "application/json")
+                .header("If-Match", ifMatch)
+                .header("Authorization", "Bearer " + token(tenant, permissions))
+                .PUT(HttpRequest.BodyPublishers.ofString(body)).build());
+    }
+
+    /** The version of a record as its GET shows it, quoted as an {@code ETag}: what an edit sends back. */
+    public String etagOf(Tenant tenant, String path, String... permissions) {
+        return "\"" + parse(get(tenant, path, permissions)).get("version").asLong() + "\"";
+    }
+
     public JsonNode parse(Outcome outcome) {
         return json.readTree(outcome.body());
     }

@@ -22,8 +22,8 @@
     operationId: listOrgUnits
     summary: The caller's unit and every unit beneath it, in path order
     description: |
-      Any signed-in caller, within their own subtree. A parent always comes
-      before its children. Each unit carries its effective jurisdiction: the
+      Any signed-in caller, within their own subtree; the active units unless
+      `status` says otherwise. A parent always comes before its children. Each unit carries its effective jurisdiction: the
       nearest country at or above it and the nearest state beneath that
       country, which is what a settings resolution for the unit uses when it
       names no country of its own.
@@ -33,6 +33,7 @@
         required: false
         schema: { type: string, maxLength: 100 }
         description: Part of the unit's name or path, any case.
+      - $ref: "#/components/parameters/activeStatus"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
     responses:
@@ -127,6 +128,68 @@
         content:
           application/json:
             schema: { $ref: "#/components/schemas/OrgUnit" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/org-units/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the unit.
+  post:
+    tags: [Organisation units]
+    operationId: deactivateOrgUnit
+    summary: Switch an organisational unit off, with a reason
+    description: |
+      Requires `ORG_UNIT_MANAGE` and the unit within the caller's subtree. 409
+      `org-unit-in-use` while it still has active units beneath it or active users in
+      it, `org-unit-root` for the tenant's top unit, `org-unit-already-inactive` when
+      already off. A unit cannot be added beneath an inactive one (`org-unit-inactive`).
+      Audited as `ORG_UNIT_DEACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/org-units/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the unit.
+  post:
+    tags: [Organisation units]
+    operationId: reactivateOrgUnit
+    summary: Switch an organisational unit back on, with a reason
+    description: |
+      Requires `ORG_UNIT_MANAGE`. 409 `org-unit-parent-inactive` while the unit above it is
+      off, `org-unit-not-inactive` when already on. Audited as `ORG_UNIT_REACTIVATED`
+      with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }

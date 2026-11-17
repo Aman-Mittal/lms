@@ -16,12 +16,15 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import {
-  CHARGE_BASES, CHARGE_DIRECTIONS, type ChargeBasisChoice, type ChargeDirectionChoice, type ChargeEntryView,
+  ApiProblem, CHARGE_BASES, CHARGE_DIRECTIONS, type ChargeBasisChoice, type ChargeDirectionChoice, type ChargeEntryView,
 } from '../gateway/lmsGateway';
 import { useSession } from '../session';
+import { ConfigActions } from './ConfigActions';
 import { money, problemText } from './moneyProblem';
+import { CONFLICT_TEXT } from './MasterDataForm';
 import { PageHeader } from './PageHeader';
 import { Money } from './Figures';
+import { StatusFilter } from './StatusFilter';
 
 /**
  * The tenant's catalogue of manual charges. Keeping it needs CHARGE_CATALOGUE_MANAGE; an entry is
@@ -34,6 +37,10 @@ export function ChargeCatalogue() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
   const [reload, setReload] = useState(0);
+  // Said when somebody else saved the entry first; the list is read again.
+  const [conflict, setConflict] = useState('');
+  // '' is the server's default, the active entries.
+  const [status, setStatus] = useState('');
 
   // the form; `editing` holds the entry being edited, with the version it was read at
   const [editing, setEditing] = useState<ChargeEntryView | null>(null);
@@ -46,11 +53,11 @@ export function ChargeCatalogue() {
 
   useEffect(() => {
     let ignore = false;
-    gateway.listChargeCatalogue({ active: null, q: search })
+    gateway.listChargeCatalogue({ active: null, q: search, status })
       .then((rows) => { if (!ignore) { setEntries(rows); } })
       .catch((e: unknown) => { if (!ignore) { setError(problemText(e)); } });
     return () => { ignore = true; };
-  }, [gateway, search, reload]);
+  }, [gateway, search, status, reload]);
 
   function reset() {
     setEditing(null);
@@ -81,6 +88,7 @@ export function ChargeCatalogue() {
     event.preventDefault();
     setError('');
     setSaved('');
+    setConflict('');
     const draft = { code, name, basis, defaultRate: rate, direction, active };
     const done = editing
       ? gateway.updateChargeCatalogueEntry(editing.id, editing.version, draft)
@@ -89,7 +97,15 @@ export function ChargeCatalogue() {
       setSaved(editing ? `Saved ${editing.code}.` : `Added ${code.trim().toUpperCase()}.`);
       reset();
       setReload((n) => n + 1);
-    }).catch((e: unknown) => setError(problemText(e)));
+    }).catch((e: unknown) => {
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        reset();
+        setConflict(CONFLICT_TEXT);
+        setReload((n) => n + 1);
+      } else {
+        setError(problemText(e));
+      }
+    });
   }
 
   return (
@@ -98,6 +114,7 @@ export function ChargeCatalogue() {
       <p className="muted">The charges raised by hand against a trip, consignment or order, with their basis and default rate.</p>
       {error && <p className="error" role="alert" data-testid="cc-error">{error}</p>}
       {saved && <p className="ok" role="status" data-testid="cc-saved">{saved}</p>}
+      {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
 
       {can('CHARGE_CATALOGUE_MANAGE') && (
         <form data-testid="cc-form" onSubmit={save}>
@@ -126,6 +143,7 @@ export function ChargeCatalogue() {
       )}
 
       <h2>Charges</h2>
+      <StatusFilter value={status} onChange={setStatus} />
       <input type="search" placeholder="Search code or name" aria-label="Search charges" data-testid="cc-search"
         value={search} onChange={(e) => setSearch(e.target.value)} />
       {entries.length === 0 ? (
@@ -143,6 +161,8 @@ export function ChargeCatalogue() {
                     <button type="button" className="link" data-testid="cc-edit" aria-label={`Edit ${e.code}`}
                       onClick={() => edit(e)}>Edit</button>
                   )}
+                  <ConfigActions kind="chargeCatalogue" id={e.id} active={e.active} label={e.code} version={e.version}
+                    onChanged={() => setReload((n) => n + 1)} />
                 </td>
               </tr>
             ))}

@@ -33,6 +33,7 @@ import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
 import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -45,6 +46,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -93,6 +95,15 @@ public class VendorPayablesController {
         VendorInvoiceView view = queries.invoice(id)
                 .orElseThrow(() -> new ResourceNotFoundException("VendorInvoice", id));
         return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
+    }
+
+    /** Voids an invoice nothing has been paid against, with a reason; its bills and advances are released. */
+    @PostMapping("/vendor-invoices/{id}/void")
+    public ResponseEntity<Void> voidInvoice(@PathVariable UUID id,
+                                            @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                            @Valid @RequestBody ReasonRequest request) {
+        commands.voidInvoice(id, IfMatch.optionalVersion(ifMatch, "the invoice's version"), request.reason());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/vendor-invoices/{id}/bills")
