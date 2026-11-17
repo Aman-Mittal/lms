@@ -27,6 +27,7 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Quantity } from './figures';
 import { When } from './when';
+import { ErrorBanner } from './error-banner';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -94,20 +95,20 @@ interface Refusal {
  */
 @Component({
   selector: 'app-order-desk',
-  imports: [FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, PageHeader, StatusBadge, Quantity, When],
+  imports: [ErrorBanner, FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, PageHeader, StatusBadge, Quantity, When],
   template: `
     <app-page-header title="Order desk" />
     <p class="muted">
       Raise an order, edit it while it is a draft, and amend it once validated, until consignments
       are cut from it.
     </p>
-    <form class="inline" (ngSubmit)="openTyped()" data-testid="open-order">
+    <form ngNativeValidate class="inline" (ngSubmit)="openTyped()" data-testid="open-order">
       <app-entity-picker [kind]="'order'" placeholder="Order" ariaLabel="Order id" testId="order-id" [required]="true"
                          [(value)]="typed" />
       <button type="submit">Open</button>
     </form>
     @if (session.can('ORDER_CREATE') && session.orgUnitId()) {
-      <form class="inline" (ngSubmit)="raise()" data-testid="raise-order">
+      <form ngNativeValidate class="inline" (ngSubmit)="raise()" data-testid="raise-order">
         <input name="orderNo" placeholder="Order number (blank: next in sequence)" aria-label="Order number"
                [value]="raising().orderNo" (input)="setRaise('orderNo', $any($event.target).value)" />
         <app-entity-picker [kind]="'customer'" placeholder="Customer" ariaLabel="New order customer id"
@@ -131,10 +132,10 @@ interface Refusal {
         <input name="raiseLoadType" placeholder="Load type (optional)" aria-label="New order load type"
                [value]="raising().loadType" (input)="setRaise('loadType', $any($event.target).value)" />
         <button type="submit">Raise order</button>
-        @if (raiseError()) { <span class="error" role="alert"> {{ raiseError() }}</span> }
+        @if (raiseError()) { <app-error-banner [message]="raiseError()" /> }
       </form>
     }
-    @if (loadError()) { <p class="error" role="alert">{{ loadError() }}</p> }
+    @if (loadError()) { <app-error-banner [message]="loadError()" /> }
     @if (desk(); as d) {
       <section data-testid="order-panel">
         <h2>{{ d.order['orderNo'] }}</h2>
@@ -178,10 +179,7 @@ interface Refusal {
         </p>
         @if (done()) { <p class="ok" role="status" data-testid="order-done">{{ done() }}</p> }
         @if (refusal(); as r) {
-          <p class="error" role="alert" data-testid="order-error">
-            @if (r.code) { <code data-testid="order-refusal">{{ r.code }}</code> }
-            {{ r.message }}
-          </p>
+          <app-error-banner [message]="r.message" [code]="r.code" testId="order-error" codeTestId="order-refusal" />
           @if (r.code === creditRefused) {
             <app-credit-override [partnerId]="d.header.customerPartnerId" [subjectType]="'ORDER'" [orderId]="d.order['id']"
                                  [errors]="r.errors" (granted)="overridden()" />
@@ -200,7 +198,7 @@ interface Refusal {
         @if (tab() === 'history') {
           <section data-testid="order-history" aria-label="Order history">
             <h3>History</h3>
-            @if (historyError()) { <p class="error" role="alert">{{ historyError() }}</p> }
+            @if (historyError()) { <app-error-banner [message]="historyError()" /> }
             @if (!historyLoading() && !historyError() && history().length === 0) {
               <p class="muted">Nothing recorded yet.</p>
             }
@@ -392,7 +390,7 @@ interface Refusal {
                 </button>
               }
             </p>
-            <form class="inline" data-testid="cancel-order"
+            <form ngNativeValidate class="inline" data-testid="cancel-order"
                   (ngSubmit)="cancelOrder(d.order['id'])">
               <input name="reason" aria-label="Cancellation reason" placeholder="Why it is cancelled (optional)"
                      [value]="reason()" (input)="reason.set($any($event.target).value)" />
