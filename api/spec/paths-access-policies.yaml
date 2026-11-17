@@ -112,9 +112,13 @@
     tags: [Access policies]
     operationId: getAccessPolicy
     summary: One access policy
+    description: The `ETag` is the version `PUT` sends back in `If-Match`.
     responses:
       "200":
         description: The policy.
+        headers:
+          ETag:
+            schema: { type: string }
         content:
           application/json:
             schema: { $ref: "#/components/schemas/AccessPolicy" }
@@ -126,6 +130,9 @@
     tags: [Access policies]
     operationId: reviseAccessPolicy
     summary: Replace what a policy says
+    description: A stale `If-Match` is 409 `concurrent-modification` and changes nothing.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
     requestBody:
       required: true
       content:
@@ -137,6 +144,7 @@
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
   delete:
     tags: [Access policies]
     operationId: deleteAccessPolicy

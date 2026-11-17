@@ -112,6 +112,9 @@ RoutingGuide:
           vendorName: { type: string }
           responseSlaMinutes: { type: integer }
           agreedRate: { type: number }
+          id: { type: string, format: uuid, description: The vendor entry; the id the switch-off and switch-on paths take. }
+          active: { type: boolean, description: False once switched off; allocation skips the vendor. }
+          version: { type: integer, format: int64, description: Send as `If-Match` when switching the entry off or on. }
 
 RoutingGuideSlice:
   type: object

@@ -36,6 +36,10 @@ import org.springframework.data.relational.core.mapping.Table;
  * {@link #countryCode}; a zone, region, branch or hub may carry a
  * {@link #stateCode}. The rank rule is the application's, applied to every
  * create and retype: trees written before it existed are not held to it.
+ *
+ * <p>A unit is never deleted. It is switched off ({@link #active}) once nothing
+ * active hangs beneath it, and its place in the tree is kept for the records
+ * that name it.
  */
 @Table("org_unit")
 public record OrgUnit(
@@ -48,6 +52,7 @@ public record OrgUnit(
         UnitType unitType,
         String countryCode,
         String stateCode,
+        boolean active,
         @Version Long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -99,14 +104,20 @@ public record OrgUnit(
                                   String countryCode, String stateCode) {
         Instant now = Instant.now();
         return new OrgUnit(UUID.randomUUID(), parent.tenantId(), parent.id(), slug, parent.childPath(slug), name,
-                unitType, countryCode, stateCode, null, now, now);
+                unitType, countryCode, stateCode, true, null, now, now);
     }
 
     /** As read at {@code expectedVersion}, renamed, retyped and recoded; the slug and path never change. */
     public OrgUnit revised(long expectedVersion, String newName, UnitType newType, String newCountry,
                            String newState) {
-        return new OrgUnit(id, tenantId, parentId, slug, path, newName, newType, newCountry, newState,
+        return new OrgUnit(id, tenantId, parentId, slug, path, newName, newType, newCountry, newState, active,
                 expectedVersion, createdAt, Instant.now());
+    }
+
+    /** The same unit switched on or off; its place in the tree never changes. */
+    public OrgUnit withActive(boolean nowActive) {
+        return new OrgUnit(id, tenantId, parentId, slug, path, name, unitType, countryCode, stateCode, nowActive,
+                version, createdAt, Instant.now());
     }
 
     /** Builds the child path for a unit nested beneath this one. */

@@ -107,10 +107,14 @@ test('define custom fields, fill them in on a partner, and retire them', async (
     await test.step('retiring the fields takes them off the form', async () => {
       await page.getByTestId('nav-custom-fields').click();
       await page.getByTestId('kind').selectOption('PARTNER');
-      await page.getByTestId(`toggle-${poKey}`).click();
-      await expect(page.getByTestId(`def-${poKey}`)).toContainText('Retired');
-      await page.getByTestId(`toggle-${tierKey}`).click();
-      await expect(page.getByTestId(`def-${tierKey}`)).toContainText('Retired');
+      // The default list is the active fields; the filter keeps a switched-off one on screen.
+      await page.getByTestId('status-filter').selectOption('ALL');
+      for (const key of [poKey, tierKey]) {
+        await page.getByTestId(`def-${key}`).getByTestId('deactivate-record').click();
+        await page.getByTestId('reason-input').fill('Not needed any more');
+        await page.getByTestId('confirm-action').click();
+        await expect(page.getByTestId(`def-${key}`)).toContainText('Inactive');
+      }
 
       await page.getByTestId('nav-partners').click();
       await page.getByTestId('row').filter({ hasText: partner }).click();

@@ -49,7 +49,7 @@ public class AllocationRuleQueryService {
     private static final String SELECT = """
             SELECT r.id, r.name, r.priority, r.active, r.origin_terminal_id, r.destination_terminal_id,
                    r.min_weight_kg, r.max_weight_kg, r.material_class, r.action,
-                   r.vendor_partner_ids, r.created_at, r.updated_at
+                   r.vendor_partner_ids, r.version, r.created_at, r.updated_at
               FROM allocation_rule r
             """;
 
@@ -67,6 +67,7 @@ public class AllocationRuleQueryService {
     }
 
     @PreAuthorize("hasAuthority('ALLOCATION_RULE_READ')")
+    /** @param active true for the active rules, false for the inactive ones, null for every rule */
     public Slice<AllocationRuleView> list(Boolean active, String cursor, Integer limit) {
         int pageSize = Slice.clampLimit(limit);
         List<AllocationRuleView> rows = jdbc.sql(SELECT + " WHERE (CAST(:active AS boolean) IS NULL OR r.active = CAST(:active AS boolean))"
@@ -96,7 +97,7 @@ public class AllocationRuleQueryService {
                 r.materialClass(), r.action(),
                 r.vendors().stream().map(v -> new AllocationRuleView.VendorRef(v.vendorPartnerId(),
                         names.getOrDefault(v.vendorPartnerId(), null))).toList(),
-                r.createdAt(), r.updatedAt())).toList();
+                r.version(), r.createdAt(), r.updatedAt())).toList();
     }
 
     private AllocationRuleView row(ResultSet rs, int n) throws SQLException {
@@ -112,7 +113,7 @@ public class AllocationRuleQueryService {
                 rs.getObject("origin_terminal_id", UUID.class),
                 rs.getObject("destination_terminal_id", UUID.class), min, max,
                 rs.getString("material_class"), rs.getString("action"), vendors,
-                instant(rs, "created_at"), instant(rs, "updated_at"));
+                rs.getObject("version", Long.class), instant(rs, "created_at"), instant(rs, "updated_at"));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {

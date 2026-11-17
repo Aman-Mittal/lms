@@ -26,6 +26,7 @@ import com.lms.identity.query.AccessQueryService;
 import com.lms.shared.error.ResourceNotFoundException;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -37,6 +38,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -65,9 +67,10 @@ public class AccessPolicyController {
     }
 
     @GetMapping("/{id}")
-    public AccessPolicyView get(@PathVariable UUID id) {
-        return queries.findById(id)
+    public ResponseEntity<AccessPolicyView> get(@PathVariable UUID id) {
+        AccessPolicyView view = queries.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("AccessPolicy", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
     }
 
     @PostMapping
@@ -85,8 +88,9 @@ public class AccessPolicyController {
      */
     @PutMapping("/{id}")
     public ResponseEntity<Void> revise(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
                                        @Valid @RequestBody RevisePolicyRequest request) {
-        commands.revise(id, request.effect(), request.description(), request.condition(),
+        commands.revise(id, IfMatch.version(ifMatch, "the policy's version"), request.effect(), request.description(), request.condition(),
                 request.enabled());
         return ResponseEntity.noContent().build();
     }

@@ -20,7 +20,9 @@ import {
   CUSTOM_FIELD_KINDS, CustomFieldKind, FIELD_TYPES, FieldDefinition, FieldType, LmsGateway,
 } from '../gateway/lms-gateway';
 import { Session } from '../session';
+import { ConfigActions } from './config-actions';
 import { PageHeader } from './page-header';
+import { StatusFilter } from './status-filter';
 
 const KIND_LABEL: Record<CustomFieldKind, string> = {
   PARTNER: 'Partners', VEHICLE: 'Vehicles', DRIVER: 'Drivers', TERMINAL: 'Terminals',
@@ -30,16 +32,17 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
 /** Settings: which custom fields exist on each kind of record. */
 @Component({
   selector: 'app-fields-settings',
-  imports: [FormsModule, PageHeader],
+  imports: [FormsModule, ConfigActions, PageHeader, StatusFilter],
   template: `
     <app-page-header title="Custom fields" />
-    <p class="muted">Fields your company tracks on its own records. Retiring a field keeps what was recorded under it.</p>
+    <p class="muted">Fields your company tracks on its own records. Deactivating a field keeps what was recorded under it.</p>
     <label>
       Record kind
       <select name="kind" data-testid="kind" [ngModel]="kind()" (ngModelChange)="pick($event)">
         @for (k of kinds; track k) { <option [value]="k">{{ label(k) }}</option> }
       </select>
     </label>
+    <app-status-filter [value]="status()" (valueChange)="status.set($event)" />
     @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
     @if (loading()) { <p>Loading…</p> }
     @else if (definitions().length === 0) {
@@ -57,12 +60,11 @@ const KIND_LABEL: Record<CustomFieldKind, string> = {
               <td>{{ d.type }}</td>
               <td>{{ d.required ? 'Yes' : 'No' }}</td>
               <td>{{ d.options.join(', ') }}</td>
-              <td>{{ d.active ? 'Active' : 'Retired' }}</td>
+              <td>{{ d.active ? 'Active' : 'Inactive' }}</td>
               <td>
                 @if (manage) {
-                  <button class="link" [attr.data-testid]="'toggle-' + d.key" (click)="toggle(d)">
-                    {{ d.active ? 'Retire' : 'Restore' }}
-                  </button>
+                  <app-config-actions kind="customFields" [recordId]="d.id" [active]="d.active" [label]="d.label"
+                                      [version]="d.version" (changed)="reload.update(n => n + 1)" />
                 }
               </td>
             </tr>
@@ -103,7 +105,9 @@ export class FieldsSettings {
   readonly loading = signal(false);
   readonly error = signal('');
   readonly addError = signal('');
-  private readonly reload = signal(0);
+  /** '' is the server's default, the active fields. */
+  readonly status = signal('');
+  protected readonly reload = signal(0);
 
   key = '';
   fieldLabel = '';
@@ -117,7 +121,7 @@ export class FieldsSettings {
 
   constructor() {
     effect(() => {
-      void this.load(this.kind(), this.reload());
+      void this.load(this.kind(), this.reload(), this.status());
     });
   }
 
@@ -127,18 +131,6 @@ export class FieldsSettings {
 
   pick(kind: CustomFieldKind): void {
     this.kind.set(kind);
-  }
-
-  async toggle(d: FieldDefinition): Promise<void> {
-    this.error.set('');
-    try {
-      await this.gateway.reviseField(d.id, {
-        label: d.label, required: d.required, options: d.options, active: !d.active,
-      });
-      this.reload.update((n) => n + 1);
-    } catch (e) {
-      this.error.set((e as Error).message);
-    }
   }
 
   async add(): Promise<void> {
@@ -161,11 +153,11 @@ export class FieldsSettings {
     }
   }
 
-  private async load(kind: CustomFieldKind, _reload: number): Promise<void> {
+  private async load(kind: CustomFieldKind, _reload: number, status: string): Promise<void> {
     this.loading.set(true);
     this.error.set('');
     try {
-      this.definitions.set(await this.gateway.listFields(kind));
+      this.definitions.set(await this.gateway.listFields(kind, status));
     } catch (e) {
       this.error.set((e as Error).message);
     } finally {
