@@ -25,8 +25,11 @@ import com.lms.customfield.command.CustomFieldDefinitionService;
 import com.lms.customfield.command.CustomFieldValueService;
 import com.lms.customfield.command.domain.EntityType;
 import com.lms.customfield.command.domain.FieldType;
+import com.lms.shared.query.ActiveFilter;
 import com.lms.shared.query.Slice;
 import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -36,6 +39,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -60,8 +64,15 @@ public class CustomFieldController {
     /** A tenant has a handful of definitions, so this is one slice with no cursor. */
     @GetMapping("/definitions")
     public Slice<CustomFieldDefinitionService.View> list(
-            @RequestParam(required = false) EntityType entityType) {
-        return new Slice<>(definitions.list(entityType), null, false);
+            @RequestParam(required = false) EntityType entityType,
+            @RequestParam(required = false) String status) {
+        return new Slice<>(definitions.list(entityType, ActiveFilter.of(status)), null, false);
+    }
+
+    @GetMapping("/definitions/{id}")
+    public ResponseEntity<CustomFieldDefinitionService.View> definition(@PathVariable UUID id) {
+        CustomFieldDefinitionService.View view = definitions.find(id);
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
     }
 
     @PostMapping("/definitions")
@@ -75,9 +86,27 @@ public class CustomFieldController {
 
     @PutMapping("/definitions/{id}")
     public ResponseEntity<Void> revise(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
                                        @Valid @RequestBody ReviseRequest request) {
-        definitions.revise(id, request.label(), Boolean.TRUE.equals(request.required()),
+        definitions.revise(id, IfMatch.version(ifMatch, "the definition's version"), request.label(), Boolean.TRUE.equals(request.required()),
                 request.options(), request.displayOrder(), !Boolean.FALSE.equals(request.active()));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Switches the field off, with a reason: it is no longer asked for or required; stored values stay. */
+    @PostMapping("/definitions/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        definitions.deactivate(id, IfMatch.optionalVersion(ifMatch, "the definition's version"), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/definitions/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        definitions.reactivate(id, IfMatch.optionalVersion(ifMatch, "the definition's version"), request.reason());
         return ResponseEntity.noContent().build();
     }
 
