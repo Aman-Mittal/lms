@@ -24,6 +24,7 @@ import { useLoad } from '../useLoad';
 import { Qr } from './Qr';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { BinList, SkuList } from './WarehouseSetupLists';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 const TABS: Array<[Tab, string]> = [
@@ -777,7 +778,7 @@ function WavePanel({ waveId, version, onChanged }: { waveId: string; version: nu
 
 // ---------------------------------------------------------------- setup
 
-function Setup({ warehouseId, bins, skus, changed }: Context) {
+function Setup({ warehouseId, version, changed }: Context) {
   const { gateway, can } = useSession();
   const [binCode, setBinCode] = useState('');
   const [capacity, setCapacity] = useState('');
@@ -805,13 +806,7 @@ function Setup({ warehouseId, bins, skus, changed }: Context) {
   return (
     <>
       <h2>Bins</h2>
-      {bins.length === 0 ? (
-        <p className="muted" data-testid="no-bins">This warehouse has no bins yet.</p>
-      ) : (
-        <Table rows={bins} rowTestId="bin-row" columns={[
-          ['code', 'Bin'], ['capacityUnits', 'Capacity'], ['occupiedUnits', 'Occupied'],
-        ]} />
-      )}
+      <BinList warehouseId={warehouseId} version={version} onChanged={changed} />
       {can('WAREHOUSE_SETUP') && (
         <>
           <form className="inline" onSubmit={createBin} data-testid="create-bin">
@@ -824,7 +819,7 @@ function Setup({ warehouseId, bins, skus, changed }: Context) {
         </>
       )}
       <h2>SKUs</h2>
-      <Table rows={skus} rowTestId="sku-row" columns={[['code', 'SKU'], ['description', 'Description'], ['uom', 'Unit']]} />
+      <SkuList version={version} onChanged={changed} />
       {can('WAREHOUSE_SETUP') && (
         <>
           <form className="inline" onSubmit={createSku} data-testid="create-sku">
