@@ -271,7 +271,8 @@ class WebhookDeliveryIntegrationTest {
         assertThat(refused.code()).isEqualTo("webhook-subscription-inactive");
 
         receiver.answerAlways(200);
-        Outcome reactivated = kit.put(caller, "/api/v1/webhooks/subscriptions/" + sub[0],
+        Outcome reactivated = kit.putMatching(caller, "/api/v1/webhooks/subscriptions/" + sub[0],
+                kit.etagOf(caller, "/api/v1/webhooks/subscriptions/" + sub[0], everything),
                 "{\"name\":\"it-" + UUID.randomUUID() + "\",\"url\":\"" + receiver.url()
                         + "\",\"eventTypes\":[\"CLAIM_RAISED\"],\"active\":true}", everything);
         assertThat(reactivated.status()).as(reactivated.body()).isEqualTo(204);

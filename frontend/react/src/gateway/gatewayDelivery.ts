@@ -74,10 +74,10 @@ export function deliveryVerbs(d: GatewayDeps): Pick<LmsGateway,
         });
       }),
 
-    listFields: (kind?: CustomFieldKind) =>
+    listFields: (kind?: CustomFieldKind, status?: string) =>
       guard(async () => {
         const slice = await customFields.listCustomFieldDefinitions({
-          entityType: kind as CustomFieldEntityType | undefined,
+          entityType: kind as CustomFieldEntityType | undefined, status: status || undefined,
         });
         return slice.items.map(definitionOf);
       }),
@@ -93,10 +93,10 @@ export function deliveryVerbs(d: GatewayDeps): Pick<LmsGateway,
         });
       }),
 
-    reviseField: (id: string, changes: FieldChanges) =>
+    reviseField: (id: string, changes: FieldChanges, version: number) =>
       guard(async () => {
         await customFields.reviseCustomField({
-          id,
+          id, ifMatch: String(version),
           reviseCustomFieldRequest: {
             label: changes.label, required: changes.required, options: changes.options,
             active: changes.active,

@@ -197,7 +197,8 @@
         in: query
         required: false
         schema: { type: boolean }
-        description: Only live guides (true) or only retired ones (false).
+        description: Only live guides (true) or only retired ones (false). `status` wins when both are given.
+      - $ref: "#/components/parameters/activeStatus"
       - $ref: "#/components/parameters/cursor"
       - $ref: "#/components/parameters/limit"
       - $ref: "#/components/parameters/q"
@@ -244,6 +245,11 @@
     tags: [Sourcing]
     operationId: getRoutingGuide
     summary: A guide and its vendors in rank order
+    description: |
+      `status` narrows the vendors: the active ones by default, `INACTIVE` for
+      those switched off on this guide, `ALL` for every one.
+    parameters:
+      - $ref: "#/components/parameters/activeStatus"
     responses:
       "200":
         description: The guide.
@@ -279,6 +285,78 @@
           schema: { $ref: "#/components/schemas/AddVendorRequest" }
     responses:
       "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/routing-guides/{id}/vendors/{entryId}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the guide.
+    - name: entryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the vendor entry (`entries[].id` of the guide).
+  post:
+    tags: [Sourcing]
+    operationId: deactivateRoutingGuideVendor
+    summary: Switch a vendor on a routing guide off, with a reason
+    description: |
+      Requires `ROUTING_GUIDE_MANAGE`. Allocation skips an inactive vendor and offers to
+      the next rank; the vendor keeps the rank and the rate. 409
+      `routing-guide-vendor-in-use` while the vendor holds an unanswered offer on this
+      guide, `routing-guide-vendor-already-inactive` when already off. Audited as
+      `ROUTING_GUIDE_VENDOR_DEACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/routing-guides/{id}/vendors/{entryId}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the guide.
+    - name: entryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the vendor entry (`entries[].id` of the guide).
+  post:
+    tags: [Sourcing]
+    operationId: reactivateRoutingGuideVendor
+    summary: Switch a vendor on a routing guide back on, with a reason
+    description: |
+      Requires `ROUTING_GUIDE_MANAGE`. 409 `routing-guide-vendor-not-inactive` when
+      already on, `vendor-not-active` when the partner is no longer active. Audited as
+      `ROUTING_GUIDE_VENDOR_REACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
