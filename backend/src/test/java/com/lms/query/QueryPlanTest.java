@@ -1505,7 +1505,7 @@ class QueryPlanTest {
         String sql = """
                 SELECT i.id FROM vendor_invoice i
                  WHERE i.tenant_id = '00000000-0000-0000-0000-000000000001'
-                   AND i.status <> 'PAID' AND i.due_date < '2026-11-12'::date
+                   AND i.status NOT IN ('PAID', 'VOID') AND i.due_date < '2026-11-12'::date
                    AND (i.due_date, i.id) > ('2026-10-01'::date, '00000000-0000-0000-0000-000000000003'::uuid)
                  ORDER BY i.due_date, i.id
                  LIMIT 51
