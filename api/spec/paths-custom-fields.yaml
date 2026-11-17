@@ -18,10 +18,11 @@
     operationId: listCustomFieldDefinitions
     summary: The custom fields a tenant has defined
     description: |
-      Requires `CUSTOM_FIELD_READ`. Every definition, retired ones included
-      (`active: false`), in display order. A tenant has a handful, so this is
+      Requires `CUSTOM_FIELD_READ`. The active definitions, in display order,
+      unless `status` says INACTIVE or ALL. A tenant has a handful, so this is
       one slice with no cursor.
     parameters:
+      - $ref: "#/components/parameters/activeStatus"
       - name: entityType
         in: query
         description: Only the fields of this kind of record.
@@ -63,19 +64,98 @@
       required: true
       schema: { type: string, format: uuid }
       description: Identifier of the definition.
+  get:
+    tags: [Custom fields]
+    operationId: getCustomFieldDefinition
+    summary: One custom field definition
+    description: Requires `CUSTOM_FIELD_READ`. The `ETag` is the version `PUT` sends back in `If-Match`.
+    responses:
+      "200":
+        description: The definition.
+        headers:
+          ETag:
+            schema: { type: string }
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomFieldDefinition" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
   put:
     tags: [Custom fields]
     operationId: reviseCustomField
-    summary: Change a custom field, or retire it
+    summary: Change a custom field
     description: |
       Requires `CUSTOM_FIELD_MANAGE`. Changes the label, whether it is
-      required, its options and its place. Setting `active` to false retires
-      it: stored values are kept, but it is no longer validated or required.
+      required, its options and its place. A stale `If-Match` is 409
+      `concurrent-modification`. To retire a field use `POST /{id}/deactivate`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
     requestBody:
       required: true
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ReviseCustomFieldRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/custom-fields/definitions/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the definition.
+  post:
+    tags: [Custom fields]
+    operationId: deactivateCustomField
+    summary: Switch a custom field off, with a reason
+    description: |
+      Requires `CUSTOM_FIELD_MANAGE`. An inactive field is no longer asked for, validated
+      or required; the values already stored under it are kept and come back with it. 409
+      `custom-field-already-inactive` when already off. Audited as
+      `CUSTOM_FIELD_DEACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/custom-fields/definitions/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the definition.
+  post:
+    tags: [Custom fields]
+    operationId: reactivateCustomField
+    summary: Switch a custom field back on, with a reason
+    description: |
+      Requires `CUSTOM_FIELD_MANAGE`. 409 `custom-field-not-inactive` when already on.
+      Audited as `CUSTOM_FIELD_REACTIVATED` with the reason.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
     responses:
       "204": { $ref: "#/components/responses/NoContent" }
       "401": { $ref: "#/components/responses/Unauthorized" }

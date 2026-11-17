@@ -77,6 +77,7 @@ NumberSeries:
       type: string
       description: The first number of the current year, showing the format.
     createdAt: { type: string, format: date-time }
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
     updatedAt: { type: string, format: date-time }
   required: [id, code, documentType, prefix, yearCode, separator, counterLength, yearStartMonth,
              timeZone, reuseReleased, active, financialYear, issuedThisYear, releasedAvailable, sample]

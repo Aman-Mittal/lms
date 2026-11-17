@@ -15,9 +15,12 @@
  */
 
 import { useEffect, useState, type FormEvent } from 'react';
-import { ORG_UNIT_RANK, ORG_UNIT_TYPES, ORG_UNIT_WORDS, type OrgUnitView } from '../gateway/lmsGateway';
+import { ApiProblem, ORG_UNIT_RANK, ORG_UNIT_TYPES, ORG_UNIT_WORDS, type OrgUnitView } from '../gateway/lmsGateway';
 import { useSession } from '../session';
+import { ConfigActions } from './ConfigActions';
+import { CONFLICT_TEXT } from './MasterDataForm';
 import { PageHeader } from './PageHeader';
+import { StatusFilter } from './StatusFilter';
 
 /** What the form beneath the tree is doing: adding a child, editing a unit, or nothing. */
 type Mode = { kind: 'none' } | { kind: 'child'; parent: OrgUnitView } | { kind: 'edit'; unit: OrgUnitView };
@@ -43,11 +46,15 @@ export function OrgUnits() {
   const [mode, setMode] = useState<Mode>({ kind: 'none' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Said when somebody else saved the unit first; the tree is read again.
+  const [conflict, setConflict] = useState('');
+  // '' is the server's default, the active units.
+  const [status, setStatus] = useState('');
   const [form, setForm] = useState({ slug: '', name: '', unitType: '', countryCode: '', stateCode: '' });
 
   async function reload() {
     try {
-      setUnits(await gateway.orgUnits());
+      setUnits(await gateway.orgUnits(status));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -56,7 +63,7 @@ export function OrgUnits() {
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status]);
 
   function allowedTypes(): string[] {
     if (mode.kind === 'child') {
@@ -93,6 +100,7 @@ export function OrgUnits() {
     event.preventDefault();
     setError('');
     setNotice('');
+    setConflict('');
     const codes = {
       countryCode: form.unitType === 'COUNTRY' ? form.countryCode : '',
       stateCode: carriesState ? form.stateCode : '',
@@ -111,7 +119,13 @@ export function OrgUnits() {
       setMode({ kind: 'none' });
       await reload();
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        setMode({ kind: 'none' });
+        setConflict(CONFLICT_TEXT);
+        await reload();
+      } else {
+        setError((e as Error).message);
+      }
     }
   }
 
@@ -124,6 +138,8 @@ export function OrgUnits() {
         sits below its parent's level. A country carries its ISO code and a zone, branch or hub may carry a state
         code: platform rules for that country and state then apply to everything beneath.</p>
       {error && <p className="error" role="alert">{error}</p>}
+      {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
+      <StatusFilter value={status} onChange={setStatus} />
 
       <div className="table-wrap"><table data-testid="org-units">
         <thead><tr><th>Unit</th><th>Level</th><th>Codes</th><th>Jurisdiction</th><th /></tr></thead>
@@ -143,6 +159,10 @@ export function OrgUnits() {
                 )}
                 {manage && (
                   <button type="button" className="link" data-testid="edit-unit" onClick={() => edit(u)}>Edit</button>
+                )}
+                {manage && (
+                  <ConfigActions kind="orgUnits" id={u.id} active={u.active} label={u.name} version={u.version}
+                    onChanged={() => void reload()} />
                 )}
               </td>
             </tr>

@@ -168,6 +168,19 @@ public record VendorAdvance(
                 cancelledAt, cancelReason);
     }
 
+    /**
+     * Given back when the invoice it was taken off is voided: paid again, as it was, and free to be
+     * taken off the next invoice for the trip.
+     */
+    public VendorAdvance restored() {
+        if (status != Status.DEDUCTED) {
+            throw new BusinessRuleViolationException("advance-illegal-transition",
+                    "Advance " + advanceNo + " is " + status + ", not deducted");
+        }
+        return copy(Status.PAID, approvalId, approvedAt, paidReference, paidOn, paidBy, null, null,
+                cancelledAt, cancelReason);
+    }
+
     /** Withdrawn before it was paid. */
     public VendorAdvance cancelled(String why, Instant at) {
         if (why == null || why.isBlank() || why.strip().length() > 500) {

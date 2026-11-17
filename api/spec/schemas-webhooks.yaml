@@ -77,6 +77,7 @@ WebhookSubscription:
       type: string
       description: Set when the platform paused the subscription after deliveries kept failing.
     consecutiveFailures: { type: integer }
+    version: { type: integer, format: int64, description: Send as `If-Match` when editing. }
     createdAt: { type: string, format: date-time }
     updatedAt: { type: string, format: date-time }
 

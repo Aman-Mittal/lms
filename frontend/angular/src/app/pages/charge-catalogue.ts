@@ -18,8 +18,11 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import {
   ApiProblem, CHARGE_BASES, CHARGE_DIRECTIONS, ChargeEntryView, LmsGateway,
 } from '../gateway/lms-gateway';
+import { ConfigActions } from './config-actions';
 import { PageHeader } from './page-header';
 import { Money } from './figures';
+import { STALE_MESSAGE } from './master-data-form';
+import { StatusFilter } from './status-filter';
 
 /** What an `(input)` or `(change)` event carries, read without a cast in the template. */
 function valueOf(event: Event): string {
@@ -35,7 +38,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-charge-catalogue',
-  imports: [PageHeader, Money],
+  imports: [ConfigActions, PageHeader, Money, StatusFilter],
   template: `
     <app-page-header title="Charge catalogue" />
     <p class="muted">The charges raised by hand against a trip, consignment or order, and their default rates.</p>
@@ -46,6 +49,7 @@ function valueOf(event: Event): string {
       </p>
     }
     @if (saved()) { <p class="ok" role="status" data-testid="cc-saved">{{ saved() }}</p> }
+    @if (conflict()) { <p class="notice" role="alert" data-testid="conflict-notice">{{ conflict() }}</p> }
 
     <form data-testid="cc-form" (submit)="save($event)">
       <h2>{{ editing() ? 'Edit ' + code() : 'New charge' }}</h2>
@@ -67,6 +71,7 @@ function valueOf(event: Event): string {
       <button type="button" class="link" data-testid="cc-reset" (click)="reset()">Reset</button>
     </form>
 
+    <app-status-filter [value]="status()" (valueChange)="setStatus($event)" />
     <form class="inline" role="search" (submit)="search($event)">
       <input type="search" placeholder="Search code or name" aria-label="Search charges" data-testid="cc-search"
              [value]="q()" (input)="q.set(valueOf($event))" />
@@ -83,7 +88,9 @@ function valueOf(event: Event): string {
               <td>{{ e.code }}</td><td>{{ e.name }}</td><td>{{ e.basis }}</td><td class="num"><app-money [value]="e.defaultRate" /></td>
               <td>{{ e.direction }}</td><td>{{ e.active ? 'Yes' : 'No' }}</td>
               <td><button type="button" class="link" data-testid="cc-edit" [attr.aria-label]="'Edit ' + e.code"
-                          (click)="edit(e.id)">Edit</button></td>
+                          (click)="edit(e.id)">Edit</button>
+                <app-config-actions kind="chargeCatalogue" [recordId]="e.id" [active]="e.active" [label]="e.code"
+                                    [version]="e.version" (changed)="reload()" /></td>
             </tr>
           }
         </tbody>
@@ -103,6 +110,10 @@ export class ChargeCatalogue implements OnInit {
   readonly q = signal('');
   readonly refusal = signal<{ code: string; message: string } | null>(null);
   readonly saved = signal('');
+  /** Said when somebody else saved the entry first; the list is read again. */
+  readonly conflict = signal('');
+  /** '' is the server's default, the active entries. */
+  readonly status = signal('');
 
   /** The entry being edited and the version read with it, which the save sends as If-Match. */
   readonly editing = signal<{ id: string; version: number } | null>(null);
@@ -119,6 +130,15 @@ export class ChargeCatalogue implements OnInit {
 
   async search(event: Event): Promise<void> {
     event.preventDefault();
+    await this.attempt(() => this.load(false));
+  }
+
+  async setStatus(value: string): Promise<void> {
+    this.status.set(value);
+    await this.attempt(() => this.load(false));
+  }
+
+  async reload(): Promise<void> {
     await this.attempt(() => this.load(false));
   }
 
@@ -169,7 +189,7 @@ export class ChargeCatalogue implements OnInit {
   }
 
   private async load(append: boolean): Promise<void> {
-    const page = await this.gateway.chargeCatalogue({ q: this.q(), activeOnly: false },
+    const page = await this.gateway.chargeCatalogue({ q: this.q(), activeOnly: false, status: this.status() },
       append ? this.next() ?? undefined : undefined);
     this.entries.set(append ? [...this.entries(), ...page.items] : page.items);
     this.next.set(page.nextCursor);
@@ -178,9 +198,16 @@ export class ChargeCatalogue implements OnInit {
   private async attempt(action: () => Promise<void>): Promise<void> {
     this.refusal.set(null);
     this.saved.set('');
+    this.conflict.set('');
     try {
       await action();
     } catch (e) {
+      if (e instanceof ApiProblem && e.code === 'concurrent-modification') {
+        this.conflict.set(STALE_MESSAGE);
+        this.reset();
+        await this.load(false).catch(() => undefined);
+        return;
+      }
       this.refusal.set({ code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message });
     }
   }
