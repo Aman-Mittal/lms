@@ -24,6 +24,7 @@ import { MapView } from './MapView';
 import { TripMoney } from './TripMoney';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { ErrorBanner } from './ErrorBanner';
 
 /** A trip's track so far and where it is now. */
 export function TripRoute() {
@@ -75,7 +76,7 @@ export function TripRoute() {
         <button type="submit">Show route</button>
       </form>
       {tripId && route.loading && <p className="muted">Loading…</p>}
-      {route.error && <p className="error" role="alert">{route.error}</p>}
+      {route.error && <ErrorBanner message={route.error} />}
       {route.data && (
         <section data-testid="trip-route">
           <dl className="facts">
@@ -95,7 +96,7 @@ export function TripRoute() {
       {route.data && (
         <section data-testid="trip-stops" aria-label="Trip stops">
           <h2>Stops</h2>
-          {(stopError || stops.error) && <p className="error" role="alert" data-testid="stop-error">{stopError || stops.error}</p>}
+          {(stopError || stops.error) && <ErrorBanner message={stopError || stops.error} testId="stop-error" />}
           {(stops.data ?? []).length === 0 ? (
             <p className="muted" data-testid="stops-empty">This trip has no planned stops.</p>
           ) : (

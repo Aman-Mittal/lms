@@ -45,6 +45,7 @@ import { useSession } from './session';
 import { WarehouseDesk } from './pages/WarehouseDesk';
 // Control tower
 import { ExceptionDesk } from './pages/ExceptionDesk';
+import { LoadingState } from './pages/EmptyState';
 
 /*
  * REACT CONCEPT: lazy and Suspense.
@@ -70,7 +71,7 @@ const VendorPayables = lazy(() => import('./pages/VendorPayables').then((m) => (
 const MyProfile = lazy(() => import('./pages/MyProfile').then((m) => ({ default: m.MyProfile })));
 
 function Deferred({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<p className="muted">Loading…</p>}>{children}</Suspense>;
+  return <Suspense fallback={<LoadingState />}>{children}</Suspense>;
 }
 
 /** Wraps the screens that need a signed-in user; others are sent to /login. */

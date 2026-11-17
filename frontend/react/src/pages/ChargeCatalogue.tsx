@@ -25,6 +25,7 @@ import { CONFLICT_TEXT } from './MasterDataForm';
 import { PageHeader } from './PageHeader';
 import { Money } from './Figures';
 import { StatusFilter } from './StatusFilter';
+import { ErrorBanner } from './ErrorBanner';
 
 /**
  * The tenant's catalogue of manual charges. Keeping it needs CHARGE_CATALOGUE_MANAGE; an entry is
@@ -112,7 +113,7 @@ export function ChargeCatalogue() {
     <>
       <PageHeader title="Charge catalogue" />
       <p className="muted">The charges raised by hand against a trip, consignment or order, with their basis and default rate.</p>
-      {error && <p className="error" role="alert" data-testid="cc-error">{error}</p>}
+      {error && <ErrorBanner message={error} testId="cc-error" />}
       {saved && <p className="ok" role="status" data-testid="cc-saved">{saved}</p>}
       {conflict && <p className="notice" role="alert" data-testid="conflict-notice">{conflict}</p>}
 
