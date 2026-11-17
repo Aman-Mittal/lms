@@ -219,7 +219,7 @@ public class OrderToBillSteps {
                 .vendorPartnerId(ids.get(vendor)).rankNo(1).responseSlaMinutes(60)
                 .agreedRate(new BigDecimal("20000")), null);
 
-        assertThat(sourcing.getRoutingGuide(guideId).getEntries())
+        assertThat(sourcing.getRoutingGuide(guideId, (String) null).getEntries())
                 .singleElement()
                 .satisfies(entry -> assertThat(entry.getVendorPartnerId()).isEqualTo(ids.get(vendor)));
     }

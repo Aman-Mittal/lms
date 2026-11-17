@@ -170,16 +170,16 @@ class NumberSeriesApiTest {
         assertThat(admin.previewNextNumber(id).getNumber()).isEqualTo(created.getSample());
 
         // Unused: the format may change.
-        admin.reviseNumberSeries(id, new ReviseNumberSeriesRequest().prefix("GPS")
+        admin.reviseNumberSeries(String.valueOf(admin.getNumberSeries(id).getVersion()), id, new ReviseNumberSeriesRequest().prefix("GPS")
                 .yearCode(NumberYearCode.START_YEAR).separator("-").counterLength(5).reuseReleased(false));
         String first = admin.issueNumber(id, null).getNumber();
         assertThat(first).isEqualTo("GPS-%d-00001".formatted(admin.getNumberSeries(id).getFinancialYear()));
         assertThat(admin.getNumberSeries(id).getLastIssued()).isEqualTo(first);
 
         // Used: the format is fixed and the series cannot be deleted, only deactivated.
-        assertConflict(() -> admin.reviseNumberSeries(id, new ReviseNumberSeriesRequest().prefix("GPX")
+        assertConflict(() -> admin.reviseNumberSeries(String.valueOf(admin.getNumberSeries(id).getVersion()), id, new ReviseNumberSeriesRequest().prefix("GPX")
                 .yearCode(NumberYearCode.START_YEAR).reuseReleased(false)), "number-series-in-use");
-        admin.reviseNumberSeries(id, new ReviseNumberSeriesRequest().prefix("GPS")
+        admin.reviseNumberSeries(String.valueOf(admin.getNumberSeries(id).getVersion()), id, new ReviseNumberSeriesRequest().prefix("GPS")
                 .yearCode(NumberYearCode.START_YEAR).separator("-").counterLength(5).reuseReleased(true)
                 .description("Reuse from now on"));
         assertThat(admin.getNumberSeries(id).getReuseReleased()).isTrue();
