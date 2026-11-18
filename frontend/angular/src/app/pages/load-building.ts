@@ -23,6 +23,7 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Quantity } from './figures';
 import { ErrorBanner } from './error-banner';
+import { AssignOne, OpenLoadForm } from './load-start';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -81,10 +82,11 @@ export class ConsignmentTable {
 /** Finds waiting consignments, picks them, and puts them on the load together. */
 @Component({
   selector: 'app-add-consignments',
-  imports: [ErrorBanner, FormsModule, EntityPicker, Quantity],
+  imports: [AssignOne, ErrorBanner, FormsModule, EntityPicker, Quantity],
   template: `
     <section data-testid="add-panel">
       <h3>Add consignments</h3>
+      <app-assign-one [loadId]="loadId()" (boarded)="boarded.emit()" />
       <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
       <form ngNativeValidate class="inline" (ngSubmit)="find()" data-testid="find-unassigned">
         <app-entity-picker [kind]="'order'" placeholder="Order (optional)" ariaLabel="Order id" testId="order-filter"
@@ -231,7 +233,7 @@ export class AddConsignments {
  */
 @Component({
   selector: 'app-load-building',
-  imports: [ErrorBanner, FormsModule, ConsignmentTable, AddConsignments, EntityPicker, PageHeader, StatusBadge],
+  imports: [ErrorBanner, FormsModule, ConsignmentTable, AddConsignments, EntityPicker, OpenLoadForm, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Load building" />
     <p class="muted">
@@ -244,6 +246,7 @@ export class AddConsignments {
                          [(value)]="typed" />
       <button type="submit">Open</button>
     </form>
+    <app-open-load-form (opened)="openNew($event)" />
     @if (loadError()) { <app-error-banner [message]="loadError()" /> }
     @if (build(); as b) {
       <section data-testid="load-panel">
@@ -261,6 +264,12 @@ export class AddConsignments {
         </dl>
         @if (cancellable()) {
           <p class="actions" data-testid="load-actions">
+            @if (b.load['status'] === 'DRAFT') {
+              <button type="button" data-testid="plan-load"
+                      (click)="act('The load is planned and ready for sourcing.', gateway.planLoad(b.load['id']))">
+                Plan
+              </button>
+            }
             @if (b.load['status'] === 'PLANNED') {
               <button type="button" data-testid="unplan-load"
                       (click)="act('The load is open for building again.', gateway.unplanLoad(b.load['id'], b.load['version']))">
@@ -336,6 +345,12 @@ export class LoadBuilding {
   readonly reason = signal('');
   readonly done = signal('');
   readonly refusal = signal<Refusal | null>(null);
+
+  /** A load just opened is shown straight away. */
+  openNew(id: string): Promise<void> {
+    this.typed.set(id);
+    return this.open();
+  }
 
   async open(): Promise<void> {
     const id = this.typed().trim().toLowerCase();

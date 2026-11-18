@@ -23,6 +23,7 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Quantity } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
+import { AssignOne, OpenLoadForm } from './LoadStart';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -68,6 +69,7 @@ export function LoadBuilding() {
           value={typed} onChange={setTyped} required />
         <button type="submit">Open</button>
       </form>
+      <OpenLoadForm onOpened={(id) => { setTyped(id); setLoadId(id); setReload((n) => n + 1); }} />
       {build.error && <ErrorBanner message={build.error} />}
       {/* Keyed by the load alone, and kept on screen while it refreshes: what was just
           added, and the queue it was picked from, outlive the reload that follows. */}
@@ -128,6 +130,14 @@ function LoadPanel({ load, aboard, onChanged }: LoadPanelProps) {
       </dl>
       {cancellable && (
         <p className="actions" data-testid="load-actions">
+          {load.status === 'DRAFT' && (
+            <>
+              <button type="button" data-testid="plan-load"
+                onClick={() => act('The load is planned and ready for sourcing.', () => gateway.planLoad(load.id))}>
+                Plan
+              </button>{' '}
+            </>
+          )}
           {load.status === 'PLANNED' && (
             <>
               <button type="button" data-testid="unplan-load"
@@ -294,6 +304,7 @@ function AddPanel({ loadId, onAdded }: { loadId: string; onAdded: () => void }) 
   return (
     <section data-testid="add-panel">
       <h3>Add consignments</h3>
+      <AssignOne loadId={loadId} onBoarded={onAdded} />
       <form className="inline" onSubmit={find} data-testid="find-unassigned">
         <EntityPicker kind="order" placeholder="Order (optional)" ariaLabel="Order id" testId="order-filter"
           value={orderTyped} onChange={setOrderTyped} />
