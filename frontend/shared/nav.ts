@@ -81,6 +81,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   { id: 'multimodal', label: 'Multimodal', sections: [{ items: [
     { key: 'itineraries', label: 'Itineraries', route: '/itineraries', any: ['MULTIMODAL_READ'] },
     { key: 'milk-runs', label: 'Milk runs', route: '/milk-runs', any: ['MILKRUN_READ'] },
+    { key: 'milk-run-desk', label: 'Milk run desk', route: '/milk-run-desk', any: ['MILKRUN_PLAN', 'MILKRUN_EXECUTE'] },
+    { key: 'itinerary-desk', label: 'Itinerary desk', route: '/itinerary-desk', any: ['MULTIMODAL_PLAN', 'MULTIMODAL_TRACK'] },
   ] }] },
   { id: 'finance', label: 'Finance', sections: [{ items: [
     { key: 'freight-bills', label: 'Freight bills', route: '/freight-bills' },
