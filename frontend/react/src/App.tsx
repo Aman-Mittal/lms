@@ -55,6 +55,7 @@ import { LoadingState } from './pages/EmptyState';
  */
 const EwayBillDesk = lazy(() => import('./pages/EwayBillDesk').then((m) => ({ default: m.EwayBillDesk })));
 const NetworkMap = lazy(() => import('./pages/NetworkMap').then((m) => ({ default: m.NetworkMap })));
+const TripDesk = lazy(() => import('./pages/TripDesk').then((m) => ({ default: m.TripDesk })));
 const TripRoute = lazy(() => import('./pages/TripRoute').then((m) => ({ default: m.TripRoute })));
 const GateDesk = lazy(() => import('./pages/GateDesk').then((m) => ({ default: m.GateDesk })));
 const Itineraries = lazy(() => import('./pages/Itineraries').then((m) => ({ default: m.Itineraries })));
@@ -107,6 +108,7 @@ export function App() {
           {/* Commercial */}
           <Route path="commercial" element={<Commercial />} />
           <Route path="map" element={<Deferred><NetworkMap /></Deferred>} />
+          <Route path="trip-desk" element={<Deferred><TripDesk /></Deferred>} />
           <Route path="trip-route" element={<Deferred><TripRoute /></Deferred>} />
           <Route path="gate" element={<Deferred><GateDesk /></Deferred>} />
           <Route path="itineraries" element={<Deferred><Itineraries /></Deferred>} />

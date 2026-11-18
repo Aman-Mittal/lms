@@ -59,6 +59,7 @@ export const routes: Routes = [
       // The map screens load on first visit: Leaflet is the console's largest
       // dependency and most sessions never open a map.
       { path: 'map', loadComponent: () => import('./pages/network-map').then((m) => m.NetworkMap) },
+      { path: 'trip-desk', loadComponent: () => import('./pages/trip-desk').then((m) => m.TripDesk) },
       { path: 'trip-route', loadComponent: () => import('./pages/trip-route').then((m) => m.TripRoute) },
       { path: 'charge-catalogue', loadComponent: () => import('./pages/charge-catalogue').then((m) => m.ChargeCatalogue) },
       { path: 'manual-charges', loadComponent: () => import('./pages/manual-charges').then((m) => m.ManualCharges) },
