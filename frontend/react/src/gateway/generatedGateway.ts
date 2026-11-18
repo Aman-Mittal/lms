@@ -32,6 +32,7 @@ import { creditVerbs, gateVerbs } from './gatewayCreditGate';
 import { deliveryVerbs } from './gatewayDelivery';
 import { enquiryVerbs } from './gatewayEnquiries';
 import { ewayVerbs } from './gatewayEway';
+import { milkVerbs } from './gatewayMilk';
 import { tripVerbs } from './gatewayTrips';
 import { moneyVerbs, numberingVerbs } from './gatewayMoney';
 import { networkVerbs } from './gatewayNetwork';
@@ -157,6 +158,7 @@ export function createGeneratedGateway(getToken: () => string | null): LmsGatewa
     ...enquiryVerbs(config),
     ...ewayVerbs(config),
     ...tripVerbs(config),
+    ...milkVerbs(config),
     ...clientBillingVerbs(deps),
     ...masterDataVerbs(deps),
     ...configVerbs(config, deps),
