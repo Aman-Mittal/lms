@@ -30,6 +30,9 @@ import type {
 } from './eway-types';
 import type { LoadOpenDraft, TripCard, TripRaiseDraft, TripStep } from './trip-desk-types';
 import type {
+  CircuitRunCard, CircuitStopCard, CircuitStopStep, ItineraryPlanDraft, RoutePlanDraft,
+} from './milk-itinerary-types';
+import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
 } from './enquiry-types';
 
@@ -1078,6 +1081,24 @@ export abstract class LmsGateway {
   abstract stepTrip(tripId: string, step: TripStep): Promise<void>;
   /** Cancels a trip that has not left the yard; the reason is mandatory. */
   abstract cancelTrip(tripId: string, reason: string): Promise<void>;
+
+  /** Publishes a version of a milk-run route and resolves to its id; needs MILKRUN_PLAN. */
+  abstract publishMilkRoute(draft: RoutePlanDraft): Promise<string>;
+  /** Plans runs from a day (today if blank) for some days (seven if blank); resolves to how many are new. */
+  abstract generateCircuitRuns(fromDate: string, days: string): Promise<number>;
+  /** Runs, newest first, of one route or (when the code is blank) of all. */
+  abstract circuitRunCards(routeCode: string): Promise<CircuitRunCard[]>;
+  abstract circuitRunCard(id: string): Promise<CircuitRunCard>;
+  abstract circuitRunStops(id: string): Promise<CircuitStopCard[]>;
+  /** Hands a run to a trip; needs MILKRUN_EXECUTE. */
+  abstract assignCircuitTrip(runId: string, tripId: string): Promise<void>;
+  /** Records one stop's milestone, now; `value` is the quantity (pickup) or the reason (skip). */
+  abstract recordCircuitStop(runId: string, sequence: number, step: CircuitStopStep, value: string): Promise<void>;
+  abstract completeCircuitRun(runId: string): Promise<void>;
+  /** Plans an itinerary and resolves to its id; needs MULTIMODAL_PLAN. */
+  abstract planItinerary(draft: ItineraryPlanDraft): Promise<string>;
+  /** Records a rail leg's next milestone, now; needs MULTIMODAL_TRACK. */
+  abstract recordRailMilestone(itineraryId: string, seq: number, milestone: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   abstract orderDesk(orderId: string): Promise<OrderDesk>;
