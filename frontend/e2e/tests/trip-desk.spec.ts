@@ -200,6 +200,7 @@ test.describe('trip desk', () => {
   });
 
   test('without the right to execute trips the desk is read-only', async ({ page }) => {
+    test.skip(!process.env.E2E_STUB_SESSION, 'dropping rights is done on the stubbed sign-in');
     const stub = await stubTrips(page);
     const trip = stub.seedTrip({ tripNo: 'T-500', status: 'LOADED' });
     await stubTripSession(page, ['TRIP_EXECUTE']);
@@ -267,6 +268,7 @@ test.describe('opening and planning a load', () => {
   });
 
   test('without the right to build loads, nothing to open or plan is offered', async ({ page }) => {
+    test.skip(!process.env.E2E_STUB_SESSION, 'dropping rights is done on the stubbed sign-in');
     const stub = await stubTrips(page);
     const load = stub.loads[1];
     await stubTripSession(page, ['LOAD_CREATE']);
