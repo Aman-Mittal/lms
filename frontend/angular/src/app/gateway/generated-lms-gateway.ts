@@ -31,7 +31,7 @@ import {
   type NumberFormatSample, type NumberSeriesDraft, type NumberSeriesScope, type NumberSeriesView,
   type NumberVerdict,
 } from './lms-gateway';
-import { GeneratedGatewayConfig } from './generated-gateway-config';
+import { GeneratedGatewayTrips } from './generated-gateway-trips';
 import {
   adminAttributesOf, adminAttributesRequest, adminConditionOf, adminDocumentRequest, adminDocumentRow,
   adminPolicyOf, adminUserOf, commercialAllocationRow, commercialBillLineRow, commercialBillRow, commercialBlank,
@@ -43,7 +43,7 @@ import {
 } from './generated-gateway-helpers';
 
 @Injectable()
-export class GeneratedLmsGateway extends GeneratedGatewayConfig {
+export class GeneratedLmsGateway extends GeneratedGatewayTrips {
   // Number series
   numberSeries(documentType?: NumberedDocumentType): Promise<NumberSeriesView[]> {
     return this.call(this.numbering.listNumberSeries({

@@ -65,6 +65,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   ] }] },
   { id: 'execution', label: 'Execution', sections: [{ items: [
     { key: 'trips', label: 'Trips', route: '/trips' },
+    { key: 'trip-desk', label: 'Trip desk', route: '/trip-desk', any: ['TRIP_READ'] },
     { key: 'trip-route', label: 'Trip route', route: '/trip-route', any: ['TRIP_READ'] },
     { key: 'consignments', label: 'Consignments', route: '/consignments', any: ['LOAD_READ'] },
     { key: 'gate', label: 'Gate', route: '/gate', any: ['GATE_REGISTER', 'GATE_PASS_MANAGE'] },

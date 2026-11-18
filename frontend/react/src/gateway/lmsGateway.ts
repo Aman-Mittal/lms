@@ -28,6 +28,7 @@
 import type {
   EwayAction, EwayBillPage, EwayBillRow, EwayFilter, EwayGenerateDraft, EwayPartBResult,
 } from './ewayTypes';
+import type { LoadOpenDraft, TripCard, TripRaiseDraft, TripStep } from './tripDeskTypes';
 import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
 } from './enquiryTypes';
@@ -1063,6 +1064,21 @@ export interface LmsGateway {
   removeFromLoad(loadId: string, version: string, consignmentId: string): Promise<void>;
   unplanLoad(loadId: string, version: string): Promise<void>;
   cancelLoad(loadId: string, version: string, reason: string): Promise<void>;
+
+  /** Opens a load for building and resolves to its id; needs LOAD_CREATE. A refusal names itself in `code`, such as `load-no-taken`. */
+  openLoad(orgUnitId: string, draft: LoadOpenDraft): Promise<string>;
+  /** Closes a load to further building, making it sourceable; a load with nothing aboard is refused (`load-is-empty`). */
+  planLoad(loadId: string): Promise<void>;
+  /** One trip as the trip desk shows it. */
+  tripCard(id: string): Promise<TripCard>;
+  /** Raises a trip against an awarded load and resolves to its id; needs TRIP_EXECUTE. */
+  raiseTrip(draft: TripRaiseDraft): Promise<string>;
+  /** Nominates the vehicle, and the driver when one is named. */
+  assignTrip(tripId: string, vehicleId: string, driverId: string): Promise<void>;
+  /** Moves the trip to its next milestone, now. Dispatch runs the compliance gate and may refuse with `dispatch-blocked`. */
+  stepTrip(tripId: string, step: TripStep): Promise<void>;
+  /** Cancels a trip that has not left the yard; the reason is mandatory. */
+  cancelTrip(tripId: string, reason: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   orderDesk(orderId: string): Promise<OrderDesk>;
