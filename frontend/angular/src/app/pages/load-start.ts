@@ -15,6 +15,7 @@
  */
 
 import { Component, inject, input, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import { LoadOpenDraft } from '../gateway/trip-desk-types';
 import { Session } from '../session';
@@ -28,7 +29,7 @@ function refusal(e: unknown): { message: string; code: string } {
 /** Opens a new load for building: a number, where it starts, and the vehicle that will carry it. */
 @Component({
   selector: 'app-open-load-form',
-  imports: [EntityPicker, ErrorBanner],
+  imports: [EntityPicker, ErrorBanner, FormsModule],
   template: `
     @if (session.can('LOAD_CREATE') && session.orgUnitId()) {
       <section data-testid="new-load">
@@ -46,7 +47,7 @@ function refusal(e: unknown): { message: string; code: string } {
             <option value="" [selected]="!draft().freightMode">Full truckload</option>
             <option value="LTL" [selected]="draft().freightMode === 'LTL'">Part load</option>
           </select>
-          <button type="submit" data-testid="new-load-open">Open load</button>
+          <button type="submit" data-testid="new-load-open">Start load</button>
         </form>
         @if (error()) { <app-error-banner [message]="error().message" [code]="error().code" testId="new-load-error" /> }
       </section>
@@ -85,7 +86,7 @@ export class OpenLoadForm {
 /** Puts one named consignment on the load, for the single one a planner already knows by reference. */
 @Component({
   selector: 'app-assign-one',
-  imports: [EntityPicker, ErrorBanner],
+  imports: [EntityPicker, ErrorBanner, FormsModule],
   template: `
     <form ngNativeValidate class="inline" (ngSubmit)="submit()" data-testid="assign-one-form">
       <app-entity-picker [kind]="'unassigned'" placeholder="Waiting consignment" ariaLabel="Consignment id"

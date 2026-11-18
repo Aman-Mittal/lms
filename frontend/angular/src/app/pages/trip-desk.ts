@@ -15,6 +15,7 @@
  */
 
 import { Component, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApiProblem, LmsGateway, TripStopView } from '../gateway/lms-gateway';
 import { TripCard, TripRaiseDraft, TripStep } from '../gateway/trip-desk-types';
@@ -48,7 +49,7 @@ interface Refusal {
  */
 @Component({
   selector: 'app-trip-desk',
-  imports: [EntityPicker, ErrorBanner, PageHeader, StatusBadge],
+  imports: [EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Trip desk" />
     <p class="muted">Raise a trip against an awarded load, put a vehicle and driver on it, and take it from the yard to completion.</p>

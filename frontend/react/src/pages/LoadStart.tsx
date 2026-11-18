@@ -72,7 +72,7 @@ export function OpenLoadForm({ onOpened }: { onOpened: (loadId: string) => void 
           <option value="">Full truckload</option>
           <option value="LTL">Part load</option>
         </select>
-        <button type="submit" data-testid="new-load-open">Open load</button>
+        <button type="submit" data-testid="new-load-open">Start load</button>
       </form>
       {error.message && <ErrorBanner message={error.message} code={error.code} testId="new-load-error" />}
     </section>
