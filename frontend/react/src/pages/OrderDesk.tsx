@@ -27,6 +27,8 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Quantity } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
+import { OrderCloseSettings } from './OrderCloseSettings';
+import { OrderLineOps } from './OrderLineOps';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -116,6 +118,7 @@ export function OrderDesk() {
       {can('ORDER_CREATE') && auth?.orgUnitId && (
         <RaiseOrder orgUnitId={auth.orgUnitId} onRaised={openOrder} />
       )}
+      <OrderCloseSettings />
       {desk.error && <ErrorBanner message={desk.error} />}
       {desk.data && desk.data.order.id === orderId && (
         <OrderPanel key={orderId} desk={desk.data} onChanged={() => setReload((n) => n + 1)} />
@@ -404,6 +407,9 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
           </tbody>
         </table>
       </div>
+
+      <OrderLineOps orderId={order.id} version={desk.version} status={order.status} lines={desk.lines}
+        onChanged={onChanged} />
 
       {closable && (
         <section data-testid="close-order" aria-label="Close the order">

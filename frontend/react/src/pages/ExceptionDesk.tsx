@@ -25,6 +25,7 @@ import { useLoad } from '../useLoad';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { CorridorDesk } from './CorridorDesk';
 
 // The map is Leaflet, the console's largest dependency: loaded only when the fleet is shown.
 const MapView = lazy(() => import('./MapView').then((m) => ({ default: m.MapView })));
@@ -519,7 +520,7 @@ function TripPanel({ tripId }: { tripId: string }) {
 
 /** Where every vehicle last reported from, and the trips that have left their corridor. */
 function Fleet({ onTrip }: { onTrip: (tripId: string) => void }) {
-  const { gateway } = useSession();
+  const { gateway, can } = useSession();
   const [version, setVersion] = useState(0);
   const positions = useLoad(() => gateway.vehiclePositions(), version);
   const deviations = useLoad(() => gateway.openDeviations(), version);
@@ -547,6 +548,7 @@ function Fleet({ onTrip }: { onTrip: (tripId: string) => void }) {
           </tbody>
         </table></div>
       )}
+      {can('TELEMATICS_INGEST') && <CorridorDesk />}
       <h3>Positions</h3>
       {positions.error && <ErrorBanner message={positions.error} />}
       {positions.data && (

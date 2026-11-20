@@ -26,6 +26,7 @@ import { EntityPicker } from './entity-picker';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
+import { CorridorDesk } from './corridor-desk';
 import { ErrorBanner } from './error-banner';
 
 /** A refusal's message, and its problem code when it had one. */
@@ -358,7 +359,7 @@ export class TripPanel {
  */
 @Component({
   selector: 'app-exception-desk',
-  imports: [ErrorBanner, FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [CorridorDesk, ErrorBanner, FormsModule, MapView, RefusalNote, TicketPanel, TripPanel, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Exception desk" />
     <p class="muted">
@@ -488,6 +489,7 @@ export class TripPanel {
           </tbody>
         </table></div>
       }
+      @if (session.can('TELEMATICS_INGEST')) { <app-corridor-desk /> }
       <h3>Positions</h3>
       @if (positions(); as p) {
         <p class="muted" data-testid="position-count">{{ p.rows.length }} vehicles reporting</p>
