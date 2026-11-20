@@ -18,11 +18,16 @@ package com.lms.identity.query;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.lms.shared.query.Search;
 import com.lms.shared.tenant.TenantContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -49,7 +54,7 @@ public class UserQueryService {
     private static final String SELECT = """
             SELECT u.id, u.email, u.full_name, u.status,
                    u.org_unit_id, o.path AS org_path, o.name AS org_name,
-                   u.last_login_at
+                   u.last_login_at, u.version
               FROM app_user u
               JOIN org_unit o ON o.id = u.org_unit_id
             """;
@@ -65,17 +70,66 @@ public class UserQueryService {
      * beneath it (vision document 2.1). Sibling subtrees are excluded.
      */
     public List<UserView> findVisible() {
-        return jdbc.sql(SELECT + " WHERE o.path LIKE :orgPath || '%' ORDER BY u.full_name")
+        return findVisible(null, null);
+    }
+
+    /**
+     * As {@link #findVisible()}, narrowed to the users whose name or login id
+     * contains {@code q} and, when given, to one status. Both are optional.
+     */
+    public List<UserView> findVisible(String q, String status) {
+        String wanted = status == null || status.isBlank() ? null : status.strip().toUpperCase(java.util.Locale.ROOT);
+        if (wanted != null && !List.of("ACTIVE", "SUSPENDED", "LOCKED").contains(wanted)) {
+            throw new IllegalArgumentException("status must be ACTIVE, SUSPENDED or LOCKED");
+        }
+        List<Row> rows = jdbc.sql(SELECT + """
+                         WHERE o.path LIKE :orgPath || '%'
+                           AND (CAST(:status AS text) IS NULL OR u.status = :status)
+                           AND (CAST(:q AS text) IS NULL OR u.full_name ILIKE :q OR u.email ILIKE :q)
+                         ORDER BY u.full_name, u.id
+                        """)
                 .param("orgPath", TenantContext.requireOrgPath())
-                .query(UserView.class)
+                .param("status", wanted)
+                .param("q", Search.containsPattern(q))
+                .query(Row.class)
                 .list();
+        Map<UUID, List<String>> roles = rolesOf(rows.stream().map(Row::id).toList());
+        return rows.stream().map(r -> r.view(roles.getOrDefault(r.id(), List.of()))).toList();
     }
 
     public Optional<UserView> findById(UUID id) {
         return jdbc.sql(SELECT + " WHERE u.id = :id")
                 .param("id", id)
-                .query(UserView.class)
-                .optional();
+                .query(Row.class)
+                .optional()
+                .map(r -> r.view(rolesOf(List.of(id)).getOrDefault(id, List.of())));
+    }
+
+    /** Role codes per user, for the given users, in one read. */
+    private Map<UUID, List<String>> rolesOf(List<UUID> userIds) {
+        Map<UUID, List<String>> out = new HashMap<>();
+        if (userIds.isEmpty()) {
+            return out;
+        }
+        jdbc.sql("""
+                        SELECT ur.user_id, r.code
+                          FROM user_role ur JOIN role r ON r.id = ur.role_id
+                         WHERE ur.user_id IN (:ids)
+                         ORDER BY r.code
+                        """)
+                .param("ids", userIds)
+                .query((rs, n) -> Map.entry(rs.getObject("user_id", UUID.class), rs.getString("code")))
+                .list()
+                .forEach(e -> out.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(e.getValue()));
+        return out;
+    }
+
+    private record Row(UUID id, String email, String fullName, String status, UUID orgUnitId,
+                       String orgPath, String orgName, Instant lastLoginAt, Long version) {
+        UserView view(List<String> roles) {
+            return new UserView(id, email, fullName, status, orgUnitId, orgPath, orgName, lastLoginAt,
+                    version, roles);
+        }
     }
 
     /** Permission codes granted to a user through all of their roles. */
