@@ -23,6 +23,7 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
 import { EntityPicker } from '../EntityPicker';
+import { EwayRecord } from './EwayRecord';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -310,6 +311,7 @@ export function EwayBillDesk() {
 
       {manage && (
         <>
+          <EwayRecord onRecorded={() => void load()} />
           <h2>Part-B for a trip</h2>
           <form className="inline" data-testid="eway-trip-form" onSubmit={(ev) => void tripPartB(ev)}>
             <EntityPicker kind="trip" placeholder="Trip id" ariaLabel="Trip id" testId="eway-trip-id"

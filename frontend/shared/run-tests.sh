@@ -6,5 +6,5 @@ cd "$(dirname "$0")"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 ../react/node_modules/.bin/tsc --outDir "$out" --module commonjs --target es2022 --strict --skipLibCheck \
-  --types node --typeRoots ../react/node_modules/@types format.ts format.test.ts problems.ts problems.test.ts feedback.ts fields.ts fields.test.ts
-node --test "$out"/format.test.js "$out"/problems.test.js "$out"/fields.test.js
+  --types node --typeRoots ../react/node_modules/@types format.ts format.test.ts problems.ts problems.test.ts feedback.ts fields.ts fields.test.ts small-ops.ts small-ops.test.ts
+node --test "$out"/format.test.js "$out"/problems.test.js "$out"/fields.test.js "$out"/small-ops.test.js

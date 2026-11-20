@@ -25,6 +25,7 @@ import { StatusBadge } from './status-badge';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
 import { EntityPicker } from './entity-picker';
+import { EwayRecord } from './eway-record';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -46,7 +47,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
  */
 @Component({
   selector: 'app-eway-bill-desk',
-  imports: [EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge, When],
+  imports: [EntityPicker, ErrorBanner, EwayRecord, FormsModule, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="E-way bills" />
     <p class="muted">Generate a consignment's bill, put a vehicle on Part-B, extend or cancel it, and watch what is about to lapse.</p>
@@ -172,6 +173,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
     }
 
     @if (session.can('EWAY_BILL_MANAGE')) {
+      <app-eway-record (recorded)="load()" />
       <h2>Part-B for a trip</h2>
       <form ngNativeValidate class="inline" (ngSubmit)="tripPartB()" data-testid="eway-trip-form">
         <app-entity-picker [kind]="'trip'" placeholder="Trip id" ariaLabel="Trip id" testId="eway-trip-id" [(value)]="tripId" />
