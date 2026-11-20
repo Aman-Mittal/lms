@@ -32,6 +32,7 @@ import type { LoadOpenDraft, TripCard, TripRaiseDraft, TripStep } from './tripDe
 import type {
   CircuitRunCard, CircuitStopCard, CircuitStopStep, ItineraryPlanDraft, RoutePlanDraft,
 } from './milkItineraryTypes';
+import type { AccountDraft, AccountRow, PermissionChoice, RoleCard, RoleDraft } from './userAdminTypes';
 import type {
   ApprovalPolicyDraft, ApprovalPolicyRow, CorridorDraft, CorridorRow, EwayRecordDraft, LineCancellationView,
   OrderCloseSettingsView, SeriesRevisionDraft, SeriesRevisionState,
@@ -1131,6 +1132,24 @@ export interface LmsGateway {
   importCorridor(draft: CorridorDraft): Promise<string>;
   /** Clears a lane's corridor; its trips go back to the straight line. */
   clearCorridor(id: string): Promise<void>;
+
+  // ---------------------------------------------------------------- user and role administration (user-admin-types.ts)
+  /** Users in the caller's subtree whose name or login id contains `q`, optionally of one status. */
+  accounts(q: string, status: string): Promise<AccountRow[]>;
+  /** Creates a user with the login id and password typed by the administrator; needs USER_MANAGE. */
+  createAccount(draft: AccountDraft): Promise<string>;
+  /** Replaces the name and roles under the version read. */
+  updateAccount(id: string, version: number, fullName: string, roles: string[]): Promise<void>;
+  deactivateAccount(id: string, version: number, reason: string): Promise<void>;
+  reactivateAccount(id: string, version: number, reason: string): Promise<void>;
+  setAccountPassword(id: string, password: string): Promise<void>;
+  roleCards(): Promise<RoleCard[]>;
+  permissionChoices(): Promise<PermissionChoice[]>;
+  /** Creates a custom role; needs ROLE_MANAGE. */
+  createRole(draft: RoleDraft): Promise<string>;
+  updateRole(id: string, version: number, name: string, permissions: string[]): Promise<void>;
+  /** Deletes a role nobody holds. */
+  deleteRole(id: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   orderDesk(orderId: string): Promise<OrderDesk>;
