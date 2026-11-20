@@ -30,6 +30,9 @@ import type {
 } from './ewayTypes';
 import type { LoadOpenDraft, TripCard, TripRaiseDraft, TripStep } from './tripDeskTypes';
 import type {
+  CircuitRunCard, CircuitStopCard, CircuitStopStep, ItineraryPlanDraft, RoutePlanDraft,
+} from './milkItineraryTypes';
+import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
 } from './enquiryTypes';
 
@@ -1079,6 +1082,24 @@ export interface LmsGateway {
   stepTrip(tripId: string, step: TripStep): Promise<void>;
   /** Cancels a trip that has not left the yard; the reason is mandatory. */
   cancelTrip(tripId: string, reason: string): Promise<void>;
+
+  /** Publishes a version of a milk-run route and resolves to its id; needs MILKRUN_PLAN. */
+  publishMilkRoute(draft: RoutePlanDraft): Promise<string>;
+  /** Plans runs from a day (today if blank) for some days (seven if blank); resolves to how many are new. */
+  generateCircuitRuns(fromDate: string, days: string): Promise<number>;
+  /** Runs, newest first, of one route or (when the code is blank) of all. */
+  circuitRunCards(routeCode: string): Promise<CircuitRunCard[]>;
+  circuitRunCard(id: string): Promise<CircuitRunCard>;
+  circuitRunStops(id: string): Promise<CircuitStopCard[]>;
+  /** Hands a run to a trip; needs MILKRUN_EXECUTE. */
+  assignCircuitTrip(runId: string, tripId: string): Promise<void>;
+  /** Records one stop's milestone, now; `value` is the quantity (pickup) or the reason (skip). */
+  recordCircuitStop(runId: string, sequence: number, step: CircuitStopStep, value: string): Promise<void>;
+  completeCircuitRun(runId: string): Promise<void>;
+  /** Plans an itinerary and resolves to its id; needs MULTIMODAL_PLAN. */
+  planItinerary(draft: ItineraryPlanDraft): Promise<string>;
+  /** Records a rail leg's next milestone, now; needs MULTIMODAL_TRACK. */
+  recordRailMilestone(itineraryId: string, seq: number, milestone: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   orderDesk(orderId: string): Promise<OrderDesk>;
