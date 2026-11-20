@@ -24,6 +24,7 @@ import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { ApprovalPolicies } from './ApprovalPolicies';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -85,6 +86,7 @@ export function ApprovalsPage() {
         ]} />
       )}
       {picked && <Detail key={`${picked}:${reload}`} id={picked} onChanged={() => setReload((n) => n + 1)} />}
+      <ApprovalPolicies />
     </>
   );
 }

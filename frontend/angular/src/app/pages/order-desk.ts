@@ -28,6 +28,8 @@ import { StatusBadge } from './status-badge';
 import { Quantity } from './figures';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { OrderCloseSettings } from './order-close-settings';
+import { OrderLineOps } from './order-line-ops';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -95,7 +97,8 @@ interface Refusal {
  */
 @Component({
   selector: 'app-order-desk',
-  imports: [ErrorBanner, FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, PageHeader, StatusBadge, Quantity, When],
+  imports: [ErrorBanner, FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, OrderCloseSettings, OrderLineOps,
+    PageHeader, StatusBadge, Quantity, When],
   template: `
     <app-page-header title="Order desk" />
     <p class="muted">
@@ -135,6 +138,7 @@ interface Refusal {
         @if (raiseError()) { <app-error-banner [message]="raiseError()" /> }
       </form>
     }
+    <app-order-close-settings />
     @if (loadError()) { <app-error-banner [message]="loadError()" /> }
     @if (desk(); as d) {
       <section data-testid="order-panel">
@@ -268,6 +272,9 @@ interface Refusal {
             </tbody>
           </table>
         </div>
+
+        <app-order-line-ops [orderId]="d.order['id']" [version]="d.version" [status]="d.order['status']"
+                            [lines]="d.lines" (changed)="reload()" />
 
         @if (closable()) {
           <section data-testid="close-order" aria-label="Close the order">
