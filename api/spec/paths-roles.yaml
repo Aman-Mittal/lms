@@ -1,0 +1,130 @@
+# Copyright 2026 Aman Mittal
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+/api/v1/roles:
+  get:
+    tags: [Roles]
+    operationId: listRoles
+    summary: The tenant's roles and what each grants
+    description: Requires `ROLE_READ`, `ROLE_MANAGE` or `USER_MANAGE`.
+    responses:
+      "200":
+        description: The roles, by name.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/Role" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+  post:
+    tags: [Roles]
+    operationId: createRole
+    summary: Create a custom role from the permission list
+    description: |
+      Requires `ROLE_MANAGE`. 409 `role-code-taken` for a code in use and
+      409 `unknown-permission` for a permission outside the vocabulary.
+      Audited as `ROLE_CREATED`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateRoleRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/roles/{id}:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  get:
+    tags: [Roles]
+    operationId: getRole
+    summary: One role
+    description: Requires `ROLE_READ`, `ROLE_MANAGE` or `USER_MANAGE`.
+    responses:
+      "200":
+        description: The role.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Role" }
+        headers:
+          ETag:
+            description: The role's version; send it back as `If-Match` when editing.
+            schema: { type: string }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [Roles]
+    operationId: updateRole
+    summary: Rename a role and replace what it grants
+    description: |
+      Requires `ROLE_MANAGE`. `If-Match` is required; a stale one is 409
+      `concurrent-modification`. The Administrator role is fixed: 409
+      `administrator-role-fixed`. Audited as `ROLE_UPDATED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateRoleRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+  delete:
+    tags: [Roles]
+    operationId: deleteRole
+    summary: Delete a role nobody holds
+    description: |
+      Requires `ROLE_MANAGE`. 409 `role-in-use` while any user holds it and
+      409 `administrator-role-fixed` for the Administrator. Audited as
+      `ROLE_DELETED`.
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/permissions:
+  get:
+    tags: [Roles]
+    operationId: listPermissions
+    summary: The permission vocabulary roles are built from
+    description: Requires `ROLE_READ`, `ROLE_MANAGE` or `USER_MANAGE`.
+    responses:
+      "200":
+        description: Every permission, by resource.
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/PermissionEntry" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }

@@ -74,6 +74,10 @@ tags:
     description: Obtaining and refreshing tokens (vision document 3.1).
   - name: Users
     description: Who exists, and what they may do.
+  - name: User administration
+    description: Creating, editing, switching off and setting the password of users.
+  - name: Roles
+    description: Roles and the permission vocabulary they are built from.
   - name: Access policies
     description: |
       Attribute-based rules layered on permissions -- approval limits,
