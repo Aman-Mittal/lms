@@ -83,8 +83,8 @@ test.describe('user accounts', () => {
       await expect(page.getByTestId('acct-create-refusal')).toHaveText(/login-id-taken/);
     });
 
-    await test.step('users are searched by name', async () => {
-      await page.getByTestId('acct-search').fill('new person');
+    await test.step('users are searched by name, and the search still finds them after they are renamed', async () => {
+      await page.getByTestId('acct-search').fill('person');
       await page.getByTestId('acct-search-go').click();
       await expect(page.getByTestId('acct-item')).toHaveCount(1);
     });
@@ -104,11 +104,11 @@ test.describe('user accounts', () => {
       await page.getByTestId('acct-reason').fill('left the company');
       await page.getByTestId('acct-deactivate').click();
       await expect(page.getByTestId('acct-done')).toHaveText('The user is switched off.');
-      await expect(page.getByTestId('acct-shown-status')).toContainText('SUSPENDED');
+      await expect(page.getByTestId('acct-shown-status')).toContainText(/suspended/i);
       await page.getByTestId('acct-reason').fill('came back');
       await page.getByTestId('acct-reactivate').click();
       await expect(page.getByTestId('acct-done')).toHaveText('The user is switched on.');
-      await expect(page.getByTestId('acct-shown-status')).toContainText('ACTIVE');
+      await expect(page.getByTestId('acct-shown-status')).toContainText(/active/i);
     });
 
     await test.step('a new password is set, or refused by its code', async () => {

@@ -86,6 +86,10 @@ function grouped(choices: PermissionChoice[]): { resource: string; items: Permis
       }
     }
 
+    @if (done()) { <p class="ok" role="status" data-testid="role-done">{{ done() }}</p> }
+    @if (refusal(); as f) {
+      <app-error-banner [message]="f.message" [code]="f.code" testId="role-error" codeTestId="role-refusal" />
+    }
     @if (listError()) { <app-error-banner [message]="listError()" testId="role-list-error" /> }
     @if (roles().length === 0) {
       <p class="muted" data-testid="role-list-empty">No roles.</p>
@@ -107,10 +111,6 @@ function grouped(choices: PermissionChoice[]): { resource: string; items: Permis
     @if (selected(); as r) {
       <section data-testid="role-panel" [attr.data-id]="r.id">
         <h2>{{ r.name }}</h2>
-        @if (done()) { <p class="ok" role="status" data-testid="role-done">{{ done() }}</p> }
-        @if (refusal(); as f) {
-          <app-error-banner [message]="f.message" [code]="f.code" testId="role-error" codeTestId="role-refusal" />
-        }
         @if (r.code === administrator) {
           <p class="muted" data-testid="role-fixed">The Administrator role always grants everything and cannot be changed or deleted.</p>
         } @else if (session.can('ROLE_MANAGE')) {

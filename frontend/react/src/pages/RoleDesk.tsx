@@ -181,6 +181,9 @@ export function RoleDesk() {
         </>
       )}
 
+      {done && <p className="ok" role="status" data-testid="role-done">{done}</p>}
+      {refusal && <ErrorBanner message={refusal.message} code={refusal.code} testId="role-error" codeTestId="role-refusal" />}
+
       {listError && <ErrorBanner message={listError} testId="role-list-error" />}
       {roles.length === 0 ? (
         <p className="muted" data-testid="role-list-empty">No roles.</p>
@@ -202,8 +205,6 @@ export function RoleDesk() {
       {selected && (
         <section data-testid="role-panel" data-id={selected.id}>
           <h2>{selected.name}</h2>
-          {done && <p className="ok" role="status" data-testid="role-done">{done}</p>}
-          {refusal && <ErrorBanner message={refusal.message} code={refusal.code} testId="role-error" codeTestId="role-refusal" />}
           {selected.code === ADMINISTRATOR ? (
             <p className="muted" data-testid="role-fixed">
               The Administrator role always grants everything and cannot be changed or deleted.
