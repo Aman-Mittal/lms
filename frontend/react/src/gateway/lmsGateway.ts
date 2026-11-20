@@ -33,6 +33,10 @@ import type {
   CircuitRunCard, CircuitStopCard, CircuitStopStep, ItineraryPlanDraft, RoutePlanDraft,
 } from './milkItineraryTypes';
 import type {
+  ApprovalPolicyDraft, ApprovalPolicyRow, CorridorDraft, CorridorRow, EwayRecordDraft, LineCancellationView,
+  OrderCloseSettingsView, SeriesRevisionDraft, SeriesRevisionState,
+} from './smallOpsTypes';
+import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
 } from './enquiryTypes';
 
@@ -1100,6 +1104,33 @@ export interface LmsGateway {
   planItinerary(draft: ItineraryPlanDraft): Promise<string>;
   /** Records a rail leg's next milestone, now; needs MULTIMODAL_TRACK. */
   recordRailMilestone(itineraryId: string, seq: number, milestone: string): Promise<void>;
+  // ---------------------------------------------------------------- small operations (small-ops-types.ts)
+  /** Every approval subject type with the policy now in force; needs APPROVAL_READ. */
+  approvalPolicies(): Promise<ApprovalPolicyRow[]>;
+  /** Sets the organisation default of one subject type, replacing what it had; needs APPROVAL_POLICY_MANAGE. */
+  setApprovalPolicy(subjectType: string, draft: ApprovalPolicyDraft): Promise<ApprovalPolicyRow>;
+  /** Clears the organisation default, so the platform default applies again. */
+  resetApprovalPolicy(subjectType: string): Promise<ApprovalPolicyRow>;
+  /** A series as a revision starts from it; its `version` is the `If-Match` of the revision. */
+  numberSeriesRevisionState(id: string): Promise<SeriesRevisionState>;
+  /** Restates a series' format and settings under `If-Match`; the format is refused once it has issued (`number-series-in-use`). */
+  reviseNumberSeries(id: string, version: string, draft: SeriesRevisionDraft): Promise<void>;
+  /** The tenant's order close policy; needs ORDER_READ. */
+  orderCloseSettings(): Promise<OrderCloseSettingsView>;
+  /** Sets the tenant's close tolerance and auto-fulfil; needs ORDER_FORCE_CLOSE. */
+  setOrderCloseSettings(tolerancePercent: string, autoFulfil: boolean): Promise<OrderCloseSettingsView>;
+  /** Adds one line to a draft order and resolves to its id; needs ORDER_UPDATE. */
+  addOrderLine(orderId: string, line: OrderLineDraft): Promise<string>;
+  /** Cancels one line of a validated order under the order's version, and the consignment it is on; needs ORDER_UPDATE. */
+  cancelOrderLine(orderId: string, version: string, lineId: string, reason: string): Promise<LineCancellationView>;
+  /** Records a bill generated outside the platform against a consignment; needs EWAY_BILL_MANAGE. */
+  recordEwayBill(draft: EwayRecordDraft): Promise<string>;
+  /** The lanes that have a corridor. */
+  corridors(): Promise<CorridorRow[]>;
+  /** Imports the corridor of a lane, replacing the one it had. */
+  importCorridor(draft: CorridorDraft): Promise<string>;
+  /** Clears a lane's corridor; its trips go back to the straight line. */
+  clearCorridor(id: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   orderDesk(orderId: string): Promise<OrderDesk>;
