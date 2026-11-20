@@ -32,6 +32,7 @@ import type { LoadOpenDraft, TripCard, TripRaiseDraft, TripStep } from './trip-d
 import type {
   CircuitRunCard, CircuitStopCard, CircuitStopStep, ItineraryPlanDraft, RoutePlanDraft,
 } from './milk-itinerary-types';
+import type { AccountDraft, AccountRow, PermissionChoice, RoleCard, RoleDraft } from './user-admin-types';
 import type {
   ApprovalPolicyDraft, ApprovalPolicyRow, CorridorDraft, CorridorRow, EwayRecordDraft, LineCancellationView,
   OrderCloseSettingsView, SeriesRevisionDraft, SeriesRevisionState,
@@ -1130,6 +1131,24 @@ export abstract class LmsGateway {
   abstract importCorridor(draft: CorridorDraft): Promise<string>;
   /** Clears a lane's corridor; its trips go back to the straight line. */
   abstract clearCorridor(id: string): Promise<void>;
+
+  // ---------------------------------------------------------------- user and role administration (user-admin-types.ts)
+  /** Users in the caller's subtree whose name or login id contains `q`, optionally of one status. */
+  abstract accounts(q: string, status: string): Promise<AccountRow[]>;
+  /** Creates a user with the login id and password typed by the administrator; needs USER_MANAGE. */
+  abstract createAccount(draft: AccountDraft): Promise<string>;
+  /** Replaces the name and roles under the version read. */
+  abstract updateAccount(id: string, version: number, fullName: string, roles: string[]): Promise<void>;
+  abstract deactivateAccount(id: string, version: number, reason: string): Promise<void>;
+  abstract reactivateAccount(id: string, version: number, reason: string): Promise<void>;
+  abstract setAccountPassword(id: string, password: string): Promise<void>;
+  abstract roleCards(): Promise<RoleCard[]>;
+  abstract permissionChoices(): Promise<PermissionChoice[]>;
+  /** Creates a custom role; needs ROLE_MANAGE. */
+  abstract createRole(draft: RoleDraft): Promise<string>;
+  abstract updateRole(id: string, version: number, name: string, permissions: string[]): Promise<void>;
+  /** Deletes a role nobody holds. */
+  abstract deleteRole(id: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   abstract orderDesk(orderId: string): Promise<OrderDesk>;

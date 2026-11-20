@@ -126,6 +126,17 @@ export const PROBLEM_MESSAGES: Readonly<Record<string, string>> = {
   'route-corridor-points-invalid': 'The corridor points are not usable: each is a longitude and latitude, in the order travelled.',
   'route-corridor-width-invalid': 'The corridor width must be a positive number of metres.',
   'route-corridor-lane-invalid': 'A corridor runs between two different, known terminals.',
+  'password-policy': 'That password is not allowed. Use 12 or more characters, with letters and digits.',
+  'login-id-taken': 'Another user already has that login id. Choose a different one.',
+  'unknown-role': 'One of the chosen roles no longer exists. Reload the roles and choose again.',
+  'self-deactivation': 'You cannot deactivate your own account. Ask another administrator to do it.',
+  'last-administrator': 'There must always be one active administrator. Make someone else an administrator first.',
+  'user-already-inactive': 'That user is already switched off.',
+  'user-not-inactive': 'That user is already switched on.',
+  'role-code-taken': 'Another role already has that code. Choose a different one.',
+  'role-in-use': 'Somebody still holds this role. Take it from them first, then delete it.',
+  'administrator-role-fixed': 'The Administrator role always grants everything and cannot be changed or deleted.',
+  'unknown-permission': 'One of the chosen permissions does not exist. Reload the list and choose again.',
 };
 
 /** The general meaning of a code by its ending, for the many codes of one kind (client-code-taken, order-line-invalid). */

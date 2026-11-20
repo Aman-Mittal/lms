@@ -137,7 +137,7 @@ public class DirectoryAccessSteps {
 
     @Then("the user directory lists the whole tenant to its administrator but only the branch to the branch user")
     public void userListing() {
-        List<User> all = users(cast.demo().getAccessToken()).listUsers();
+        List<User> all = users(cast.demo().getAccessToken()).listUsers(null, null);
         List<String> emails = all.stream().map(User::getEmail).toList();
         assertThat(emails).contains(HttpWorld.DEMO_ADMIN, branchUser.email(),
                 cast.readerAccount().email(), cast.nobodyAccount().email());
@@ -153,7 +153,7 @@ public class DirectoryAccessSteps {
         assertThat(branch.getOrgName()).isEqualTo("Branch " + world.salt);
         assertThat(branch.getOrgUnitId()).isNotNull();
 
-        List<User> own = users(branchSession.getAccessToken()).listUsers();
+        List<User> own = users(branchSession.getAccessToken()).listUsers(null, null);
         assertThat(own).extracting(User::getEmail).containsExactly(branchUser.email());
     }
 

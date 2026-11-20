@@ -15,31 +15,43 @@
  */package com.lms.identity.web;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
 import com.lms.identity.access.SubjectAttributes;
 import com.lms.identity.command.AccessPolicyCommandService;
+import com.lms.identity.command.UserAdminService;
 import com.lms.identity.query.AccessQueryService;
 import com.lms.identity.query.UserAccessAttributesView;
 import com.lms.identity.query.UserQueryService;
 import com.lms.identity.query.UserView;
 import com.lms.shared.error.ResourceNotFoundException;
+import com.lms.shared.web.IdResponse;
+import com.lms.shared.web.IfMatch;
+import com.lms.shared.web.ReasonRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Users visible to the caller (vision document 3.1).
+ * Users visible to the caller (vision document 3.1), and their administration.
  *
  * <p>"Visible" is the org hierarchy doing its work: the listing is bounded by
  * the caller's own organisational path, so a branch manager sees their branch
- * and everything under it and nothing above. There is no unfiltered listing to
- * ask for, which is why this controller has no query parameters at all.
+ * and everything under it and nothing above. The only parameters narrow that
+ * listing (a search text, a status); none widens it. Creating, editing,
+ * switching off and setting passwords need {@code USER_MANAGE}.
  */
 @RestController
 @RequestMapping("/api/v1/users")
@@ -49,22 +61,70 @@ public class UserController {
     private final AccessQueryService access;
     private final AccessPolicyCommandService accessCommands;
 
+    private final UserAdminService admin;
+
     public UserController(UserQueryService users, AccessQueryService access,
-                          AccessPolicyCommandService accessCommands) {
+                          AccessPolicyCommandService accessCommands, UserAdminService admin) {
+        this.admin = admin;
         this.users = users;
         this.access = access;
         this.accessCommands = accessCommands;
     }
 
     @GetMapping
-    public List<UserView> list() {
-        return users.findVisible();
+    public List<UserView> list(@RequestParam(required = false) String q,
+                               @RequestParam(required = false) String status) {
+        return users.findVisible(q, status);
     }
 
     @GetMapping("/{id}")
-    public UserView get(@PathVariable UUID id) {
-        return users.findById(id)
+    public ResponseEntity<UserView> get(@PathVariable UUID id) {
+        UserView view = users.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("AppUser", id));
+        return ResponseEntity.ok().eTag(IfMatch.etag(view.version())).body(view);
+    }
+
+    /** Creates a user with the login id and password the administrator typed. */
+    @PostMapping
+    public ResponseEntity<IdResponse> create(@Valid @RequestBody CreateUserRequest request) {
+        UUID id = admin.create(request.orgUnitId(), request.email(), request.password(),
+                request.fullName(), request.roles());
+        return ResponseEntity.created(URI.create("/api/v1/users/" + id)).body(new IdResponse(id));
+    }
+
+    /** Edits the name and roles; a stale {@code If-Match} is a 409. */
+    @PutMapping("/{id}")
+    public ResponseEntity<Void> update(@PathVariable UUID id,
+                                       @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                       @Valid @RequestBody UpdateUserRequest request) {
+        admin.update(id, IfMatch.version(ifMatch, "the user's version"), request.fullName(), request.roles());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Switches the user off, with a reason. There is no delete. */
+    @PostMapping("/{id}/deactivate")
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        admin.deactivate(id, IfMatch.optionalVersion(ifMatch, "the user's version"), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reactivate")
+    public ResponseEntity<Void> reactivate(@PathVariable UUID id,
+                                           @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                           @Valid @RequestBody ReasonRequest request) {
+        admin.reactivate(id, IfMatch.optionalVersion(ifMatch, "the user's version"), request.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Sets a new password for the user and signs them out everywhere. */
+    @PutMapping("/{id}/password")
+    public ResponseEntity<Void> setPassword(@PathVariable UUID id,
+                                            @RequestHeader(value = "If-Match", required = false) String ifMatch,
+                                            @Valid @RequestBody SetPasswordRequest request) {
+        admin.setPassword(id, IfMatch.optionalVersion(ifMatch, "the user's version"), request.password());
+        return ResponseEntity.noContent().build();
     }
 
     /**
@@ -98,6 +158,31 @@ public class UserController {
         accessCommands.setUserAttributes(id, new SubjectAttributes(request.region(),
                 request.freightModes(), request.partnerId(), request.approvalLimit()));
         return ResponseEntity.noContent().build();
+    }
+
+    public record CreateUserRequest(
+            UUID orgUnitId,
+            @NotBlank @Email String email,
+            @NotBlank String password,
+            @NotBlank String fullName,
+            List<String> roles) {
+
+        /** Keeps the password out of anything that prints the request. */
+        @Override
+        public String toString() {
+            return "CreateUserRequest[email=" + email + "]";
+        }
+    }
+
+    public record UpdateUserRequest(@NotBlank String fullName, List<String> roles) {
+    }
+
+    public record SetPasswordRequest(@NotBlank String password) {
+
+        @Override
+        public String toString() {
+            return "SetPasswordRequest[]";
+        }
     }
 
     public record AccessAttributesRequest(String region, List<String> freightModes,

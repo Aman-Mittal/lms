@@ -39,8 +39,20 @@
     summary: Users visible to the caller
     description: |
       Bounded by the caller's own organisational path: a branch manager sees
-      their branch and everything under it and nothing above. There is no
-      unfiltered listing to ask for, which is why there are no parameters.
+      their branch and everything under it and nothing above. The parameters
+      only narrow that listing. Each user carries the codes of the roles they
+      hold and the `version` an edit sends as `If-Match`.
+    parameters:
+      - name: q
+        in: query
+        required: false
+        schema: { type: string }
+        description: Text the user's name or login id contains, in any case.
+      - name: status
+        in: query
+        required: false
+        schema: { type: string, enum: [ACTIVE, SUSPENDED, LOCKED] }
+        description: Only users in this status.
     responses:
       "200":
         description: Users the caller may see.
@@ -51,6 +63,32 @@
               items: { $ref: "#/components/schemas/User" }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+  post:
+    tags: [User administration]
+    operationId: createUser
+    summary: Create a user with a login id and password
+    description: |
+      Requires `USER_MANAGE`. The administrator types the login id (an email
+      address, as sign-in expects) and the password: there is no invitation and
+      no email. The password must satisfy the password policy (12 to 72 bytes,
+      letters and digits, not a repeated pattern, not containing the login id),
+      refused with 409 `password-policy`. 409 `login-id-taken` when the login id
+      exists in the tenant and 409 `unknown-role` for a role code that does not.
+      Filed under the caller's own unit unless `orgUnitId` names one beneath it.
+      Audited as `USER_CREATED`, without the password.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CreateUserRequest" }
+    responses:
+      "201": { $ref: "#/components/responses/Created" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/users/{id}:
   parameters:
@@ -69,10 +107,129 @@
         content:
           application/json:
             schema: { $ref: "#/components/schemas/User" }
+        headers:
+          ETag:
+            description: The user's version; send it back as `If-Match` when editing.
+            schema: { type: string }
       "401": { $ref: "#/components/responses/Unauthorized" }
       "403": { $ref: "#/components/responses/Forbidden" }
       "404": { $ref: "#/components/responses/NotFound" }
       "400": { $ref: "#/components/responses/BadRequest" }
+  put:
+    tags: [User administration]
+    operationId: updateUser
+    summary: Change a user's name and roles
+    description: |
+      Requires `USER_MANAGE`. The login id never changes. `If-Match` is
+      required; a stale one is 409 `concurrent-modification`. Dropping the
+      Administrator role from the last active administrator is refused with 409
+      `last-administrator`. Audited as `USER_UPDATED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatch"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/users/{id}/deactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [User administration]
+    operationId: deactivateUser
+    summary: Switch a user off, with a reason
+    description: |
+      Requires `USER_MANAGE`. There is no delete: the user is suspended and
+      every session of theirs is revoked. Refused with 409 `self-deactivation`
+      for the caller's own account, `last-administrator` for the last active
+      administrator and `user-already-inactive` when already off. Audited as
+      `USER_DEACTIVATED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/users/{id}/reactivate:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  post:
+    tags: [User administration]
+    operationId: reactivateUser
+    summary: Switch a suspended or locked user back on, with a reason
+    description: |
+      Requires `USER_MANAGE`. 409 `user-not-inactive` when the user is active.
+      Audited as `USER_REACTIVATED`.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReasonRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
+
+/api/v1/users/{id}/password:
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Identifier of the resource.
+  put:
+    tags: [User administration]
+    operationId: setUserPassword
+    summary: Set a new password for a user
+    description: |
+      Requires `USER_MANAGE`. Stored hashed exactly as sign-in verifies it,
+      after the password policy (409 `password-policy`). Clears a lockout and
+      revokes the user's sessions. Audited as `USER_PASSWORD_SET`, without the
+      password.
+    parameters:
+      - $ref: "#/components/parameters/ifMatchOptional"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/SetPasswordRequest" }
+    responses:
+      "204": { $ref: "#/components/responses/NoContent" }
+      "401": { $ref: "#/components/responses/Unauthorized" }
+      "403": { $ref: "#/components/responses/Forbidden" }
+      "404": { $ref: "#/components/responses/NotFound" }
+      "400": { $ref: "#/components/responses/BadRequest" }
+      "409": { $ref: "#/components/responses/Conflict" }
 
 /api/v1/users/{id}/permissions:
   parameters:

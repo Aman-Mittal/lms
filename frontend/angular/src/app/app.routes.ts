@@ -76,6 +76,8 @@ export const routes: Routes = [
       { path: 'warehouse', loadComponent: () => import('./pages/warehouse-desk').then((m) => m.WarehouseDesk) },
       // Administration: loaded on first visit, like the maps; few sessions open it.
       { path: 'admin/users', loadComponent: adminDesk, data: { section: 'users' } },
+      { path: 'admin/accounts', loadComponent: () => import('./pages/user-accounts').then((m) => m.UserAccounts) },
+      { path: 'admin/roles', loadComponent: () => import('./pages/role-desk').then((m) => m.RoleDesk) },
       { path: 'admin/access-policies', loadComponent: adminDesk, data: { section: 'policies' } },
       { path: 'admin/compliance', loadComponent: adminDesk, data: { section: 'compliance' } },
       { path: 'admin/credit-limits', loadComponent: () => import('./pages/credit').then((m) => m.CreditLimitsPage) },

@@ -99,6 +99,34 @@ public record AppUser(
                 status, at, 0, null, null, version, createdAt, Instant.now());
     }
 
+    /** A new, active account; the version is left null so that a save inserts. */
+    public static AppUser create(UUID id, UUID tenantId, UUID orgUnitId, String email,
+                                 String passwordHash, String fullName) {
+        Instant now = Instant.now();
+        return new AppUser(id, tenantId, orgUnitId, email, passwordHash, fullName,
+                UserStatus.ACTIVE, null, 0, null, null, null, now, now);
+    }
+
+    public AppUser renamed(String newFullName) {
+        return new AppUser(id, tenantId, orgUnitId, email, passwordHash, newFullName,
+                status, lastLoginAt, failedLoginAttempts, lockedUntil, lastFailedLoginAt, version,
+                createdAt, Instant.now());
+    }
+
+    /** Switching on also lifts a lockout, so a reactivated user can sign in at once. */
+    public AppUser withStatus(UserStatus target) {
+        boolean on = target == UserStatus.ACTIVE;
+        return new AppUser(id, tenantId, orgUnitId, email, passwordHash, fullName,
+                target, lastLoginAt, on ? 0 : failedLoginAttempts, on ? null : lockedUntil,
+                on ? null : lastFailedLoginAt, version, createdAt, Instant.now());
+    }
+
+    /** A new password clears the failure count: the person has just been given a fresh start. */
+    public AppUser withPasswordHash(String newHash) {
+        return new AppUser(id, tenantId, orgUnitId, email, newHash, fullName,
+                status, lastLoginAt, 0, null, null, version, createdAt, Instant.now());
+    }
+
     /**
      * Keeps the password hash out of logs and error messages. Spring Data JDBC
      * does not need {@code toString}, and a record's default one would print

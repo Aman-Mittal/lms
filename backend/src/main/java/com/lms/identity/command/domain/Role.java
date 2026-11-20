@@ -31,4 +31,12 @@ public record Role(
         String name,
         @Version Long version,
         Instant createdAt) {
+
+    public static Role create(UUID id, UUID tenantId, String code, String name) {
+        return new Role(id, tenantId, code, name, null, java.time.Instant.now());
+    }
+
+    public Role renamed(String newName) {
+        return new Role(id, tenantId, code, newName, version, createdAt);
+    }
 }
