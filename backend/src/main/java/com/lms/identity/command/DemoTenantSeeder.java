@@ -131,6 +131,12 @@ public class DemoTenantSeeder implements ApplicationRunner {
                     .update();
 
             UUID orgUnitId = ensureRootOrgUnit(tenantId, tenantCode, rootPath);
+            // Administrator, Planner, Dispatcher, Finance and Viewer (V66): created
+            // only where absent, so a role the tenant has edited is left alone.
+            jdbc.sql("SELECT count(*) FROM (SELECT seed_standard_roles(:tenantId)) seeded")
+                    .param("tenantId", tenantId)
+                    .query(Long.class)
+                    .single();
             UUID roleId = ensureAdminRole(tenantId);
             grantEveryPermission(tenantId, roleId);
             UUID userId = ensureAdministrator(tenantId, orgUnitId, email, rawPassword);

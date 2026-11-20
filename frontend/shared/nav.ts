@@ -106,6 +106,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     // The first section keeps the `nav-admin` test id: it is present only for someone who holds an administration right.
     { testid: 'nav-admin', label: 'Administration', items: [
       { key: 'admin-users', label: 'Users', route: '/admin/users', any: ['ACCESS_POLICY_MANAGE'] },
+      { key: 'admin-accounts', label: 'User accounts', route: '/admin/accounts', any: ['USER_MANAGE'] },
+      { key: 'admin-roles', label: 'Roles', route: '/admin/roles', any: ['ROLE_READ', 'ROLE_MANAGE'] },
       { key: 'admin-policies', label: 'Access policies', route: '/admin/access-policies', any: ['ACCESS_POLICY_MANAGE'] },
       { key: 'admin-compliance', label: 'Compliance', route: '/admin/compliance', any: ['VEHICLE_READ'] },
       { key: 'admin-number-series', label: 'Number series', route: '/admin/number-series', any: ['NUMBER_SERIES_MANAGE'] },
