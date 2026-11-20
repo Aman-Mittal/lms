@@ -33,6 +33,10 @@ import type {
   CircuitRunCard, CircuitStopCard, CircuitStopStep, ItineraryPlanDraft, RoutePlanDraft,
 } from './milk-itinerary-types';
 import type {
+  ApprovalPolicyDraft, ApprovalPolicyRow, CorridorDraft, CorridorRow, EwayRecordDraft, LineCancellationView,
+  OrderCloseSettingsView, SeriesRevisionDraft, SeriesRevisionState,
+} from './small-ops-types';
+import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
 } from './enquiry-types';
 
@@ -1099,6 +1103,33 @@ export abstract class LmsGateway {
   abstract planItinerary(draft: ItineraryPlanDraft): Promise<string>;
   /** Records a rail leg's next milestone, now; needs MULTIMODAL_TRACK. */
   abstract recordRailMilestone(itineraryId: string, seq: number, milestone: string): Promise<void>;
+  // ---------------------------------------------------------------- small operations (small-ops-types.ts)
+  /** Every approval subject type with the policy now in force; needs APPROVAL_READ. */
+  abstract approvalPolicies(): Promise<ApprovalPolicyRow[]>;
+  /** Sets the organisation default of one subject type, replacing what it had; needs APPROVAL_POLICY_MANAGE. */
+  abstract setApprovalPolicy(subjectType: string, draft: ApprovalPolicyDraft): Promise<ApprovalPolicyRow>;
+  /** Clears the organisation default, so the platform default applies again. */
+  abstract resetApprovalPolicy(subjectType: string): Promise<ApprovalPolicyRow>;
+  /** A series as a revision starts from it; its `version` is the `If-Match` of the revision. */
+  abstract numberSeriesRevisionState(id: string): Promise<SeriesRevisionState>;
+  /** Restates a series' format and settings under `If-Match`; the format is refused once it has issued (`number-series-in-use`). */
+  abstract reviseNumberSeries(id: string, version: string, draft: SeriesRevisionDraft): Promise<void>;
+  /** The tenant's order close policy; needs ORDER_READ. */
+  abstract orderCloseSettings(): Promise<OrderCloseSettingsView>;
+  /** Sets the tenant's close tolerance and auto-fulfil; needs ORDER_FORCE_CLOSE. */
+  abstract setOrderCloseSettings(tolerancePercent: string, autoFulfil: boolean): Promise<OrderCloseSettingsView>;
+  /** Adds one line to a draft order and resolves to its id; needs ORDER_UPDATE. */
+  abstract addOrderLine(orderId: string, line: OrderLineDraft): Promise<string>;
+  /** Cancels one line of a validated order under the order's version, and the consignment it is on; needs ORDER_UPDATE. */
+  abstract cancelOrderLine(orderId: string, version: string, lineId: string, reason: string): Promise<LineCancellationView>;
+  /** Records a bill generated outside the platform against a consignment; needs EWAY_BILL_MANAGE. */
+  abstract recordEwayBill(draft: EwayRecordDraft): Promise<string>;
+  /** The lanes that have a corridor. */
+  abstract corridors(): Promise<CorridorRow[]>;
+  /** Imports the corridor of a lane, replacing the one it had. */
+  abstract importCorridor(draft: CorridorDraft): Promise<string>;
+  /** Clears a lane's corridor; its trips go back to the straight line. */
+  abstract clearCorridor(id: string): Promise<void>;
 
   /** Rejects with a 404 problem for an order that does not exist. */
   abstract orderDesk(orderId: string): Promise<OrderDesk>;
