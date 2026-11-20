@@ -17,7 +17,7 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, withHashLocation } from '@angular/router';
-import { provideApi } from './api';
+import { provideApi } from './api/provide-api';
 import { lazyGateway } from './gateway/lazy-gateway';
 import { LmsGateway } from './gateway/lms-gateway';
 import { bearerToken } from './auth';

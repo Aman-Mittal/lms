@@ -16,6 +16,7 @@
 package com.lms.identity.query;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -35,5 +36,12 @@ public record UserView(
         UUID orgUnitId,
         String orgPath,
         String orgName,
-        Instant lastLoginAt) {
+        Instant lastLoginAt,
+        Long version,
+        List<String> roles) {
+
+    /** The version is the ETag of a read of one user, and what an edit's If-Match carries. */
+    public UserView withRoles(List<String> codes) {
+        return new UserView(id, email, fullName, status, orgUnitId, orgPath, orgName, lastLoginAt, version, codes);
+    }
 }
