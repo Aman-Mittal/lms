@@ -26,6 +26,7 @@ import { RowTable, type RowColumn } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { SeriesRevise } from './SeriesRevise';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -274,6 +275,7 @@ export function NumberSeries() {
               value={releaseReason} onChange={(e) => setReleaseReason(e.target.value)} />
             <button type="submit" data-testid="release-submit">Release</button>
           </form>
+          <SeriesRevise seriesId={current.id} onRevised={() => setReload((n) => n + 1)} />
           {releases.length === 0
             ? <p className="muted" data-testid="releases-empty">No number has been given back.</p>
             : <RowTable testId="releases" rows={releases} columns={RELEASE_COLUMNS} />}

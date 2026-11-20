@@ -23,6 +23,7 @@ import { RowColumn, RowTable } from './row-table';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { ErrorBanner } from './error-banner';
+import { SeriesRevise } from './series-revise';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -60,7 +61,7 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-number-series',
-  imports: [ErrorBanner, RowTable, PageHeader, StatusBadge],
+  imports: [ErrorBanner, RowTable, PageHeader, SeriesRevise, StatusBadge],
   template: `
     <app-page-header title="Number series" />
     <p class="muted">
@@ -160,6 +161,7 @@ function valueOf(event: Event): string {
                  [value]="releaseReason()" (input)="releaseReason.set(valueOf($event))" />
           <button type="submit" data-testid="release-submit">Release</button>
         </form>
+        <app-series-revise [seriesId]="s.id" (revised)="afterRevision(s.id)" />
         @if (releases().length === 0) {
           <p class="muted" data-testid="releases-empty">No number has been given back.</p>
         } @else {
@@ -343,6 +345,11 @@ export class NumberSeriesPage implements OnInit {
   }
 
   /** The list, then the open series' next number and releases. */
+  /** The series was revised: read the list and the open series again. */
+  async afterRevision(id: string): Promise<void> {
+    await this.attempt(() => this.refresh(id));
+  }
+
   private async refresh(id: string): Promise<void> {
     await this.reload();
     const [next, releases] = await Promise.all([this.gateway.nextNumber(id), this.gateway.numberReleases(id)]);
