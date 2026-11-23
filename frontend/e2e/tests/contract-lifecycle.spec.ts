@@ -15,9 +15,7 @@
  */
 
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import {
-  API, apiSession, newBillingPartner, openScreen, publishContract, resetApprovalPolicy, setApprovalPolicy, signIn, tag,
-  type Session, withValue } from './support';
+import { API, apiSession, newBillingPartner, openScreen, publishContract, resetApprovalPolicy, setApprovalPolicy, signIn, tag, type Session, withValue, confirm } from './support';
 
 /*
  * A client contract's lifecycle in both consoles: draft, checklist, verification through the
@@ -163,6 +161,7 @@ test.describe('client contract lifecycle', () => {
     await expect(page.getByTestId('contract-rejection')).toContainText('rate sheet missing');
 
     await page.getByTestId('delete-draft').click();
+    await confirm(page);
     await expect(page.getByTestId('contract-message')).toHaveText('Draft deleted.');
     await expect(page.getByTestId('version-row')).toHaveCount(0);
   });
