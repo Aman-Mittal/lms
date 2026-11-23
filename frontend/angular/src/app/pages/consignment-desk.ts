@@ -23,6 +23,8 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { Quantity } from './figures';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -35,7 +37,7 @@ import { ErrorBanner } from './error-banner';
  */
 @Component({
   selector: 'app-consignment-desk',
-  imports: [ErrorBanner, FormsModule, Qr, PageHeader, StatusBadge, Quantity],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, Qr, PageHeader, StatusBadge, Quantity],
   template: `
     <app-page-header title="Consignments" />
     <p class="muted">Look a consignment up by its lorry receipt or docket number.</p>
@@ -93,11 +95,10 @@ import { ErrorBanner } from './error-banner';
           <section data-testid="cancel-form">
             <h3>Cancel this consignment</h3>
             <p class="muted">Takes it off its load first; its order lines go back to be planned again.</p>
-            <form ngNativeValidate class="inline" (ngSubmit)="cancelConsignment()">
-              <input name="reason" placeholder="Reason" aria-label="Reason for cancelling" data-testid="cancel-reason"
-                     [value]="reason()" (input)="reason.set($any($event.target).value)" />
-              <button type="submit" data-testid="cancel-consignment" [disabled]="busy()">Cancel consignment</button>
-            </form>
+            <p class="actions">
+              <button type="button" data-testid="cancel-consignment" [disabled]="busy()" (click)="askCancel()">Cancel consignment</button>
+            </p>
+            <app-confirm-host [(pending)]="pending" />
           </section>
         }
         @if (cancelRefusal(); as r) {
@@ -198,6 +199,8 @@ import { ErrorBanner } from './error-banner';
   `,
 })
 export class ConsignmentDesk {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
@@ -224,7 +227,6 @@ export class ConsignmentDesk {
   ];
   readonly draft = signal<ConsignmentParticularsDraft>(emptyDraft());
   readonly particularsRefusal = signal<{ code: string; message: string } | null>(null);
-  readonly reason = signal('');
   readonly cancelRefusal = signal<{ code: string; message: string } | null>(null);
 
   readonly amendable = computed(() => {
@@ -314,7 +316,19 @@ export class ConsignmentDesk {
     }
   }
 
-  async cancelConsignment(): Promise<void> {
+  askCancel(): void {
+    const c = this.card();
+    if (!c) {
+      return;
+    }
+    this.pending.set({
+      wording: confirmWording('Cancel consignment', c.trackingRef),
+      reason: { label: 'Reason for cancelling', testId: 'cancel-reason', placeholder: 'Reason' },
+      run: (why) => this.cancelConsignment(why),
+    });
+  }
+
+  private async cancelConsignment(reason: string): Promise<void> {
     const c = this.card();
     if (!c) {
       return;
@@ -322,9 +336,7 @@ export class ConsignmentDesk {
     this.cancelRefusal.set(null);
     this.busy.set(true);
     try {
-      await this.gateway.cancelConsignment(c.id, this.reason());
-      // Cleared before the re-read, so nothing typed survives a success.
-      this.reason.set('');
+      await this.gateway.cancelConsignment(c.id, reason);
       await this.show(() => this.gateway.consignment(c.id));
     } catch (e) {
       this.cancelRefusal.set(refusalOf(e));
