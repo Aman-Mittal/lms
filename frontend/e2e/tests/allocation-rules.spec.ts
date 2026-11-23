@@ -15,10 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import {
-  apiSession, newPlannedLoad, offerLoad, openAllocationRules, retireRules, signIn, tag, withoutPermissions,
-  type Lane,
-} from './support';
+import { apiSession, newPlannedLoad, offerLoad, openAllocationRules, retireRules, signIn, tag, withoutPermissions, type Lane, confirm } from './support';
 
 /** Fills the rule form for a rule on the lane and saves it; the vendors are added in the order given. */
 async function writeRule(
@@ -111,8 +108,7 @@ test.describe('allocation rules', () => {
       await expect(page.getByTestId('dry-run-order')).toHaveCount(2);
 
       await row(page, name).getByTestId('deactivate-record').click();
-      await page.getByTestId('reason-input').fill('Not needed any more');
-      await page.getByTestId('confirm-action').click();
+      await confirm(page, 'Not needed any more');
       // The default list is the active rules; the filter keeps a switched-off one on screen.
       await page.getByTestId('status-filter').selectOption('ALL');
       await expect(row(page, name).getByTestId('rule-status')).toHaveText('Retired');

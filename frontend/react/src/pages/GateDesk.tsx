@@ -24,6 +24,8 @@ import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -90,8 +92,7 @@ export function GateDesk() {
   const [passQ, setPassQ] = useState('');
   const [passes, setPasses] = useState<GatePassView[]>([]);
   const [passesNext, setPassesNext] = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState('');
-  const [cancelReason, setCancelReason] = useState('');
+  const confirm = useConfirm();
 
   async function loadInside() {
     setInside(await gateway.openGateVisits());
@@ -209,16 +210,9 @@ export function GateDesk() {
     });
   }
 
-  function startCancel(id: string) {
-    setCancelling(id);
-    setCancelReason('');
-  }
-
-  function cancel(e: FormEvent, id: string) {
-    e.preventDefault();
+  function cancel(id: string, reason: string) {
     void attempt(async () => {
-      await gateway.cancelGatePass(id, cancelReason);
-      setCancelling('');
+      await gateway.cancelGatePass(id, reason);
       await loadPasses(false);
       return 'Pass cancelled.';
     });
@@ -418,9 +412,12 @@ export function GateDesk() {
               </thead>
               <tbody>
                 {passes.map((p) => (
-                  <PassRow key={p.id} p={p} canCancel={can('GATE_PASS_MANAGE')} open={cancelling === p.id}
-                    onStart={() => startCancel(p.id)} onKeep={() => setCancelling('')}
-                    onSubmit={(e) => cancel(e, p.id)} reason={cancelReason} setReason={setCancelReason} />
+                  <PassRow key={p.id} p={p} canCancel={can('GATE_PASS_MANAGE')}
+                    onCancel={() => confirm.ask({
+                      wording: confirmWording('Cancel pass', p.passNo),
+                      reason: { label: 'Cancellation reason', testId: 'pass-cancel-reason', placeholder: 'Why', required: true },
+                      run: (why) => cancel(p.id, why),
+                    })} />
                 ))}
               </tbody>
             </table></div>
@@ -431,6 +428,7 @@ export function GateDesk() {
           )}
         </section>
       )}
+      {confirm.dialog}
     </>
   );
 }
@@ -488,15 +486,10 @@ function InsideRow(p: InsideRowProps) {
 interface PassRowProps {
   p: GatePassView;
   canCancel: boolean;
-  open: boolean;
-  onStart: () => void;
-  onKeep: () => void;
-  onSubmit: (e: FormEvent) => void;
-  reason: string;
-  setReason: (v: string) => void;
+  onCancel: () => void;
 }
 
-/** A pass, and the small form that cancels it. */
+/** A pass, with the button that cancels it. */
 function PassRow(props: PassRowProps) {
   const { p } = props;
   return (
@@ -512,22 +505,10 @@ function PassRow(props: PassRowProps) {
         <td>
           {p.status === 'ISSUED' && props.canCancel && (
             <button type="button" className="link" data-testid="pass-cancel" aria-label={`Cancel pass ${p.passNo}`}
-              onClick={props.onStart}>Cancel</button>
+              onClick={props.onCancel}>Cancel</button>
           )}
         </td>
       </tr>
-      {props.open && (
-        <tr data-testid="pass-cancel-row">
-          <td colSpan={9}>
-            <form className="inline" data-testid="pass-cancel-form" onSubmit={props.onSubmit}>
-              <input placeholder="Why" aria-label="Cancellation reason" data-testid="pass-cancel-reason" required
-                value={props.reason} onChange={(e) => props.setReason(e.target.value)} />
-              <button type="submit" data-testid="pass-cancel-confirm">Cancel pass</button>
-              <button type="button" className="link" onClick={props.onKeep}>Keep</button>
-            </form>
-          </td>
-        </tr>
-      )}
     </>
   );
 }
