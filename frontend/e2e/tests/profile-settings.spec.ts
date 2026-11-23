@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { apiSession, openScreen, signIn, signOut, tag, withoutPermissions, type Session } from './support';
+import { apiSession, openScreen, signIn, signOut, tag, withoutPermissions, type Session, confirm } from './support';
 
 const API = process.env.E2E_API_URL ?? 'http://localhost:8080';
 const TOLERANCE = 'order.close.tolerancePercent';
@@ -121,6 +121,7 @@ test.describe('profile and settings', () => {
       await expect(row).toContainText(`Customer: Terms ${code}`);
 
       await panel.getByTestId('delete-profile').click();
+      await confirm(page);
       await expect(page.getByTestId('profile-panel')).toHaveCount(0);
       await context.getByTestId('show-effective').click();
       await expect(page.getByTestId(`effective-${TOLERANCE}`)).not.toContainText(`Terms ${code}`);
@@ -158,6 +159,7 @@ test.describe('profile and settings', () => {
       await expect(row).toContainText(`Vendor: Vendor ${code}`);
 
       await panel.getByTestId('delete-profile').click();
+      await confirm(page);
       await expect(page.getByTestId('profile-panel')).toHaveCount(0);
     });
 

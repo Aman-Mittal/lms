@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { openScreen, signIn } from './support';
+import { openScreen, signIn, confirm } from './support';
 import { stubUsers, stubUsersSession, type UsersStub } from './support-users';
 
 /*
@@ -101,12 +101,12 @@ test.describe('user accounts', () => {
     });
 
     await test.step('the user is switched off and on, each with a reason', async () => {
-      await page.getByTestId('acct-reason').fill('left the company');
       await page.getByTestId('acct-deactivate').click();
+      await confirm(page, 'left the company');
       await expect(page.getByTestId('acct-done')).toHaveText('The user is switched off.');
       await expect(page.getByTestId('acct-shown-status')).toContainText(/suspended/i);
-      await page.getByTestId('acct-reason').fill('came back');
       await page.getByTestId('acct-reactivate').click();
+      await confirm(page, 'came back');
       await expect(page.getByTestId('acct-done')).toHaveText('The user is switched on.');
       await expect(page.getByTestId('acct-shown-status')).toContainText(/active/i);
     });
@@ -126,8 +126,8 @@ test.describe('user accounts', () => {
     await signIn(page);
     await openAccounts(page);
     await page.getByTestId('acct-select').click();
-    await page.getByTestId('acct-reason').fill('testing');
     await page.getByTestId('acct-deactivate').click();
+    await confirm(page, 'testing');
     await expect(page.getByTestId('acct-refusal')).toHaveText(/self-deactivation/);
 
     await page.getByTestId('acct-edit-role-ADMIN').uncheck();
@@ -179,6 +179,7 @@ test.describe('roles', () => {
 
     await test.step('an unused role is deleted', async () => {
       await page.getByTestId('role-delete').click();
+      await confirm(page);
       await expect(page.getByTestId('role-done')).toHaveText('The role is deleted.');
       await expect(page.getByTestId('role-item').filter({ hasText: 'YARD_LEAD' })).toHaveCount(0);
     });
@@ -192,6 +193,7 @@ test.describe('roles', () => {
 
     await page.getByTestId('role-item').filter({ hasText: 'PLANNER' }).getByTestId('role-select').click();
     await page.getByTestId('role-delete').click();
+    await confirm(page);
     await expect(page.getByTestId('role-refusal')).toHaveText(/role-in-use/);
 
     await page.getByTestId('role-item').filter({ hasText: 'ADMIN' }).getByTestId('role-select').click();

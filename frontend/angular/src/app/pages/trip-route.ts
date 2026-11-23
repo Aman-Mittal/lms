@@ -26,13 +26,16 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** A trip's track so far and where it is now. */
 @Component({
   selector: 'app-trip-route',
-  imports: [ErrorBanner, FormsModule, MapView, EntityPicker, TripMoney, PageHeader, StatusBadge, When],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, MapView, EntityPicker, TripMoney, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Trip route" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">The route a trip has driven so far, from the positions its vehicle reported.</p>
     <!-- A signal, not ngModel: ngModel connects after the screen is shown, and would wipe an id typed before it. -->
     <form ngNativeValidate class="inline" (ngSubmit)="lookUp()" data-testid="trip-lookup">
@@ -88,7 +91,7 @@ import { ErrorBanner } from './error-banner';
                         <button type="button" class="link" data-testid="stop-arrive"
                                 [attr.aria-label]="'Arrive at ' + s.terminalCode" (click)="arrive(s)">Arrive</button>
                         <button type="button" class="link" data-testid="stop-skip"
-                                [attr.aria-label]="'Skip ' + s.terminalCode" (click)="startSkip(s.id)">Skip</button>
+                                [attr.aria-label]="'Skip ' + s.terminalCode" (click)="askSkip(s)">Skip</button>
                       }
                       @if (s.status === 'ARRIVED') {
                         <button type="button" class="link" data-testid="stop-depart"
@@ -97,18 +100,6 @@ import { ErrorBanner } from './error-banner';
                     }
                   </td>
                 </tr>
-                @if (skipping() === s.id) {
-                  <tr data-testid="stop-skip-row">
-                    <td colspan="9">
-                      <form ngNativeValidate class="inline" data-testid="stop-skip-form" (submit)="skip($event, s)">
-                        <input placeholder="Why" aria-label="Skip reason" data-testid="stop-skip-reason" required
-                               [value]="skipReason()" (input)="skipReason.set($any($event.target).value)" />
-                        <button type="submit" data-testid="stop-skip-confirm">Skip stop</button>
-                        <button type="button" class="link" (click)="skipping.set('')">Keep</button>
-                      </form>
-                    </td>
-                  </tr>
-                }
               }
             </tbody>
           </table></div>
@@ -119,6 +110,8 @@ import { ErrorBanner } from './error-banner';
   `,
 })
 export class TripRoute implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly location = inject(ActivatedRoute);
   protected readonly session = inject(Session);
@@ -129,8 +122,6 @@ export class TripRoute implements OnInit {
   readonly stops = signal<TripStopView[]>([]);
   readonly stopError = signal('');
   readonly shownTripId = signal('');
-  readonly skipping = signal('');
-  readonly skipReason = signal('');
   /** The trip the stops belong to: what was looked up, not what is typed since. */
   private shownTrip = '';
 
@@ -170,14 +161,12 @@ export class TripRoute implements OnInit {
     return this.act(() => this.gateway.departFromStop(this.shownTrip, stop.id));
   }
 
-  startSkip(id: string): void {
-    this.skipping.set(id);
-    this.skipReason.set('');
-  }
-
-  async skip(event: Event, stop: TripStopView): Promise<void> {
-    event.preventDefault();
-    await this.act(() => this.gateway.skipStop(this.shownTrip, stop.id, this.skipReason()));
+  askSkip(stop: TripStopView): void {
+    this.pending.set({
+      wording: confirmWording('Skip stop', stop.terminalCode),
+      reason: { label: 'Why the stop is skipped', testId: 'stop-skip-reason', placeholder: 'Why', required: true },
+      run: (why) => this.act(() => this.gateway.skipStop(this.shownTrip, stop.id, why)),
+    });
   }
 
   /** The stops are read again after every action: the server decides what state a stop is in. */
@@ -193,7 +182,6 @@ export class TripRoute implements OnInit {
     this.stopError.set('');
     try {
       await action();
-      this.skipping.set('');
     } catch (e) {
       this.stopError.set((e as Error).message);
     }

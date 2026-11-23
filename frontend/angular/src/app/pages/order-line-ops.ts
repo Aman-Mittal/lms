@@ -20,6 +20,8 @@ import { ApiProblem, LmsGateway, MATERIAL_CLASSES, OrderLineDraft, OrderLineView
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** Once consignments are cut from an order, a line can still be cancelled on its own. */
 const CANCELLABLE = ['VALIDATED', 'PARTIALLY_PLANNED', 'FULLY_PLANNED'];
@@ -40,7 +42,7 @@ function blankLine(lines: OrderLineView[]): OrderLineDraft {
  */
 @Component({
   selector: 'app-order-line-ops',
-  imports: [EntityPicker, ErrorBanner, FormsModule],
+  imports: [ConfirmHost, EntityPicker, ErrorBanner, FormsModule],
   template: `
     @if (canAppend()) {
       <form ngNativeValidate class="inline" data-testid="append-line" (submit)="append($event)">
@@ -77,21 +79,22 @@ function blankLine(lines: OrderLineView[]): OrderLineDraft {
           close the order instead.
         </p>
         <div class="inline">
-          <input placeholder="Why (optional)" aria-label="Why a line is cancelled" data-testid="cancel-line-reason"
-                 [value]="reason()" (input)="reason.set($any($event.target).value)" />
           @for (l of cancellable(); track l.id) {
-            <button type="button" data-testid="cancel-line" [attr.data-line]="l.lineNo" (click)="cancelLine(l)">
+            <button type="button" data-testid="cancel-line" [attr.data-line]="l.lineNo" (click)="askCancel(l)">
               Cancel line {{ l.lineNo }}
             </button>
           }
         </div>
       </section>
     }
+    <app-confirm-host [(pending)]="pending" />
     @if (done()) { <p class="ok" role="status" data-testid="line-op-done">{{ done() }}</p> }
     @if (error().message) { <app-error-banner [message]="error().message" [code]="error().code" testId="line-op-error" codeTestId="line-op-refusal" /> }
   `,
 })
 export class OrderLineOps {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
@@ -103,7 +106,6 @@ export class OrderLineOps {
   readonly changed = output<void>();
 
   readonly classes = MATERIAL_CLASSES;
-  readonly reason = signal('');
   readonly done = signal('');
   readonly error = signal({ message: '', code: '' });
   private readonly typed = signal<OrderLineDraft | null>(null);
@@ -130,11 +132,18 @@ export class OrderLineOps {
     }
   }
 
-  async cancelLine(line: OrderLineView): Promise<void> {
+  askCancel(line: OrderLineView): void {
+    this.pending.set({
+      wording: confirmWording('Cancel line', String(line.lineNo), 'The consignment it is on is cancelled too.'),
+      reason: { label: 'Why a line is cancelled', testId: 'cancel-line-reason', placeholder: 'Why (optional)' },
+      run: (why) => this.cancelLine(line, why),
+    });
+  }
+
+  private async cancelLine(line: OrderLineView, reason: string): Promise<void> {
     this.begin();
     try {
-      const result = await this.gateway.cancelOrderLine(this.orderId(), this.version(), line.id, this.reason());
-      this.reason.set('');
+      const result = await this.gateway.cancelOrderLine(this.orderId(), this.version(), line.id, reason);
       this.done.set(`Line ${line.lineNo} cancelled; ${result.cancelledConsignments} consignment(s) cancelled.`);
       this.changed.emit();
     } catch (e) {
