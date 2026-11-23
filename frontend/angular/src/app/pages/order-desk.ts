@@ -30,6 +30,8 @@ import { When } from './when';
 import { ErrorBanner } from './error-banner';
 import { OrderCloseSettings } from './order-close-settings';
 import { OrderLineOps } from './order-line-ops';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -97,7 +99,7 @@ interface Refusal {
  */
 @Component({
   selector: 'app-order-desk',
-  imports: [ErrorBanner, FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, OrderCloseSettings, OrderLineOps,
+  imports: [ConfirmHost, ErrorBanner, FormsModule, EntityPicker, CreditPositionPanel, CreditOverride, OrderCloseSettings, OrderLineOps,
     PageHeader, StatusBadge, Quantity, When],
   template: `
     <app-page-header title="Order desk" />
@@ -143,6 +145,7 @@ interface Refusal {
     @if (desk(); as d) {
       <section data-testid="order-panel">
         <h2>{{ d.order['orderNo'] }}</h2>
+        <app-confirm-host [(pending)]="pending" />
         <dl>
           <div><dt>Status</dt><dd><app-status-badge data-testid="order-status" [value]="d.order['status']" /></dd></div>
           <div><dt>Version</dt><dd data-testid="order-version">{{ d.version }}</dd></div>
@@ -262,7 +265,7 @@ interface Refusal {
                     }
                     @if (isDraft() && session.can('ORDER_UPDATE') && d.lines.length > 1) {
                       <button type="button" class="link" data-testid="remove-line"
-                              (click)="act('Line ' + l.lineNo + ' removed.', gateway.removeOrderLine(d.order['id'], d.version, l.id))">
+                              (click)="askRemoveLine(d.order['id'], d.order['orderNo'], d.version, l.id, l.lineNo)">
                         Remove
                       </button>
                     }
@@ -397,12 +400,9 @@ interface Refusal {
                 </button>
               }
             </p>
-            <form ngNativeValidate class="inline" data-testid="cancel-order"
-                  (ngSubmit)="cancelOrder(d.order['id'])">
-              <input name="reason" aria-label="Cancellation reason" placeholder="Why it is cancelled (optional)"
-                     [value]="reason()" (input)="reason.set($any($event.target).value)" />
-              <button type="submit">Cancel order</button>
-            </form>
+            <p class="actions" data-testid="cancel-order">
+              <button type="button" (click)="askCancelOrder(d.order['id'], d.order['orderNo'])">Cancel order</button>
+            </p>
           </section>
         }
 
@@ -438,6 +438,8 @@ interface Refusal {
   `,
 })
 export class OrderDeskPage {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   readonly gateway = inject(LmsGateway);
   readonly session = inject(Session);
 
@@ -456,7 +458,6 @@ export class OrderDeskPage {
   readonly lines = signal<OrderLineDraft[]>([]);
   readonly refusal = signal<Refusal | null>(null);
   readonly done = signal('');
-  readonly reason = signal('');
   readonly closeReason = signal('');
   readonly slip = signal(false);
   readonly tab = signal<'details' | 'history'>('details');
@@ -622,9 +623,24 @@ export class OrderDeskPage {
    * raises the request and says so; the order stays as it is until somebody
    * else approves it in the Approvals inbox.
    */
-  async cancelOrder(orderId: string): Promise<void> {
+  askCancelOrder(orderId: string, orderNo: string): void {
+    this.pending.set({
+      wording: confirmWording('Cancel order', orderNo),
+      reason: { label: 'Cancellation reason', testId: 'cancel-order-reason', placeholder: 'Why it is cancelled (optional)' },
+      run: (why) => this.cancelOrder(orderId, why),
+    });
+  }
+
+  askRemoveLine(orderId: string, orderNo: string, version: string, lineId: string, lineNo: number): void {
+    this.pending.set({
+      wording: confirmWording('Remove line', String(lineNo), '', `from order ${orderNo}`),
+      run: () => this.act(`Line ${lineNo} removed.`, this.gateway.removeOrderLine(orderId, version, lineId)),
+    });
+  }
+
+  private async cancelOrder(orderId: string, reason: string): Promise<void> {
     const result = { pending: false };
-    await this.act('Order cancelled.', this.gateway.cancelOrder(orderId, this.reason()).then((p) => {
+    await this.act('Order cancelled.', this.gateway.cancelOrder(orderId, reason).then((p) => {
       result.pending = p !== null;
     }));
     if (result.pending) {

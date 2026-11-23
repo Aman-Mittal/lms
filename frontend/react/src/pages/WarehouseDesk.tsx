@@ -26,6 +26,8 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { BinList, SkuList } from './WarehouseSetupLists';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 const TABS: Array<[Tab, string]> = [
@@ -546,6 +548,7 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
   const detail = useLoad(() => gateway.outboundOrder(orderId), `${orderId}:${version}`);
   const [slip, setSlip] = useState(false);
   const { run, report } = useAction();
+  const confirm = useConfirm();
 
   if (detail.error) {
     return <ErrorBanner message={detail.error} />;
@@ -582,7 +585,10 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
         )}{' '}
         {operate && status === 'BACK_ORDERED' && (
           <button data-testid="cancel-back-order"
-            onClick={async () => { if (await run(() => gateway.cancelBackOrder(orderId), 'Back order cancelled.')) { onChanged(); } }}>
+            onClick={() => confirm.ask({
+              wording: confirmWording('Cancel back order', header.orderNo),
+              run: async () => { if (await run(() => gateway.cancelBackOrder(orderId), 'Back order cancelled.')) { onChanged(); } },
+            })}>
             Cancel back order
           </button>
         )}{' '}
@@ -610,6 +616,7 @@ function OrderPanel({ orderId, stock, version, onPacked, onChanged }: OrderPanel
           </p>
         </section>
       )}
+      {confirm.dialog}
     </section>
   );
 }
