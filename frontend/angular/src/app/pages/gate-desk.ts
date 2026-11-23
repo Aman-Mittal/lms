@@ -25,6 +25,8 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 type Tab = 'desk' | 'register' | 'passes';
 
@@ -48,9 +50,10 @@ function listOf(text: string): string[] {
  */
 @Component({
   selector: 'app-gate-desk',
-  imports: [ErrorBanner, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ConfirmHost, ErrorBanner, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Gate desk" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">Vehicles at the gate: who is inside, entries and exits, the register and gate passes.</p>
     @if (refusal(); as r) {
       <app-error-banner [message]="r.message" [code]="r.code" testId="gate-error" codeTestId="gate-refusal" />
@@ -272,22 +275,10 @@ function listOf(text: string): string[] {
                   <td>
                     @if (p.status === 'ISSUED' && session.can('GATE_PASS_MANAGE')) {
                       <button type="button" class="link" data-testid="pass-cancel"
-                              [attr.aria-label]="'Cancel pass ' + p.passNo" (click)="startCancel(p.id)">Cancel</button>
+                              [attr.aria-label]="'Cancel pass ' + p.passNo" (click)="askCancel(p.id, p.passNo)">Cancel</button>
                     }
                   </td>
                 </tr>
-                @if (cancelling() === p.id) {
-                  <tr data-testid="pass-cancel-row">
-                    <td colspan="9">
-                      <form ngNativeValidate class="inline" data-testid="pass-cancel-form" (submit)="cancel($event, p.id)">
-                        <input placeholder="Why" aria-label="Cancellation reason" data-testid="pass-cancel-reason" required
-                               [value]="cancelReason()" (input)="cancelReason.set(valueOf($event))" />
-                        <button type="submit" data-testid="pass-cancel-confirm">Cancel pass</button>
-                        <button type="button" class="link" (click)="cancelling.set('')">Keep</button>
-                      </form>
-                    </td>
-                  </tr>
-                }
               }
             </tbody>
           </table></div>
@@ -300,6 +291,8 @@ function listOf(text: string): string[] {
   `,
 })
 export class GateDesk implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   protected readonly session = inject(Session);
 
@@ -357,8 +350,6 @@ export class GateDesk implements OnInit {
   readonly passQ = signal('');
   readonly passes = signal<GatePassView[]>([]);
   readonly passesNext = signal<string | null>(null);
-  readonly cancelling = signal('');
-  readonly cancelReason = signal('');
 
   async ngOnInit(): Promise<void> {
     await this.attempt(() => this.loadInside());
@@ -472,16 +463,17 @@ export class GateDesk implements OnInit {
     await this.attempt(() => this.loadPasses(true));
   }
 
-  startCancel(id: string): void {
-    this.cancelling.set(id);
-    this.cancelReason.set('');
+  askCancel(id: string, passNo: string): void {
+    this.pending.set({
+      wording: confirmWording('Cancel pass', passNo),
+      reason: { label: 'Cancellation reason', testId: 'pass-cancel-reason', placeholder: 'Why', required: true },
+      run: (why) => this.cancel(id, why),
+    });
   }
 
-  async cancel(event: Event, id: string): Promise<void> {
-    event.preventDefault();
+  private async cancel(id: string, reason: string): Promise<void> {
     await this.attempt(async () => {
-      await this.gateway.cancelGatePass(id, this.cancelReason());
-      this.cancelling.set('');
+      await this.gateway.cancelGatePass(id, reason);
       await this.loadPasses(false);
       return 'Pass cancelled.';
     });
