@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { signIn } from './support';
+import { signIn, confirm } from './support';
 import {
   awardedLoadId, consignmentId, draftLoadId, driverId, inactiveVehicleId, stubTripSession, stubTrips, terminalId,
   vehicleId, type TripStub,
@@ -179,13 +179,17 @@ test.describe('trip desk', () => {
 
     await test.step('without a reason nothing is sent', async () => {
       await page.getByTestId('trip-cancel').click();
+      await expect(page.getByTestId('confirm-dialog')).toContainText('Cancel trip T-400?');
+      await page.getByTestId('confirm-accept').click();
+      await expect(page.getByTestId('reason-error')).toBeVisible();
       expect(sent(stub, '/cancellation')).toBeUndefined();
+      await page.getByTestId('confirm-dismiss').click();
       await expect(status(page)).toHaveAttribute('data-value', 'PLANNED');
     });
 
     await test.step('with a reason it is cancelled and says why', async () => {
-      await page.getByTestId('trip-cancel-reason').fill('the customer withdrew');
       await page.getByTestId('trip-cancel').click();
+      await confirm(page, 'the customer withdrew');
       await expect(status(page)).toHaveAttribute('data-value', 'CANCELLED');
       await expect(page.getByTestId('trip-cancelled-reason')).toHaveText('the customer withdrew');
       expect(sent(stub, '/cancellation')?.body).toMatchObject({ reason: 'the customer withdrew' });

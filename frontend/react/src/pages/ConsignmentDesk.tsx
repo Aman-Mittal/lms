@@ -23,6 +23,8 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Quantity } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -327,17 +329,15 @@ function ParticularsForm({ consignment: c, onSaved }: { consignment: Consignment
 /** Cancels the consignment on its own, taking it off its load first. */
 function CancelForm({ consignment: c, onCancelled }: { consignment: ConsignmentCard; onCancelled: () => void }) {
   const { gateway } = useSession();
-  const [reason, setReason] = useState('');
+  const confirm = useConfirm();
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function cancel(event: FormEvent) {
-    event.preventDefault();
+  async function cancel(reason: string) {
     setRefusal(null);
     setBusy(true);
     try {
       await gateway.cancelConsignment(c.id, reason);
-      setReason('');
       onCancelled();
     } catch (e) {
       setRefusal(refusalOf(e));
@@ -350,11 +350,14 @@ function CancelForm({ consignment: c, onCancelled }: { consignment: ConsignmentC
     <section data-testid="cancel-form">
       <h3>Cancel this consignment</h3>
       <p className="muted">Takes it off its load first; its order lines go back to be planned again.</p>
-      <form className="inline" onSubmit={cancel}>
-        <input placeholder="Reason" aria-label="Reason for cancelling" data-testid="cancel-reason"
-          value={reason} onChange={(e) => setReason(e.target.value)} />
-        <button type="submit" data-testid="cancel-consignment" disabled={busy}>Cancel consignment</button>
-      </form>
+      <p className="actions">
+        <button type="button" data-testid="cancel-consignment" disabled={busy} onClick={() => confirm.ask({
+          wording: confirmWording('Cancel consignment', c.trackingRef),
+          reason: { label: 'Reason for cancelling', testId: 'cancel-reason', placeholder: 'Reason' },
+          run: cancel,
+        })}>Cancel consignment</button>
+      </p>
+      {confirm.dialog}
       {refusal && <RefusalNote refusal={refusal} testId="cancel" />}
     </section>
   );

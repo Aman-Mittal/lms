@@ -15,10 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import {
-  apiSession, assignToLoad, newBulkOrder, newPlannedLoad, offerLoad, planLoad, printed, removeFromLoadElsewhere,
-  signIn, stubPrint, tag, withoutPermissions,
-} from './support';
+import { apiSession, assignToLoad, newBulkOrder, newPlannedLoad, offerLoad, planLoad, printed, removeFromLoadElsewhere, signIn, stubPrint, tag, withoutPermissions, confirm } from './support';
 
 const LARGE = 150;
 
@@ -164,14 +161,15 @@ test.describe('load maintenance', () => {
 
     await test.step('the load is opened for building again', async () => {
       await page.getByTestId('unplan-load').click();
+      await confirm(page);
       await expect(page.getByTestId('load-done')).toHaveText('The load is open for building again.');
       await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'DRAFT');
       await expect(page.getByTestId('unplan-load')).toHaveCount(0);
     });
 
     await test.step('the load is cancelled with a reason, and its freight released', async () => {
-      await page.getByTestId('cancel-reason').fill('the yard is closed today');
       await page.getByTestId('cancel-load').click();
+      await confirm(page, 'the yard is closed today');
       await expect(page.getByTestId('load-done')).toHaveText('The load is cancelled and its consignments released.');
       await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'CANCELLED');
       await expect(page.getByTestId('nothing-aboard')).toBeVisible();
@@ -188,6 +186,7 @@ test.describe('load maintenance', () => {
     await openLoad(page, lane.loadId);
 
     await page.getByTestId('unplan-load').click();
+    await confirm(page);
     await expect(page.getByTestId('load-refusal')).toHaveText('load-allocated');
     await expect(page.getByTestId('load-done')).toHaveCount(0);
     await expect(page.getByTestId('load-status')).toHaveAttribute('data-value', 'PLANNED');
