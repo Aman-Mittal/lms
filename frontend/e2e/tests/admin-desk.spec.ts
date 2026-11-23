@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { DEMO_EMAIL, apiSession, openScreen, signIn, tag, withoutPermissions } from './support';
+import { DEMO_EMAIL, apiSession, openScreen, signIn, tag, withoutPermissions, confirm } from './support';
 import {
   accessAttributesOf, adminUserId, deletePolicy, inDays, newVehicle, restoreAccessAttributes,
 } from './support-admin';
@@ -133,6 +133,7 @@ test.describe('access policies', () => {
 
       await test.step('deleted', async () => {
         await page.getByTestId('policy-detail').getByTestId('delete-policy').click();
+        await confirm(page);
         await expect(page.getByTestId('policies-row').filter({ hasText: code })).toHaveCount(0);
         await expect(form).toBeVisible();
       });

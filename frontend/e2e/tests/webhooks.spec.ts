@@ -18,7 +18,7 @@ import { createHmac } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { apiSession, openScreen, signIn, tag, withoutPermissions, type Session } from './support';
+import { apiSession, openScreen, signIn, tag, withoutPermissions, type Session, confirm } from './support';
 
 /*
  * Webhooks against the real backend, delivered for real: each test starts a
@@ -195,8 +195,7 @@ test.describe('webhooks', () => {
       await page.getByTestId('save-webhook').click();
       await expect(page.getByTestId('webhook-message')).toHaveText('Saved.');
       await page.getByTestId('webhook-detail').getByTestId('deactivate-record').click();
-      await page.getByTestId('reason-input').fill('Receiver retired');
-      await page.getByTestId('confirm-action').click();
+      await confirm(page, 'Receiver retired');
       // The default list is the active subscriptions; the filter brings the switched-off one back.
       await page.getByTestId('status-filter').selectOption('ALL');
       const row = page.getByTestId('webhooks-row').filter({ hasText: `Edited ${salt}` });
