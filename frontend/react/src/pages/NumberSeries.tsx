@@ -27,6 +27,8 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
 import { SeriesRevise } from './SeriesRevise';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -56,6 +58,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
  */
 export function NumberSeries() {
   const { gateway } = useSession();
+  const confirm = useConfirm();
   const [refusal, setRefusal] = useState<{ code: string; message: string } | null>(null);
   const [message, setMessage] = useState('');
   const [reload, setReload] = useState(0);
@@ -253,18 +256,24 @@ export function NumberSeries() {
           })}>Issue a number</button>
           {issued && <p data-testid="series-issued">Issued <code>{issued}</code></p>}
           {current.active
-            ? <button type="button" data-testid="series-deactivate" onClick={() => void attempt(async () => {
-              await gateway.setNumberSeriesActive(current.id, false);
-              return 'Series deactivated.';
+            ? <button type="button" data-testid="series-deactivate" onClick={() => confirm.ask({
+              wording: confirmWording('Deactivate series', current.code, 'No numbers are issued from it until it is activated again.'),
+              run: () => attempt(async () => {
+                await gateway.setNumberSeriesActive(current.id, false);
+                return 'Series deactivated.';
+              }),
             })}>Deactivate</button>
             : <button type="button" data-testid="series-activate" onClick={() => void attempt(async () => {
               await gateway.setNumberSeriesActive(current.id, true);
               return 'Series activated.';
             })}>Activate</button>}
-          <button type="button" className="link" data-testid="series-delete" onClick={() => void attempt(async () => {
-            await gateway.deleteNumberSeries(current.id);
-            setPicked('');
-            return 'Series deleted.';
+          <button type="button" className="link" data-testid="series-delete" onClick={() => confirm.ask({
+            wording: confirmWording('Delete series', current.code, 'This cannot be undone.'),
+            run: () => attempt(async () => {
+              await gateway.deleteNumberSeries(current.id);
+              setPicked('');
+              return 'Series deleted.';
+            }),
           })}>Delete</button>
 
           <form className="inline" data-testid="series-release" onSubmit={(e) => release(e, current.id)}>
@@ -281,6 +290,7 @@ export function NumberSeries() {
             : <RowTable testId="releases" rows={releases} columns={RELEASE_COLUMNS} />}
         </section>
       )}
+      {confirm.dialog}
 
       <form className="inline" data-testid="series-verify" onSubmit={verify}>
         <h2>Check a number</h2>
