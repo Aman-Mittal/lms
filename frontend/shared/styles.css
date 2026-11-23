@@ -221,3 +221,17 @@ button[aria-busy=true] { cursor:progress; }
 .toast button:hover:not(:disabled) { background:none; opacity:.7; }
 @keyframes toast-in { from { opacity:0; transform:translateY(.5rem); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation:none; } }
+
+/* ---------------------------------------------------------------- confirm dialog (phase 4) */
+/* The one modal both consoles use before a destructive action: a native <dialog> opened with showModal(), so the page behind it is inert
+   and the browser traps focus and answers Escape. Its backdrop and colours come from the tokens, so it follows the light and dark themes. */
+.dialog { width:min(30rem, calc(100vw - 2 * var(--space-4))); max-width:100%; padding:var(--space-5); border:1px solid var(--line); border-radius:var(--radius-lg); background:var(--card); color:var(--ink); box-shadow:var(--shadow-lg); }
+.dialog::backdrop { background:var(--backdrop); }
+.dialog h2 { margin:0 0 var(--space-2); font-size:var(--text-lg); line-height:var(--leading-tight); }
+.dialog p { margin:0 0 var(--space-3); color:var(--muted); }
+.dialog .field-label { margin-top:0; }
+.dialog textarea, .dialog input { width:100%; box-sizing:border-box; }
+.dialog .dialog__error { display:block; margin:var(--space-1) 0 var(--space-2); color:var(--err); font-size:var(--text-sm); }
+.dialog .dialog__actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:var(--space-3); margin-top:var(--space-4); }
+button.danger { background:var(--danger); color:var(--danger-ink); }
+button.danger:hover:not(:disabled) { background:var(--danger-hover); }
