@@ -26,6 +26,8 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -52,9 +54,10 @@ interface LineInputs {
  */
 @Component({
   selector: 'app-enquiry-desk',
-  imports: [ErrorBanner, FormsModule, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Enquiry desk" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">Quote each line, record who won it, and convert what was won into a draft order.</p>
 
     <form ngNativeValidate class="inline" (ngSubmit)="load()" data-testid="enquiry-filter">
@@ -166,7 +169,7 @@ interface LineInputs {
                              (keydown.enter)="$event.preventDefault(); quote(e, l)" />
                       @if (held(l)) {
                         <button type="button" data-testid="enquiry-quote-revise" (click)="quote(e, l)">Revise quote</button>
-                        <button type="button" data-testid="enquiry-quote-revoke" (click)="revoke(e, l)">Revoke quote</button>
+                        <button type="button" data-testid="enquiry-quote-revoke" (click)="askRevoke(e, l)">Revoke quote</button>
                       } @else {
                         <button type="button" data-testid="enquiry-quote-issue" (click)="quote(e, l)">Issue quote</button>
                       }
@@ -190,11 +193,9 @@ interface LineInputs {
         @if (session.can('ORDER_UPDATE')) {
           @if (e.status === 'OPEN') {
             <p><button type="button" data-testid="enquiry-rediscover" (click)="rediscover(e)">Look for contract rates again</button></p>
-            <form ngNativeValidate class="inline" (ngSubmit)="cancel(e)" data-testid="enquiry-cancel-form">
-              <input name="cancelReason" placeholder="Why cancel" aria-label="Cancel reason" data-testid="enquiry-cancel-reason"
-                     [value]="cancelReason()" (input)="cancelReason.set($any($event.target).value)" />
-              <button type="submit" data-testid="enquiry-cancel">Cancel enquiry</button>
-            </form>
+            <p data-testid="enquiry-cancel-form">
+              <button type="button" data-testid="enquiry-cancel" (click)="askCancel(e)">Cancel enquiry</button>
+            </p>
           }
           @if ((e.status === 'WON' || e.status === 'PARTIAL' || e.status === 'CONVERTED') && session.can('ORDER_CREATE')) {
             <p><button type="button" data-testid="enquiry-convert" (click)="convert(e)">Convert to a draft order</button></p>
@@ -205,6 +206,8 @@ interface LineInputs {
   `,
 })
 export class EnquiryDeskPage {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   protected readonly session = inject(Session);
   protected readonly statuses = ENQUIRY_STATUSES;
@@ -220,7 +223,6 @@ export class EnquiryDeskPage {
   readonly reference = signal('');
   readonly entry = signal<EnquiryLineDraft>({ ...BLANK_LINE });
   readonly draftLines = signal<EnquiryLineDraft[]>([]);
-  readonly cancelReason = signal('');
   private readonly inputs = signal<Record<string, LineInputs>>({});
 
   constructor() {
@@ -332,7 +334,14 @@ export class EnquiryDeskPage {
       : this.gateway.issueEnquiryQuote(e.id, e.version, line.id, draft));
   }
 
-  revoke(e: EnquiryDesk, line: EnquiryLineView): Promise<void> {
+  askRevoke(e: EnquiryDesk, line: EnquiryLineView): void {
+    this.pending.set({
+      wording: confirmWording('Revoke quote', `on line ${line.lineNo}`),
+      run: () => this.revoke(e, line),
+    });
+  }
+
+  private revoke(e: EnquiryDesk, line: EnquiryLineView): Promise<void> {
     return this.change(e, 'Quote withdrawn.', () =>
       this.gateway.revokeEnquiryQuote(e.id, e.version, line.id, this.typed(line.id).reason));
   }
@@ -348,8 +357,12 @@ export class EnquiryDeskPage {
     return this.change(e, 'Contract rates looked up again.', () => this.gateway.discoverEnquiryRates(e.id, e.version));
   }
 
-  cancel(e: EnquiryDesk): Promise<void> {
-    return this.change(e, 'Enquiry cancelled.', () => this.gateway.cancelEnquiry(e.id, e.version, this.cancelReason()));
+  askCancel(e: EnquiryDesk): void {
+    this.pending.set({
+      wording: confirmWording('Cancel enquiry', e.enquiryNo),
+      reason: { label: 'Cancel reason', testId: 'enquiry-cancel-reason', placeholder: 'Why cancel' },
+      run: (why) => this.change(e, 'Enquiry cancelled.', () => this.gateway.cancelEnquiry(e.id, e.version, why)),
+    });
   }
 
   convert(e: EnquiryDesk): Promise<void> {
