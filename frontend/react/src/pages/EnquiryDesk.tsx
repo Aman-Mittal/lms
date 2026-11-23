@@ -25,6 +25,8 @@ import { useSession } from '../session';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -69,7 +71,7 @@ export function EnquiryDeskPage() {
   const [reference, setReference] = useState('');
   const [entry, setEntry] = useState<EnquiryLineDraft>({ ...BLANK_LINE });
   const [draftLines, setDraftLines] = useState<EnquiryLineDraft[]>([]);
-  const [cancelReason, setCancelReason] = useState('');
+  const confirm = useConfirm();
   const [inputs, setInputs] = useState<Record<string, LineInputs>>({});
 
   async function load(next: EnquiryFilter = filter) {
@@ -288,7 +290,10 @@ export function EnquiryDeskPage() {
                           {held(l) ? (
                             <>
                               <button type="button" data-testid="enquiry-quote-revise" onClick={() => void quote(selected, l)}>Revise quote</button>
-                              <button type="button" data-testid="enquiry-quote-revoke" onClick={() => void revoke(selected, l)}>Revoke quote</button>
+                              <button type="button" data-testid="enquiry-quote-revoke" onClick={() => confirm.ask({
+                                wording: confirmWording('Revoke quote', `on line ${l.lineNo}`),
+                                run: () => revoke(selected, l),
+                              })}>Revoke quote</button>
                             </>
                           ) : (
                             <button type="button" data-testid="enquiry-quote-issue" onClick={() => void quote(selected, l)}>Issue quote</button>
@@ -319,12 +324,13 @@ export function EnquiryDeskPage() {
                   <p><button type="button" data-testid="enquiry-rediscover"
                     onClick={() => void change(selected, 'Contract rates looked up again.', () => gateway.discoverEnquiryRates(selected.id, selected.version))}>
                     Look for contract rates again</button></p>
-                  <form className="inline" data-testid="enquiry-cancel-form"
-                    onSubmit={(ev) => { ev.preventDefault(); void change(selected, 'Enquiry cancelled.', () => gateway.cancelEnquiry(selected.id, selected.version, cancelReason)); }}>
-                    <input name="cancelReason" placeholder="Why cancel" aria-label="Cancel reason" data-testid="enquiry-cancel-reason"
-                      value={cancelReason} onChange={(ev) => setCancelReason(ev.target.value)} />
-                    <button type="submit" data-testid="enquiry-cancel">Cancel enquiry</button>
-                  </form>
+                  <p data-testid="enquiry-cancel-form">
+                    <button type="button" data-testid="enquiry-cancel" onClick={() => confirm.ask({
+                      wording: confirmWording('Cancel enquiry', selected.enquiryNo),
+                      reason: { label: 'Cancel reason', testId: 'enquiry-cancel-reason', placeholder: 'Why cancel' },
+                      run: (why) => change(selected, 'Enquiry cancelled.', () => gateway.cancelEnquiry(selected.id, selected.version, why)),
+                    })}>Cancel enquiry</button>
+                  </p>
                 </>
               )}
               {(selected.status === 'WON' || selected.status === 'PARTIAL' || selected.status === 'CONVERTED') && can('ORDER_CREATE') && (
@@ -336,6 +342,7 @@ export function EnquiryDeskPage() {
           )}
         </section>
       )}
+      {confirm.dialog}
     </>
   );
 }
