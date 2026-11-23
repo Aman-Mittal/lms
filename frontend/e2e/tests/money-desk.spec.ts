@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { apiSession, openScreen, signIn, tag } from './support';
+import { apiSession, openScreen, signIn, tag, confirm } from './support';
 import { deliveredTrip } from './support-commercial';
 import {
   allowSelfApproval, approveBill, approveSubject, newChargeEntry, resetApprovalPolicies, setOrgSetting, tripOfBill,
@@ -129,8 +129,7 @@ test.describe('manual charges', () => {
     await test.step('an approved charge that has not been billed is cancelled with a reason', async () => {
       const row = page.locator(`[data-testid="mc-row"][data-id="${pendingId}"]`);
       await row.getByTestId('mc-cancel').click();
-      await page.getByTestId('mc-cancel-reason').fill('raised twice');
-      await page.getByTestId('mc-cancel-confirm').click();
+      await confirm(page, 'raised twice');
       await page.getByTestId('mc-filter-status').selectOption('CANCELLED');
       await expect(page.locator(`[data-testid="mc-row"][data-id="${pendingId}"]`).getByTestId('mc-status'))
         .toHaveAttribute('data-value', 'CANCELLED');

@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type Page } from '@playwright/test';
-import {
-  amendParticulars, apiSession, newConsignment, printed, signIn, splitEvenly, stubPrint, trackingRefOf,
-  withoutPermissions,
-} from './support';
+import { amendParticulars, apiSession, newConsignment, printed, signIn, splitEvenly, stubPrint, trackingRefOf, withoutPermissions, confirm } from './support';
 
 /** Opens the consignment desk and looks a consignment up by its reference. */
 async function lookUp(page: Page, reference: string): Promise<void> {
@@ -173,9 +170,8 @@ test.describe('correcting and cancelling a consignment', () => {
     await signIn(page);
     await lookUp(page, reference);
 
-    const cancel = page.getByTestId('cancel-form');
-    await cancel.getByTestId('cancel-reason').fill('Consignee closed for stocktake');
-    await cancel.getByTestId('cancel-consignment').click();
+    await page.getByTestId('cancel-form').getByTestId('cancel-consignment').click();
+    await confirm(page, 'Consignee closed for stocktake');
     await expect(page.getByTestId('consignment-status')).toHaveAttribute('data-value', 'CANCELLED');
     await expect(page.getByTestId('cancel-form')).toHaveCount(0);
     await expect(page.getByTestId('particulars-form')).toHaveCount(0);

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { API, apiSession, openScreen, signIn, tag, withoutPermissions, type Session } from './support';
+import { API, apiSession, openScreen, signIn, tag, withoutPermissions, type Session, confirm } from './support';
 
 const TOLERANCE = 'order.close.tolerancePercent';
 
@@ -173,6 +173,7 @@ test.describe('settings by level and combination', () => {
       await expect(effective).toContainText(`Branch Depot ${t} + Customer ${code} Mills`);
 
       await panel.getByTestId('delete-profile').click();
+      await confirm(page);
       await expect(page.getByTestId('profile-panel')).toHaveCount(0);
     });
 
@@ -204,6 +205,7 @@ test.describe('settings by level and combination', () => {
     await expect(page.getByTestId(`effective-${TOLERANCE}`)).toContainText(`Country: Realm ${t}`);
 
     await panel.getByTestId('delete-profile').click();
+    await confirm(page);
     await expect(page.getByTestId('profile-panel')).toHaveCount(0);
   });
 });

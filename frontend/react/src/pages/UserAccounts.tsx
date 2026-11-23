@@ -20,6 +20,8 @@ import { useSession } from '../session';
 import { ErrorBanner } from './ErrorBanner';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 interface Refusal {
   code: string;
@@ -53,7 +55,7 @@ export function UserAccounts() {
   const [selectedId, setSelectedId] = useState('');
   const [editName, setEditName] = useState('');
   const [editRoles, setEditRoles] = useState<string[]>([]);
-  const [reason, setReason] = useState('');
+  const confirm = useConfirm();
   const [newPassword, setNewPassword] = useState('');
   const [done, setDone] = useState('');
   const [refusal, setRefusal] = useState<Refusal | null>(null);
@@ -83,7 +85,6 @@ export function UserAccounts() {
     if (id !== selectedId) {
       setDone('');
       setRefusal(null);
-      setReason('');
       setNewPassword('');
     }
     setSelectedId(found ? id : '');
@@ -116,7 +117,6 @@ export function UserAccounts() {
     try {
       await change();
       message = ok;
-      setReason('');
       setNewPassword('');
     } catch (e) {
       failure = problem(e);
@@ -229,23 +229,27 @@ export function UserAccounts() {
                 <p className="actions"><button type="submit" data-testid="acct-save">Save changes</button></p>
               </form>
 
-              <form data-testid="acct-switch-form" onSubmit={(ev) => {
-                ev.preventDefault();
-                const off = selected.status === 'ACTIVE';
-                void act(selected, () => (off
-                  ? gateway.deactivateAccount(selected.id, selected.version, reason)
-                  : gateway.reactivateAccount(selected.id, selected.version, reason)),
-                off ? 'The user is switched off.' : 'The user is switched on.');
-              }}>
+              <div data-testid="acct-switch-form">
                 <h3>{selected.status === 'ACTIVE' ? 'Switch off' : 'Switch on'}</h3>
-                <input name="reason" placeholder="Reason" aria-label="Reason" data-testid="acct-reason" required value={reason}
-                  onChange={(ev) => setReason(ev.target.value)} />
                 <p className="actions">
-                  <button type="submit" data-testid={selected.status === 'ACTIVE' ? 'acct-deactivate' : 'acct-reactivate'}>
+                  <button type="button" data-testid={selected.status === 'ACTIVE' ? 'acct-deactivate' : 'acct-reactivate'}
+                    onClick={() => {
+                      const off = selected.status === 'ACTIVE';
+                      confirm.ask({
+                        wording: confirmWording(off ? 'Deactivate user' : 'Reactivate user', selected.email,
+                          off ? 'They can no longer sign in until they are switched on again.' : 'They can sign in again.'),
+                        reason: { label: 'Reason', testId: 'acct-reason', placeholder: 'Reason', required: true },
+                        tone: off ? 'danger' : 'neutral',
+                        run: (why) => act(selected, () => (off
+                          ? gateway.deactivateAccount(selected.id, selected.version, why)
+                          : gateway.reactivateAccount(selected.id, selected.version, why)),
+                        off ? 'The user is switched off.' : 'The user is switched on.'),
+                      });
+                    }}>
                     {selected.status === 'ACTIVE' ? 'Deactivate user' : 'Reactivate user'}
                   </button>
                 </p>
-              </form>
+              </div>
 
               <form data-testid="acct-password-form" onSubmit={(ev) => {
                 ev.preventDefault();
@@ -261,6 +265,7 @@ export function UserAccounts() {
           )}
         </section>
       )}
+      {confirm.dialog}
     </>
   );
 }
