@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { signIn } from './support';
+import { signIn, confirm } from './support';
 import {
   consignmentId, otherConsignmentId, stubEway, stubEwaySession, tripId,
 } from './support-eway';
@@ -94,8 +94,8 @@ test.describe('e-way bill desk', () => {
       await page.getByTestId('eway-vehicle').fill('MH 14 ZZ 0001');
       await page.getByTestId('eway-change-vehicle').click();
       await expect(page.getByTestId('eway-detail-vehicle')).toHaveText('MH14ZZ0001');
-      await page.getByTestId('eway-reason').fill('goods not moved');
       await page.getByTestId('eway-cancel').click();
+      await confirm(page, 'goods not moved');
       await expect(page.getByTestId('eway-detail-status')).toHaveAttribute('data-value', 'CANCELLED');
       await expect(page.getByTestId('eway-detail-cancel-reason')).toHaveText('goods not moved');
       await expect(rowById(page, 'eway-row', stub.bills[0].id).getByTestId('eway-row-status')).toHaveAttribute('data-value', 'CANCELLED');

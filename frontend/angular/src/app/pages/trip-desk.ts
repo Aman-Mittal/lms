@@ -24,6 +24,8 @@ import { EntityPicker } from './entity-picker';
 import { ErrorBanner } from './error-banner';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** The states in which a trip has not left the yard, and so may still be cancelled. */
 const CANCELLABLE = ['PLANNED', 'ASSIGNED', 'AT_ORIGIN', 'LOADED'];
@@ -49,7 +51,7 @@ interface Refusal {
  */
 @Component({
   selector: 'app-trip-desk',
-  imports: [EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge],
+  imports: [ConfirmHost, EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Trip desk" />
     <p class="muted">Raise a trip against an awarded load, put a vehicle and driver on it, and take it from the yard to completion.</p>
@@ -117,12 +119,11 @@ interface Refusal {
             <p class="actions"><button type="button" [attr.data-testid]="n.testId" (click)="step(t, n)">{{ n.label }}</button></p>
           }
           @if (cancellable(t)) {
-            <form ngNativeValidate class="inline" (ngSubmit)="cancel(t)" data-testid="trip-cancel-form">
-              <input name="cancelReason" placeholder="Reason for cancelling" aria-label="Reason for cancelling the trip"
-                     data-testid="trip-cancel-reason" required [value]="reason()" (input)="reason.set($any($event.target).value)" />
-              <button type="submit" data-testid="trip-cancel">Cancel trip</button>
-            </form>
+            <p class="actions" data-testid="trip-cancel-form">
+              <button type="button" data-testid="trip-cancel" (click)="askCancel(t)">Cancel trip</button>
+            </p>
           }
+          <app-confirm-host [(pending)]="pending" />
         }
 
         <h3>Stops</h3>
@@ -160,6 +161,8 @@ interface Refusal {
   `,
 })
 export class TripDesk {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly location = inject(ActivatedRoute);
   protected readonly session = inject(Session);
@@ -175,7 +178,6 @@ export class TripDesk {
   readonly refusal = signal<Refusal | null>(null);
   readonly vehicleId = signal('');
   readonly driverId = signal('');
-  readonly reason = signal('');
 
   constructor() {
     // A link from another screen names the trip, so it is shown straight away.
@@ -205,7 +207,6 @@ export class TripDesk {
       this.stops.set([]);
       this.done.set('');
       this.refusal.set(null);
-      this.reason.set('');
       this.vehicleId.set('');
       this.driverId.set('');
     }
@@ -233,8 +234,12 @@ export class TripDesk {
     return this.act(t, n.done, () => this.gateway.stepTrip(t.id, n.step));
   }
 
-  cancel(t: TripCard): Promise<void> {
-    return this.act(t, 'The trip is cancelled.', () => this.gateway.cancelTrip(t.id, this.reason()));
+  askCancel(t: TripCard): void {
+    this.pending.set({
+      wording: confirmWording('Cancel trip', t.tripNo),
+      reason: { label: 'Reason for cancelling the trip', testId: 'trip-cancel-reason', placeholder: 'Reason for cancelling', required: true },
+      run: (why) => this.act(t, 'The trip is cancelled.', () => this.gateway.cancelTrip(t.id, why)),
+    });
   }
 
   arriveAt(t: TripCard, s: TripStopView): Promise<void> {
@@ -255,7 +260,6 @@ export class TripDesk {
     this.refusal.set(null);
     try {
       await change();
-      this.reason.set('');
       this.done.set(outcome);
     } catch (e) {
       this.refusal.set(this.problem(e));
