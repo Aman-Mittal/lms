@@ -26,6 +26,8 @@ import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -78,7 +80,7 @@ function draftOf(d: ContractDetail): ContractDraft {
  */
 @Component({
   selector: 'app-contract-lifecycle',
-  imports: [ErrorBanner, FormsModule, EntityPicker, StatusBadge, Money, When],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, EntityPicker, StatusBadge, Money, When],
   template: `
     <section data-testid="contract-lifecycle" aria-label="Contract lifecycle">
       <h3>Contract versions</h3>
@@ -116,6 +118,7 @@ function draftOf(d: ContractDetail): ContractDraft {
         }
       }
       @if (message()) { <p data-testid="contract-message">{{ message() }}</p> }
+      <app-confirm-host [(pending)]="pending" />
 
       @if (detail(); as d) {
         <section data-testid="contract-panel" aria-label="Contract version">
@@ -146,7 +149,7 @@ function draftOf(d: ContractDetail): ContractDraft {
                     <td>{{ l.slabs || '—' }}</td>
                     <td>
                       @if (d.status === 'DRAFT' && session.can('CLIENT_CONTRACT_MANAGE')) {
-                        <button class="link" data-testid="remove-lane" (click)="removeLane(l.laneCode)">Remove</button>
+                        <button class="link" data-testid="remove-lane" (click)="askRemoveLane(d.code, l.laneCode)">Remove</button>
                       }
                     </td>
                   </tr>
@@ -224,7 +227,7 @@ function draftOf(d: ContractDetail): ContractDraft {
             </form>
             <p class="actions">
               <button data-testid="request-verification" (click)="verify()">Request verification</button>
-              <button class="link" data-testid="delete-draft" (click)="remove()">Delete draft</button>
+              <button class="link" data-testid="delete-draft" (click)="askDelete()">Delete draft</button>
             </p>
           }
           @if (d.status === 'PENDING_VERIFICATION') {
@@ -264,6 +267,8 @@ function draftOf(d: ContractDetail): ContractDraft {
   `,
 })
 export class ContractLifecycle {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   readonly session = inject(Session);
 
@@ -371,7 +376,25 @@ export class ContractLifecycle {
     });
   }
 
-  async removeLane(laneCode: string): Promise<void> {
+  askRemoveLane(contractCode: string, laneCode: string): void {
+    this.pending.set({
+      wording: confirmWording('Remove lane', laneCode, '', `from contract ${contractCode}`),
+      run: () => this.removeLane(laneCode),
+    });
+  }
+
+  askDelete(): void {
+    const d = this.detail();
+    if (!d) {
+      return;
+    }
+    this.pending.set({
+      wording: confirmWording('Delete draft', d.code, 'This cannot be undone.'),
+      run: () => this.remove(),
+    });
+  }
+
+  private async removeLane(laneCode: string): Promise<void> {
     const d = this.detail();
     if (!d) {
       return;
@@ -398,7 +421,7 @@ export class ContractLifecycle {
     });
   }
 
-  async remove(): Promise<void> {
+  private async remove(): Promise<void> {
     const d = this.detail();
     if (!d) {
       return;
