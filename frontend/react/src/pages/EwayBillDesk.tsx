@@ -24,6 +24,8 @@ import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
 import { EntityPicker } from '../EntityPicker';
 import { EwayRecord } from './EwayRecord';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -45,6 +47,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
  */
 export function EwayBillDesk() {
   const { gateway, can } = useSession();
+  const confirm = useConfirm();
   const manage = can('EWAY_BILL_MANAGE');
 
   const [filter, setFilter] = useState<EwayFilter>({ status: '', q: '' });
@@ -146,11 +149,11 @@ export function EwayBillDesk() {
     }
   }
 
-  async function act(bill: EwayBillRow, action: EwayAction) {
+  async function act(bill: EwayBillRow, action: EwayAction, why = reason) {
     setError('');
     setNote('');
     try {
-      setSelected(await gateway.actOnEwayBill(bill.id, action, reason, vehicle));
+      setSelected(await gateway.actOnEwayBill(bill.id, action, why, vehicle));
       setNote(ACTION_DONE[action]);
       await load();
       if (draft.consignmentId.trim()) {
@@ -302,7 +305,11 @@ export function EwayBillDesk() {
                 <input name="reason" placeholder="Reason" aria-label="Reason" data-testid="eway-reason"
                   value={reason} onChange={(ev) => setReason(ev.target.value)} />
                 <button type="button" data-testid="eway-extend" onClick={() => void act(selected, 'EXTEND')}>Extend validity</button>
-                <button type="button" data-testid="eway-cancel" onClick={() => void act(selected, 'CANCEL')}>Cancel bill</button>
+                <button type="button" data-testid="eway-cancel" onClick={() => confirm.ask({
+                  wording: confirmWording('Cancel bill', selected.billNo),
+                  reason: { label: 'Reason', testId: 'eway-cancel-reason', placeholder: 'Reason' },
+                  run: (why) => act(selected, 'CANCEL', why),
+                })}>Cancel bill</button>
               </form>
             </>
           )}
@@ -342,6 +349,7 @@ export function EwayBillDesk() {
           )}
         </>
       )}
+      {confirm.dialog}
     </>
   );
 }

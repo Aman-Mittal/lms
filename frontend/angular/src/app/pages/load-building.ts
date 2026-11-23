@@ -24,6 +24,8 @@ import { StatusBadge } from './status-badge';
 import { Quantity } from './figures';
 import { ErrorBanner } from './error-banner';
 import { AssignOne, OpenLoadForm } from './load-start';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -233,7 +235,7 @@ export class AddConsignments {
  */
 @Component({
   selector: 'app-load-building',
-  imports: [ErrorBanner, FormsModule, ConsignmentTable, AddConsignments, EntityPicker, OpenLoadForm, PageHeader, StatusBadge],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, ConsignmentTable, AddConsignments, EntityPicker, OpenLoadForm, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Load building" />
     <p class="muted">
@@ -272,19 +274,16 @@ export class AddConsignments {
             }
             @if (b.load['status'] === 'PLANNED') {
               <button type="button" data-testid="unplan-load"
-                      (click)="act('The load is open for building again.', gateway.unplanLoad(b.load['id'], b.load['version']))">
+                      (click)="askUnplan(b)">
                 Un-plan
               </button>
             }
-            <input data-testid="cancel-reason" aria-label="Reason for cancelling" placeholder="Reason (optional)"
-                   [value]="reason()" (input)="reason.set($any($event.target).value)" />
-            <button type="button" data-testid="cancel-load"
-                    (click)="act('The load is cancelled and its consignments released.',
-                                 gateway.cancelLoad(b.load['id'], b.load['version'], reason()))">
+            <button type="button" data-testid="cancel-load" (click)="askCancel(b)">
               Cancel load
             </button>
           </p>
         }
+        <app-confirm-host [(pending)]="pending" />
         @if (done()) { <p class="ok" role="status" data-testid="load-done">{{ done() }}</p> }
         @if (refusal(); as r) {
           <app-error-banner [message]="r.message" [code]="r.code" testId="load-error" codeTestId="load-refusal" />
@@ -325,6 +324,8 @@ export class AddConsignments {
   `,
 })
 export class LoadBuilding {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   protected readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
@@ -342,7 +343,6 @@ export class LoadBuilding {
     const b = this.build();
     return !!b && this.session.can('LOAD_CREATE') && CANCELLABLE.includes(b.load['status']);
   });
-  readonly reason = signal('');
   readonly done = signal('');
   readonly refusal = signal<Refusal | null>(null);
 
@@ -359,7 +359,6 @@ export class LoadBuilding {
       this.manifest.set(false);
       this.done.set('');
       this.refusal.set(null);
-      this.reason.set('');
     }
     this.loadId.set(id);
     await this.refresh();
@@ -376,22 +375,39 @@ export class LoadBuilding {
     }
   }
 
-  removeFromLoad(b: LoadBuild, consignment: Row): Promise<void> {
-    return this.act(`${consignment['trackingRef']} is off the load.`,
-      this.gateway.removeFromLoad(b.load['id'], b.load['version'], consignment['id']));
+  removeFromLoad(b: LoadBuild, consignment: Row): void {
+    this.pending.set({
+      wording: confirmWording('Remove consignment', consignment['trackingRef'], '', `from load ${b.load['loadNo']}`),
+      run: () => this.act(`${consignment['trackingRef']} is off the load.`,
+        this.gateway.removeFromLoad(b.load['id'], b.load['version'], consignment['id'])),
+    });
+  }
+
+  askUnplan(b: LoadBuild): void {
+    this.pending.set({
+      wording: confirmWording('Un-plan load', b.load['loadNo'], 'It goes back to being built.'),
+      run: () => this.act('The load is open for building again.', this.gateway.unplanLoad(b.load['id'], b.load['version'])),
+    });
+  }
+
+  askCancel(b: LoadBuild): void {
+    this.pending.set({
+      wording: confirmWording('Cancel load', b.load['loadNo'], 'Its consignments are released.'),
+      reason: { label: 'Reason for cancelling', testId: 'cancel-reason', placeholder: 'Reason (optional)' },
+      run: (why) => this.act('The load is cancelled and its consignments released.',
+        this.gateway.cancelLoad(b.load['id'], b.load['version'], why)),
+    });
   }
 
   /**
-   * Makes a change at the version on screen, then reads the load again. The reason is cleared
-   * as soon as the change is made, before the re-read; a refusal is shown by its code and the
-   * load is read again too, so a stale screen catches up.
+   * Makes a change at the version on screen, then reads the load again. A refusal is shown by its
+   * code and the load is read again too, so a stale screen catches up.
    */
   async act(outcome: string, change: Promise<void>): Promise<void> {
     this.done.set('');
     this.refusal.set(null);
     try {
       await change;
-      this.reason.set('');
       this.done.set(outcome);
     } catch (e) {
       this.refusal.set({ code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message });
