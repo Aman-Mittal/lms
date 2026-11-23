@@ -25,6 +25,8 @@ import { EntityPicker } from './entity-picker';
 import { ErrorBanner } from './error-banner';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 interface Refusal {
   code: string;
@@ -46,9 +48,10 @@ function blankRoute(): RoutePlanDraft {
  */
 @Component({
   selector: 'app-milk-run-desk',
-  imports: [EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge],
+  imports: [ConfirmHost, EntityPicker, ErrorBanner, FormsModule, PageHeader, StatusBadge],
   template: `
     <app-page-header title="Milk run desk" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">Publish a pickup circuit, plan its runs, and follow each run stop by stop.</p>
 
     @if (session.can('MILKRUN_PLAN')) {
@@ -196,10 +199,8 @@ function blankRoute(): RoutePlanDraft {
                     @if (s.status === 'PENDING') {
                       <button type="button" class="link" data-testid="mr-stop-arrive"
                               [attr.aria-label]="'Arrive at ' + s.terminalCode" (click)="stop(r, s, 'arrival')">Arrive</button>
-                      <input placeholder="Reason" [attr.aria-label]="'Reason to skip ' + s.terminalCode" data-testid="mr-stop-skip-reason"
-                             [value]="entry(s.sequence)" (input)="setEntry(s.sequence, $any($event.target).value)" />
                       <button type="button" class="link" data-testid="mr-stop-skip"
-                              [attr.aria-label]="'Skip ' + s.terminalCode" (click)="stop(r, s, 'skip')">Skip</button>
+                              [attr.aria-label]="'Skip ' + s.terminalCode" (click)="askSkip(r, s)">Skip</button>
                     }
                     @if (s.status === 'ARRIVED') {
                       <input type="number" min="0" step="any" placeholder="kg" [attr.aria-label]="'Quantity picked up at ' + s.terminalCode"
@@ -220,6 +221,8 @@ function blankRoute(): RoutePlanDraft {
   `,
 })
 export class MilkRunDesk implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   protected readonly session = inject(Session);
 
@@ -338,15 +341,19 @@ export class MilkRunDesk implements OnInit {
     return this.act(r, 'The run is complete.', () => this.gateway.completeCircuitRun(r.id));
   }
 
-  async stop(r: CircuitRunCard, s: CircuitStopCard, step: CircuitStopStep): Promise<void> {
-    const value = step === 'pickup' || step === 'skip' ? this.entry(s.sequence).trim() : '';
+  askSkip(r: CircuitRunCard, s: CircuitStopCard): void {
+    this.pending.set({
+      wording: confirmWording('Skip stop', s.terminalCode, 'It is recorded as skipped and the run moves on.'),
+      reason: { label: `Why ${s.terminalCode} is skipped`, testId: 'mr-stop-skip-reason', placeholder: 'Reason', required: true },
+      run: (why) => this.stop(r, s, 'skip', why),
+    });
+  }
+
+  async stop(r: CircuitRunCard, s: CircuitStopCard, step: CircuitStopStep, reason = ''): Promise<void> {
+    const value = step === 'skip' ? reason : step === 'pickup' ? this.entry(s.sequence).trim() : '';
     this.stopError.set('');
     if (step === 'pickup' && !value) {
       this.stopError.set('Enter the quantity picked up.');
-      return;
-    }
-    if (step === 'skip' && !value) {
-      this.stopError.set('Say why the stop is skipped.');
       return;
     }
     try {

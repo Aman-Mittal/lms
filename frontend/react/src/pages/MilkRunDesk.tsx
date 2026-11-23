@@ -24,6 +24,8 @@ import { useSession } from '../session';
 import { ErrorBanner } from './ErrorBanner';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 interface Refusal {
   code: string;
@@ -49,6 +51,7 @@ function problem(e: unknown): Refusal {
  */
 export function MilkRunDesk() {
   const { gateway, can } = useSession();
+  const confirm = useConfirm();
   const [draft, setDraft] = useState<RoutePlanDraft>(blankRoute);
   const [publishDone, setPublishDone] = useState('');
   const [publishError, setPublishError] = useState<Refusal | null>(null);
@@ -156,15 +159,11 @@ export function MilkRunDesk() {
     await loadRuns();
   }
 
-  async function stop(r: CircuitRunCard, s: CircuitStopCard, step: CircuitStopStep) {
-    const value = step === 'pickup' || step === 'skip' ? (entries[s.sequence] ?? '').trim() : '';
+  async function stop(r: CircuitRunCard, s: CircuitStopCard, step: CircuitStopStep, reason = '') {
+    const value = step === 'skip' ? reason : step === 'pickup' ? (entries[s.sequence] ?? '').trim() : '';
     setStopError('');
     if (step === 'pickup' && !value) {
       setStopError('Enter the quantity picked up.');
-      return;
-    }
-    if (step === 'skip' && !value) {
-      setStopError('Say why the stop is skipped.');
       return;
     }
     try {
@@ -342,10 +341,12 @@ export function MilkRunDesk() {
                       <>
                         <button type="button" className="link" data-testid="mr-stop-arrive"
                           aria-label={`Arrive at ${s.terminalCode}`} onClick={() => void stop(run, s, 'arrival')}>Arrive</button>
-                        <input placeholder="Reason" aria-label={`Reason to skip ${s.terminalCode}`} data-testid="mr-stop-skip-reason"
-                          value={entries[s.sequence] ?? ''} onChange={(ev) => setEntry(s.sequence, ev.target.value)} />
                         <button type="button" className="link" data-testid="mr-stop-skip"
-                          aria-label={`Skip ${s.terminalCode}`} onClick={() => void stop(run, s, 'skip')}>Skip</button>
+                          aria-label={`Skip ${s.terminalCode}`} onClick={() => confirm.ask({
+                            wording: confirmWording('Skip stop', s.terminalCode, 'It is recorded as skipped and the run moves on.'),
+                            reason: { label: `Why ${s.terminalCode} is skipped`, testId: 'mr-stop-skip-reason', placeholder: 'Reason', required: true },
+                            run: (why) => stop(run, s, 'skip', why),
+                          })}>Skip</button>
                       </>
                     )}
                     {execute && run.status === 'IN_PROGRESS' && s.status === 'ARRIVED' && (
@@ -366,6 +367,7 @@ export function MilkRunDesk() {
           </table></div>
         </section>
       )}
+      {confirm.dialog}
     </>
   );
 }
