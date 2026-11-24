@@ -37,6 +37,7 @@ import type {
   ApprovalPolicyDraft, ApprovalPolicyRow, CorridorDraft, CorridorRow, EwayRecordDraft, LineCancellationView,
   OrderCloseSettingsView, SeriesRevisionDraft, SeriesRevisionState,
 } from './small-ops-types';
+import type { BulkAmendItem, BulkConsignmentOutcome, ConsignmentListPage } from './consignment-bulk-types';
 import type { MarginPage, ServiceUsageDraft, StorageMonthView } from './client-billing-form-types';
 import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
@@ -941,6 +942,12 @@ export abstract class LmsGateway {
    * why, such as `consignment-from-warehouse` or `consignment-dispatched`.
    */
   abstract cancelConsignment(id: string, reason: string): Promise<void>;
+  /** The consignment register in every state, by tracking reference, a page at a time; `status` and `q` may be empty. */
+  abstract consignmentList(status: string, q: string, cursor?: string): Promise<ConsignmentListPage>;
+  /** Amends many consignments, each by its own version, each judged on its own; one outcome per item, in order. Needs LOAD_CREATE. */
+  abstract bulkAmendConsignments(items: BulkAmendItem[]): Promise<BulkConsignmentOutcome[]>;
+  /** Cancels many consignments with one reason, each judged on its own; one outcome per item, in order. Needs LOAD_CREATE. */
+  abstract bulkCancelConsignments(consignmentIds: string[], reason: string): Promise<BulkConsignmentOutcome[]>;
 
   /** Shown once: the token in the result cannot be read again. */
   abstract issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink>;

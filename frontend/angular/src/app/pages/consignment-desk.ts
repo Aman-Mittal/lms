@@ -25,6 +25,8 @@ import { Quantity } from './figures';
 import { ErrorBanner } from './error-banner';
 import { ConfirmHost } from './confirm-dialog';
 import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
+import { PARTICULAR_FIELDS } from '../../../../shared/consignment-bulk';
+import { ConsignmentRegister } from './consignment-register';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -37,7 +39,7 @@ import { confirmWording, type PendingConfirm } from '../../../../shared/confirm'
  */
 @Component({
   selector: 'app-consignment-desk',
-  imports: [ConfirmHost, ErrorBanner, FormsModule, Qr, PageHeader, StatusBadge, Quantity],
+  imports: [ConfirmHost, ConsignmentRegister, ErrorBanner, FormsModule, Qr, PageHeader, StatusBadge, Quantity],
   template: `
     <app-page-header title="Consignments" />
     <p class="muted">Look a consignment up by its lorry receipt or docket number.</p>
@@ -196,6 +198,7 @@ import { confirmWording, type PendingConfirm } from '../../../../shared/confirm'
         }
       </section>
     }
+    <app-consignment-register />
   `,
 })
 export class ConsignmentDesk {
@@ -216,15 +219,7 @@ export class ConsignmentDesk {
   readonly splitError = signal('');
   readonly busy = signal(false);
 
-  readonly particularFields: { key: keyof ConsignmentParticularsDraft; label: string }[] = [
-    { key: 'contactName', label: 'Contact name' },
-    { key: 'contactPhone', label: 'Contact phone' },
-    { key: 'consigneeReference', label: 'Consignee reference' },
-    { key: 'clientReference', label: 'Client reference' },
-    { key: 'deliveryWindowFrom', label: 'Deliver from' },
-    { key: 'deliveryWindowTo', label: 'Deliver by' },
-    { key: 'remarks', label: 'Remarks' },
-  ];
+  readonly particularFields = PARTICULAR_FIELDS;
   readonly draft = signal<ConsignmentParticularsDraft>(emptyDraft());
   readonly particularsRefusal = signal<{ code: string; message: string } | null>(null);
   readonly cancelRefusal = signal<{ code: string; message: string } | null>(null);
