@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -50,21 +51,22 @@ public class RoleQueryService {
 
     @PreAuthorize("hasAnyAuthority('ROLE_READ', 'ROLE_MANAGE', 'USER_MANAGE')")
     public List<RoleView> list() {
-        List<Row> rows = jdbc.sql(SELECT + " ORDER BY r.name, r.id").query(Row.class).list();
+        List<Row> rows = jdbc.sql(SELECT + " ORDER BY r.name, r.id").query(Row.MAPPER).list();
         Map<UUID, List<String>> grants = grantsOf(null);
         return rows.stream().map(r -> r.view(grants.getOrDefault(r.id(), List.of()))).toList();
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_READ', 'ROLE_MANAGE', 'USER_MANAGE')")
     public Optional<RoleView> find(UUID id) {
-        return jdbc.sql(SELECT + " WHERE r.id = :id").param("id", id).query(Row.class).optional()
+        return jdbc.sql(SELECT + " WHERE r.id = :id").param("id", id).query(Row.MAPPER).optional()
                 .map(r -> r.view(grantsOf(id).getOrDefault(id, List.of())));
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_READ', 'ROLE_MANAGE', 'USER_MANAGE')")
     public List<PermissionView> permissions() {
         return jdbc.sql("SELECT code, resource, action FROM permission ORDER BY resource, code")
-                .query(PermissionView.class).list();
+                .query((rs, n) -> new PermissionView(rs.getString("code"), rs.getString("resource"),
+                        rs.getString("action"))).list();
     }
 
     private Map<UUID, List<String>> grantsOf(UUID roleId) {
@@ -83,6 +85,13 @@ public class RoleQueryService {
     }
 
     private record Row(UUID id, String code, String name, Long version, long userCount) {
+
+        // Mapped by hand, not with query(Row.class): a private record has no
+        // reflection metadata in the native image (see UserQueryService).
+        static final RowMapper<Row> MAPPER = (rs, n) -> new Row(rs.getObject("id", UUID.class),
+                rs.getString("code"), rs.getString("name"), rs.getObject("version", Long.class),
+                rs.getLong("user_count"));
+
         RoleView view(List<String> permissions) {
             return new RoleView(id, code, name, STANDARD.contains(code), userCount, version, permissions);
         }

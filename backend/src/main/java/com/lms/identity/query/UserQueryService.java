@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -29,6 +30,7 @@ import java.util.UUID;
 
 import com.lms.shared.query.Search;
 import com.lms.shared.tenant.TenantContext;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,7 +93,7 @@ public class UserQueryService {
                 .param("orgPath", TenantContext.requireOrgPath())
                 .param("status", wanted)
                 .param("q", Search.containsPattern(q))
-                .query(Row.class)
+                .query(Row.MAPPER)
                 .list();
         Map<UUID, List<String>> roles = rolesOf(rows.stream().map(Row::id).toList());
         return rows.stream().map(r -> r.view(roles.getOrDefault(r.id(), List.of()))).toList();
@@ -100,7 +102,7 @@ public class UserQueryService {
     public Optional<UserView> findById(UUID id) {
         return jdbc.sql(SELECT + " WHERE u.id = :id")
                 .param("id", id)
-                .query(Row.class)
+                .query(Row.MAPPER)
                 .optional()
                 .map(r -> r.view(rolesOf(List.of(id)).getOrDefault(id, List.of())));
     }
@@ -126,6 +128,18 @@ public class UserQueryService {
 
     private record Row(UUID id, String email, String fullName, String status, UUID orgUnitId,
                        String orgPath, String orgName, Instant lastLoginAt, Long version) {
+
+        // Mapped by hand, not with query(Row.class): a private record has no
+        // reflection metadata in the native image, so the reflective mapper
+        // cannot construct it there and the read answers 500.
+        static final RowMapper<Row> MAPPER = (rs, n) -> {
+            OffsetDateTime lastLogin = rs.getObject("last_login_at", OffsetDateTime.class);
+            return new Row(rs.getObject("id", UUID.class), rs.getString("email"), rs.getString("full_name"),
+                    rs.getString("status"), rs.getObject("org_unit_id", UUID.class), rs.getString("org_path"),
+                    rs.getString("org_name"), lastLogin == null ? null : lastLogin.toInstant(),
+                    rs.getObject("version", Long.class));
+        };
+
         UserView view(List<String> roles) {
             return new UserView(id, email, fullName, status, orgUnitId, orgPath, orgName, lastLoginAt,
                     version, roles);
