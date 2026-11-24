@@ -19,6 +19,7 @@ import { ApiProblem, type Row } from '../gateway/lmsGateway';
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
+import { ClientBillingForms, MarginReport } from './ClientBillingForms';
 import { ContractLifecycle } from './ContractLifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPosition } from './Credit';
 import { PageHeader } from './PageHeader';
@@ -67,6 +68,7 @@ export function ClientBilling() {
         <button type="submit">Open</button>
       </form>
       {clientId && <ClientDesk key={clientId} clientId={clientId} />}
+      <MarginReport />
     </>
   );
 }
@@ -165,6 +167,8 @@ function ClientDesk({ clientId }: { clientId: string }) {
       )}
       <p>Balance <strong><Money data-testid="statement-balance" value={entries.length ? entries[entries.length - 1].balance : '0'} /></strong></p>
       {can('CLIENT_BILLING_RUN') && <RecordPayment clientId={clientId} onRecorded={changed} />}
+
+      <ClientBillingForms clientId={clientId} onChanged={changed} />
 
       <h2>Ageing</h2>
       {ageing.data && (
