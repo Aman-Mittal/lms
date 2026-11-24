@@ -19,6 +19,8 @@ import { ApiProblem, MATERIAL_CLASSES, type OrderLineDraft, type OrderLineView }
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 interface Refused {
   message: string;
@@ -49,7 +51,7 @@ export function OrderLineOps({ orderId, version, status, lines, onChanged }: {
 }) {
   const { gateway, can } = useSession();
   const [typed, setTyped] = useState<OrderLineDraft | null>(null);
-  const [reason, setReason] = useState('');
+  const confirm = useConfirm();
   const [done, setDone] = useState('');
   const [error, setError] = useState<Refused>(NONE);
   const draft = typed ?? blankLine(lines);
@@ -75,12 +77,11 @@ export function OrderLineOps({ orderId, version, status, lines, onChanged }: {
     }
   }
 
-  async function cancelLine(line: OrderLineView) {
+  async function cancelLine(line: OrderLineView, reason: string) {
     setDone('');
     setError(NONE);
     try {
       const result = await gateway.cancelOrderLine(orderId, version, line.id, reason);
-      setReason('');
       setDone(`Line ${line.lineNo} cancelled; ${result.cancelledConsignments} consignment(s) cancelled.`);
       onChanged();
     } catch (e) {
@@ -125,16 +126,19 @@ export function OrderLineOps({ orderId, version, status, lines, onChanged }: {
             close the order instead.
           </p>
           <div className="inline">
-            <input placeholder="Why (optional)" aria-label="Why a line is cancelled" data-testid="cancel-line-reason"
-              value={reason} onChange={(e) => setReason(e.target.value)} />
             {cancellable.map((l) => (
-              <button key={l.id} type="button" data-testid="cancel-line" data-line={l.lineNo} onClick={() => void cancelLine(l)}>
+              <button key={l.id} type="button" data-testid="cancel-line" data-line={l.lineNo} onClick={() => confirm.ask({
+                wording: confirmWording('Cancel line', String(l.lineNo), 'The consignment it is on is cancelled too.'),
+                reason: { label: 'Why a line is cancelled', testId: 'cancel-line-reason', placeholder: 'Why (optional)' },
+                run: (why) => cancelLine(l, why),
+              })}>
                 Cancel line {l.lineNo}
               </button>
             ))}
           </div>
         </section>
       )}
+      {confirm.dialog}
       {done && <p className="ok" role="status" data-testid="line-op-done">{done}</p>}
       {error.message && <ErrorBanner message={error.message} code={error.code} testId="line-op-error" codeTestId="line-op-refusal" />}
     </>

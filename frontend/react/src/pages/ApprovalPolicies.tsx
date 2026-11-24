@@ -21,6 +21,8 @@ import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { ErrorBanner } from './ErrorBanner';
 import { RowTable } from './RowTable';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 interface Refused {
   message: string;
@@ -49,6 +51,7 @@ function draftOf(p: ApprovalPolicyRow): ApprovalPolicyDraft {
  */
 export function ApprovalPolicies() {
   const { gateway, can } = useSession();
+  const confirm = useConfirm();
   const [reload, setReload] = useState(0);
   const list = useLoad(() => gateway.approvalPolicies(), reload);
   const [picked, setPicked] = useState('');
@@ -135,11 +138,15 @@ export function ApprovalPolicies() {
           </select>
           <button type="submit" data-testid="apol-set">Set policy</button>
           <button type="button" className="link" data-testid="apol-reset"
-            onClick={() => void run(`Policy for ${current.subjectType} reset to the default.`, () => gateway.resetApprovalPolicy(current.subjectType))}>
+            onClick={() => confirm.ask({
+              wording: confirmWording('Reset policy', current.subjectType, 'Its settings go back to the default.'),
+              run: () => run(`Policy for ${current.subjectType} reset to the default.`, () => gateway.resetApprovalPolicy(current.subjectType)),
+            })}>
             Reset to default
           </button>
         </form>
       )}
+      {confirm.dialog}
     </section>
   );
 }
