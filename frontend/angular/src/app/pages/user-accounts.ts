@@ -21,6 +21,8 @@ import { Session } from '../session';
 import { ErrorBanner } from './error-banner';
 import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 interface Refusal {
   code: string;
@@ -42,9 +44,10 @@ function withCode(codes: string[], code: string, on: boolean): string[] {
  */
 @Component({
   selector: 'app-user-accounts',
-  imports: [ErrorBanner, FormsModule, PageHeader, StatusBadge],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, PageHeader, StatusBadge],
   template: `
     <app-page-header title="User accounts" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">Everyone in your organisational unit and below. You choose each user's login id and password here.</p>
 
     @if (session.can('USER_MANAGE')) {
@@ -138,16 +141,15 @@ function withCode(codes: string[], code: string, on: boolean): string[] {
             <p class="actions"><button type="submit" data-testid="acct-save">Save changes</button></p>
           </form>
 
-          <form ngNativeValidate data-testid="acct-switch-form" (ngSubmit)="switchOver(a)">
+          <div data-testid="acct-switch-form">
             <h3>{{ a.status === 'ACTIVE' ? 'Switch off' : 'Switch on' }}</h3>
-            <input name="reason" placeholder="Reason" aria-label="Reason" data-testid="acct-reason" required [value]="reason()"
-                   (input)="reason.set($any($event.target).value)" />
             <p class="actions">
-              <button type="submit" [attr.data-testid]="a.status === 'ACTIVE' ? 'acct-deactivate' : 'acct-reactivate'">
+              <button type="button" [attr.data-testid]="a.status === 'ACTIVE' ? 'acct-deactivate' : 'acct-reactivate'"
+                      (click)="askSwitch(a)">
                 {{ a.status === 'ACTIVE' ? 'Deactivate user' : 'Reactivate user' }}
               </button>
             </p>
-          </form>
+          </div>
 
           <form ngNativeValidate data-testid="acct-password-form" (ngSubmit)="newPasswordFor(a)">
             <h3>Set a new password</h3>
@@ -162,6 +164,8 @@ function withCode(codes: string[], code: string, on: boolean): string[] {
   `,
 })
 export class UserAccounts implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   protected readonly session = inject(Session);
 
@@ -175,7 +179,6 @@ export class UserAccounts implements OnInit {
   readonly selected = signal<AccountRow | null>(null);
   readonly editName = signal('');
   readonly editRoles = signal<string[]>([]);
-  readonly reason = signal('');
   readonly newPassword = signal('');
   readonly done = signal('');
   readonly refusal = signal<Refusal | null>(null);
@@ -236,7 +239,6 @@ export class UserAccounts implements OnInit {
     if (found?.id !== this.selected()?.id) {
       this.done.set('');
       this.refusal.set(null);
-      this.reason.set('');
       this.newPassword.set('');
     }
     this.selected.set(found);
@@ -253,7 +255,6 @@ export class UserAccounts implements OnInit {
     try {
       await change();
       this.done.set(ok);
-      this.reason.set('');
       this.newPassword.set('');
     } catch (e) {
       this.refusal.set(this.problem(e));
@@ -271,10 +272,17 @@ export class UserAccounts implements OnInit {
       'The changes are saved.');
   }
 
-  switchOver(a: AccountRow): Promise<void> {
-    return a.status === 'ACTIVE'
-      ? this.act(a, () => this.gateway.deactivateAccount(a.id, a.version, this.reason()), 'The user is switched off.')
-      : this.act(a, () => this.gateway.reactivateAccount(a.id, a.version, this.reason()), 'The user is switched on.');
+  askSwitch(a: AccountRow): void {
+    const off = a.status === 'ACTIVE';
+    this.pending.set({
+      wording: confirmWording(off ? 'Deactivate user' : 'Reactivate user', a.email,
+        off ? 'They can no longer sign in until they are switched on again.' : 'They can sign in again.'),
+      reason: { label: 'Reason', testId: 'acct-reason', placeholder: 'Reason', required: true },
+      tone: off ? 'danger' : 'neutral',
+      run: (why) => off
+        ? this.act(a, () => this.gateway.deactivateAccount(a.id, a.version, why), 'The user is switched off.')
+        : this.act(a, () => this.gateway.reactivateAccount(a.id, a.version, why), 'The user is switched on.'),
+    });
   }
 
   newPasswordFor(a: AccountRow): Promise<void> {

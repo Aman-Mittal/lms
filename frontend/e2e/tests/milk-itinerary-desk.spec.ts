@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { signIn } from './support';
+import { signIn, confirm } from './support';
 import {
   busyTripId, cancelledTripId, carrierId, plantId, railheadA, railheadB, stubMilk, stubMilkSession, supplierA, supplierB,
   tripId, type MilkStub,
@@ -132,8 +132,8 @@ test.describe('milk run desk', () => {
 
     await test.step('the second stop is skipped with a reason, and the run completed', async () => {
       const second = page.locator('[data-testid="mr-stop"][data-seq="2"]');
-      await second.getByTestId('mr-stop-skip-reason').fill('the supplier was closed');
       await second.getByTestId('mr-stop-skip').click();
+      await confirm(page, 'the supplier was closed');
       await expect(second.getByTestId('mr-stop-status')).toHaveAttribute('data-value', 'SKIPPED');
       expect(sent(stub, '/stops/2/skip')?.body).toEqual({ reason: 'the supplier was closed' });
       await expect(page.getByTestId('mr-run-skipped')).toHaveText('1');
@@ -196,8 +196,10 @@ test.describe('milk run desk', () => {
     await page.locator(`[data-testid="mr-run"][data-id="${runId}"]`).getByTestId('mr-run-select').click();
     const first = page.locator('[data-testid="mr-stop"][data-seq="1"]');
     await first.getByTestId('mr-stop-skip').click();
-    await expect(page.getByTestId('mr-stop-error')).toContainText('Say why the stop is skipped.');
+    await page.getByTestId('confirm-accept').click();
+    await expect(page.getByTestId('reason-error')).toBeVisible();
     expect(sent(stub, '/stops/1/skip')).toBeUndefined();
+    await page.getByTestId('confirm-dismiss').click();
     await first.getByTestId('mr-stop-arrive').click();
     await first.getByTestId('mr-stop-pickup').click();
     await expect(page.getByTestId('mr-stop-error')).toContainText('Enter the quantity picked up.');

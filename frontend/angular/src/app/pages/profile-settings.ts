@@ -27,6 +27,8 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
@@ -50,9 +52,10 @@ const PICKER: Record<string, PickKind> = {
  */
 @Component({
   selector: 'app-profile-settings',
-  imports: [ErrorBanner, FormsModule, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Profile settings" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">The most specific profile that sets a value wins: organisation, then unit (country, zone,
       branch: deeper first), then vehicle, customer or vendor, then a combination of those (more conditions first,
       then the deeper unit, then the higher priority). A person's own preferences sit on top, under My profile.</p>
@@ -176,7 +179,7 @@ const PICKER: Record<string, PickKind> = {
             <p>
               <button type="submit" data-testid="save-profile">Save</button>
               @if (p.scopeType !== 'ORG_DEFAULT') {
-                <button type="button" class="link" data-testid="delete-profile" (click)="remove()">Delete profile</button>
+                <button type="button" class="link" data-testid="delete-profile" (click)="askDelete()">Delete profile</button>
               }
             </p>
           }
@@ -239,6 +242,8 @@ const PICKER: Record<string, PickKind> = {
   `,
 })
 export class ProfileSettingsPage implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
@@ -401,7 +406,18 @@ export class ProfileSettingsPage implements OnInit {
     }
   }
 
-  async remove(): Promise<void> {
+  askDelete(): void {
+    const p = this.picked();
+    if (!p) {
+      return;
+    }
+    this.pending.set({
+      wording: confirmWording('Delete profile', p.name, 'Its values stop applying. This cannot be undone.'),
+      run: () => this.remove(),
+    });
+  }
+
+  private async remove(): Promise<void> {
     const p = this.picked();
     if (!p) {
       return;

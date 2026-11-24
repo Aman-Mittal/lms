@@ -15,9 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import {
-  apiSession, cutConsignments, editOrderElsewhere, newDeskOrder, printed, signIn, stubPrint, tag, withoutPermissions,
-} from './support';
+import { apiSession, cutConsignments, editOrderElsewhere, newDeskOrder, printed, signIn, stubPrint, tag, withoutPermissions, confirm } from './support';
 
 async function openDesk(page: Page): Promise<void> {
   await page.getByTestId('nav-order-desk').click();
@@ -68,6 +66,7 @@ test.describe('order desk', () => {
       await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '500');
 
       await page.getByTestId('order-line').filter({ hasText: 'PALLET-2' }).getByTestId('remove-line').click();
+      await confirm(page);
       await expect(page.getByTestId('order-done')).toHaveText('Line 2 removed.');
       await expect(page.getByTestId('order-line')).toHaveCount(1);
       await expect(page.getByTestId('order-weight')).toHaveAttribute('data-value', '300');
@@ -167,8 +166,8 @@ test.describe('order desk', () => {
     });
 
     await test.step('cancel it and read what happened, newest first', async () => {
-      await page.getByLabel('Cancellation reason').fill('raised by mistake');
       await page.getByTestId('cancel-order').getByRole('button', { name: 'Cancel order' }).click();
+      await confirm(page, 'raised by mistake');
       await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CANCELLED');
 
       await page.getByTestId('tab-history').click();
@@ -191,8 +190,8 @@ test.describe('order desk', () => {
     await signIn(page);
     await openOrder(page, order.orderId);
 
-    await page.getByLabel('Cancellation reason').fill('customer withdrew');
     await page.getByTestId('cancel-order').getByRole('button', { name: 'Cancel order' }).click();
+    await confirm(page, 'customer withdrew');
     await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'CANCELLED');
     await expect(page.getByTestId('edit-draft')).toHaveCount(0);
     await expect(page.getByTestId('amend-order')).toHaveCount(0);

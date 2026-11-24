@@ -322,8 +322,8 @@ async function changeNested(route: Route, url: URL, kind: Kind, id: string | und
 
 /** The testids this spec relies on, by what they are. */
 export const TESTIDS = {
-  shared: ['status-filter', 'deactivate-record', 'reactivate-record', 'confirm-panel', 'reason-input', 'reason-error',
-    'confirm-action', 'cancel-action', 'action-error', 'conflict-notice', 'void-record'],
+  shared: ['status-filter', 'deactivate-record', 'reactivate-record', 'confirm-dialog', 'reason-input', 'reason-error',
+    'confirm-accept', 'confirm-dismiss', 'action-error', 'conflict-notice', 'void-record'],
   lists: ['rule-row', 'rule-status', 'org-unit-row', 'cc-row', 'webhook-detail', 'bin-row', 'sku-row',
     'bin-status-filter', 'sku-status-filter', 'guide-vendor', 'guide-panel', 'inv-row', 'inv-detail', 'detail-status',
     'detail-void-reason', 'save-webhook', 'policy-detail', 'save-policy'],

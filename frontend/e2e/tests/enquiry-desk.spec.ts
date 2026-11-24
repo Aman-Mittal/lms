@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { signIn, withValue } from './support';
+import { signIn, withValue, confirm } from './support';
 import {
   customer, destinationId, originId, stubEnquiries, stubSession, stubUpload, type EnquiryStub,
 } from './support-enquiry';
@@ -100,6 +100,7 @@ test.describe('enquiry desk', () => {
 
       await line(page, 1).getByTestId('enquiry-line-reason').fill('customer asked again');
       await line(page, 1).getByTestId('enquiry-quote-revoke').click();
+      await confirm(page);
       await expect(line(page, 1).getByTestId('enquiry-quote-row').nth(1)).toContainText('REVOKED');
       await line(page, 1).getByTestId('enquiry-quote-amount').fill('4600');
       await line(page, 1).getByTestId('enquiry-quote-issue').click();
@@ -166,8 +167,10 @@ test.describe('enquiry desk', () => {
     await page.getByTestId('enquiry-rediscover').click();
     await expect(page.getByTestId('enquiry-note')).toContainText('rates');
     await page.getByTestId('enquiry-cancel').click();
+    await confirm(page);
     await expect(page.getByTestId('enquiry-error')).toBeVisible();
 
+    await page.getByTestId('enquiry-cancel').click();
     await page.getByTestId('enquiry-cancel-reason').fill('customer went away');
     await page.getByTestId('enquiry-cancel-reason').press('Enter');
     await expect(page.getByTestId('enquiry-status')).toHaveAttribute('data-value', 'CANCELLED');

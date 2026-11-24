@@ -26,6 +26,8 @@ import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
 import { EntityPicker } from '../EntityPicker';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** What the subject picker offers for each kind of subject. */
 const SUBJECT_KIND: Record<ChargeSubjectType, PickKind> = { TRIP: 'trip', CONSIGNMENT: 'consignment', ORDER: 'order' };
@@ -54,8 +56,7 @@ export function ManualCharges() {
   const [reason, setReason] = useState('');
   const [evidence, setEvidence] = useState('');
 
-  const [cancelling, setCancelling] = useState('');
-  const [cancelReason, setCancelReason] = useState('');
+  const confirm = useConfirm();
 
   useEffect(() => {
     let ignore = false;
@@ -90,11 +91,9 @@ export function ManualCharges() {
     }).catch((e: unknown) => setError(problemText(e)));
   }
 
-  function cancel(event: FormEvent, id: string) {
-    event.preventDefault();
+  function cancel(id: string, reason: string) {
     setError('');
-    gateway.cancelManualCharge(id, cancelReason).then(() => {
-      setCancelling('');
+    gateway.cancelManualCharge(id, reason).then(() => {
       setReload((n) => n + 1);
     }).catch((e: unknown) => setError(problemText(e)));
   }
@@ -163,17 +162,12 @@ export function ManualCharges() {
                 <td>{m.billed ? 'Yes' : 'No'}</td>
                 <td>
                   {can('MANUAL_CHARGE_RECORD') && !m.billed && (m.status === 'PENDING_APPROVAL' || m.status === 'APPROVED') && (
-                    cancelling === m.id ? (
-                      <form className="inline" onSubmit={(e) => cancel(e, m.id)}>
-                        <input placeholder="Why" aria-label="Cancel reason" data-testid="mc-cancel-reason" required
-                          value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
-                        <button type="submit" data-testid="mc-cancel-confirm">Cancel charge</button>
-                        <button type="button" className="link" onClick={() => setCancelling('')}>Keep</button>
-                      </form>
-                    ) : (
-                      <button type="button" className="link" data-testid="mc-cancel" aria-label={`Cancel ${m.chargeNo}`}
-                        onClick={() => { setCancelling(m.id); setCancelReason(''); }}>Cancel</button>
-                    )
+                    <button type="button" className="link" data-testid="mc-cancel" aria-label={`Cancel ${m.chargeNo}`}
+                      onClick={() => confirm.ask({
+                        wording: confirmWording('Cancel charge', m.chargeNo),
+                        reason: { label: 'Cancel reason', testId: 'mc-cancel-reason', placeholder: 'Why', required: true },
+                        run: (why) => cancel(m.id, why),
+                      })}>Cancel</button>
                   )}
                 </td>
               </tr>
@@ -181,6 +175,7 @@ export function ManualCharges() {
           </tbody>
         </table></div>
       )}
+      {confirm.dialog}
     </>
   );
 }

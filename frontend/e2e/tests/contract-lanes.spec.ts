@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 import { expect, test, type Page } from '@playwright/test';
-import {
-  apiSession, newBillingPartner, newDeskOrder, newSite, openScreen, publishContract, resetApprovalPolicy,
-  setApprovalPolicy, signIn, tag, type Session,
-} from './support';
+import { apiSession, newBillingPartner, newDeskOrder, newSite, openScreen, publishContract, resetApprovalPolicy, setApprovalPolicy, signIn, tag, type Session, confirm } from './support';
 
 /*
  * Contract lanes in both consoles: edited on a draft contract and frozen once it is in force, and
@@ -124,6 +121,7 @@ test.describe('contract lanes', () => {
       await page.getByTestId('add-lane-button').click();
       await expect(page.getByTestId('lane-row')).toHaveCount(2);
       await page.getByTestId('lane-row').filter({ hasText: 'E2E-2' }).getByTestId('remove-lane').click();
+      await confirm(page);
       await expect(page.getByTestId('contract-message')).toHaveText('Lane removed.');
       await expect(page.getByTestId('lane-row')).toHaveCount(1);
     });

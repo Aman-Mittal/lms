@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { API, apiSession, newDeskOrder, openScreen, signIn, tag, type Session } from './support';
+import { API, apiSession, newDeskOrder, openScreen, signIn, tag, type Session, confirm } from './support';
 import { deliveredTrip } from './support-commercial';
 
 /*
@@ -57,9 +57,8 @@ async function openOrder(page: Page, orderId: string): Promise<void> {
 /** Asks to cancel on the order desk and sees it wait. */
 async function askToCancel(page: Page, orderId: string, reason: string): Promise<void> {
   await openOrder(page, orderId);
-  const cancel = page.getByTestId('cancel-order');
-  await cancel.getByLabel('Cancellation reason').fill(reason);
-  await cancel.getByRole('button', { name: 'Cancel order' }).click();
+  await page.getByTestId('cancel-order').getByRole('button', { name: 'Cancel order' }).click();
+  await confirm(page, reason);
   await expect(page.getByTestId('order-done')).toHaveText('Cancellation requested: awaiting approval.');
   await expect(page.getByTestId('order-status')).toHaveAttribute('data-value', 'DRAFT');
 }
@@ -132,6 +131,7 @@ test.describe('approvals inbox', () => {
     const row = page.getByTestId('approvals').getByRole('row').filter({ hasText: order.orderNo });
     await row.getByRole('button').first().click();
     await page.getByTestId('cancel-approval').click();
+    await confirm(page);
     await expect(page.getByTestId('approval-status')).toHaveAttribute('data-value', 'CANCELLED');
   });
 

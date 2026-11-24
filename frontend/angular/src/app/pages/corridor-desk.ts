@@ -20,6 +20,8 @@ import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import { CorridorDraft, CorridorRow } from '../gateway/small-ops-types';
 import { EntityPicker } from './entity-picker';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 const BLANK: CorridorDraft = { originTerminalId: '', destinationTerminalId: '', name: '', points: '', widthMetres: '' };
 
@@ -30,10 +32,11 @@ const BLANK: CorridorDraft = { originTerminalId: '', destinationTerminalId: '', 
  */
 @Component({
   selector: 'app-corridor-desk',
-  imports: [EntityPicker, ErrorBanner, FormsModule],
+  imports: [ConfirmHost, EntityPicker, ErrorBanner, FormsModule],
   template: `
     <section data-testid="corridors">
       <h3>Route corridors</h3>
+      <app-confirm-host [(pending)]="pending" />
       @if (rows().length === 0 && read()) {
         <p class="muted" data-testid="no-corridors">No lane has a corridor: its trips are measured against the straight line.</p>
       }
@@ -46,7 +49,7 @@ const BLANK: CorridorDraft = { originTerminalId: '', destinationTerminalId: '', 
                 <td data-testid="corridor-name">{{ c.name }}</td><td>{{ c.origin }}</td><td>{{ c.destination }}</td>
                 <td>{{ c.pointCount }}</td><td>{{ c.widthMetres || '—' }}</td>
                 <td><button type="button" class="link" data-testid="corridor-clear" [attr.aria-label]="'Clear corridor ' + c.name"
-                            (click)="clear(c)">Clear corridor</button></td>
+                            (click)="askClear(c)">Clear corridor</button></td>
               </tr>
             }
           </tbody>
@@ -74,6 +77,8 @@ const BLANK: CorridorDraft = { originTerminalId: '', destinationTerminalId: '', 
   `,
 })
 export class CorridorDesk implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
 
   readonly rows = signal<CorridorRow[]>([]);
@@ -101,7 +106,14 @@ export class CorridorDesk implements OnInit {
     });
   }
 
-  clear(c: CorridorRow): Promise<void> {
+  askClear(c: CorridorRow): void {
+    this.pending.set({
+      wording: confirmWording('Clear corridor', c.name, `Trips on ${c.origin} to ${c.destination} are measured against the straight line again.`),
+      run: () => this.clear(c),
+    });
+  }
+
+  private clear(c: CorridorRow): Promise<void> {
     return this.run(async () => {
       await this.gateway.clearCorridor(c.id);
       await this.reload();

@@ -22,6 +22,8 @@ import { Session } from '../session';
 import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -39,10 +41,11 @@ function today(): string {
  */
 @Component({
   selector: 'app-trip-money',
-  imports: [ErrorBanner, StatusBadge, Money],
+  imports: [ConfirmHost, ErrorBanner, StatusBadge, Money],
   template: `
     <section data-testid="trip-money" aria-label="Trip money">
       <h2>Advances and charges</h2>
+      <app-confirm-host [(pending)]="pending" />
       @if (refusal(); as r) {
         <app-error-banner [message]="r.message" [code]="r.code" testId="adv-error" />
       }
@@ -74,30 +77,20 @@ function today(): string {
                 <td>
                   @if (a.status === 'APPROVED' && session.can('PAYABLES_MANAGE')) {
                     <button type="button" class="link" data-testid="adv-pay" [attr.aria-label]="'Pay ' + a.advanceNo"
-                            (click)="start('pay', a.id)">Pay</button>
+                            (click)="start(a.id)">Pay</button>
                   }
                   @if ((a.status === 'APPROVED' || a.status === 'PENDING_APPROVAL') && session.can('ADVANCE_REQUEST')) {
                     <button type="button" class="link" data-testid="adv-cancel" [attr.aria-label]="'Cancel ' + a.advanceNo"
-                            (click)="start('cancel', a.id)">Cancel</button>
+                            (click)="askCancel(a.id, a.advanceNo)">Cancel</button>
                   }
                 </td>
               </tr>
-              @if (acting() === a.id && action() === 'pay') {
+              @if (acting() === a.id) {
                 <tr><td colspan="6">
                   <form ngNativeValidate class="inline" (submit)="pay($event, a.id)">
                     <input placeholder="Reference" aria-label="Payment reference" data-testid="adv-pay-reference" required
                            [value]="text()" (input)="text.set(valueOf($event))" />
                     <button type="submit" data-testid="adv-pay-confirm">Record payment</button>
-                    <button type="button" class="link" (click)="acting.set('')">Keep</button>
-                  </form>
-                </td></tr>
-              }
-              @if (acting() === a.id && action() === 'cancel') {
-                <tr><td colspan="6">
-                  <form ngNativeValidate class="inline" (submit)="cancel($event, a.id)">
-                    <input placeholder="Why" aria-label="Cancel reason" data-testid="adv-cancel-reason" required
-                           [value]="text()" (input)="text.set(valueOf($event))" />
-                    <button type="submit" data-testid="adv-cancel-confirm">Cancel advance</button>
                     <button type="button" class="link" (click)="acting.set('')">Keep</button>
                   </form>
                 </td></tr>
@@ -126,6 +119,8 @@ function today(): string {
   `,
 })
 export class TripMoney implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   /** The trip these belong to. */
   readonly tripId = input.required<string>();
   private readonly gateway = inject(LmsGateway);
@@ -141,7 +136,6 @@ export class TripMoney implements OnInit {
   readonly amount = signal('');
   readonly reason = signal('');
   readonly acting = signal('');
-  readonly action = signal<'pay' | 'cancel'>('pay');
   readonly text = signal('');
 
   async ngOnInit(): Promise<void> {
@@ -161,8 +155,7 @@ export class TripMoney implements OnInit {
     });
   }
 
-  start(action: 'pay' | 'cancel', id: string): void {
-    this.action.set(action);
+  start(id: string): void {
     this.acting.set(id);
     this.text.set('');
   }
@@ -176,11 +169,17 @@ export class TripMoney implements OnInit {
     });
   }
 
-  async cancel(event: Event, id: string): Promise<void> {
-    event.preventDefault();
+  askCancel(id: string, advanceNo: string): void {
+    this.pending.set({
+      wording: confirmWording('Cancel advance', advanceNo),
+      reason: { label: 'Cancel reason', testId: 'adv-cancel-reason', placeholder: 'Why', required: true },
+      run: (why) => this.cancel(id, why),
+    });
+  }
+
+  private async cancel(id: string, reason: string): Promise<void> {
     await this.attempt(async () => {
-      await this.gateway.cancelVendorAdvance(id, this.text());
-      this.acting.set('');
+      await this.gateway.cancelVendorAdvance(id, reason);
       await this.load();
     });
   }

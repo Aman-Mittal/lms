@@ -23,6 +23,8 @@ import { money, problemText } from './moneyProblem';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /**
  * A trip's money: the advances paid to its vendor (requested, paid, cancelled before payment) and the
@@ -41,8 +43,7 @@ export function TripMoney({ tripId }: { tripId: string }) {
   const [reason, setReason] = useState('');
   const [paying, setPaying] = useState('');
   const [payReference, setPayReference] = useState('');
-  const [cancelling, setCancelling] = useState('');
-  const [cancelReason, setCancelReason] = useState('');
+  const confirm = useConfirm();
 
   const canSee = can('ADVANCE_REQUEST') || can('ADVANCE_APPROVE') || can('PAYABLES_MANAGE') || can('INVOICE_READ');
   const canSeeCharges = can('MANUAL_CHARGE_RECORD') || can('MANUAL_CHARGE_APPROVE') || can('INVOICE_READ');
@@ -122,19 +123,14 @@ export function TripMoney({ tripId }: { tripId: string }) {
                         <button type="button" className="link" data-testid="adv-pay" aria-label={`Pay ${a.advanceNo}`}
                           onClick={() => { setPaying(a.id); setPayReference(''); }}>Pay</button>
                       ))}
-                      {can('ADVANCE_REQUEST') && (a.status === 'PENDING_APPROVAL' || a.status === 'APPROVED') && (cancelling === a.id ? (
-                        <form className="inline" onSubmit={(e) => {
-                          e.preventDefault();
-                          act(() => gateway.cancelVendorAdvance(a.id, cancelReason), () => setCancelling(''));
-                        }}>
-                          <input placeholder="Why" aria-label="Cancel reason" data-testid="adv-cancel-reason" required
-                            value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
-                          <button type="submit" data-testid="adv-cancel-confirm">Cancel advance</button>
-                        </form>
-                      ) : (
+                      {can('ADVANCE_REQUEST') && (a.status === 'PENDING_APPROVAL' || a.status === 'APPROVED') && (
                         <button type="button" className="link" data-testid="adv-cancel" aria-label={`Cancel ${a.advanceNo}`}
-                          onClick={() => { setCancelling(a.id); setCancelReason(''); }}>Cancel</button>
-                      ))}
+                          onClick={() => confirm.ask({
+                            wording: confirmWording('Cancel advance', a.advanceNo),
+                            reason: { label: 'Cancel reason', testId: 'adv-cancel-reason', placeholder: 'Why', required: true },
+                            run: (why) => act(() => gateway.cancelVendorAdvance(a.id, why)),
+                          })}>Cancel</button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -161,6 +157,7 @@ export function TripMoney({ tripId }: { tripId: string }) {
           )}
         </>
       )}
+      {confirm.dialog}
     </section>
   );
 }

@@ -13,12 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Component, ElementRef, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import type { ConfigAction, ConfigKind } from '../gateway/config-types';
 import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { STALE_MESSAGE } from './master-data-form';
 import { ErrorBanner } from './error-banner';
+import { ConfirmDialog } from './confirm-dialog';
+import { confirmWording, type ConfirmWording, type ReasonField } from '../../../../shared/confirm';
 
 const MANAGE: Record<ConfigKind, string> = {
   allocationRules: 'ALLOCATION_RULE_MANAGE', orgUnits: 'ORG_UNIT_MANAGE', chargeCatalogue: 'CHARGE_CATALOGUE_MANAGE',
@@ -38,34 +40,25 @@ const WORDS: Record<ConfigAction, { verb: string; line: string }> = {
  * the confirmation stays open. The version is the one the list read, so a row somebody else changed says so.
  */
 @Component({
-  imports: [ErrorBanner],
+  imports: [ConfirmDialog, ErrorBanner],
   selector: 'app-config-actions',
   template: `
-    @if (!pending()) {
-      @if (allowed()) {
-        <span class="actions">
-          @if (kind() === 'vendorInvoices') {
-            @if (active()) { <button type="button" data-testid="void-record" (click)="ask('void')">Void</button> }
-          } @else if (active()) {
-            <button type="button" class="link" data-testid="deactivate-record" (click)="ask('deactivate')">Deactivate</button>
-          } @else {
-            <button type="button" class="link" data-testid="reactivate-record" (click)="ask('reactivate')">Reactivate</button>
-          }
-        </span>
-      }
-    } @else {
-      <div class="confirm" data-testid="confirm-panel" role="group" [attr.aria-label]="question()">
-        <p #asked tabindex="-1"><strong>{{ question() }}</strong> {{ line() }} Say why; the reason is kept in the audit trail.</p>
-        <label>Reason
-          <textarea rows="2" data-testid="reason-input" [value]="reason()" (input)="reason.set($any($event.target).value)"></textarea>
-        </label>
-        @if (reasonError()) { <p class="error" role="alert" data-testid="reason-error">A reason is required.</p> }
+    @if (allowed()) {
+      <span class="actions">
+        @if (kind() === 'vendorInvoices') {
+          @if (active()) { <button type="button" data-testid="void-record" (click)="ask('void')">Void</button> }
+        } @else if (active()) {
+          <button type="button" class="link" data-testid="deactivate-record" (click)="ask('deactivate')">Deactivate</button>
+        } @else {
+          <button type="button" class="link" data-testid="reactivate-record" (click)="ask('reactivate')">Reactivate</button>
+        }
+      </span>
+    }
+    @if (pending()) {
+      <app-confirm-dialog [wording]="wording()" [reason]="reasonField" [tone]="pending() === 'reactivate' ? 'neutral' : 'danger'"
+                          [busy]="busy()" (confirmed)="confirm($event)" (dismissed)="cancel()">
         @if (failure()) { <app-error-banner [message]="failure()" testId="action-error" /> }
-        <div class="actions">
-          <button type="button" data-testid="confirm-action" [disabled]="busy()" (click)="confirm()">{{ verb() }}</button>
-          <button type="button" class="link" data-testid="cancel-action" (click)="cancel()">Cancel</button>
-        </div>
-      </div>
+      </app-confirm-dialog>
     }
   `,
 })
@@ -86,41 +79,24 @@ export class ConfigActions {
   readonly changed = output<void>();
 
   protected readonly pending = signal<ConfigAction | null>(null);
-  protected readonly reason = signal('');
-  protected readonly reasonError = signal(false);
   protected readonly failure = signal('');
   protected readonly busy = signal(false);
   /** A stale refusal is shown in place; the list is read again when the confirmation is left. */
   private stale = false;
-  private readonly questionRef = viewChild<ElementRef<HTMLElement>>('asked');
-
-  constructor() {
-    // Focus moves to the question when the confirmation opens.
-    effect(() => this.questionRef()?.nativeElement.focus());
-  }
+  protected readonly reasonField: ReasonField = { label: 'Reason', testId: 'reason-input', required: true, multiline: true };
 
   protected allowed(): boolean {
     return this.session.can(MANAGE[this.kind()]);
   }
 
-  protected question(): string {
+  protected readonly wording = computed<ConfirmWording>(() => {
     const action = this.pending();
-    return action ? `${WORDS[action].verb} ${this.label()}?` : '';
-  }
-
-  protected line(): string {
-    const action = this.pending();
-    return action ? WORDS[action].line : '';
-  }
-
-  protected verb(): string {
-    const action = this.pending();
-    return action ? WORDS[action].verb : '';
-  }
+    return action
+      ? confirmWording(WORDS[action].verb, this.label(), `${WORDS[action].line} The reason is kept in the audit trail.`)
+      : confirmWording('', '');
+  });
 
   protected ask(action: ConfigAction): void {
-    this.reason.set('');
-    this.reasonError.set(false);
     this.failure.set('');
     this.stale = false;
     this.pending.set(action);
@@ -133,20 +109,15 @@ export class ConfigActions {
     }
   }
 
-  protected async confirm(): Promise<void> {
+  protected async confirm(reason: string): Promise<void> {
     const action = this.pending();
     if (!action) {
       return;
     }
-    if (!this.reason().trim()) {
-      this.reasonError.set(true);
-      return;
-    }
-    this.reasonError.set(false);
     this.failure.set('');
     this.busy.set(true);
     try {
-      await this.gateway.switchConfigRecord(this.kind(), this.recordId(), action, this.reason(), Number(this.version()),
+      await this.gateway.switchConfigRecord(this.kind(), this.recordId(), action, reason, Number(this.version()),
         this.parentId());
       this.pending.set(null);
       this.changed.emit();

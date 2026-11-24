@@ -21,6 +21,8 @@ import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { useLoad } from '../useLoad';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 const BLANK: CorridorDraft = { originTerminalId: '', destinationTerminalId: '', name: '', points: '', widthMetres: '' };
 
@@ -31,6 +33,7 @@ const BLANK: CorridorDraft = { originTerminalId: '', destinationTerminalId: '', 
  */
 export function CorridorDesk() {
   const { gateway } = useSession();
+  const confirm = useConfirm();
   const [reload, setReload] = useState(0);
   const list = useLoad(() => gateway.corridors(), reload);
   const [draft, setDraft] = useState<CorridorDraft>(BLANK);
@@ -86,7 +89,10 @@ export function CorridorDesk() {
                   <td>{c.pointCount}</td><td>{c.widthMetres || '—'}</td>
                   <td>
                     <button type="button" className="link" data-testid="corridor-clear" aria-label={`Clear corridor ${c.name}`}
-                      onClick={() => clear(c)}>Clear corridor</button>
+                      onClick={() => confirm.ask({
+                        wording: confirmWording('Clear corridor', c.name, `Trips on ${c.origin} to ${c.destination} are measured against the straight line again.`),
+                        run: () => clear(c),
+                      })}>Clear corridor</button>
                   </td>
                 </tr>
               ))}
@@ -110,6 +116,7 @@ export function CorridorDesk() {
       </form>
       {done && <p className="ok" role="status" data-testid="corridor-done">{done}</p>}
       {error.message && <ErrorBanner message={error.message} code={error.code} testId="corridor-error" codeTestId="corridor-refusal" />}
+      {confirm.dialog}
     </section>
   );
 }

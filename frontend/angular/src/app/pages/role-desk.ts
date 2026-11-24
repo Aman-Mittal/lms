@@ -20,6 +20,8 @@ import type { PermissionChoice, RoleCard, RoleDraft } from '../gateway/user-admi
 import { Session } from '../session';
 import { ErrorBanner } from './error-banner';
 import { PageHeader } from './page-header';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 interface Refusal {
   code: string;
@@ -53,9 +55,10 @@ function grouped(choices: PermissionChoice[]): { resource: string; items: Permis
  */
 @Component({
   selector: 'app-role-desk',
-  imports: [ErrorBanner, FormsModule, PageHeader],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, PageHeader],
   template: `
     <app-page-header title="Roles" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">A role is a named set of permissions. Give users roles on the user accounts screen.</p>
 
     @if (session.can('ROLE_MANAGE')) {
@@ -131,7 +134,7 @@ function grouped(choices: PermissionChoice[]): { resource: string; items: Permis
             }
             <p class="actions">
               <button type="submit" data-testid="role-save">Save role</button>
-              <button type="button" data-testid="role-delete" (click)="remove(r)">Delete role</button>
+              <button type="button" data-testid="role-delete" (click)="askDelete(r)">Delete role</button>
             </p>
           </form>
         } @else {
@@ -142,6 +145,8 @@ function grouped(choices: PermissionChoice[]): { resource: string; items: Permis
   `,
 })
 export class RoleDesk implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   protected readonly session = inject(Session);
   protected readonly administrator = ADMINISTRATOR;
@@ -234,7 +239,14 @@ export class RoleDesk implements OnInit {
     await this.reselect(r.id, ok);
   }
 
-  async remove(r: RoleCard): Promise<void> {
+  askDelete(r: RoleCard): void {
+    this.pending.set({
+      wording: confirmWording('Delete role', r.name, 'This cannot be undone.'),
+      run: () => this.remove(r),
+    });
+  }
+
+  private async remove(r: RoleCard): Promise<void> {
     this.done.set('');
     this.refusal.set(null);
     try {

@@ -26,6 +26,8 @@ import { When } from './when';
 import { ErrorBanner } from './error-banner';
 import { EntityPicker } from './entity-picker';
 import { EwayRecord } from './eway-record';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** A refusal as the desk shows it: what the server said, and its problem code. */
 function problemText(e: unknown): string {
@@ -47,9 +49,10 @@ const ACTION_DONE: Record<EwayAction, string> = {
  */
 @Component({
   selector: 'app-eway-bill-desk',
-  imports: [EntityPicker, ErrorBanner, EwayRecord, FormsModule, PageHeader, StatusBadge, When],
+  imports: [ConfirmHost, EntityPicker, ErrorBanner, EwayRecord, FormsModule, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="E-way bills" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">Generate a consignment's bill, put a vehicle on Part-B, extend or cancel it, and watch what is about to lapse.</p>
 
     <form ngNativeValidate class="inline" (ngSubmit)="load()" data-testid="eway-filter">
@@ -166,7 +169,7 @@ const ACTION_DONE: Record<EwayAction, string> = {
             <input name="reason" placeholder="Reason" aria-label="Reason" data-testid="eway-reason"
                    [value]="reason()" (input)="reason.set($any($event.target).value)" />
             <button type="button" data-testid="eway-extend" (click)="act(b, 'EXTEND')">Extend validity</button>
-            <button type="button" data-testid="eway-cancel" (click)="act(b, 'CANCEL')">Cancel bill</button>
+            <button type="button" data-testid="eway-cancel" (click)="askCancel(b)">Cancel bill</button>
           </form>
         }
       </section>
@@ -201,6 +204,8 @@ const ACTION_DONE: Record<EwayAction, string> = {
   `,
 })
 export class EwayBillDeskPage {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   protected readonly session = inject(Session);
   protected readonly statuses = EWAY_STATUSES;
@@ -309,11 +314,19 @@ export class EwayBillDeskPage {
     }
   }
 
-  async act(bill: EwayBillRow, action: EwayAction): Promise<void> {
+  askCancel(bill: EwayBillRow): void {
+    this.pending.set({
+      wording: confirmWording('Cancel bill', bill.billNo),
+      reason: { label: 'Reason', testId: 'eway-cancel-reason', placeholder: 'Reason' },
+      run: (why) => this.act(bill, 'CANCEL', why),
+    });
+  }
+
+  async act(bill: EwayBillRow, action: EwayAction, why = this.reason()): Promise<void> {
     this.error.set('');
     this.note.set('');
     try {
-      this.selected.set(await this.gateway.actOnEwayBill(bill.id, action, this.reason(), this.vehicle()));
+      this.selected.set(await this.gateway.actOnEwayBill(bill.id, action, why, this.vehicle()));
       this.note.set(ACTION_DONE[action]);
       await this.load();
       if (this.draft().consignmentId.trim()) {

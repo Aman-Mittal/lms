@@ -24,6 +24,8 @@ import { useSession } from '../session';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** Today as a `YYYY-MM-DD` day, in UTC like the API. */
 function today(): string {
@@ -78,6 +80,7 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
   clientId: string; contracts: Row[]; onChanged: () => void;
 }) {
   const { gateway, can, auth } = useSession();
+  const confirm = useConfirm();
   const [form, setForm] = useState<ContractDraft>(blankDraft);
   const [edit, setEdit] = useState<ContractDraft>(blankDraft);
   const [detail, setDetail] = useState<ContractDetail | null>(null);
@@ -322,7 +325,10 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
                     <td>{l.slabs || '—'}</td>
                     <td>
                       {detail.status === 'DRAFT' && manage && (
-                        <button className="link" data-testid="remove-lane" onClick={() => removeLane(l.laneCode)}>Remove</button>
+                        <button className="link" data-testid="remove-lane" onClick={() => confirm.ask({
+                          wording: confirmWording('Remove lane', l.laneCode, '', `from contract ${detail.code}`),
+                          run: () => removeLane(l.laneCode),
+                        })}>Remove</button>
                       )}
                     </td>
                   </tr>
@@ -402,7 +408,9 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
               </form>
               <p className="actions">
                 <button data-testid="request-verification" onClick={verify}>Request verification</button>
-                <button className="link" data-testid="delete-draft" onClick={remove}>Delete draft</button>
+                <button className="link" data-testid="delete-draft" onClick={() => confirm.ask({
+                  wording: confirmWording('Delete draft', detail.code, 'This cannot be undone.'), run: remove,
+                })}>Delete draft</button>
               </p>
             </>
           )}
@@ -443,6 +451,7 @@ export function ContractLifecycle({ clientId, contracts, onChanged }: {
           )}
         </section>
       )}
+      {confirm.dialog}
     </section>
   );
 }

@@ -45,9 +45,9 @@ const switches = () => stub.changes.filter((c) => /\/(deactivate|reactivate|void
 /** Presses a switch button inside `scope`, says why, and confirms. */
 async function switchOver(page: Page, scope: Locator, button: string, reason: string) {
   await scope.getByTestId(button).click();
-  await expect(page.getByTestId('confirm-panel')).toBeVisible();
+  await expect(page.getByTestId('confirm-dialog')).toBeVisible();
   await page.getByTestId('reason-input').fill(reason);
-  await page.getByTestId('confirm-action').click();
+  await page.getByTestId('confirm-accept').click();
 }
 
 test.describe('allocation rules', () => {
@@ -68,12 +68,12 @@ test.describe('allocation rules', () => {
     await page.getByTestId('status-filter').selectOption('');
     const target = row(page, 'Prefer Swift');
     await target.getByTestId('deactivate-record').click();
-    await page.getByTestId('confirm-action').click();
+    await page.getByTestId('confirm-accept').click();
     await expect(page.getByTestId('reason-error')).toBeVisible();
     expect(switches()).toHaveLength(0);
 
     await page.getByTestId('reason-input').fill('Seasonal pause');
-    await page.getByTestId('confirm-action').click();
+    await page.getByTestId('confirm-accept').click();
     await expect(page.getByTestId('rule-row')).toHaveCount(0);
     expect(last()).toMatchObject({ method: 'POST', ifMatch: '0', body: { reason: 'Seasonal pause' } });
     expect(last().path).toMatch(/\/allocation-rules\/[^/]+\/deactivate$/);
@@ -93,11 +93,11 @@ test.describe('allocation rules', () => {
     await row(page, 'Prefer Swift').getByTestId('deactivate-record').click();
     stub.touch('allocationRules', rule.id);
     await page.getByTestId('reason-input').fill('Seasonal pause');
-    await page.getByTestId('confirm-action').click();
+    await page.getByTestId('confirm-accept').click();
     await expect(page.getByTestId('action-error')).toContainText('Someone else changed this record');
     expect(rule.active).toBe(true);
 
-    await page.getByTestId('cancel-action').click();
+    await page.getByTestId('confirm-dismiss').click();
     await row(page, 'Prefer Swift').getByTestId('rule-edit').click();
     await expect(page.getByTestId('rule-form')).toBeVisible();
     stub.touch('allocationRules', rule.id);
@@ -121,7 +121,7 @@ test.describe('organisational units', () => {
 
     await switchOver(page, row(page, 'North zone'), 'deactivate-record', 'Closing the zone');
     await expect(page.getByTestId('action-error')).toContainText('still has 2 active unit(s)');
-    await page.getByTestId('cancel-action').click();
+    await page.getByTestId('confirm-dismiss').click();
 
     await switchOver(page, row(page, 'Gurgaon branch'), 'deactivate-record', 'Branch closed');
     await expect(row(page, 'Gurgaon branch')).toHaveCount(0);
@@ -221,7 +221,7 @@ test.describe('warehouse bins and SKUs', () => {
     const bin = (code: string) => page.getByTestId('bin-row').filter({ hasText: code });
     await switchOver(page, bin('A-01'), 'deactivate-record', 'Racking removed');
     await expect(page.getByTestId('action-error')).toContainText('still holds 10 unit(s)');
-    await page.getByTestId('cancel-action').click();
+    await page.getByTestId('confirm-dismiss').click();
 
     await switchOver(page, bin('A-02'), 'deactivate-record', 'Racking removed');
     await expect(page.getByTestId('bin-row')).toHaveCount(1);
@@ -256,7 +256,7 @@ test.describe('routing guide vendors', () => {
     const vendor = (name: string) => page.getByTestId('guide-vendor').filter({ hasText: name });
     await switchOver(page, vendor('Steady Haulage'), 'deactivate-record', 'Contract on hold');
     await expect(page.getByTestId('action-error')).toContainText('open offer');
-    await page.getByTestId('cancel-action').click();
+    await page.getByTestId('confirm-dismiss').click();
 
     await switchOver(page, vendor('Swift Carriers'), 'deactivate-record', 'Contract on hold');
     await expect(page.getByTestId('guide-vendor')).toHaveCount(1);
@@ -283,10 +283,10 @@ test.describe('vendor invoices', () => {
     await row('VI-OPEN').click();
     await expect(page.getByTestId('inv-detail')).toHaveAttribute('aria-label', 'Invoice VI-OPEN');
     await page.getByTestId('void-record').click();
-    await page.getByTestId('confirm-action').click();
+    await page.getByTestId('confirm-accept').click();
     await expect(page.getByTestId('reason-error')).toBeVisible();
     await page.getByTestId('reason-input').fill('Raised against the wrong bill');
-    await page.getByTestId('confirm-action').click();
+    await page.getByTestId('confirm-accept').click();
     await expect(page.getByTestId('detail-status')).toHaveAttribute('data-value', 'VOID');
     await expect(page.getByTestId('detail-void-reason')).toContainText('Raised against the wrong bill');
     await expect(page.getByTestId('void-record')).toHaveCount(0);

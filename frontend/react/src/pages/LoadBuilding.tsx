@@ -24,6 +24,8 @@ import { StatusBadge } from './StatusBadge';
 import { Quantity } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
 import { AssignOne, OpenLoadForm } from './LoadStart';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** A load's states in which more freight may still go on, or come off. */
 const BUILDABLE = ['DRAFT', 'PLANNED'];
@@ -90,23 +92,21 @@ interface LoadPanelProps {
 function LoadPanel({ load, aboard, onChanged }: LoadPanelProps) {
   const { can, gateway } = useSession();
   const [manifest, setManifest] = useState(false);
-  const [reason, setReason] = useState('');
+  const confirm = useConfirm();
   const [done, setDone] = useState('');
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const buildable = can('LOAD_CREATE') && BUILDABLE.includes(load.status);
   const cancellable = can('LOAD_CREATE') && CANCELLABLE.includes(load.status);
 
   /**
-   * Makes a change at the version on screen, then reads the load again. The reason is cleared
-   * as soon as the change is made; a refusal is shown by its code and the load is read again
-   * too, so a stale screen catches up.
+   * Makes a change at the version on screen, then reads the load again. A refusal is shown by its
+   * code and the load is read again too, so a stale screen catches up.
    */
   async function act(outcome: string, change: () => Promise<void>) {
     setDone('');
     setRefusal(null);
     try {
       await change();
-      setReason('');
       setDone(outcome);
     } catch (e) {
       setRefusal({ code: e instanceof ApiProblem ? e.code : '', message: (e as Error).message });
@@ -141,17 +141,20 @@ function LoadPanel({ load, aboard, onChanged }: LoadPanelProps) {
           {load.status === 'PLANNED' && (
             <>
               <button type="button" data-testid="unplan-load"
-                onClick={() => act('The load is open for building again.',
-                  () => gateway.unplanLoad(load.id, load.version))}>
+                onClick={() => confirm.ask({
+                  wording: confirmWording('Un-plan load', load.loadNo, 'It goes back to being built.'),
+                  run: () => act('The load is open for building again.', () => gateway.unplanLoad(load.id, load.version)),
+                })}>
                 Un-plan
               </button>{' '}
             </>
           )}
-          <input data-testid="cancel-reason" aria-label="Reason for cancelling" placeholder="Reason (optional)"
-            value={reason} onChange={(e) => setReason(e.target.value)} />{' '}
           <button type="button" data-testid="cancel-load"
-            onClick={() => act('The load is cancelled and its consignments released.',
-              () => gateway.cancelLoad(load.id, load.version, reason))}>
+            onClick={() => confirm.ask({
+              wording: confirmWording('Cancel load', load.loadNo, 'Its consignments are released.'),
+              reason: { label: 'Reason for cancelling', testId: 'cancel-reason', placeholder: 'Reason (optional)' },
+              run: (why) => act('The load is cancelled and its consignments released.', () => gateway.cancelLoad(load.id, load.version, why)),
+            })}>
             Cancel load
           </button>
         </p>
@@ -171,8 +174,10 @@ function LoadPanel({ load, aboard, onChanged }: LoadPanelProps) {
       ) : (
         <div className="table-scroll">
           <ConsignmentTable rows={aboard} testId="aboard-table" rowTestId="aboard-row"
-            onRemove={buildable ? (c) => act(`${c.trackingRef} is off the load.`,
-              () => gateway.removeFromLoad(load.id, load.version, c.id)) : undefined} />
+            onRemove={buildable ? (c) => confirm.ask({
+              wording: confirmWording('Remove consignment', c.trackingRef, '', `from load ${load.loadNo}`),
+              run: () => act(`${c.trackingRef} is off the load.`, () => gateway.removeFromLoad(load.id, load.version, c.id)),
+            }) : undefined} />
         </div>
       )}
       {manifest && (
@@ -190,6 +195,7 @@ function LoadPanel({ load, aboard, onChanged }: LoadPanelProps) {
         </section>
       )}
       {buildable && <AddPanel loadId={load.id} onAdded={onChanged} />}
+      {confirm.dialog}
     </section>
   );
 }

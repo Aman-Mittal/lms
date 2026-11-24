@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { openScreen, signIn } from './support';
+import { openScreen, signIn, confirm } from './support';
 import {
   consignmentId, draftOrderId, otherTerminalId, stubSmallOps, stubSmallOpsSession, terminalId, validatedOrderId,
   type SmallOpsStub,
@@ -69,6 +69,7 @@ test.describe('approval policies', () => {
 
     await test.step('resetting takes the policy back to the default', async () => {
       await policies.getByTestId('apol-reset').click();
+      await confirm(page);
       await expect(policies.getByTestId('apol-done')).toHaveText('Policy for ORDER_CANCELLATION reset to the default.');
       expect(sent(stub, 'DELETE', '/policies/ORDER_CANCELLATION')).toBeDefined();
       await expect(policies.getByTestId('apol-row').first()).not.toContainText('FINANCE_HEAD');
@@ -190,8 +191,8 @@ test.describe('order lines and close policy', () => {
     await expect(page.getByTestId('append-line')).toHaveCount(0);
     await expect(page.getByTestId('cancel-line')).toHaveCount(2);
 
-    await page.getByTestId('cancel-line-reason').fill('customer dropped it');
     await page.getByTestId('cancel-line').first().click();
+    await confirm(page, 'customer dropped it');
     await expect(page.getByTestId('line-op-done')).toContainText('Line 1 cancelled');
     const cancel = sent(stub, 'POST', '/cancellation');
     expect(cancel?.ifMatch?.replace(/"/g, '')).toBe('4');
@@ -201,6 +202,7 @@ test.describe('order lines and close policy', () => {
     await expect(page.getByTestId('cancel-line')).toHaveCount(1);
 
     await page.getByTestId('cancel-line').click();
+    await confirm(page);
     await expect(page.getByTestId('line-op-refusal')).toHaveText('order-line-last');
     expect(stub.orders[1].lines.filter((l) => !l.cancelled)).toHaveLength(1);
   });
@@ -307,6 +309,7 @@ test.describe('route corridors', () => {
 
     await test.step('clearing takes the lane back to the straight line', async () => {
       await corridors.getByTestId('corridor-clear').click();
+      await confirm(page);
       await expect(corridors.getByTestId('corridor-done')).toHaveText('Corridor Ring road cleared.');
       expect(stub.changes.filter((c) => c.method === 'DELETE')).toHaveLength(1);
       await expect(corridors.getByTestId('corridor-row')).toHaveCount(0);

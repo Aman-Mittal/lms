@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-import { Component, ElementRef, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
 import type { MasterAction, MasterKind } from '../gateway/master-data-types';
 import { Session } from '../session';
 import { STALE_MESSAGE } from './master-data-form';
 import { ErrorBanner } from './error-banner';
+import { ConfirmDialog } from './confirm-dialog';
+import { confirmWording, type ConfirmWording, type ReasonField } from '../../../../shared/confirm';
 
 const UPDATE: Record<MasterKind, string> = {
   partners: 'PARTNER_UPDATE', vehicles: 'VEHICLE_UPDATE', drivers: 'DRIVER_UPDATE', terminals: 'TERMINAL_UPDATE',
@@ -36,30 +38,20 @@ const WORDS: Record<MasterAction, { verb: string; done: string }> = {
  * always required; a refusal from the server is shown in place and the confirmation stays open.
  */
 @Component({
-  imports: [ErrorBanner],
+  imports: [ConfirmDialog, ErrorBanner],
   selector: 'app-master-data-actions',
   template: `
-    @if (!pending()) {
-      <div class="actions">
-        @if (canUpdate()) { <button type="button" data-testid="edit-record" (click)="edit.emit()">Edit</button> }
-        @if (canDeactivate()) { <button type="button" data-testid="deactivate-record" (click)="ask('deactivate')">Deactivate</button> }
-        @if (canReactivate()) { <button type="button" data-testid="reactivate-record" (click)="ask('reactivate')">Reactivate</button> }
-        @if (canBlacklist()) { <button type="button" class="danger" data-testid="blacklist-record" (click)="ask('blacklist')">Blacklist</button> }
-      </div>
-    } @else {
-      <div class="confirm" data-testid="confirm-panel" role="group" [attr.aria-label]="question()">
-        <p #asked tabindex="-1"><strong>{{ question() }}</strong></p>
-        <label for="md-reason">Reason
-          <textarea id="md-reason" rows="2" data-testid="reason-input" [value]="reason()"
-                    (input)="reason.set($any($event.target).value)"></textarea>
-        </label>
-        @if (reasonError()) { <p class="error" role="alert" data-testid="reason-error">A reason is required.</p> }
+    <div class="actions">
+      @if (canUpdate()) { <button type="button" data-testid="edit-record" (click)="edit.emit()">Edit</button> }
+      @if (canDeactivate()) { <button type="button" data-testid="deactivate-record" (click)="ask('deactivate')">Deactivate</button> }
+      @if (canReactivate()) { <button type="button" data-testid="reactivate-record" (click)="ask('reactivate')">Reactivate</button> }
+      @if (canBlacklist()) { <button type="button" class="danger" data-testid="blacklist-record" (click)="ask('blacklist')">Blacklist</button> }
+    </div>
+    @if (pending()) {
+      <app-confirm-dialog [wording]="wording()" [reason]="reasonField" [tone]="pending() === 'reactivate' ? 'neutral' : 'danger'"
+                          [busy]="busy()" (confirmed)="confirm($event)" (dismissed)="cancel()">
         @if (failure()) { <app-error-banner [message]="failure()" testId="action-error" /> }
-        <div class="actions">
-          <button type="button" data-testid="confirm-action" [disabled]="busy()" (click)="confirm()">{{ verb() }}</button>
-          <button type="button" class="link" data-testid="cancel-action" (click)="cancel()">Cancel</button>
-        </div>
-      </div>
+      </app-confirm-dialog>
     }
   `,
 })
@@ -77,16 +69,12 @@ export class MasterDataActions {
   readonly changed = output<void>();
 
   protected readonly pending = signal<MasterAction | null>(null);
-  protected readonly reason = signal('');
-  protected readonly reasonError = signal(false);
   protected readonly failure = signal('');
   protected readonly busy = signal(false);
   private read: Promise<number> = Promise.resolve(0);
-  private readonly questionRef = viewChild<ElementRef<HTMLElement>>('asked');
+  protected readonly reasonField: ReasonField = { label: 'Reason', testId: 'reason-input', required: true, multiline: true };
 
   constructor() {
-    // Focus moves to the question when the confirmation opens.
-    effect(() => this.questionRef()?.nativeElement.focus());
     // A different record starts clean.
     effect(() => { this.recordId(); this.cancel(); }, { allowSignalWrites: true });
   }
@@ -114,19 +102,19 @@ export class MasterDataActions {
     return this.partners() && this.status() !== 'BLACKLISTED' && this.canUpdate();
   }
 
-  protected question(): string {
+  protected readonly wording = computed<ConfirmWording>(() => {
     const action = this.pending();
-    return action ? `${WORDS[action].verb} ${this.label()}? Say why; the reason is kept in the audit trail.` : '';
-  }
-
-  protected verb(): string {
-    const action = this.pending();
-    return action ? WORDS[action].verb : '';
-  }
+    if (!action) {
+      return confirmWording('', '');
+    }
+    const thing = this.kind() === 'partners' ? 'partner' : this.kind().replace(/s$/, '');
+    const line = action === 'blacklist' ? 'A blacklisted partner cannot be reinstated.'
+      : action === 'reactivate' ? `The ${thing} will be available again.`
+        : `The ${thing} is kept, but can no longer be used until it is reactivated.`;
+    return confirmWording(WORDS[action].verb, this.label(), `${line} The reason is kept in the audit trail.`);
+  });
 
   protected ask(action: MasterAction): void {
-    this.reason.set('');
-    this.reasonError.set(false);
     this.failure.set('');
     this.pending.set(action);
     // The version the person is looking at when asked, which is what the change is conditional on.
@@ -138,20 +126,15 @@ export class MasterDataActions {
     this.pending.set(null);
   }
 
-  protected async confirm(): Promise<void> {
+  protected async confirm(reason: string): Promise<void> {
     const action = this.pending();
     if (!action) {
       return;
     }
-    if (!this.reason().trim()) {
-      this.reasonError.set(true);
-      return;
-    }
-    this.reasonError.set(false);
     this.failure.set('');
     this.busy.set(true);
     try {
-      await this.gateway.switchMasterRecord(this.kind(), this.recordId(), action, this.reason(), await this.read);
+      await this.gateway.switchMasterRecord(this.kind(), this.recordId(), action, reason, await this.read);
       this.pending.set(null);
       this.changed.emit();
     } catch (e) {

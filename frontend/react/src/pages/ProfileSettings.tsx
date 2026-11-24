@@ -26,6 +26,8 @@ import { choicesOf, controlOf, fromInput, todayIso, toInput } from '../settingsF
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 const SCOPE_LABEL: Record<string, string> = {
   ORG_DEFAULT: 'Organisation default', ORG_UNIT: 'Org unit', CUSTOMER: 'Customer', VENDOR: 'Vendor',
@@ -76,6 +78,7 @@ const label = (s: string) => SCOPE_LABEL[s] ?? s;
  */
 export function ProfileSettings() {
   const { gateway, can } = useSession();
+  const confirm = useConfirm();
   const manage = can('SETTINGS_MANAGE');
   const [definitions, setDefinitions] = useState<SettingDefinitionView[]>([]);
   const [filter, setFilter] = useState('');
@@ -313,7 +316,9 @@ export function ProfileSettings() {
               <p>
                 <button type="submit" data-testid="save-profile">Save</button>
                 {picked.scopeType !== 'ORG_DEFAULT' && (
-                  <button type="button" className="link" data-testid="delete-profile" onClick={remove}>Delete profile</button>
+                  <button type="button" className="link" data-testid="delete-profile" onClick={() => confirm.ask({
+                    wording: confirmWording('Delete profile', picked.name, 'Its values stop applying. This cannot be undone.'), run: () => { void remove(); },
+                  })}>Delete profile</button>
                 )}
               </p>
             )}
@@ -380,6 +385,7 @@ export function ProfileSettings() {
           </tbody>
         </table></div>
       )}
+      {confirm.dialog}
     </>
   );
 }

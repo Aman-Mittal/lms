@@ -26,6 +26,8 @@ import { EntityPicker } from './entity-picker';
 import { STALE_MESSAGE } from './master-data-form';
 import { PageHeader } from './page-header';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
 
@@ -65,9 +67,10 @@ function inDays(days: number): string {
  */
 @Component({
   selector: 'app-admin-desk',
-  imports: [ErrorBanner, RowTable, EntityPicker, PageHeader],
+  imports: [ConfirmHost, ErrorBanner, RowTable, EntityPicker, PageHeader],
   template: `
     <app-page-header [title]="title" />
+    <app-confirm-host [(pending)]="pending" />
     @if (refusal(); as r) {
       <app-error-banner [message]="r.message" [code]="r.code" testId="admin-error" codeTestId="admin-refusal" />
     }
@@ -147,7 +150,7 @@ function inDays(days: number): string {
               Enabled
             </label>
             <button type="submit" data-testid="save-policy">Save policy</button>
-            <button type="button" data-testid="delete-policy" (click)="deletePolicy(p.id)">Delete</button>
+            <button type="button" data-testid="delete-policy" (click)="askDeletePolicy(p.id, p.code)">Delete</button>
           </form>
         </section>
       } @else {
@@ -229,6 +232,8 @@ function inDays(days: number): string {
   `,
 })
 export class AdminDesk implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
   readonly section: AdminSection = inject(ActivatedRoute).snapshot.data['section'] ?? 'users';
@@ -414,7 +419,14 @@ export class AdminDesk implements OnInit {
     });
   }
 
-  async deletePolicy(id: string): Promise<void> {
+  askDeletePolicy(id: string, code: string): void {
+    this.pending.set({
+      wording: confirmWording('Delete policy', code, 'This cannot be undone.'),
+      run: () => this.deletePolicy(id),
+    });
+  }
+
+  private async deletePolicy(id: string): Promise<void> {
     await this.act(async () => {
       await this.gateway.deleteAccessPolicy(id);
       this.closePolicy();

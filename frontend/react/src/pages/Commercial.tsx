@@ -28,6 +28,8 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { Money } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 interface Refusal {
@@ -249,6 +251,7 @@ function TariffsPanel({ orgUnitId }: { orgUnitId: string }) {
 /** Routing guides: who is offered a lane's loads, in what order, and how long each has to answer. */
 function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string }) {
   const { gateway } = useSession();
+  const confirm = useConfirm();
   const [guide, setGuide] = useState<GuideDraft>({
     originTerminalId: '', destinationTerminalId: '', vehicleType: '', strategy: 'CONTRACTUAL',
   });
@@ -366,12 +369,16 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
                   onChange={(e) => setAgreedRate(e.target.value)} />
                 <button type="submit">Add vendor</button>
               </form>
-              <p><button className="link" data-testid="retire-guide" onClick={() => void retire()}>Retire guide</button></p>
+              <p><button className="link" data-testid="retire-guide" onClick={() => confirm.ask({
+                wording: confirmWording('Retire guide', `${detail.guide.originTerminalCode} to ${detail.guide.destinationTerminalCode}, ${detail.guide.vehicleType}`),
+                run: retire,
+              })}>Retire guide</button></p>
             </>
           )}
           <RefusalNote refusal={actRefusal} testId="guide-act-refusal" />
         </section>
       )}
+      {confirm.dialog}
     </section>
   );
 }
@@ -379,6 +386,7 @@ function GuidesPanel({ manage, orgUnitId }: { manage: boolean; orgUnitId: string
 /** Allocations: a load offered to the vendors its guide names, one at a time, until one accepts. */
 function AllocationsPanel({ act }: { act: boolean }) {
   const { gateway } = useSession();
+  const confirm = useConfirm();
   const [status, setStatus] = useState('');
   const [rows, setRows] = useState<Row[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -521,11 +529,15 @@ function AllocationsPanel({ act }: { act: boolean }) {
           </table></div>
           {act && detail.allocation.status !== 'CANCELLED' && detail.allocation.status !== 'AWARDED' && (
             <p><button className="link" data-testid="cancel-allocation"
-              onClick={() => void respond((id) => gateway.cancelAllocation(id))}>Cancel allocation</button></p>
+              onClick={() => confirm.ask({
+                wording: confirmWording('Cancel allocation', detail.allocation.loadNo, 'No more vendors are offered the load.'),
+                run: () => respond((id) => gateway.cancelAllocation(id)),
+              })}>Cancel allocation</button></p>
           )}
         </section>
       )}
       <RefusalNote refusal={actRefusal} testId="allocation-refusal" />
+      {confirm.dialog}
     </section>
   );
 }

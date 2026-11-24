@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { apiSession, newConsignment, printed, signIn, stubPrint, withoutPermissions } from './support';
+import { apiSession, newConsignment, printed, signIn, stubPrint, withoutPermissions, confirm } from './support';
 
 /** Opens the tracking links screen and looks a consignment up. */
 async function openLinks(page: Page, consignment: string): Promise<void> {
@@ -90,6 +90,7 @@ test.describe('tracking links', () => {
     const url = await issueLink(page);
 
     await page.getByTestId('revoke-link').click();
+    await confirm(page);
     await expect(page.getByTestId('link-status')).toHaveAttribute('data-value', 'REVOKED');
     await expect(page.getByTestId('revoke-link')).toHaveCount(0);
 

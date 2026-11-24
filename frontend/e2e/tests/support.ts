@@ -839,3 +839,18 @@ export async function billLastMonth(request: APIRequestContext, session: Session
     period: dayOfMonth(1, 1),
   })).id as string;
 }
+
+/**
+ * Confirms the dialog a destructive button opens: waits for it, optionally types the reason into its one field, and clicks the
+ * danger button. Call it right after the click that asked. A spec that needs the field filled in a particular way, or the
+ * dialog dismissed, drives the `confirm-*` test ids itself.
+ */
+export async function confirm(page: Page, reason?: string): Promise<void> {
+  const dialog = page.getByTestId('confirm-dialog');
+  await dialog.waitFor();
+  if (reason !== undefined) {
+    await dialog.locator('input, textarea').fill(reason);
+  }
+  await page.getByTestId('confirm-accept').click();
+  await expect(dialog).toHaveCount(0);
+}

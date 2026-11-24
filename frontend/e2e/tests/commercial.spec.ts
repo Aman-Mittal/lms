@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { apiSession, newPlannedLoad, openScreen, printed, signIn, stubPrint, tag, withoutPermissions } from './support';
+import { apiSession, newPlannedLoad, openScreen, printed, signIn, stubPrint, tag, withoutPermissions, confirm } from './support';
 import { commercialGuide, commercialLane, commercialVendor, deliveredTrip } from './support-commercial';
 // Rate cards and rail tariffs
 import { commercialRailheads, commercialRateCard, commercialRateCards } from './support-commercial';
@@ -134,6 +134,7 @@ test.describe('commercial desk', () => {
 
     await test.step('retired, it takes no more vendors', async () => {
       await panel.getByTestId('retire-guide').click();
+      await confirm(page);
       await expect(panel.getByTestId('guide-state')).toHaveText('Retired');
       await expect(panel.getByTestId('add-vendor')).toHaveCount(0);
       await expect(panel.getByTestId('retire-guide')).toHaveCount(0);

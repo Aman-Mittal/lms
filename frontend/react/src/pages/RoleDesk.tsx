@@ -19,6 +19,8 @@ import type { PermissionChoice, RoleCard, RoleDraft } from '../gateway/userAdmin
 import { useSession } from '../session';
 import { ErrorBanner } from './ErrorBanner';
 import { PageHeader } from './PageHeader';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 interface Refusal {
   code: string;
@@ -54,6 +56,7 @@ function grouped(choices: PermissionChoice[]): { resource: string; items: Permis
  */
 export function RoleDesk() {
   const { gateway, can } = useSession();
+  const confirm = useConfirm();
   const [roles, setRoles] = useState<RoleCard[]>([]);
   const [groups, setGroups] = useState<{ resource: string; items: PermissionChoice[] }[]>([]);
   const [listError, setListError] = useState('');
@@ -227,7 +230,10 @@ export function RoleDesk() {
               ))}
               <p className="actions">
                 <button type="submit" data-testid="role-save">Save role</button>
-                <button type="button" data-testid="role-delete" onClick={() => void remove(selected)}>Delete role</button>
+                <button type="button" data-testid="role-delete" onClick={() => confirm.ask({
+                  wording: confirmWording('Delete role', selected.name, 'This cannot be undone.'),
+                  run: () => remove(selected),
+                })}>Delete role</button>
               </p>
             </form>
           ) : (
@@ -235,6 +241,7 @@ export function RoleDesk() {
           )}
         </section>
       )}
+      {confirm.dialog}
     </>
   );
 }

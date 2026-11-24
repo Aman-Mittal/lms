@@ -24,6 +24,8 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { ErrorBanner } from './error-banner';
 import { SeriesRevise } from './series-revise';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 const SERIES_COLUMNS: RowColumn[] = [
   { header: 'Code', field: 'code' }, { header: 'Document', field: 'documentType' }, { header: 'Scope', field: 'scope' },
@@ -61,9 +63,10 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-number-series',
-  imports: [ErrorBanner, RowTable, PageHeader, SeriesRevise, StatusBadge],
+  imports: [ConfirmHost, ErrorBanner, RowTable, PageHeader, SeriesRevise, StatusBadge],
   template: `
     <app-page-header title="Number series" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">
       The most specific active series numbers a document: one for its unit or a unit above it, else the
       tenant-wide one. Without a series, a document keeps its built-in numbering.
@@ -147,11 +150,11 @@ function valueOf(event: Event): string {
         <button type="button" data-testid="series-issue" (click)="issue(s.id)">Issue a number</button>
         @if (issued()) { <p data-testid="series-issued">Issued <code>{{ issued() }}</code></p> }
         @if (s.active) {
-          <button type="button" data-testid="series-deactivate" (click)="setActive(s.id, false)">Deactivate</button>
+          <button type="button" data-testid="series-deactivate" (click)="askDeactivate(s.id, s.code)">Deactivate</button>
         } @else {
           <button type="button" data-testid="series-activate" (click)="setActive(s.id, true)">Activate</button>
         }
-        <button type="button" class="link" data-testid="series-delete" (click)="remove(s.id)">Delete</button>
+        <button type="button" class="link" data-testid="series-delete" (click)="askDelete(s.id, s.code)">Delete</button>
 
         <form ngNativeValidate class="inline" data-testid="series-release" (submit)="release($event, s.id)">
           <h3>Give a number back</h3>
@@ -192,6 +195,8 @@ function valueOf(event: Event): string {
   `,
 })
 export class NumberSeriesPage implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
 
   readonly valueOf = valueOf;
@@ -304,7 +309,21 @@ export class NumberSeriesPage implements OnInit {
     });
   }
 
-  async remove(id: string): Promise<void> {
+  askDeactivate(id: string, code: string): void {
+    this.pending.set({
+      wording: confirmWording('Deactivate series', code, 'No numbers are issued from it until it is activated again.'),
+      run: () => this.setActive(id, false),
+    });
+  }
+
+  askDelete(id: string, code: string): void {
+    this.pending.set({
+      wording: confirmWording('Delete series', code, 'This cannot be undone.'),
+      run: () => this.remove(id),
+    });
+  }
+
+  private async remove(id: string): Promise<void> {
     await this.attempt(async () => {
       await this.gateway.deleteNumberSeries(id);
       this.picked.set('');

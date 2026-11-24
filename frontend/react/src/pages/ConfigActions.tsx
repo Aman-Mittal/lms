@@ -13,11 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { ApiProblem, type ConfigAction, type ConfigKind } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { CONFLICT_TEXT } from './MasterDataForm';
 import { ErrorBanner } from './ErrorBanner';
+import { ConfirmDialog } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 const MANAGE: Record<ConfigKind, string> = {
   allocationRules: 'ALLOCATION_RULE_MANAGE', orgUnits: 'ORG_UNIT_MANAGE', chargeCatalogue: 'CHARGE_CATALOGUE_MANAGE',
@@ -53,20 +55,13 @@ interface Props {
 export function ConfigActions({ kind, id, parentId, active, label, version, onChanged }: Props) {
   const { can, gateway } = useSession();
   const [pending, setPending] = useState<ConfigAction | null>(null);
-  const [reason, setReason] = useState('');
-  const [reasonError, setReasonError] = useState(false);
   const [refusal, setRefusal] = useState('');
   const [busy, setBusy] = useState(false);
   // A stale refusal is shown in place; the list is read again when the confirmation is left.
   const [stale, setStale] = useState(false);
-  const box = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => { if (pending) { box.current?.focus(); } }, [pending]);
 
   function ask(action: ConfigAction) {
     setPending(action);
-    setReason('');
-    setReasonError(false);
     setRefusal('');
     setStale(false);
   }
@@ -76,17 +71,12 @@ export function ConfigActions({ kind, id, parentId, active, label, version, onCh
     if (stale) { onChanged(); }
   }
 
-  async function confirm() {
+  async function confirm(reason: string) {
     if (!pending) { return; }
-    if (!reason.trim()) {
-      setReasonError(true);
-      return;
-    }
-    setReasonError(false);
     setRefusal('');
     setBusy(true);
     try {
-      await gateway.switchConfigRecord(kind, id, pending, reason.trim(), Number(version), parentId);
+      await gateway.switchConfigRecord(kind, id, pending, reason, Number(version), parentId);
       setPending(null);
       onChanged();
     } catch (e) {
@@ -99,31 +89,24 @@ export function ConfigActions({ kind, id, parentId, active, label, version, onCh
   }
 
   if (!can(MANAGE[kind])) { return null; }
-  if (!pending) {
-    if (kind === 'vendorInvoices') {
-      return active ? <span className="actions"><button type="button" data-testid="void-record" onClick={() => ask('void')}>Void</button></span> : null;
-    }
-    return (
-      <span className="actions">
-        {active
-          ? <button type="button" className="link" data-testid="deactivate-record" onClick={() => ask('deactivate')}>Deactivate</button>
-          : <button type="button" className="link" data-testid="reactivate-record" onClick={() => ask('reactivate')}>Reactivate</button>}
-      </span>
-    );
-  }
-  const question = `${WORDS[pending].verb} ${label}?`;
   return (
-    <section className="confirm" role="group" aria-label={question} data-testid="confirm-panel">
-      <p><strong>{question}</strong> {WORDS[pending].line} Say why; the reason is kept in the audit trail.</p>
-      <label>Reason
-        <textarea ref={box} rows={2} data-testid="reason-input" value={reason} onChange={(e) => setReason(e.target.value)} />
-      </label>
-      {reasonError && <small className="error" role="alert" data-testid="reason-error">A reason is required.</small>}
-      {refusal && <ErrorBanner message={refusal} testId="action-error" />}
-      <div className="actions">
-        <button type="button" data-testid="confirm-action" disabled={busy} onClick={confirm}>{WORDS[pending].verb}</button>
-        <button type="button" className="link" data-testid="cancel-action" onClick={cancel}>Cancel</button>
-      </div>
-    </section>
+    <>
+      {kind === 'vendorInvoices' ? (
+        active ? <span className="actions"><button type="button" data-testid="void-record" onClick={() => ask('void')}>Void</button></span> : null
+      ) : (
+        <span className="actions">
+          {active
+            ? <button type="button" className="link" data-testid="deactivate-record" onClick={() => ask('deactivate')}>Deactivate</button>
+            : <button type="button" className="link" data-testid="reactivate-record" onClick={() => ask('reactivate')}>Reactivate</button>}
+        </span>
+      )}
+      {pending && (
+        <ConfirmDialog wording={confirmWording(WORDS[pending].verb, label, `${WORDS[pending].line} The reason is kept in the audit trail.`)}
+          reason={{ label: 'Reason', testId: 'reason-input', required: true, multiline: true }}
+          tone={pending === 'reactivate' ? 'neutral' : 'danger'} busy={busy} onConfirm={(why) => void confirm(why)} onDismiss={cancel}>
+          {refusal && <ErrorBanner message={refusal} testId="action-error" />}
+        </ConfirmDialog>
+      )}
+    </>
   );
 }

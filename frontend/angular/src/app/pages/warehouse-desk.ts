@@ -27,6 +27,8 @@ import { StatusBadge } from './status-badge';
 import { WarehouseSetupLists } from './warehouse-setup-lists';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 type Tab = 'inbound' | 'stock' | 'outbound' | 'waves' | 'setup';
 type Columns = Array<[string, string]>;
@@ -106,7 +108,7 @@ export class WhTable {
  */
 @Component({
   selector: 'app-warehouse-floor',
-  imports: [ErrorBanner, FormsModule, WhTable, Qr, EntityPicker, StatusBadge, When, WarehouseSetupLists],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, WhTable, Qr, EntityPicker, StatusBadge, When, WarehouseSetupLists],
   template: `
     <section data-testid="warehouse-desk">
       @if (error()) { <app-error-banner [message]="error()" /> }
@@ -246,10 +248,11 @@ export class WhTable {
                   <button data-testid="pack-order" (click)="packOrder()">Pack</button>
                 }
                 @if (session.can('WAREHOUSE_OPERATE') && o.header['status'] === 'BACK_ORDERED') {
-                  <button data-testid="cancel-back-order" (click)="cancelBackOrder()">Cancel back order</button>
+                  <button data-testid="cancel-back-order" (click)="askCancelBackOrder(o.header['orderNo'])">Cancel back order</button>
                 }
                 <button class="link" data-testid="print-pick-list" (click)="pickList.set(true)">Print pick list</button>
               </p>
+              <app-confirm-host [(pending)]="pending" />
               @if (pickList()) {
                 <section class="slip manifest" data-testid="pick-list" aria-label="Pick list to print">
                   <h3>Pick list {{ o.header['orderNo'] }}</h3>
@@ -421,6 +424,8 @@ export class WhTable {
   `,
 })
 export class WarehouseFloor implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   readonly session = inject(Session);
 
@@ -684,7 +689,14 @@ export class WarehouseFloor implements OnInit {
     }
   }
 
-  async cancelBackOrder(): Promise<void> {
+  askCancelBackOrder(orderNo: string): void {
+    this.pending.set({
+      wording: confirmWording('Cancel back order', orderNo),
+      run: () => this.cancelBackOrder(),
+    });
+  }
+
+  private async cancelBackOrder(): Promise<void> {
     const id = this.orderId();
     if (id) {
       await this.act(() => this.gateway.cancelBackOrder(id), 'Back order cancelled.');

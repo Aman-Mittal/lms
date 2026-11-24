@@ -25,6 +25,8 @@ import { StatusBadge } from './status-badge';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
 import { ApprovalPolicies } from './approval-policies';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -40,7 +42,7 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
  */
 @Component({
   selector: 'app-approvals',
-  imports: [ApprovalPolicies, ErrorBanner, FormsModule, RowTable, PageHeader, StatusBadge, When],
+  imports: [ConfirmHost, ApprovalPolicies, ErrorBanner, FormsModule, RowTable, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Approvals" />
     <p class="muted">Requests waiting for somebody to agree before anything happens.</p>
@@ -68,6 +70,7 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
     @if (detail(); as d) {
       <section data-testid="approval-detail">
         <h2>{{ d.summary['summary'] }}</h2>
+        <app-confirm-host [(pending)]="pending" />
         <dl class="facts">
           <div><dt>Subject</dt><dd>{{ d.summary['subjectType'] }} {{ d.summary['action'] }}</dd></div>
           <div><dt>Status</dt><dd><app-status-badge data-testid="approval-status" [value]="d.summary['status']" /></dd></div>
@@ -102,7 +105,7 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
           </form>
         }
         @if (d.open && d.requestedByMe) {
-          <button type="button" data-testid="cancel-approval" (click)="cancel(d)">Cancel my request</button>
+          <button type="button" data-testid="cancel-approval" (click)="askCancel(d)">Cancel my request</button>
         }
       </section>
     }
@@ -110,6 +113,8 @@ const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   `,
 })
 export class Approvals implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
 
   readonly scopes = APPROVAL_SCOPES;
@@ -178,7 +183,14 @@ export class Approvals implements OnInit {
     return this.act('Rejected', d, () => this.gateway.rejectApproval(d.summary['id'], d.version, this.reason.trim()));
   }
 
-  cancel(d: ApprovalDetail): Promise<void> {
+  askCancel(d: ApprovalDetail): void {
+    this.pending.set({
+      wording: confirmWording('Cancel request', d.summary['summary'], 'The request is withdrawn; nobody needs to decide it.'),
+      run: () => this.cancel(d),
+    });
+  }
+
+  private cancel(d: ApprovalDetail): Promise<void> {
     return this.act('Cancelled', d, () => this.gateway.cancelApproval(d.summary['id'], d.version, ''));
   }
 

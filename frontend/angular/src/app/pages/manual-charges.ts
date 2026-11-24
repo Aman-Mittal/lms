@@ -23,6 +23,8 @@ import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { ErrorBanner } from './error-banner';
 import { EntityPicker } from './entity-picker';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 function valueOf(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -35,9 +37,10 @@ function valueOf(event: Event): string {
  */
 @Component({
   selector: 'app-manual-charges',
-  imports: [EntityPicker, ErrorBanner, PageHeader, StatusBadge, Money],
+  imports: [ConfirmHost, EntityPicker, ErrorBanner, PageHeader, StatusBadge, Money],
   template: `
     <app-page-header title="Manual charges" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">Detention, loading, tolls and penalties raised by hand against a trip, consignment or order.</p>
     @if (refusal(); as r) {
       <app-error-banner [message]="r.message" [code]="r.code" testId="mc-error" />
@@ -98,22 +101,10 @@ function valueOf(event: Event): string {
               <td>
                 @if ((c.status === 'PENDING_APPROVAL' || (c.status === 'APPROVED' && !c.billed))) {
                   <button type="button" class="link" data-testid="mc-cancel" [attr.aria-label]="'Cancel ' + c.chargeNo"
-                          (click)="startCancel(c.id)">Cancel</button>
+                          (click)="askCancel(c.id, c.chargeNo)">Cancel</button>
                 }
               </td>
             </tr>
-            @if (cancelling() === c.id) {
-              <tr data-testid="mc-cancel-row">
-                <td colspan="8">
-                  <form ngNativeValidate class="inline" (submit)="cancel($event, c.id)">
-                    <input placeholder="Why" aria-label="Cancel reason" data-testid="mc-cancel-reason" required
-                           [value]="cancelReason()" (input)="cancelReason.set(valueOf($event))" />
-                    <button type="submit" data-testid="mc-cancel-confirm">Cancel charge</button>
-                    <button type="button" class="link" (click)="cancelling.set('')">Keep</button>
-                  </form>
-                </td>
-              </tr>
-            }
           }
         </tbody>
       </table></div>
@@ -122,6 +113,8 @@ function valueOf(event: Event): string {
   `,
 })
 export class ManualCharges implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   protected readonly valueOf = valueOf;
   readonly subjectTypes = CHARGE_SUBJECT_TYPES;
@@ -146,8 +139,6 @@ export class ManualCharges implements OnInit {
   readonly rate = signal('');
   readonly reason = signal('');
   readonly evidence = signal('');
-  readonly cancelling = signal('');
-  readonly cancelReason = signal('');
 
   ratePlaceholder(): string {
     const entry = this.entries().find((e) => e.id === this.catalogue());
@@ -187,16 +178,17 @@ export class ManualCharges implements OnInit {
     });
   }
 
-  startCancel(id: string): void {
-    this.cancelling.set(id);
-    this.cancelReason.set('');
+  askCancel(id: string, chargeNo: string): void {
+    this.pending.set({
+      wording: confirmWording('Cancel charge', chargeNo),
+      reason: { label: 'Cancel reason', testId: 'mc-cancel-reason', placeholder: 'Why', required: true },
+      run: (why) => this.cancel(id, why),
+    });
   }
 
-  async cancel(event: Event, id: string): Promise<void> {
-    event.preventDefault();
+  private async cancel(id: string, reason: string): Promise<void> {
     await this.attempt(async () => {
-      await this.gateway.cancelManualCharge(id, this.cancelReason());
-      this.cancelling.set('');
+      await this.gateway.cancelManualCharge(id, reason);
       await this.load(false);
     });
   }

@@ -29,6 +29,8 @@ import { StatusBadge } from './status-badge';
 import { Money } from './figures';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** A refusal as the desk shows it: the problem's stable code, when it has one, and its message. */
 export interface Refusal {
@@ -271,7 +273,7 @@ export class TariffsPanel {
 /** Routing guides: who is offered a lane's loads, in what order, and how long each has to answer. */
 @Component({
   selector: 'app-guides-panel',
-  imports: [FormsModule, RefusalNote, EntityPicker, GuideVendors, StatusBadge],
+  imports: [ConfirmHost, FormsModule, RefusalNote, EntityPicker, GuideVendors, StatusBadge],
   template: `
     <section data-testid="guides">
       <h2>Routing guides</h2>
@@ -316,15 +318,18 @@ export class TariffsPanel {
                      [value]="agreedRate()" (input)="agreedRate.set($any($event.target).value)" />
               <button type="submit">Add vendor</button>
             </form>
-            <p><button class="link" data-testid="retire-guide" (click)="retire()">Retire guide</button></p>
+            <p><button class="link" data-testid="retire-guide" (click)="askRetire(d)">Retire guide</button></p>
           }
           <app-refusal [refusal]="actRefusal()" testId="guide-act-refusal" />
         </section>
       }
+      <app-confirm-host [(pending)]="pending" />
     </section>
   `,
 })
 export class GuidesPanel {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
@@ -393,7 +398,14 @@ export class GuidesPanel {
     }
   }
 
-  async retire(): Promise<void> {
+  askRetire(d: RoutingGuideDetail): void {
+    this.pending.set({
+      wording: confirmWording('Retire guide', `${d.guide['originTerminalCode']} to ${d.guide['destinationTerminalCode']}, ${d.guide['vehicleType']}`),
+      run: () => this.retire(),
+    });
+  }
+
+  private async retire(): Promise<void> {
     this.actRefusal.set(null);
     try {
       await this.gateway.retireRoutingGuide(this.guideId());
@@ -407,7 +419,7 @@ export class GuidesPanel {
 /** Allocations: a load offered to the vendors its guide names, one at a time, until one accepts. */
 @Component({
   selector: 'app-allocations-panel',
-  imports: [FormsModule, RefusalNote, EntityPicker, StatusBadge, When],
+  imports: [ConfirmHost, FormsModule, RefusalNote, EntityPicker, StatusBadge, When],
   template: `
     <section data-testid="allocations">
       <h2>Allocations</h2>
@@ -476,15 +488,18 @@ export class GuidesPanel {
             </tbody>
           </table></div>
           @if (act() && d.allocation['status'] !== 'CANCELLED' && d.allocation['status'] !== 'AWARDED') {
-            <p><button class="link" data-testid="cancel-allocation" (click)="cancel()">Cancel allocation</button></p>
+            <p><button class="link" data-testid="cancel-allocation" (click)="askCancel(d.allocation['loadNo'])">Cancel allocation</button></p>
           }
         </section>
       }
       <app-refusal [refusal]="actRefusal()" testId="allocation-refusal" />
+      <app-confirm-host [(pending)]="pending" />
     </section>
   `,
 })
 export class AllocationsPanel implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
 
   readonly act = input(false);
@@ -544,8 +559,11 @@ export class AllocationsPanel implements OnInit {
     return this.respond(() => this.gateway.rejectOffer(this.openId() ?? '', vendorPartnerId));
   }
 
-  cancel(): Promise<void> {
-    return this.respond(() => this.gateway.cancelAllocation(this.openId() ?? ''));
+  askCancel(loadNo: string): void {
+    this.pending.set({
+      wording: confirmWording('Cancel allocation', loadNo, 'No more vendors are offered the load.'),
+      run: () => this.respond(() => this.gateway.cancelAllocation(this.openId() ?? '')),
+    });
   }
 
   private async respond(action: () => Promise<void>): Promise<void> {

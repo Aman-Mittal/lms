@@ -25,6 +25,8 @@ import { TripMoney } from './TripMoney';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** A trip's track so far and where it is now. */
 export function TripRoute() {
@@ -39,8 +41,7 @@ export function TripRoute() {
   const stops = useLoad(() => (tripId ? gateway.tripStops(tripId) : Promise.resolve([] as TripStopView[])),
     `${tripId}:${reread}`);
   const [stopError, setStopError] = useState('');
-  const [skipping, setSkipping] = useState('');
-  const [skipReason, setSkipReason] = useState('');
+  const confirm = useConfirm();
   // Each "Show route" counts, so the money panel re-reads even when the trip is the same one.
   const [lookups, setLookups] = useState(0);
 
@@ -54,16 +55,10 @@ export function TripRoute() {
     setStopError('');
     try {
       await action();
-      setSkipping('');
     } catch (e) {
       setStopError((e as Error).message);
     }
     setReread((n) => n + 1);
-  }
-
-  function skip(event: FormEvent, stop: TripStopView) {
-    event.preventDefault();
-    void act(() => gateway.skipStop(tripId, stop.id, skipReason));
   }
 
   return (
@@ -125,7 +120,11 @@ export function TripRoute() {
                               onClick={() => void act(() => gateway.arriveAtStop(tripId, s.id))}>Arrive</button>
                             <button type="button" className="link" data-testid="stop-skip"
                               aria-label={`Skip ${s.terminalCode}`}
-                              onClick={() => { setSkipping(s.id); setSkipReason(''); }}>Skip</button>
+                              onClick={() => confirm.ask({
+                                wording: confirmWording('Skip stop', s.terminalCode),
+                                reason: { label: 'Why the stop is skipped', testId: 'stop-skip-reason', placeholder: 'Why', required: true },
+                                run: (why) => act(() => gateway.skipStop(tripId, s.id, why)),
+                              })}>Skip</button>
                           </>
                         )}
                         {can('TRIP_EXECUTE') && s.status === 'ARRIVED' && (
@@ -135,18 +134,6 @@ export function TripRoute() {
                         )}
                       </td>
                     </tr>
-                    {skipping === s.id && (
-                      <tr data-testid="stop-skip-row">
-                        <td colSpan={9}>
-                          <form className="inline" data-testid="stop-skip-form" onSubmit={(e) => skip(e, s)}>
-                            <input placeholder="Why" aria-label="Skip reason" data-testid="stop-skip-reason" required
-                              value={skipReason} onChange={(e) => setSkipReason(e.target.value)} />
-                            <button type="submit" data-testid="stop-skip-confirm">Skip stop</button>
-                            <button type="button" className="link" onClick={() => setSkipping('')}>Keep</button>
-                          </form>
-                        </td>
-                      </tr>
-                    )}
                   </Fragment>
                 ))}
               </tbody>
@@ -154,6 +141,7 @@ export function TripRoute() {
           )}
         </section>
       )}
+      {confirm.dialog}
       {route.data && tripId && <TripMoney key={`${tripId}:${lookups}`} tripId={tripId} />}
     </>
   );

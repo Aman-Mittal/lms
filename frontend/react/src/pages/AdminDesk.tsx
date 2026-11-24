@@ -26,6 +26,8 @@ import { CONFLICT_TEXT } from './MasterDataForm';
 import { RowTable } from './RowTable';
 import { PageHeader } from './PageHeader';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** The picker each kind of document owner is chosen with. */
 const OWNER_PICKS: Record<DocumentOwnerType, PickKind> = { PARTNER: 'partner', VEHICLE: 'vehicle', DRIVER: 'driver' };
@@ -335,6 +337,7 @@ function PolicyDetail({ policy, onClose, onChanged, onStale, onDeleted }: {
 }) {
   const { gateway } = useSession();
   const { refusal, message, act } = useOutcome();
+  const confirm = useConfirm();
   const [effect, setEffect] = useState<PolicyEffect>(policy.effect);
   const [description, setDescription] = useState(policy.description);
   const [condition, setCondition] = useState(policy.condition);
@@ -373,9 +376,12 @@ function PolicyDetail({ policy, onClose, onChanged, onStale, onDeleted }: {
         <PolicyFields effect={effect} setEffect={setEffect} description={description} setDescription={setDescription}
           condition={condition} setCondition={setCondition} enabled={enabled} setEnabled={setEnabled} />
         <button type="submit" data-testid="save-policy">Save policy</button>
-        <button type="button" data-testid="delete-policy" onClick={remove}>Delete</button>
+        <button type="button" data-testid="delete-policy" onClick={() => confirm.ask({
+          wording: confirmWording('Delete policy', policy.code, 'This cannot be undone.'), run: remove,
+        })}>Delete</button>
       </form>
       <Outcome refusal={refusal} message={message} />
+      {confirm.dialog}
     </section>
   );
 }

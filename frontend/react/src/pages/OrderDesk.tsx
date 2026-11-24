@@ -29,6 +29,8 @@ import { Quantity } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
 import { OrderCloseSettings } from './OrderCloseSettings';
 import { OrderLineOps } from './OrderLineOps';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** The editable part of a stored line, as an edit restates it. */
 function draftOf(line: OrderLineView): OrderLineDraft {
@@ -208,7 +210,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
   const [lines, setLines] = useState<OrderLineDraft[]>(editableLines(desk.lines));
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [done, setDone] = useState('');
-  const [reason, setReason] = useState('');
+  const confirm = useConfirm();
   const [closeReason, setCloseReason] = useState('');
   const [slip, setSlip] = useState(false);
   const [tab, setTab] = useState<'details' | 'history'>('details');
@@ -262,7 +264,7 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
    * raises the request and says so; the order stays as it is until somebody
    * else approves it in the Approvals inbox.
    */
-  async function cancelOrder() {
+  async function cancelOrder(reason: string) {
     const result = { pending: false };
     await act('Order cancelled.', async () => {
       result.pending = (await gateway.cancelOrder(order.id, reason)) !== null;
@@ -397,7 +399,10 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
                   )}
                   {draft && can('ORDER_UPDATE') && desk.lines.length > 1 && (
                     <button type="button" className="link" data-testid="remove-line"
-                      onClick={() => act(`Line ${l.lineNo} removed.`, () => gateway.removeOrderLine(order.id, version, l.id))}>
+                      onClick={() => confirm.ask({
+                        wording: confirmWording('Remove line', String(l.lineNo), '', `from order ${order.orderNo}`),
+                        run: () => act(`Line ${l.lineNo} removed.`, () => gateway.removeOrderLine(order.id, version, l.id)),
+                      })}>
                       Remove
                     </button>
                   )}
@@ -538,12 +543,14 @@ function OrderPanel({ desk, onChanged }: { desk: Desk; onChanged: () => void }) 
               </button>
             )}
           </p>
-          <form className="inline" data-testid="cancel-order"
-            onSubmit={(e) => { e.preventDefault(); void cancelOrder(); }}>
-            <input aria-label="Cancellation reason" placeholder="Why it is cancelled (optional)" value={reason}
-              onChange={(e) => setReason(e.target.value)} />
-            <button type="submit">Cancel order</button>
-          </form>
+          <p className="actions" data-testid="cancel-order">
+            <button type="button" onClick={() => confirm.ask({
+              wording: confirmWording('Cancel order', order.orderNo),
+              reason: { label: 'Cancellation reason', testId: 'cancel-order-reason', placeholder: 'Why it is cancelled (optional)' },
+              run: cancelOrder,
+            })}>Cancel order</button>
+          </p>
+          {confirm.dialog}
         </section>
       )}
 

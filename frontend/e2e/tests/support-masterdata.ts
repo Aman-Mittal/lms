@@ -236,7 +236,7 @@ export const TESTIDS = {
   list: ['row', 'status-filter', 'new-record'],
   panel: ['record-panel', 'edit-record', 'deactivate-record', 'reactivate-record', 'blacklist-record'],
   form: ['record-form', 'save-record', 'cancel-form', 'form-error', 'conflict-notice'],
-  confirm: ['confirm-panel', 'reason-input', 'reason-error', 'confirm-action', 'cancel-action', 'action-error'],
+  confirm: ['confirm-dialog', 'reason-input', 'reason-error', 'confirm-accept', 'confirm-dismiss', 'action-error'],
   fields: [
     'field-code', 'field-legalName', 'field-partnerType', 'field-taxId', 'field-paymentTerms', 'field-billingAddress',
     'field-registrationNo', 'field-category', 'field-vehicleType', 'field-axleConfig', 'field-grossWeightKg',

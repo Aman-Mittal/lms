@@ -15,7 +15,7 @@
  */
 
 import { expect, test } from '@playwright/test';
-import { registerPartner, retireFields, signIn, signOut, tag } from './support';
+import { registerPartner, retireFields, signIn, signOut, tag, confirm } from './support';
 
 /*
  * The whole custom-fields story as a person lives it, in one test so that the
@@ -111,8 +111,7 @@ test('define custom fields, fill them in on a partner, and retire them', async (
       await page.getByTestId('status-filter').selectOption('ALL');
       for (const key of [poKey, tierKey]) {
         await page.getByTestId(`def-${key}`).getByTestId('deactivate-record').click();
-        await page.getByTestId('reason-input').fill('Not needed any more');
-        await page.getByTestId('confirm-action').click();
+        await confirm(page, 'Not needed any more');
         await expect(page.getByTestId(`def-${key}`)).toContainText('Inactive');
       }
 

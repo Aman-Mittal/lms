@@ -25,6 +25,8 @@ import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
 import { ApprovalPolicies } from './ApprovalPolicies';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 const SCOPE_LABELS: Record<ApprovalScopeName, string> = {
   MINE_TO_DECIDE: 'Mine to decide', REQUESTED_BY_ME: 'Requested by me', ALL: 'Everything',
@@ -93,6 +95,7 @@ export function ApprovalsPage() {
 
 function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
   const { gateway } = useSession();
+  const confirm = useConfirm();
   const detail = useLoad(() => gateway.approval(id), id);
   const [note, setNote] = useState('');
   const [reason, setReason] = useState('');
@@ -160,10 +163,14 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
       )}
       {d.open && d.requestedByMe && (
         <button type="button" data-testid="cancel-approval"
-          onClick={() => void act('Cancelled', () => gateway.cancelApproval(id, d.version, ''))}>
+          onClick={() => confirm.ask({
+            wording: confirmWording('Cancel request', s.summary, 'The request is withdrawn; nobody needs to decide it.'),
+            run: () => act('Cancelled', () => gateway.cancelApproval(id, d.version, '')),
+          })}>
           Cancel my request
         </button>
       )}
+      {confirm.dialog}
     </section>
   );
 }

@@ -21,6 +21,8 @@ import type { TripCard, TripRaiseDraft, TripStep } from '../gateway/tripDeskType
 import { EntityPicker } from '../EntityPicker';
 import { useSession } from '../session';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 
@@ -75,7 +77,7 @@ export function TripDesk() {
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [vehicleId, setVehicleId] = useState('');
   const [driverId, setDriverId] = useState('');
-  const [reason, setReason] = useState('');
+  const confirm = useConfirm();
   const execute = can('TRIP_EXECUTE');
 
   async function refresh(id: string) {
@@ -96,7 +98,6 @@ export function TripDesk() {
       setStops([]);
       setDone('');
       setRefusal(null);
-      setReason('');
       setVehicleId('');
       setDriverId('');
     }
@@ -131,7 +132,6 @@ export function TripDesk() {
     setRefusal(null);
     try {
       await change();
-      setReason('');
       setDone(outcome);
     } catch (e) {
       setRefusal(problem(e));
@@ -227,15 +227,16 @@ export function TripDesk() {
             </p>
           )}
           {execute && CANCELLABLE.includes(trip.status) && (
-            <form className="inline" data-testid="trip-cancel-form" onSubmit={(ev) => {
-              ev.preventDefault();
-              void act(trip, 'The trip is cancelled.', () => gateway.cancelTrip(trip.id, reason));
-            }}>
-              <input name="cancelReason" placeholder="Reason for cancelling" aria-label="Reason for cancelling the trip"
-                data-testid="trip-cancel-reason" required value={reason} onChange={(ev) => setReason(ev.target.value)} />
-              <button type="submit" data-testid="trip-cancel">Cancel trip</button>
-            </form>
+            <p className="actions" data-testid="trip-cancel-form">
+              <button type="button" data-testid="trip-cancel" onClick={() => confirm.ask({
+                wording: confirmWording('Cancel trip', trip.tripNo),
+                reason: { label: 'Reason for cancelling the trip', testId: 'trip-cancel-reason', placeholder: 'Reason for cancelling', required: true },
+                run: (why) => act(trip, 'The trip is cancelled.', () => gateway.cancelTrip(trip.id, why)),
+              })}>Cancel trip</button>
+            </p>
           )}
+
+          {confirm.dialog}
 
           <h3>Stops</h3>
           {stopError && <ErrorBanner message={stopError} testId="trip-stop-error" />}

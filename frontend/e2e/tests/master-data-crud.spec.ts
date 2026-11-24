@@ -56,9 +56,9 @@ async function openPanel(page: Page, id: string) {
 
 async function switchOff(page: Page, button: string, reason: string) {
   await page.getByTestId(button).click();
-  await expect(page.getByTestId('confirm-panel')).toBeVisible();
+  await expect(page.getByTestId('confirm-dialog')).toBeVisible();
   await page.getByTestId('reason-input').fill(reason);
-  await page.getByTestId('confirm-action').click();
+  await page.getByTestId('confirm-accept').click();
 }
 
 test.describe('lists', () => {
@@ -150,12 +150,12 @@ test.describe('partners', () => {
     await openPanel(page, id);
 
     await page.getByTestId('deactivate-record').click();
-    await expect(page.getByTestId('confirm-panel')).toBeVisible();
-    await page.getByTestId('confirm-action').click();
+    await expect(page.getByTestId('confirm-dialog')).toBeVisible();
+    await page.getByTestId('confirm-accept').click();
     await expect(page.getByTestId('reason-error')).toBeVisible();
     expect(stub.changes).toHaveLength(0);
-    await page.getByTestId('cancel-action').click();
-    await expect(page.getByTestId('confirm-panel')).toHaveCount(0);
+    await page.getByTestId('confirm-dismiss').click();
+    await expect(page.getByTestId('confirm-dialog')).toHaveCount(0);
 
     await switchOff(page, 'deactivate-record', 'Credit review');
     await expect(rowFor(page, id)).toHaveCount(0);
@@ -321,7 +321,7 @@ test.describe('terminals', () => {
     await expect(rowFor(page, id)).toBeVisible();
 
     stub.busyTerminals.clear();
-    await page.getByTestId('confirm-action').click();
+    await page.getByTestId('confirm-accept').click();
     await expect(rowFor(page, id)).toHaveCount(0);
 
     await page.getByTestId('status-filter').selectOption('INACTIVE');
