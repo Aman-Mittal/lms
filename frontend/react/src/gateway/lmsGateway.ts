@@ -37,6 +37,7 @@ import type {
   ApprovalPolicyDraft, ApprovalPolicyRow, CorridorDraft, CorridorRow, EwayRecordDraft, LineCancellationView,
   OrderCloseSettingsView, SeriesRevisionDraft, SeriesRevisionState,
 } from './smallOpsTypes';
+import type { MarginPage, ServiceUsageDraft, StorageMonthView } from './clientBillingFormTypes';
 import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
 } from './enquiryTypes';
@@ -1264,6 +1265,16 @@ export interface LmsGateway {
   /** Invoices, credit notes and payments in the order they happened, with the running balance. */
   clientStatement(clientId: string): Promise<Row[]>;
   clientAgeing(clientId: string): Promise<ClientAgeingView>;
+  /** Lets a user sign in to the client's portal; needs CLIENT_CONTRACT_MANAGE. */
+  grantPortalAccess(clientId: string, userId: string): Promise<void>;
+  /** Records one usage of a service by hand and resolves to its charge's id; needs CLIENT_BILLING_RUN. */
+  recordServiceUsage(clientId: string, draft: ServiceUsageDraft): Promise<string>;
+  /** Computes the month's storage from the warehouse ledger and charges it; idempotent per month; needs CLIENT_BILLING_RUN. */
+  computeClientStorage(clientId: string, period: string): Promise<StorageMonthView>;
+  /** The client's storage in the month holding `period`, whether or not it has been computed. */
+  clientStorage(clientId: string, period: string): Promise<StorageMonthView>;
+  /** The margin report of the month holding `period`, a page at a time; needs CLIENT_MARGIN_READ. */
+  clientMargins(period: string, cursor?: string): Promise<MarginPage>;
 
   // Warehouse operations
   /** Terminals whose category is WAREHOUSE. */
