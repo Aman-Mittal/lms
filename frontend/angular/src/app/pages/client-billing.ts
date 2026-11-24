@@ -19,6 +19,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiProblem, ClientAgeingView, ClientInvoiceDetail, LmsGateway, Row } from '../gateway/lms-gateway';
 import { Session } from '../session';
 import { EntityPicker } from './entity-picker';
+import { ClientBillingForms, MarginReport } from './client-billing-forms';
 import { ContractLifecycle } from './contract-lifecycle';
 import { CREDIT_LIMIT_EXCEEDED, CreditOverride, CreditPositionPanel } from './credit';
 import { PageHeader } from './page-header';
@@ -98,7 +99,7 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
  */
 @Component({
   selector: 'app-client-desk',
-  imports: [EntityPicker, ErrorBanner, FormsModule, BillingTable, ContractLifecycle, CreditPositionPanel, CreditOverride, Money, When],
+  imports: [EntityPicker, ErrorBanner, FormsModule, BillingTable, ClientBillingForms, ContractLifecycle, CreditPositionPanel, CreditOverride, Money, When],
   template: `
     <section data-testid="client-desk">
       @if (error()) { <app-error-banner [message]="error()" /> }
@@ -237,6 +238,8 @@ const STATEMENT_COLUMNS: Array<[string, string]> = [
         @if (paid()) { <p data-testid="payment-recorded">Payment {{ paid() }} recorded.</p> }
         @if (payError()) { <app-error-banner [message]="payError()" /> }
       }
+
+      <app-client-billing-forms [clientId]="clientId()" (changed)="refresh()" />
 
       <h2>Ageing</h2>
       @if (ageing(); as a) {
@@ -441,7 +444,7 @@ export class ClientDesk implements OnInit {
 /** Opens a 3PL client's billing desk by its partner id. */
 @Component({
   selector: 'app-client-billing',
-  imports: [FormsModule, ClientDesk, EntityPicker, PageHeader],
+  imports: [FormsModule, ClientDesk, EntityPicker, MarginReport, PageHeader],
   template: `
     <app-page-header title="Client billing" />
     <p class="muted">
@@ -457,6 +460,7 @@ export class ClientDesk implements OnInit {
     @for (id of opened(); track id) {
       <app-client-desk [clientId]="id" />
     }
+    <app-margin-report />
   `,
 })
 export class ClientBilling {
