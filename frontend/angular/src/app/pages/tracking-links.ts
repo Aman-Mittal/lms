@@ -25,13 +25,16 @@ import { PageHeader } from './page-header';
 import { StatusBadge } from './status-badge';
 import { When } from './when';
 import { ErrorBanner } from './error-banner';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 @Component({
   selector: 'app-tracking-links',
-  imports: [ErrorBanner, FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, Qr, EntityPicker, PageHeader, StatusBadge, When],
   template: `
     <app-page-header title="Tracking links" />
+    <app-confirm-host [(pending)]="pending" />
     <p class="muted">
       Give a customer a link to follow a consignment without signing in. A link's secret is shown once, when it is issued.
     </p>
@@ -97,7 +100,7 @@ import { ErrorBanner } from './error-banner';
                     <td>{{ (l.revokedAt || '—') | when }}</td>
                     <td>
                       @if (l.status === 'ACTIVE') {
-                        <button class="link" data-testid="revoke-link" (click)="revoke(l.id)">Revoke</button>
+                        <button class="link" data-testid="revoke-link" (click)="askRevoke(l.id, l.createdAt)">Revoke</button>
                       }
                     </td>
                   </tr>
@@ -111,6 +114,8 @@ import { ErrorBanner } from './error-banner';
   `,
 })
 export class TrackingLinks {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
@@ -150,7 +155,14 @@ export class TrackingLinks {
     }
   }
 
-  async revoke(id: string): Promise<void> {
+  askRevoke(id: string, createdAt: string): void {
+    this.pending.set({
+      wording: confirmWording('Revoke link', `issued ${createdAt}`, 'Anyone holding it can no longer track the consignment.'),
+      run: () => this.revoke(id),
+    });
+  }
+
+  private async revoke(id: string): Promise<void> {
     this.error.set('');
     try {
       await this.gateway.revokeTrackingLink(id);

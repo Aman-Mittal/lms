@@ -24,6 +24,8 @@ import { trackingUrl } from './trackingUrl';
 import { PageHeader } from './PageHeader';
 import { StatusBadge } from './StatusBadge';
 import { ErrorBanner } from './ErrorBanner';
+import { useConfirm } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 /** Issue, list, revoke and print the links a customer follows a consignment by. */
 export function TrackingLinks() {
@@ -84,6 +86,7 @@ interface PanelProps {
 
 function Panel({ consignmentId, links, issued, onIssued, onChanged }: PanelProps) {
   const { gateway } = useSession();
+  const confirm = useConfirm();
   const [error, setError] = useState('');
   const [days, setDays] = useState('30');
   const [slip, setSlip] = useState(false);
@@ -177,7 +180,10 @@ function Panel({ consignmentId, links, issued, onIssued, onChanged }: PanelProps
                 <td>{l.revokedAt || '—'}</td>
                 <td>
                   {l.status === 'ACTIVE' && (
-                    <button className="link" data-testid="revoke-link" onClick={() => revoke(l.id)}>Revoke</button>
+                    <button className="link" data-testid="revoke-link" onClick={() => confirm.ask({
+                      wording: confirmWording('Revoke link', `issued ${l.createdAt}`, 'Anyone holding it can no longer track the consignment.'),
+                      run: () => revoke(l.id),
+                    })}>Revoke</button>
                   )}
                 </td>
               </tr>
@@ -185,6 +191,7 @@ function Panel({ consignmentId, links, issued, onIssued, onChanged }: PanelProps
           </tbody>
         </table></div>
       )}
+      {confirm.dialog}
     </section>
   );
 }
