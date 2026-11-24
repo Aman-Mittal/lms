@@ -149,6 +149,7 @@ test.describe('load maintenance', () => {
 
     await test.step('the middle consignment comes off and the drops close up', async () => {
       await page.getByRole('button', { name: `Remove ${middle.trackingRef}` }).click();
+      await confirm(page);
       await expect(page.getByTestId('load-done')).toHaveText(`${middle.trackingRef} is off the load.`);
       await expect(page.getByTestId('load-count')).toHaveText('2');
       await expect(page.getByTestId('load-weight')).toContainText('200');
@@ -205,12 +206,14 @@ test.describe('load maintenance', () => {
 
     await removeFromLoadElsewhere(request, session, bulk.loadId, taken.id);
     await page.getByRole('button', { name: `Remove ${left.trackingRef}` }).click();
+    await confirm(page);
 
     await expect(page.getByTestId('load-refusal')).toHaveText('concurrent-modification');
     await expect(page.getByTestId('aboard-row')).toHaveCount(1);
     await expect(page.getByTestId('load-count')).toHaveText('1');
     await test.step('at the version now on screen the change goes through', async () => {
       await page.getByRole('button', { name: `Remove ${left.trackingRef}` }).click();
+      await confirm(page);
       await expect(page.getByTestId('load-done')).toHaveText(`${left.trackingRef} is off the load.`);
       await expect(page.getByTestId('nothing-aboard')).toBeVisible();
     });

@@ -21,6 +21,8 @@ import { APPROVAL_EXPIRIES, ApprovalPolicyDraft, ApprovalPolicyRow } from '../ga
 import { Session } from '../session';
 import { ErrorBanner } from './error-banner';
 import { RowColumn, RowTable } from './row-table';
+import { ConfirmHost } from './confirm-dialog';
+import { confirmWording, type PendingConfirm } from '../../../../shared/confirm';
 
 const COLUMNS: RowColumn[] = [
   { header: 'Subject', field: 'subjectType' }, { header: 'Approval asked', field: 'required' },
@@ -42,10 +44,11 @@ function draftOf(p: ApprovalPolicyRow): ApprovalPolicyDraft {
  */
 @Component({
   selector: 'app-approval-policies',
-  imports: [ErrorBanner, FormsModule, RowTable],
+  imports: [ConfirmHost, ErrorBanner, FormsModule, RowTable],
   template: `
     <section data-testid="approval-policies">
       <h2>Approval policies</h2>
+      <app-confirm-host [(pending)]="pending" />
       <p class="muted">What each kind of request needs before it goes ahead, for the whole organisation.</p>
       @if (error().message) { <app-error-banner [message]="error().message" [code]="error().code" testId="apol-error" /> }
       @if (done()) { <p class="ok" role="status" data-testid="apol-done">{{ done() }}</p> }
@@ -85,7 +88,7 @@ function draftOf(p: ApprovalPolicyRow): ApprovalPolicyDraft {
               }
             </select>
             <button type="submit" data-testid="apol-set">Set policy</button>
-            <button type="button" class="link" data-testid="apol-reset" (click)="reset(p)">Reset to default</button>
+            <button type="button" class="link" data-testid="apol-reset" (click)="askReset(p)">Reset to default</button>
           </form>
         }
       }
@@ -93,6 +96,8 @@ function draftOf(p: ApprovalPolicyRow): ApprovalPolicyDraft {
   `,
 })
 export class ApprovalPolicies implements OnInit {
+  /** The destructive action waiting for its confirmation, shown by the confirm host in the template. */
+  protected readonly pending = signal<PendingConfirm | null>(null);
   private readonly gateway = inject(LmsGateway);
   private readonly session = inject(Session);
 
@@ -138,7 +143,14 @@ export class ApprovalPolicies implements OnInit {
     });
   }
 
-  reset(p: ApprovalPolicyRow): Promise<void> {
+  askReset(p: ApprovalPolicyRow): void {
+    this.pending.set({
+      wording: confirmWording('Reset policy', p.subjectType, 'Its settings go back to the default.'),
+      run: () => this.reset(p),
+    });
+  }
+
+  private reset(p: ApprovalPolicyRow): Promise<void> {
     return this.run(async () => {
       this.replace(await this.gateway.resetApprovalPolicy(p.subjectType));
       this.done.set(`Policy for ${p.subjectType} reset to the default.`);
