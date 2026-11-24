@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { MasterKind, MasterSwitch } from '../gateway/lmsGateway';
 import { useSession } from '../session';
 import { CONFLICT_TEXT } from './MasterDataForm';
 import { EDIT_PERMISSION, KIND_LABEL } from './masterDataFields';
 import { ApiProblem } from '../gateway/lmsGateway';
 import { ErrorBanner } from './ErrorBanner';
+import { ConfirmDialog } from './ConfirmDialog';
+import { confirmWording } from '../../../shared/confirm';
 
 interface Props {
   kind: MasterKind;
@@ -40,13 +42,8 @@ const VERB: Record<MasterSwitch, string> = { deactivate: 'Deactivate', reactivat
 export function MasterDataActions({ kind, id, name, status, version, onEdit, onSwitched }: Props) {
   const { can, gateway } = useSession();
   const [pending, setPending] = useState<MasterSwitch | null>(null);
-  const [reason, setReason] = useState('');
-  const [reasonError, setReasonError] = useState('');
   const [refusal, setRefusal] = useState('');
   const [busy, setBusy] = useState(false);
-  const box = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => { if (pending) { box.current?.focus(); } }, [pending]);
 
   const canEdit = can(EDIT_PERMISSION[kind]);
   const canOff = kind === 'terminals' ? can('TERMINAL_DELETE') : canEdit;
@@ -57,22 +54,15 @@ export function MasterDataActions({ kind, id, name, status, version, onEdit, onS
 
   function ask(action: MasterSwitch) {
     setPending(action);
-    setReason('');
-    setReasonError('');
     setRefusal('');
   }
 
-  async function confirm() {
+  async function confirm(reason: string) {
     if (!pending) { return; }
-    if (!reason.trim()) {
-      setReasonError('A reason is required.');
-      return;
-    }
-    setReasonError('');
     setRefusal('');
     setBusy(true);
     try {
-      await gateway.switchMasterRecord(kind, id, pending, reason.trim(), version);
+      await gateway.switchMasterRecord(kind, id, pending, reason, version);
       setPending(null);
       onSwitched();
     } catch (e) {
@@ -88,31 +78,21 @@ export function MasterDataActions({ kind, id, name, status, version, onEdit, onS
 
   return (
     <>
-      {!pending && (
-        <div className="actions">
-          {canEdit && <button type="button" data-testid="edit-record" onClick={onEdit}>Edit</button>}
-          {canOff && offAction && <button type="button" data-testid="deactivate-record" onClick={() => ask('deactivate')}>Deactivate</button>}
-          {canOff && onAction && <button type="button" data-testid="reactivate-record" onClick={() => ask('reactivate')}>Reactivate</button>}
-          {canOff && blacklist && <button type="button" data-testid="blacklist-record" onClick={() => ask('blacklist')}>Blacklist</button>}
-        </div>
-      )}
+      <div className="actions">
+        {canEdit && <button type="button" data-testid="edit-record" onClick={onEdit}>Edit</button>}
+        {canOff && offAction && <button type="button" data-testid="deactivate-record" onClick={() => ask('deactivate')}>Deactivate</button>}
+        {canOff && onAction && <button type="button" data-testid="reactivate-record" onClick={() => ask('reactivate')}>Reactivate</button>}
+        {canOff && blacklist && <button type="button" data-testid="blacklist-record" onClick={() => ask('blacklist')}>Blacklist</button>}
+      </div>
       {pending && (
-        <section className="confirm" role="group" aria-label={`${VERB[pending]} ${thing}`} data-testid="confirm-panel">
-          <p><strong>{VERB[pending]} {name}?</strong>{' '}
-            {pending === 'blacklist' ? 'A blacklisted partner cannot be reinstated.'
-              : pending === 'reactivate' ? `The ${thing} will be available again.`
-                : `The ${thing} is kept, but can no longer be used until it is reactivated.`}</p>
-          <label htmlFor="md-reason">Reason</label>
-          <textarea id="md-reason" ref={box} rows={2} data-testid="reason-input" value={reason}
-            aria-invalid={reasonError ? true : undefined} aria-describedby={reasonError ? 'md-reason-error' : undefined}
-            onChange={(e) => setReason(e.target.value)} />
-          {reasonError && <small id="md-reason-error" className="error" role="alert" data-testid="reason-error">{reasonError}</small>}
+        <ConfirmDialog
+          wording={confirmWording(VERB[pending], name, pending === 'blacklist' ? 'A blacklisted partner cannot be reinstated.'
+            : pending === 'reactivate' ? `The ${thing} will be available again.`
+              : `The ${thing} is kept, but can no longer be used until it is reactivated.`)}
+          reason={{ label: 'Reason', testId: 'reason-input', required: true, multiline: true }}
+          tone={pending === 'reactivate' ? 'neutral' : 'danger'} busy={busy} onConfirm={(why) => void confirm(why)} onDismiss={() => setPending(null)}>
           {refusal && <ErrorBanner message={refusal} testId="action-error" />}
-          <div className="actions">
-            <button type="button" data-testid="confirm-action" disabled={busy} onClick={confirm}>{VERB[pending]}</button>
-            <button type="button" className="link" data-testid="cancel-action" onClick={() => setPending(null)}>Cancel</button>
-          </div>
-        </section>
+        </ConfirmDialog>
       )}
     </>
   );
