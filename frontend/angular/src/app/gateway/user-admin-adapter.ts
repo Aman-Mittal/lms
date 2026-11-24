@@ -67,6 +67,7 @@ export class UserAdminAdapter {
     return this.call(this.admin.createUser({
       createUserRequest: {
         email: draft.email.trim(), password: draft.password, fullName: draft.fullName.trim(), roles: draft.roles,
+        orgUnitId: draft.orgUnitId || undefined,
       },
     }), (r) => text(r.id));
   }
