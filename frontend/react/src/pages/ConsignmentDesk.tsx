@@ -25,6 +25,8 @@ import { Quantity } from './Figures';
 import { ErrorBanner } from './ErrorBanner';
 import { useConfirm } from './ConfirmDialog';
 import { confirmWording } from '../../../shared/confirm';
+import { PARTICULAR_FIELDS } from '../../../shared/consignment-bulk';
+import { ConsignmentRegister } from './ConsignmentRegister';
 
 /**
  * The consignment desk: find a consignment by its reference, see where it is,
@@ -65,6 +67,7 @@ export function ConsignmentDesk() {
           onOpen={(id) => { setTarget({ id }); setReload((n) => n + 1); }}
           onChanged={() => setReload((n) => n + 1)} />
       )}
+      <ConsignmentRegister />
     </>
   );
 }
@@ -253,16 +256,6 @@ function SplitForm({ consignment: c, onSplit }: { consignment: ConsignmentCard; 
     </section>
   );
 }
-
-const PARTICULAR_FIELDS: { key: keyof ConsignmentParticularsDraft; label: string }[] = [
-  { key: 'contactName', label: 'Contact name' },
-  { key: 'contactPhone', label: 'Contact phone' },
-  { key: 'consigneeReference', label: 'Consignee reference' },
-  { key: 'clientReference', label: 'Client reference' },
-  { key: 'deliveryWindowFrom', label: 'Deliver from' },
-  { key: 'deliveryWindowTo', label: 'Deliver by' },
-  { key: 'remarks', label: 'Remarks' },
-];
 
 interface Refusal {
   code: string;
