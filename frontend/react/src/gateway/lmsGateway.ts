@@ -37,6 +37,7 @@ import type {
   ApprovalPolicyDraft, ApprovalPolicyRow, CorridorDraft, CorridorRow, EwayRecordDraft, LineCancellationView,
   OrderCloseSettingsView, SeriesRevisionDraft, SeriesRevisionState,
 } from './smallOpsTypes';
+import type { BulkAmendItem, BulkConsignmentOutcome, ConsignmentListPage } from './consignmentBulkTypes';
 import type { MarginPage, ServiceUsageDraft, StorageMonthView } from './clientBillingFormTypes';
 import type {
   EnquiryConverted, EnquiryDesk, EnquiryDraft, EnquiryFilter, EnquiryPage, OutcomeDraft, QuoteDraft, UploadOutcome,
@@ -940,6 +941,12 @@ export interface LmsGateway {
    * why, such as `consignment-from-warehouse` or `consignment-dispatched`.
    */
   cancelConsignment(id: string, reason: string): Promise<void>;
+  /** The consignment register in every state, by tracking reference, a page at a time; `status` and `q` may be empty. */
+  consignmentList(status: string, q: string, cursor?: string): Promise<ConsignmentListPage>;
+  /** Amends many consignments, each by its own version, each judged on its own; one outcome per item, in order. Needs LOAD_CREATE. */
+  bulkAmendConsignments(items: BulkAmendItem[]): Promise<BulkConsignmentOutcome[]>;
+  /** Cancels many consignments with one reason, each judged on its own; one outcome per item, in order. Needs LOAD_CREATE. */
+  bulkCancelConsignments(consignmentIds: string[], reason: string): Promise<BulkConsignmentOutcome[]>;
 
   /** Shown once: the token in the result cannot be read again. */
   issueTrackingLink(consignmentId: string, expiresInDays?: number): Promise<IssuedTrackingLink>;
