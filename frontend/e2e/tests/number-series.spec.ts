@@ -15,7 +15,7 @@
  */
 
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { apiSession, openScreen, signIn, tag, type Session } from './support';
+import { apiSession, openScreen, signIn, tag, type Session, confirm } from './support';
 
 const API = process.env.E2E_API_URL ?? 'http://localhost:8080';
 
@@ -86,8 +86,10 @@ test.describe('number series', () => {
       await expect(page.getByTestId('verify-verdict')).toContainText('ISSUED');
 
       await detail.getByTestId('series-delete').click();
+      await confirm(page);
       await expect(page.getByTestId('series-refusal')).toHaveText('number-series-in-use');
       await detail.getByTestId('series-deactivate').click();
+      await confirm(page);
       await expect(detail.getByTestId('series-state')).toHaveText('Inactive');
       await expect(detail.getByTestId('series-activate')).toBeVisible();
     });
