@@ -40,6 +40,8 @@ export interface AccountDraft {
   password: string;
   fullName: string;
   roles: string[];
+  /** The unit the user is created in; left out, the server uses the caller's own unit. */
+  orgUnitId?: string;
 }
 
 /** A role, with what it grants and how many users hold it. */

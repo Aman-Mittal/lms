@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import { useEffect, useState, type FormEvent } from 'react';
-import { ApiProblem } from '../gateway/lmsGateway';
+import { ApiProblem, type OrgUnitView } from '../gateway/lmsGateway';
 import type { AccountDraft, AccountRow, RoleCard } from '../gateway/userAdminTypes';
 import { useSession } from '../session';
 import { ErrorBanner } from './ErrorBanner';
@@ -44,12 +44,15 @@ function problem(e: unknown): Refusal {
  * rule (password policy, the last administrator, switching yourself off); each refusal is shown by its code.
  */
 export function UserAccounts() {
-  const { gateway, can } = useSession();
+  const { gateway, can, auth } = useSession();
+  const ownUnit = auth?.orgUnitId ?? '';
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [list, setList] = useState<AccountRow[]>([]);
   const [listError, setListError] = useState('');
   const [roles, setRoles] = useState<RoleCard[]>([]);
+  const [units, setUnits] = useState<OrgUnitView[]>([]);
+  const [unitChoice, setUnitChoice] = useState(ownUnit);
   const [draft, setDraft] = useState<AccountDraft>(BLANK_DRAFT);
   const [createError, setCreateError] = useState<Refusal | null>(null);
   const [selectedId, setSelectedId] = useState('');
@@ -59,6 +62,11 @@ export function UserAccounts() {
   const [newPassword, setNewPassword] = useState('');
   const [done, setDone] = useState('');
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+
+  const activeUnits = units.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, path: u.path }));
+  // The caller's own unit is always offered, even if the list of units could not be read.
+  const unitOptions = !ownUnit || activeUnits.some((u) => u.id === ownUnit)
+    ? activeUnits : [{ id: ownUnit, name: 'My organisational unit', path: '' }, ...activeUnits];
 
   const selected = list.find((a) => a.id === selectedId) ?? null;
 
@@ -76,6 +84,7 @@ export function UserAccounts() {
 
   useEffect(() => {
     gateway.roleCards().then(setRoles, () => setRoles([]));
+    gateway.orgUnits().then(setUnits, () => setUnits([]));
     void search();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -98,8 +107,9 @@ export function UserAccounts() {
     event.preventDefault();
     setCreateError(null);
     try {
-      const id = await gateway.createAccount(draft);
+      const id = await gateway.createAccount({ ...draft, orgUnitId: unitChoice || undefined });
       setDraft(BLANK_DRAFT);
+      setUnitChoice(ownUnit);
       const found = await search();
       select(id, found);
       setDone('The user is created. They can sign in with the login id and password you typed.');
@@ -145,6 +155,14 @@ export function UserAccounts() {
               <input name="fullName" placeholder="Full name" aria-label="Full name" data-testid="acct-name" required
                 value={draft.fullName} onChange={(ev) => setDraft((d) => ({ ...d, fullName: ev.target.value }))} />
             </div>
+            <label className="field">Organisational unit
+              <select name="orgUnit" aria-label="Organisational unit" data-testid="acct-org-unit" value={unitChoice}
+                onChange={(ev) => setUnitChoice(ev.target.value)}>
+                {unitOptions.map((u) => (
+                  <option key={u.id} value={u.id}>{u.path ? `${u.name} (${u.path})` : u.name}</option>
+                ))}
+              </select>
+            </label>
             <fieldset data-testid="acct-roles">
               <legend>Roles</legend>
               {roles.map((r) => (
@@ -202,7 +220,7 @@ export function UserAccounts() {
           <dl className="facts">
             <div><dt>Login id</dt><dd data-testid="acct-shown-email">{selected.email}</dd></div>
             <div><dt>Status</dt><dd><StatusBadge data-testid="acct-shown-status" value={selected.status} /></dd></div>
-            <div><dt>Unit</dt><dd>{selected.orgName}</dd></div>
+            <div><dt>Unit</dt><dd data-testid="acct-shown-org">{selected.orgName}</dd></div>
           </dl>
           {done && <p className="ok" role="status" data-testid="acct-done">{done}</p>}
           {refusal && <ErrorBanner message={refusal.message} code={refusal.code} testId="acct-error" codeTestId="acct-refusal" />}

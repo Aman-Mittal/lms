@@ -25,6 +25,15 @@ import type { Page, Route } from '@playwright/test';
 
 export const unitId = '44444444-5555-4666-8777-888888888888';
 export const selfId = '99999999-0000-4000-8000-000000000001';
+export const depotUnitId = '44444444-5555-4666-8777-999999999999';
+
+/** The active units the stub offers: the signed-in administrator's own and one below it. */
+export const STUB_UNITS = [
+  { id: unitId, parentId: '', slug: 'head-office', path: 'head-office', name: 'Head Office', unitType: 'COMPANY', level: 0,
+    version: '0', active: true },
+  { id: depotUnitId, parentId: unitId, slug: 'north-depot', path: 'head-office.north-depot', name: 'North Depot', unitType: 'DEPOT',
+    level: 1, version: '0', active: true },
+];
 
 const cors = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'ETag' };
 const preflight = { status: 204, headers: { ...cors, 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } };
@@ -108,6 +117,8 @@ export async function stubUsers(page: Page): Promise<UsersStub> {
   const otherAdmins = (except: string) =>
     stub.users.filter((u) => u.id !== except && u.status === 'ACTIVE' && u.roles.includes('ADMIN')).length;
 
+  await page.route(/\/api\/v1\/org-units(\?.*)?$/, (route) => handle(route, () => json({ items: STUB_UNITS, nextCursor: null })));
+
   await page.route(/\/api\/v1\/permissions(\?.*)?$/, (route) => handle(route, () => json(PERMISSIONS)));
 
   await page.route(/\/api\/v1\/roles(\/.*)?(\?.*)?$/, async (route) => {
@@ -180,7 +191,8 @@ export async function stubUsers(page: Page): Promise<UsersStub> {
         && (!status || u.status === status))));
     }
     if (parts.length === 0 && method === 'POST') {
-      const body = request.postDataJSON() as { email: string; password: string; fullName: string; roles?: string[] };
+      const body = request.postDataJSON() as { email: string; password: string; fullName: string; roles?: string[];
+        orgUnitId?: string };
       note(route, { ...body, password: '(hidden)' });
       if (body.password.length < 12 || !/[A-Za-z]/.test(body.password) || !/[0-9]/.test(body.password)) {
         return route.fulfill(problem(409, 'password-policy', 'The password must be at least 12 characters long'));
@@ -189,7 +201,7 @@ export async function stubUsers(page: Page): Promise<UsersStub> {
         return route.fulfill(problem(409, 'login-id-taken', `Login id ${body.email} is already in use`));
       }
       const created: StubUser = { id: uuid(), email: body.email.toLowerCase(), fullName: body.fullName, status: 'ACTIVE',
-        orgName: 'Head Office', version: 0, roles: body.roles ?? [] };
+        orgName: STUB_UNITS.find((u) => u.id === body.orgUnitId)?.name ?? 'Head Office', version: 0, roles: body.roles ?? [] };
       stub.users.push(created);
       return route.fulfill(json({ id: created.id }, 201));
     }

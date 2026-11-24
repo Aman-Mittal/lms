@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiProblem, LmsGateway } from '../gateway/lms-gateway';
+import { ApiProblem, LmsGateway, type OrgUnitView } from '../gateway/lms-gateway';
 import type { AccountDraft, AccountRow, RoleCard } from '../gateway/user-admin-types';
 import { Session } from '../session';
 import { ErrorBanner } from './error-banner';
@@ -62,6 +62,14 @@ function withCode(codes: string[], code: string, on: boolean): string[] {
           <input name="fullName" placeholder="Full name" aria-label="Full name" data-testid="acct-name" required
                  [value]="draft().fullName" (input)="setField('fullName', $any($event.target).value)" />
         </div>
+        <label class="field">Organisational unit
+          <select name="orgUnit" aria-label="Organisational unit" data-testid="acct-org-unit" [value]="orgUnitChoice()"
+                  (change)="orgUnitChoice.set($any($event.target).value)">
+            @for (u of unitOptions(); track u.id) {
+              <option [value]="u.id" [selected]="u.id === orgUnitChoice()">{{ u.path ? u.name + ' (' + u.path + ')' : u.name }}</option>
+            }
+          </select>
+        </label>
         <fieldset data-testid="acct-roles">
           <legend>Roles</legend>
           @for (r of roles(); track r.code) {
@@ -117,7 +125,7 @@ function withCode(codes: string[], code: string, on: boolean): string[] {
         <dl class="facts">
           <div><dt>Login id</dt><dd data-testid="acct-shown-email">{{ a.email }}</dd></div>
           <div><dt>Status</dt><dd><app-status-badge data-testid="acct-shown-status" [value]="a.status" /></dd></div>
-          <div><dt>Unit</dt><dd>{{ a.orgName }}</dd></div>
+          <div><dt>Unit</dt><dd data-testid="acct-shown-org">{{ a.orgName }}</dd></div>
         </dl>
         @if (done()) { <p class="ok" role="status" data-testid="acct-done">{{ done() }}</p> }
         @if (refusal(); as f) {
@@ -174,6 +182,15 @@ export class UserAccounts implements OnInit {
   readonly list = signal<AccountRow[]>([]);
   readonly listError = signal('');
   readonly roles = signal<RoleCard[]>([]);
+  readonly orgUnits = signal<OrgUnitView[]>([]);
+  /** The unit a new user is created in; starts as the caller's own unit. */
+  readonly orgUnitChoice = signal<string>(this.session.orgUnitId() ?? '');
+  /** The active units to pick from; the caller's own unit is always offered, even if the list could not be read. */
+  readonly unitOptions = computed<Array<{ id: string; name: string; path: string }>>(() => {
+    const own = this.session.orgUnitId() ?? '';
+    const units = this.orgUnits().filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, path: u.path }));
+    return !own || units.some((u) => u.id === own) ? units : [{ id: own, name: 'My organisational unit', path: '' }, ...units];
+  });
   readonly draft = signal<AccountDraft>(blankDraft());
   readonly createError = signal<Refusal | null>(null);
   readonly selected = signal<AccountRow | null>(null);
@@ -185,6 +202,7 @@ export class UserAccounts implements OnInit {
 
   ngOnInit(): void {
     void this.loadRoles();
+    void this.loadUnits();
     void this.search();
   }
 
@@ -212,6 +230,14 @@ export class UserAccounts implements OnInit {
     }
   }
 
+  private async loadUnits(): Promise<void> {
+    try {
+      this.orgUnits.set(await this.gateway.orgUnits());
+    } catch {
+      this.orgUnits.set([]);
+    }
+  }
+
   async search(): Promise<void> {
     this.listError.set('');
     try {
@@ -224,8 +250,9 @@ export class UserAccounts implements OnInit {
   async create(): Promise<void> {
     this.createError.set(null);
     try {
-      const id = await this.gateway.createAccount(this.draft());
+      const id = await this.gateway.createAccount({ ...this.draft(), orgUnitId: this.orgUnitChoice() || undefined });
       this.draft.set(blankDraft());
+      this.orgUnitChoice.set(this.session.orgUnitId() ?? '');
       await this.search();
       this.select(id);
       this.done.set('The user is created. They can sign in with the login id and password you typed.');

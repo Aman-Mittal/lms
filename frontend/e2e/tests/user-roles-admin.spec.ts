@@ -15,7 +15,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { openScreen, signIn, confirm } from './support';
-import { stubUsers, stubUsersSession, type UsersStub } from './support-users';
+import { depotUnitId, stubUsers, stubUsersSession, unitId, type UsersStub } from './support-users';
 
 /*
  * Users and roles, in both consoles: create a user by typing the login id and password, search, edit the name and roles,
@@ -118,6 +118,32 @@ test.describe('user accounts', () => {
       await page.getByTestId('acct-new-password').fill(secret());
       await page.getByTestId('acct-set-password').click();
       await expect(page.getByTestId('acct-done')).toHaveText('The new password is set.');
+    });
+  });
+
+  test('the create form offers the organisational units, starts on the caller\'s own and sends the one chosen', async ({ page }) => {
+    const stub = await stubUsers(page);
+    await signIn(page);
+    await openAccounts(page);
+    const picker = page.getByTestId('acct-org-unit');
+
+    await test.step('the active units are listed and the caller\'s own is chosen', async () => {
+      await expect(picker.locator('option', { hasText: 'Head Office' })).toHaveCount(1);
+      await expect(picker.locator('option', { hasText: 'North Depot' })).toHaveCount(1);
+      if (process.env.E2E_STUB_SESSION) {
+        await expect(picker).toHaveValue(unitId);
+      } else {
+        await expect(picker).not.toHaveValue('');
+      }
+    });
+
+    await test.step('the unit chosen travels with the new user and is shown on the user', async () => {
+      await picker.selectOption(depotUnitId);
+      const email = `depot.person.${Date.now()}@example.test`;
+      await createUser(page, email, secret(), 'Depot Person', []);
+      await expect(page.getByTestId('acct-done')).toContainText('The user is created');
+      expect(sent(stub, '/users')?.body).toMatchObject({ email, orgUnitId: depotUnitId });
+      await expect(page.getByTestId('acct-shown-org')).toHaveText('North Depot');
     });
   });
 
