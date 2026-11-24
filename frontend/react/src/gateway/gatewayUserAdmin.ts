@@ -55,7 +55,8 @@ export function userAdminVerbs(config: Configuration): UserAdminVerbs {
 
     createAccount: (d) =>
       guard(async () => text((await admin.createUser({
-        createUserRequest: { email: d.email.trim(), password: d.password, fullName: d.fullName.trim(), roles: d.roles },
+        createUserRequest: { email: d.email.trim(), password: d.password, fullName: d.fullName.trim(), roles: d.roles,
+          orgUnitId: d.orgUnitId || undefined },
       })).id)),
 
     updateAccount: (id, version, fullName, roles) =>
